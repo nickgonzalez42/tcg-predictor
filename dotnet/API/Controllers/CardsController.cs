@@ -74,6 +74,69 @@ public class CardsController(
             : Ok(await Facets(onePiece.Cards));
     }
 
+    // Monthly price history per condition tier, for charting (TradingView-style).
+    [HttpGet("{game}/{id:int}/history")]
+    public async Task<IActionResult> GetHistory(string game, int id, [FromQuery] string? grade)
+    {
+        var key = GameKey(game);
+        var query = priceCharting.History.Where(h => h.Game == key && h.ProductId == id);
+        if (!string.IsNullOrEmpty(grade)) query = query.Where(h => h.Grade == grade);
+
+        var points = await query.OrderBy(h => h.Date).ToListAsync();
+        var series = points
+            .GroupBy(p => p.Grade)
+            .ToDictionary(g => g.Key, g => g.Select(p => new { p.Date, p.Price }).ToList());
+
+        return Ok(new { game = key, productId = id, series });
+    }
+
+    // Summary stats per tier (current, all-time high/low, % change windows).
+    [HttpGet("{game}/{id:int}/stats")]
+    public async Task<IActionResult> GetStats(string game, int id)
+    {
+        var key = GameKey(game);
+        var points = await priceCharting.History
+            .Where(h => h.Game == key && h.ProductId == id)
+            .OrderBy(h => h.Date).ToListAsync();
+
+        var grades = points
+            .GroupBy(p => p.Grade)
+            .ToDictionary(g => g.Key, g => StatsFor(g.ToList()));
+
+        var current = await priceCharting.GradedPrices
+            .FirstOrDefaultAsync(x => x.Game == key && x.ProductId == id);
+
+        return Ok(new { game = key, productId = id, salesVolume = current?.SalesVolume, grades });
+    }
+
+    private static object StatsFor(List<PriceHistoryPoint> series)
+    {
+        var latest = series[^1];
+        var latestDate = DateTime.Parse(latest.Date);
+
+        double? changeOver(int months)
+        {
+            var target = latestDate.AddMonths(-months);
+            var past = series.LastOrDefault(p => DateTime.Parse(p.Date) <= target);
+            return past == null || past.Price == 0
+                ? null
+                : Math.Round((latest.Price / past.Price - 1) * 100, 1);
+        }
+
+        return new
+        {
+            current = latest.Price,
+            asOf = latest.Date,
+            ath = series.Max(p => p.Price),
+            atl = series.Min(p => p.Price),
+            change1m = changeOver(1),
+            change6m = changeOver(6),
+            change1y = changeOver(12),
+            change5y = changeOver(60),
+            points = series.Count,
+        };
+    }
+
     private async Task<List<CardDto>> Page<T>(
         IQueryable<T> source, CardParams cardParams, string folder, Func<T, string, CardDto> toDto)
         where T : CardBase

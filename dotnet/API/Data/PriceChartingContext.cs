@@ -9,9 +9,24 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
 {
     public DbSet<GradedPrice> GradedPrices => Set<GradedPrice>();
 
+    // Monthly per-grade history. Mapped to graded_price_history for now; swap
+    // ToTable("price_history_unified") once the blended table is built.
+    public DbSet<PriceHistoryPoint> History => Set<PriceHistoryPoint>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<PriceHistoryPoint>(h =>
+        {
+            h.ToTable("graded_price_history");
+            h.HasKey(x => new { x.Game, x.ProductId, x.Grade, x.Date });
+            h.Property(x => x.Game).HasColumnName("game");
+            h.Property(x => x.ProductId).HasColumnName("product_id");
+            h.Property(x => x.Grade).HasColumnName("grade");
+            h.Property(x => x.Date).HasColumnName("date");
+            h.Property(x => x.Price).HasColumnName("price");
+        });
 
         builder.Entity<GradedPrice>(p =>
         {
