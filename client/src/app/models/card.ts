@@ -13,4 +13,18 @@ export type Card = {
     pictureUrl?: string
     imageUrl?: string
     attributes: Record<string, string>
+    gradedPrices?: GradedPrices
+}
+
+export type GradedPrices = {
+    ungraded?: number
+    grade7?: number
+    grade8?: number
+    grade9?: number
+    grade95?: number
+    psa10?: number
+    bgs10?: number
+    cgc10?: number
+    sgc10?: number
+    salesVolume?: number
 }

@@ -23,6 +23,19 @@ export default function CardDetails() {
         { label: 'Description', value: card.description },
     ].filter(detail => detail.value);
 
+    const g = card.gradedPrices;
+    const gradeRows = g ? [
+        { label: 'Ungraded', value: g.ungraded },
+        { label: 'Grade 7', value: g.grade7 },
+        { label: 'Grade 8', value: g.grade8 },
+        { label: 'Grade 9', value: g.grade9 },
+        { label: 'Grade 9.5', value: g.grade95 },
+        { label: 'PSA 10', value: g.psa10 },
+        { label: 'BGS 10', value: g.bgs10 },
+        { label: 'CGC 10', value: g.cgc10 },
+        { label: 'SGC 10', value: g.sgc10 },
+    ].filter(r => r.value != null) : [];
+
     return (
         <div className="detail">
             <div>
@@ -65,6 +78,23 @@ export default function CardDetails() {
                         ))}
                     </tbody>
                 </table>
+                {gradeRows.length > 0 && (
+                    <>
+                        <h4 className="graded-title">
+                            Graded prices <span className="est-note">· PriceCharting</span>
+                        </h4>
+                        <table className="detail-table">
+                            <tbody>
+                                {gradeRows.map((r, i) => (
+                                    <tr key={i}>
+                                        <td>{r.label}</td>
+                                        <td>{currencyFormat(r.value)}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </>
+                )}
             </div>
         </div>
     )

@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 namespace API.Controllers;
 
 public class CardsController(
-    OnePieceContext onePiece, PokemonContext pokemon, PredictionsContext predictions) : BaseApiController
+    OnePieceContext onePiece, PokemonContext pokemon,
+    PredictionsContext predictions, PriceChartingContext priceCharting) : BaseApiController
 {
     [HttpGet]
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
@@ -39,7 +40,30 @@ public class CardsController(
         if (dto == null) return NotFound();
 
         await AttachPredictions([dto], folder);
+        dto.GradedPrices = await GetGradedPrices(folder, id);
         return dto;
+    }
+
+    // Current PriceCharting graded/ungraded prices for a single card (detail view).
+    private async Task<GradedPriceDto?> GetGradedPrices(string game, int id)
+    {
+        var g = await priceCharting.GradedPrices
+            .FirstOrDefaultAsync(x => x.Game == game && x.ProductId == id);
+        if (g == null) return null;
+
+        return new GradedPriceDto
+        {
+            Ungraded = g.Ungraded,
+            Grade7 = g.Grade7,
+            Grade8 = g.Grade8,
+            Grade9 = g.Grade9,
+            Grade95 = g.Grade95,
+            Psa10 = g.Psa10,
+            Bgs10 = g.Bgs10,
+            Cgc10 = g.Cgc10,
+            Sgc10 = g.Sgc10,
+            SalesVolume = g.SalesVolume,
+        };
     }
 
     [HttpGet("filters")]

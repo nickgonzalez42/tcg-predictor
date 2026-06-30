@@ -26,6 +26,11 @@ builder.Services.AddDbContext<PredictionsContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("PredictionsConnection"));
 });
+// Read-only PriceCharting graded prices.
+builder.Services.AddDbContext<PriceChartingContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("PriceChartingConnection"));
+});
 builder.Services.AddCors();
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();

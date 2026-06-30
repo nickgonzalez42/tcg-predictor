@@ -301,6 +301,11 @@ h1, h2, h3, h4 {
   color: var(--text-muted);
 }
 
+.graded-title {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
 .card__actions {
   display: flex;
   justify-content: space-between;
