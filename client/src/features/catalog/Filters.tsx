@@ -1,7 +1,7 @@
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setBrands, setOrderBy, setTypes } from "./catalogSlice";
+import { resetParams, setGame, setOrderBy, setRarities, setSets } from "./catalogSlice";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 
 const sortOptions = [
@@ -10,18 +10,30 @@ const sortOptions = [
     { value: 'price', label: 'Price: Low to high' },
 ]
 
+const gameOptions = [
+    { value: 'onepiece', label: 'One Piece' },
+    { value: 'pokemon', label: 'Pokémon' },
+]
+
 type Props = {
-    filtersData: { brands: string[], types: string[] }
+    filtersData: { sets: string[], rarities: string[] }
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { orderBy, types, brands } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
 
     return (
         <div className="filters">
             <div className="panel">
                 <Search />
+            </div>
+            <div className="panel">
+                <RadioButtonGroup
+                    selectedValue={game}
+                    options={gameOptions}
+                    onChange={e => dispatch(setGame(e.target.value))}
+                />
             </div>
             <div className="panel">
                 <RadioButtonGroup
@@ -32,16 +44,16 @@ export default function Filters({ filtersData: data }: Props) {
             </div>
             <div className="panel">
                 <CheckBoxButtons
-                    items={data.brands}
-                    checked={brands}
-                    onChange={(items: string[]) => dispatch(setBrands(items))}
+                    items={data.rarities}
+                    checked={rarities}
+                    onChange={(items: string[]) => dispatch(setRarities(items))}
                 />
             </div>
             <div className="panel">
                 <CheckBoxButtons
-                    items={data.types}
-                    checked={types}
-                    onChange={(items: string[]) => dispatch(setTypes(items))}
+                    items={data.sets}
+                    checked={sets}
+                    onChange={(items: string[]) => dispatch(setSets(items))}
                 />
             </div>
             <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>

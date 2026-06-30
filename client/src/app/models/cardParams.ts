@@ -1,9 +1,9 @@
-export type ProductParams = {
+export type CardParams = {
+    game: string;
     orderBy: string;
     searchTerm?: string;
-    types: string[];
-    brands: string[];
+    sets: string[];
+    rarities: string[];
     pageNumber: number;
     pageSize: number;
-
 }

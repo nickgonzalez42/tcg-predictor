@@ -1,7 +1,7 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { Product } from "../../app/models/product";
+import type { Card } from "../../app/models/card";
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
-import type { ProductParams } from "../../app/models/productParams";
+import type { CardParams } from "../../app/models/cardParams";
 import { filterEmptyValues } from "../../lib/util";
 import type { Pagination } from "../../app/models/pagination";
 
@@ -9,26 +9,26 @@ export const catalogApi = createApi({
     reducerPath: 'catalogApi',
     baseQuery: baseQueryWithErrorHandling,
     endpoints: (builder) => ({
-        fetchProducts: builder.query<{items: Product[], pagination: Pagination}, ProductParams>({
-            query: (productParams) => {
+        fetchCards: builder.query<{ items: Card[], pagination: Pagination }, CardParams>({
+            query: (cardParams) => {
                 return {
-                    url: 'products',
-                    params: filterEmptyValues(productParams)
+                    url: 'cards',
+                    params: filterEmptyValues(cardParams)
                 }
             },
-            transformResponse: (items: Product[], meta) => {
+            transformResponse: (items: Card[], meta) => {
                 const paginationHeader = meta?.response?.headers.get('Pagination');
                 const pagination = paginationHeader ? JSON.parse(paginationHeader) : null;
-                return {items, pagination};
+                return { items, pagination };
             }
         }),
-        fetchProductDetails: builder.query<Product, number>({
-            query: (productId) => `products/${productId}`
+        fetchCardDetails: builder.query<Card, { game: string, id: number }>({
+            query: ({ game, id }) => `cards/${game}/${id}`
         }),
-        fetchFilters: builder.query<{brands: string[], types: string[]}, void>({
-            query: () => 'products/filters'
+        fetchFilters: builder.query<{ sets: string[], rarities: string[] }, string>({
+            query: (game) => `cards/filters?game=${game}`
         })
     })
 });
 
-export const {useFetchProductDetailsQuery, useFetchProductsQuery, useFetchFiltersQuery} = catalogApi;
+export const { useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery } = catalogApi;

@@ -22,7 +22,7 @@ export default function Search() {
 
     return (
         <div className="field" style={{ margin: 0 }}>
-            <label htmlFor="search">Search products</label>
+            <label htmlFor="search">Search cards</label>
             <input
                 id="search"
                 className="input"

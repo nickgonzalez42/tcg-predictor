@@ -5,11 +5,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace API.Data;
 
-public class StoreContext(DbContextOptions options) : IdentityDbContext<User>(options)
+public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbContext<User>(options)
 {
-    public required DbSet<Product> Products {get; set;}
-    public required DbSet<Basket>  Baskets {get; set;}
-
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

@@ -1,11 +1,12 @@
 import { createSlice } from "@reduxjs/toolkit";
-import type { ProductParams } from "../../app/models/productParams";
+import type { CardParams } from "../../app/models/cardParams";
 
-const initialState: ProductParams = {
+const initialState: CardParams = {
+    game: 'onepiece',
     pageNumber: 1,
     pageSize: 8,
-    types: [],
-    brands: [],
+    sets: [],
+    rarities: [],
     searchTerm: '',
     orderBy: 'name'
 }
@@ -17,29 +18,37 @@ export const catalogSlice = createSlice({
         setPageNumber(state, action) {
             state.pageNumber = action.payload;
         },
-        setPageSize(state,action) {
+        setPageSize(state, action) {
             state.pageSize = action.payload;
         },
-        setOrderBy(state,action) {
+        setOrderBy(state, action) {
             state.orderBy = action.payload;
             state.pageNumber = 1;
         },
-        setTypes(state,action) {
-            state.types = action.payload;
+        setGame(state, action) {
+            // Switching games invalidates the previous game's set/rarity filters.
+            state.game = action.payload;
+            state.sets = [];
+            state.rarities = [];
+            state.searchTerm = '';
             state.pageNumber = 1;
         },
-        setBrands(state,action) {
-            state.brands = action.payload;
+        setSets(state, action) {
+            state.sets = action.payload;
             state.pageNumber = 1;
         },
-        setSearchTerm(state,action) {
+        setRarities(state, action) {
+            state.rarities = action.payload;
+            state.pageNumber = 1;
+        },
+        setSearchTerm(state, action) {
             state.searchTerm = action.payload;
             state.pageNumber = 1;
         },
-        resetParams() {
-            return initialState;
+        resetParams(state) {
+            return { ...initialState, game: state.game };
         }
     }
 });
 
-export const {setBrands, setOrderBy, setPageNumber, setPageSize, setSearchTerm, setTypes, resetParams} = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, resetParams } = catalogSlice.actions;
