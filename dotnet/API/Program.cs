@@ -21,6 +21,11 @@ builder.Services.AddDbContext<PokemonContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("PokemonConnection"));
 });
+// Read-only model predictions (produced offline by the ML pipeline).
+builder.Services.AddDbContext<PredictionsContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("PredictionsConnection"));
+});
 builder.Services.AddCors();
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();

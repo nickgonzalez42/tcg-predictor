@@ -8,7 +8,8 @@ using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
-public class CardsController(OnePieceContext onePiece, PokemonContext pokemon) : BaseApiController
+public class CardsController(
+    OnePieceContext onePiece, PokemonContext pokemon, PredictionsContext predictions) : BaseApiController
 {
     [HttpGet]
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
@@ -21,16 +22,24 @@ public class CardsController(OnePieceContext onePiece, PokemonContext pokemon) :
     [HttpGet("{game}/{id:int}")]
     public async Task<ActionResult<CardDto>> GetCard(string game, int id)
     {
+        var folder = GameKey(game);
+
+        CardDto? dto;
         if (IsPokemon(game))
         {
             var card = await pokemon.Cards.FindAsync(id);
-            return card == null ? NotFound() : card.ToDto(ImageUrl("pokemon", card.Id));
+            dto = card?.ToDto(ImageUrl(folder, card.Id));
         }
         else
         {
             var card = await onePiece.Cards.FindAsync(id);
-            return card == null ? NotFound() : card.ToDto(ImageUrl("onepiece", card.Id));
+            dto = card?.ToDto(ImageUrl(folder, card.Id));
         }
+
+        if (dto == null) return NotFound();
+
+        await AttachPredictions([dto], folder);
+        return dto;
     }
 
     [HttpGet("filters")]
@@ -54,7 +63,27 @@ public class CardsController(OnePieceContext onePiece, PokemonContext pokemon) :
 
         Response.AddPaginationHeader(paged.Metadata);
 
-        return paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
+        var cards = paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
+        await AttachPredictions(cards, folder);
+        return cards;
+    }
+
+    // Fills in each card's model-predicted price from the predictions DB.
+    private async Task AttachPredictions(List<CardDto> cards, string game)
+    {
+        if (cards.Count == 0) return;
+
+        var ids = cards.Select(c => c.Id).ToList();
+        var byId = await predictions.Predictions
+            .Where(p => p.Game == game && ids.Contains(p.ProductId))
+            .ToDictionaryAsync(p => p.ProductId);
+
+        foreach (var card in cards)
+        {
+            if (!byId.TryGetValue(card.Id, out var prediction)) continue;
+            card.PredictedPrice = prediction.PredictedPrice;
+            card.UsedImage = prediction.UsedImage;
+        }
     }
 
     private static async Task<object> Facets<T>(IQueryable<T> source) where T : CardBase
@@ -72,4 +101,6 @@ public class CardsController(OnePieceContext onePiece, PokemonContext pokemon) :
 
     private static bool IsPokemon(string? game) =>
         string.Equals(game?.Trim(), "pokemon", StringComparison.OrdinalIgnoreCase);
+
+    private static string GameKey(string? game) => IsPokemon(game) ? "pokemon" : "onepiece";
 }
