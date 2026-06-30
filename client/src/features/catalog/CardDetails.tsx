@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom"
 import { useFetchCardDetailsQuery } from "./catalogApi";
-import { currencyFormat } from "../../lib/util";
+import { currencyFormat, pctVsMarket } from "../../lib/util";
 
 export default function CardDetails() {
     const { game, id } = useParams();
@@ -9,6 +9,8 @@ export default function CardDetails() {
     );
 
     if (isLoading || !card) return <div>Is loading...</div>
+
+    const pct = pctVsMarket(card.price, card.predictedPrice);
 
     const cardDetails = [
         { label: 'Name', value: card.name },
@@ -37,7 +39,22 @@ export default function CardDetails() {
             <div>
                 <h3>{card.name}</h3>
                 <hr className="divider" />
-                <div className="card__price" style={{ fontSize: '2rem' }}>{currencyFormat(card.price)}</div>
+                {card.price != null && (
+                    <div className="card__price" style={{ fontSize: '2rem' }}>
+                        {currencyFormat(card.price)} <span className="price-caption">market</span>
+                    </div>
+                )}
+                {card.predictedPrice != null && (
+                    <div className="estimate">
+                        Model estimate: <strong>{currencyFormat(card.predictedPrice)}</strong>
+                        {pct != null && (
+                            <span className={`valuation ${pct >= 0 ? 'valuation--up' : 'valuation--down'}`}>
+                                {pct >= 0 ? '+' : ''}{pct.toFixed(0)}% vs market
+                            </span>
+                        )}
+                        {card.usedImage && <span className="est-note"> · uses card art</span>}
+                    </div>
+                )}
                 <table className="detail-table">
                     <tbody>
                         {cardDetails.map((detail, index) => (

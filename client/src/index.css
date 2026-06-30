@@ -253,6 +253,54 @@ h1, h2, h3, h4 {
   color: var(--secondary);
 }
 
+/* ---------- Model prediction ---------- */
+.card__est {
+  margin-top: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.estimate {
+  margin: 0.5rem 0;
+  color: var(--text-muted);
+}
+
+.valuation {
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+}
+
+.valuation--up {
+  color: #166534;
+  background: #dcfce7;
+}
+
+.valuation--down {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.est-tag {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 0.3rem;
+}
+
+.price-caption,
+.est-note {
+  font-size: 0.8rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 .card__actions {
   display: flex;
   justify-content: space-between;
