@@ -27,8 +27,14 @@ export const catalogApi = createApi({
         }),
         fetchFilters: builder.query<{ sets: string[], rarities: string[] }, string>({
             query: (game) => `cards/filters?game=${game}`
+        }),
+        fetchCardHistory: builder.query<
+            { game: string, productId: number, series: Record<string, { date: string, price: number }[]> },
+            { game: string, id: number }
+        >({
+            query: ({ game, id }) => `cards/${game}/${id}/history`
         })
     })
 });
 
-export const { useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery } = catalogApi;
+export const { useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery, useFetchCardHistoryQuery } = catalogApi;

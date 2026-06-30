@@ -306,6 +306,28 @@ h1, h2, h3, h4 {
   font-size: 1rem;
 }
 
+.chart-section {
+  margin-top: 2rem;
+}
+
+.grade-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.grade-tabs .btn {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.8rem;
+}
+
+.btn--active {
+  background: var(--secondary);
+  color: #fff;
+  border-color: var(--secondary);
+}
+
 .card__actions {
   display: flex;
   justify-content: space-between;

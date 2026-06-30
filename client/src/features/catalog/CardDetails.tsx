@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom"
 import { useFetchCardDetailsQuery } from "./catalogApi";
 import { currencyFormat, pctVsMarket } from "../../lib/util";
+import PriceHistoryChart from "./PriceHistoryChart";
 
 export default function CardDetails() {
     const { game, id } = useParams();
@@ -37,6 +38,7 @@ export default function CardDetails() {
     ].filter(r => r.value != null) : [];
 
     return (
+        <>
         <div className="detail">
             <div>
                 <img
@@ -97,5 +99,10 @@ export default function CardDetails() {
                 )}
             </div>
         </div>
+        <section className="chart-section">
+            <h4 className="graded-title">Price history</h4>
+            <PriceHistoryChart game={game ?? 'onepiece'} id={id ? +id : 0} />
+        </section>
+        </>
     )
 }
