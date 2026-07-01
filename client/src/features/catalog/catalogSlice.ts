@@ -47,8 +47,11 @@ export const catalogSlice = createSlice({
         },
         resetParams(state) {
             return { ...initialState, game: state.game };
+        },
+        setParams(state, action) {
+            return { ...state, ...action.payload };
         }
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, resetParams } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, resetParams, setParams } = catalogSlice.actions;
