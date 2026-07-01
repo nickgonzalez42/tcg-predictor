@@ -3,6 +3,8 @@ import { useFetchCardDetailsQuery, useFetchCardForecastQuery } from "./catalogAp
 import { currencyFormat, pctVsMarket } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
 
+const TARGETS = ['ungraded', 'psa10'];
+const HORIZONS = ['6m', '12m'];
 const TARGET_LABEL: Record<string, string> = { ungraded: 'Ungraded', psa10: 'PSA 10' };
 const HORIZON_LABEL: Record<string, string> = { '6m': '6 months', '12m': '12 months' };
 
@@ -119,25 +121,31 @@ export default function CardDetails() {
                 </h4>
                 <table className="forecast-table">
                     <thead>
-                        <tr><th>Tier</th><th>Horizon</th><th>Forecast</th><th>Range</th><th>Change</th></tr>
+                        <tr>
+                            <th>Tier</th>
+                            {HORIZONS.map(h => <th key={h}>{HORIZON_LABEL[h]}</th>)}
+                        </tr>
                     </thead>
                     <tbody>
-                        {forecasts.map((f, i) => {
-                            const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
-                            return (
-                                <tr key={i}>
-                                    <td>{TARGET_LABEL[f.target] ?? f.target}</td>
-                                    <td>{HORIZON_LABEL[f.horizon] ?? f.horizon}</td>
-                                    <td><strong>{currencyFormat(f.forecastPrice)}</strong></td>
-                                    <td className="est-note">{currencyFormat(f.low)}–{currencyFormat(f.high)}</td>
-                                    <td>
-                                        <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
-                                            {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%
-                                        </span>
-                                    </td>
-                                </tr>
-                            );
-                        })}
+                        {TARGETS.filter(t => forecasts.some(f => f.target === t)).map(t => (
+                            <tr key={t}>
+                                <td>{TARGET_LABEL[t] ?? t}</td>
+                                {HORIZONS.map(h => {
+                                    const f = forecasts.find(x => x.target === t && x.horizon === h);
+                                    if (!f) return <td key={h}>—</td>;
+                                    const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
+                                    return (
+                                        <td key={h}>
+                                            <strong>{currencyFormat(f.forecastPrice)}</strong>{' '}
+                                            <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
+                                                {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%
+                                            </span>
+                                            <div className="est-note">{currencyFormat(f.low)}–{currencyFormat(f.high)}</div>
+                                        </td>
+                                    );
+                                })}
+                            </tr>
+                        ))}
                     </tbody>
                 </table>
                 <div className="est-note" style={{ marginTop: '0.5rem' }}>
