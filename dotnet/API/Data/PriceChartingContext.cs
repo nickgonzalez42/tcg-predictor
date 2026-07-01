@@ -19,13 +19,14 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
 
         builder.Entity<PriceHistoryPoint>(h =>
         {
-            h.ToTable("graded_price_history");
+            h.ToTable("price_history_unified");   // blended TCGplayer + PriceCharting
             h.HasKey(x => new { x.Game, x.ProductId, x.Grade, x.Date });
             h.Property(x => x.Game).HasColumnName("game");
             h.Property(x => x.ProductId).HasColumnName("product_id");
             h.Property(x => x.Grade).HasColumnName("grade");
             h.Property(x => x.Date).HasColumnName("date");
             h.Property(x => x.Price).HasColumnName("price");
+            h.Property(x => x.Source).HasColumnName("source");
         });
 
         builder.Entity<GradedPrice>(p =>

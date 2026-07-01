@@ -85,7 +85,7 @@ public class CardsController(
         var points = await query.OrderBy(h => h.Date).ToListAsync();
         var series = points
             .GroupBy(p => p.Grade)
-            .ToDictionary(g => g.Key, g => g.Select(p => new { p.Date, p.Price }).ToList());
+            .ToDictionary(g => g.Key, g => g.Select(p => new { p.Date, p.Price, p.Source }).ToList());
 
         return Ok(new { game = key, productId = id, series });
     }
