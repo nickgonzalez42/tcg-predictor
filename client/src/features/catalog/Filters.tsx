@@ -3,6 +3,7 @@ import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import { resetParams, setGame, setOrderBy, setRarities, setSets } from "./catalogSlice";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
+import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
 
 const sortOptions = [
     { value: 'name', label: 'Alphabetical' },
@@ -50,7 +51,8 @@ export default function Filters({ filtersData: data }: Props) {
                 />
             </div>
             <div className="panel">
-                <CheckBoxButtons
+                <MultiSelectDropdown
+                    label="Sets"
                     items={data.sets}
                     checked={sets}
                     onChange={(items: string[]) => dispatch(setSets(items))}
