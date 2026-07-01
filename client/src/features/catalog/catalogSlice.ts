@@ -4,7 +4,7 @@ import type { CardParams } from "../../app/models/cardParams";
 const initialState: CardParams = {
     game: 'onepiece',
     pageNumber: 1,
-    pageSize: 8,
+    pageSize: 50,
     sets: [],
     rarities: [],
     searchTerm: '',
