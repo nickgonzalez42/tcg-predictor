@@ -25,6 +25,7 @@ export type Forecast = {
     low: number
     high: number
     ret: number
+    months?: number
 }
 
 export type GradedPrices = {

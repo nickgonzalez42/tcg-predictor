@@ -99,10 +99,18 @@ public class CardsController(
             .Where(f => f.Game == key && f.ProductId == id)
             .ToListAsync();
 
+        // Months of history per tier — a proxy for how trustworthy the forecast is.
+        var monthsByTier = await priceCharting.History
+            .Where(h => h.Game == key && h.ProductId == id)
+            .GroupBy(h => h.Grade)
+            .Select(g => new { Grade = g.Key, Months = g.Count() })
+            .ToDictionaryAsync(x => x.Grade, x => x.Months);
+
         var forecasts = rows.Select(f => new
         {
             f.Target, f.Horizon, f.AsOf, f.BasePrice,
             f.ForecastPrice, f.Low, f.High, f.Ret,
+            Months = monthsByTier.GetValueOrDefault(f.Target, 0),
         });
 
         return Ok(new { game = key, productId = id, forecasts });

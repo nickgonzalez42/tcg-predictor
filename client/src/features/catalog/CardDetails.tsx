@@ -8,6 +8,14 @@ const HORIZONS = ['6m', '12m'];
 const TARGET_LABEL: Record<string, string> = { ungraded: 'Ungraded', psa10: 'PSA 10' };
 const HORIZON_LABEL: Record<string, string> = { '6m': '6 months', '12m': '12 months' };
 
+// Confidence from how much monthly price history the tier has. The model's
+// reliable signal came from cards with years of data; thin history = low trust.
+function confidence(months?: number) {
+    if (!months || months < 24) return { label: 'Low confidence', cls: 'conf--low' };
+    if (months < 48) return { label: 'Medium confidence', cls: 'conf--med' };
+    return { label: 'High confidence', cls: 'conf--high' };
+}
+
 export default function CardDetails() {
     const { game, id } = useParams();
     const { data: card, isLoading } = useFetchCardDetailsQuery(
@@ -127,29 +135,39 @@ export default function CardDetails() {
                         </tr>
                     </thead>
                     <tbody>
-                        {TARGETS.filter(t => forecasts.some(f => f.target === t)).map(t => (
-                            <tr key={t}>
-                                <td>{TARGET_LABEL[t] ?? t}</td>
-                                {HORIZONS.map(h => {
-                                    const f = forecasts.find(x => x.target === t && x.horizon === h);
-                                    if (!f) return <td key={h}>—</td>;
-                                    const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
-                                    return (
-                                        <td key={h}>
-                                            <strong>{currencyFormat(f.forecastPrice)}</strong>{' '}
-                                            <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
-                                                {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%
-                                            </span>
-                                            <div className="est-note">{currencyFormat(f.low)}–{currencyFormat(f.high)}</div>
-                                        </td>
-                                    );
-                                })}
-                            </tr>
-                        ))}
+                        {TARGETS.filter(t => forecasts.some(f => f.target === t)).map(t => {
+                            const tierForecasts = forecasts.filter(f => f.target === t);
+                            const conf = confidence(tierForecasts[0]?.months);
+                            return (
+                                <tr key={t}>
+                                    <td>
+                                        {TARGET_LABEL[t] ?? t}
+                                        <div><span className={`conf ${conf.cls}`}>{conf.label}</span></div>
+                                    </td>
+                                    {HORIZONS.map(h => {
+                                        const f = tierForecasts.find(x => x.horizon === h);
+                                        if (!f) return <td key={h}>—</td>;
+                                        const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
+                                        return (
+                                            <td key={h}>
+                                                <strong>{currencyFormat(f.forecastPrice)}</strong>{' '}
+                                                <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
+                                                    {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%
+                                                </span>
+                                                <div className="est-note">{currencyFormat(f.low)}–{currencyFormat(f.high)}</div>
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            );
+                        })}
                     </tbody>
                 </table>
-                <div className="est-note" style={{ marginTop: '0.5rem' }}>
-                    Directional model; range is a confidence band. Not investment advice.
+                <div className="est-note" style={{ marginTop: '0.5rem', maxWidth: '560px' }}>
+                    Each horizon is a separate model estimate, so 6- and 12-month figures can differ.
+                    The range is a confidence band; confidence reflects how much price history the card
+                    has. Cards with limited history (e.g. recent alternate arts) are far less reliable.
+                    Not investment advice.
                 </div>
             </section>
         )}
