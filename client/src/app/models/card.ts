@@ -16,6 +16,17 @@ export type Card = {
     gradedPrices?: GradedPrices
 }
 
+export type Forecast = {
+    target: string
+    horizon: string
+    asOf?: string
+    basePrice: number
+    forecastPrice: number
+    low: number
+    high: number
+    ret: number
+}
+
 export type GradedPrices = {
     ungraded?: number
     grade7?: number

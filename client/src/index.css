@@ -310,6 +310,27 @@ h1, h2, h3, h4 {
   margin-top: 2rem;
 }
 
+.forecast-table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 560px;
+}
+
+.forecast-table th {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.forecast-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+
 .grade-tabs {
   display: flex;
   flex-wrap: wrap;
