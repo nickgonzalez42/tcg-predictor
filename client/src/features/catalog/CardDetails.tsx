@@ -131,6 +131,7 @@ export default function CardDetails() {
                     <thead>
                         <tr>
                             <th>Tier</th>
+                            <th>Current</th>
                             {HORIZONS.map(h => <th key={h}>{HORIZON_LABEL[h]}</th>)}
                         </tr>
                     </thead>
@@ -144,6 +145,7 @@ export default function CardDetails() {
                                         {TARGET_LABEL[t] ?? t}
                                         <div><span className={`conf ${conf.cls}`}>{conf.label}</span></div>
                                     </td>
+                                    <td><strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong></td>
                                     {HORIZONS.map(h => {
                                         const f = tierForecasts.find(x => x.horizon === h);
                                         if (!f) return <td key={h}>—</td>;
