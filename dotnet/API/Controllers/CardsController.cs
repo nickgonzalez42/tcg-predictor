@@ -90,6 +90,24 @@ public class CardsController(
         return Ok(new { game = key, productId = id, series });
     }
 
+    // Model price forecasts (6m/12m for ungraded + PSA 10) with confidence bands.
+    [HttpGet("{game}/{id:int}/forecast")]
+    public async Task<IActionResult> GetForecast(string game, int id)
+    {
+        var key = GameKey(game);
+        var rows = await predictions.Forecasts
+            .Where(f => f.Game == key && f.ProductId == id)
+            .ToListAsync();
+
+        var forecasts = rows.Select(f => new
+        {
+            f.Target, f.Horizon, f.AsOf, f.BasePrice,
+            f.ForecastPrice, f.Low, f.High, f.Ret,
+        });
+
+        return Ok(new { game = key, productId = id, forecasts });
+    }
+
     // Summary stats per tier (current, all-time high/low, % change windows).
     [HttpGet("{game}/{id:int}/stats")]
     public async Task<IActionResult> GetStats(string game, int id)
