@@ -7,7 +7,7 @@ type Props = {
 
 export default function CardList({ cards }: Props) {
   return (
-    <div className="product-grid">
+    <div className="product-grid subgrid full-span">
         {cards.map(card => (
           <CardItem card={card} key={card.id} />
         ))}

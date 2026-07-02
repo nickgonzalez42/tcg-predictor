@@ -3,9 +3,12 @@ import { useFetchCardDetailsQuery, useFetchCardForecastQuery } from "./catalogAp
 import { currencyFormat, pctVsMarket } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
 
-const TARGETS = ['ungraded', 'psa10'];
+const TARGETS = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const HORIZONS = ['6m', '12m'];
-const TARGET_LABEL: Record<string, string> = { ungraded: 'Ungraded', psa10: 'PSA 10' };
+const TARGET_LABEL: Record<string, string> = {
+    ungraded: 'Ungraded', grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
+    grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
+};
 const HORIZON_LABEL: Record<string, string> = { '6m': '6 months', '12m': '12 months' };
 
 // Confidence from how much monthly price history the tier has. The model's

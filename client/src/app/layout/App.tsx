@@ -9,7 +9,7 @@ function App() {
     <div className={`app-shell ${darkMode ? "" : "theme-light"}`}>
       <ScrollRestoration />
       <NavBar />
-      <main className="container page">
+      <main className="container page grid-box">
         <Outlet />
       </main>
     </div>

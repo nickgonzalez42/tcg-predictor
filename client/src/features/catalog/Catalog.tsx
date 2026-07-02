@@ -48,9 +48,9 @@ export default function Catalog() {
   if (isLoading || !data || filtersLoading || !filtersData) return <div>Is loading...</div>
 
   return (
-    <div className="catalog">
+    <div className="catalog subgrid full-span">
       <Filters filtersData={filtersData} />
-      <div>
+      <div className="catalog-items subgrid">
         {data.items && data.items.length > 0 ? (
           <>
             <CardList cards={data.items} />

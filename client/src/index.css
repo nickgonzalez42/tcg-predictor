@@ -63,12 +63,27 @@ h1, h2, h3, h4 {
 .container {
   max-width: 1280px;
   margin: 0 auto;
-  padding: 0 1.5rem;
 }
 
 .page {
   padding-top: 6rem;
   padding-bottom: 3rem;
+}
+
+.grid-box {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: 40px;
+  width: 100%;
+}
+
+.subgrid {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
+.full-span {
+  grid-column: 1 / -1;
 }
 
 /* ---------- Nav ---------- */
@@ -227,6 +242,8 @@ h1, h2, h3, h4 {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
+
+  grid-column: span 3;
 }
 
 .card__media {
@@ -427,22 +444,27 @@ h1, h2, h3, h4 {
 
 /* ---------- Catalog grid ---------- */
 .catalog {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 2rem;
+  /* display: grid; */
+  /* grid-template-columns: 280px 1fr; */
+  /* gap: 2rem; */
   align-items: start;
 }
 
 .product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1.5rem;
+  /* display: grid; */
+  /* grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); */
+  /* gap: 1.5rem; */
 }
 
 .filters {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  grid-column: span 3;
+}
+
+.catalog-items {
+  grid-column: span 9;
 }
 
 /* ---------- Forms ---------- */
@@ -547,11 +569,13 @@ h1, h2, h3, h4 {
   margin-top: 1.5rem;
   flex-wrap: wrap;
   gap: 1rem;
+  grid-column: 1 / -1;
 }
 
 .pagination__pages {
   display: flex;
   gap: 0.35rem;
+  width: 100%;
 }
 
 .page-btn {
@@ -597,4 +621,22 @@ h1, h2, h3, h4 {
   text-align: center;
   min-height: 400px;
   gap: 0.5rem;
+}
+
+@media (max-width: 1023px) {
+  .grid-box {
+    grid-template-columns: repeat(8, 1fr);
+    column-gap: 24px;
+  }
+}
+
+
+@media (max-width: 767px) {
+  .grid-box {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    column-gap: 16px;
+    width: 100%;
+    max-width: 100%;
+  }
 }
