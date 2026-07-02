@@ -325,6 +325,7 @@ h1, h2, h3, h4 {
 
 .chart-section {
   margin-top: 2rem;
+  grid-column: span 9;
 }
 
 /* ---------- Multi-select dropdown ---------- */
@@ -535,10 +536,12 @@ h1, h2, h3, h4 {
 
 /* ---------- Misc ---------- */
 .detail {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3rem;
-  align-items: start;
+  grid-column: span 3;
+  grid-row: span 2;
+}
+
+.detail * {
+  grid-column: 1 / -1;
 }
 
 .detail img {

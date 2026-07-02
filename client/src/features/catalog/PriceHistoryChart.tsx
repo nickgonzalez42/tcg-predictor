@@ -35,6 +35,8 @@ export default function PriceHistoryChart({ game, id }: Props) {
             grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
             rightPriceScale: { borderColor: '#ddd' },
             timeScale: { borderColor: '#ddd' },
+            handleScroll: false,   // no pan / mouse-wheel scroll (page scrolls normally over it)
+            handleScale: false,    // no zoom; chart stays fit to the full range
         });
         const series = chart.addSeries(AreaSeries, {
             lineColor: '#0176d5',
