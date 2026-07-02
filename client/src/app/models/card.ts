@@ -8,8 +8,6 @@ export type Card = {
     cardType?: string
     description?: string
     price?: number
-    predictedPrice?: number
-    usedImage?: boolean
     pictureUrl?: string
     imageUrl?: string
     attributes: Record<string, string>

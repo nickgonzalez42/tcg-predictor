@@ -39,7 +39,6 @@ public class CardsController(
 
         if (dto == null) return NotFound();
 
-        await AttachPredictions([dto], folder);
         dto.GradedPrices = await GetGradedPrices(folder, id);
         return dto;
     }
@@ -176,27 +175,7 @@ public class CardsController(
 
         Response.AddPaginationHeader(paged.Metadata);
 
-        var cards = paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
-        await AttachPredictions(cards, folder);
-        return cards;
-    }
-
-    // Fills in each card's model-predicted price from the predictions DB.
-    private async Task AttachPredictions(List<CardDto> cards, string game)
-    {
-        if (cards.Count == 0) return;
-
-        var ids = cards.Select(c => c.Id).ToList();
-        var byId = await predictions.Predictions
-            .Where(p => p.Game == game && ids.Contains(p.ProductId))
-            .ToDictionaryAsync(p => p.ProductId);
-
-        foreach (var card in cards)
-        {
-            if (!byId.TryGetValue(card.Id, out var prediction)) continue;
-            card.PredictedPrice = prediction.PredictedPrice;
-            card.UsedImage = prediction.UsedImage;
-        }
+        return paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
     }
 
     private static async Task<object> Facets<T>(IQueryable<T> source) where T : CardBase

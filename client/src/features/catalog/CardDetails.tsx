@@ -1,6 +1,6 @@
 import { useParams } from "react-router-dom"
 import { useFetchCardDetailsQuery, useFetchCardForecastQuery } from "./catalogApi";
-import { currencyFormat, pctVsMarket } from "../../lib/util";
+import { currencyFormat } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
 import TrackButton from "../watchlist/TrackButton";
 
@@ -33,8 +33,6 @@ export default function CardDetails() {
 
     const forecasts = [...(forecastData?.forecasts ?? [])].sort((a, b) =>
         a.target.localeCompare(b.target) || a.horizon.localeCompare(b.horizon));
-
-    const pct = pctVsMarket(card.price, card.predictedPrice);
 
     const cardDetails = [
         { label: 'Name', value: card.name },
@@ -81,19 +79,6 @@ export default function CardDetails() {
                 {card.price != null && (
                     <div className="card__price" style={{ fontSize: '2rem' }}>
                         {currencyFormat(card.price)} <span className="price-caption">market</span>
-                    </div>
-                )}
-                {card.predictedPrice != null && (
-                    <div className="estimate">
-                        Model estimate: <strong>{currencyFormat(card.predictedPrice)}</strong>
-                        {pct != null && Math.abs(pct) <= 40 ? (
-                            <span className={`valuation ${pct >= 0 ? 'valuation--up' : 'valuation--down'}`}>
-                                {pct >= 0 ? '+' : ''}{pct.toFixed(0)}% vs market
-                            </span>
-                        ) : pct != null ? (
-                            <span className="est-note"> · low confidence (outside the model's usual price range)</span>
-                        ) : null}
-                        {card.usedImage && <span className="est-note"> · uses card art</span>}
                     </div>
                 )}
                 <table className="detail-table">
