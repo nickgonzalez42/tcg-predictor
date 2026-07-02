@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { createChart, AreaSeries, ColorType } from "lightweight-charts";
 import { useFetchCardHistoryQuery } from "./catalogApi";
 
-const GRADE_ORDER = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
+const GRADE_ORDER = ['ungraded', 'lp', 'mp', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const GRADE_LABEL: Record<string, string> = {
-    ungraded: 'Ungraded', grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
+    ungraded: 'Near Mint', lp: 'Lightly Played', mp: 'Moderately Played',
+    grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
     grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
 };
 
