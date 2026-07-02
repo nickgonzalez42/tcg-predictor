@@ -43,6 +43,11 @@ export default function NavBar() {
                                 </NavLink>
                             </li>
                         ))}
+                        {user && (
+                            <li>
+                                <NavLink to="/watchlist" className="navbar__link">MY LIST</NavLink>
+                            </li>
+                        )}
                     </ul>
                 </nav>
 

@@ -9,12 +9,20 @@ import ServerError from "../errors/ServerError";
 import NotFound from "../errors/NotFound";
 import LoginForm from "../../features/account/loginForm";
 import RegisterForm from "../../features/account/registerForm";
+import RequireAuth from "./RequireAuth";
+import Watchlist from "../../features/watchlist/Watchlist";
 
 export const router = createBrowserRouter([
     {
         path: '/',
         element: <App />,
         children: [
+            {
+                element: <RequireAuth />,
+                children: [
+                    {path: '/watchlist', element: <Watchlist />},
+                ]
+            },
             {path: '', element: <HomePage />},
             {path: '/catalog', element: <Catalog />},
             {path: '/catalog/:game/:id', element: <CardDetails />},

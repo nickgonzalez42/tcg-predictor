@@ -1,6 +1,7 @@
 import type { Card } from "../../app/models/card"
 import { Link } from "react-router-dom"
 import { currencyFormat, gameKey, pctVsMarket } from "../../lib/util"
+import TrackButton from "../watchlist/TrackButton"
 
 type Props = {
     card: Card
@@ -45,6 +46,7 @@ export default function CardItem({ card }: Props) {
             </div>
             <div className="card__actions">
                 <Link className="btn btn--outline" to={`/catalog/${gameKey(card.game)}/${card.id}`}>View</Link>
+                <TrackButton game={gameKey(card.game)} productId={card.id} compact />
             </div>
         </div>
     )

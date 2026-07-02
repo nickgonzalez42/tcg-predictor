@@ -7,9 +7,15 @@ namespace API.Data;
 
 public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbContext<User>(options)
 {
+    public DbSet<TrackedCard> TrackedCards => Set<TrackedCard>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<TrackedCard>()
+            .HasIndex(x => new { x.UserName, x.Game, x.ProductId })
+            .IsUnique();
 
         builder.Entity<IdentityRole>()
             .HasData(

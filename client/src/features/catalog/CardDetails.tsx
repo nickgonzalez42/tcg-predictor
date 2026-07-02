@@ -2,6 +2,7 @@ import { useParams } from "react-router-dom"
 import { useFetchCardDetailsQuery, useFetchCardForecastQuery } from "./catalogApi";
 import { currencyFormat, pctVsMarket } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
+import TrackButton from "../watchlist/TrackButton";
 
 const TARGETS = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const HORIZONS = ['6m', '12m'];
@@ -75,6 +76,7 @@ export default function CardDetails() {
             </div>
             <div>
                 <h3>{card.name}</h3>
+                <TrackButton game={game ?? 'onepiece'} productId={id ? +id : 0} />
                 <hr className="divider" />
                 {card.price != null && (
                     <div className="card__price" style={{ fontSize: '2rem' }}>
@@ -121,13 +123,13 @@ export default function CardDetails() {
                 )}
             </div>
         </div>
-        <div>
-            <section className="chart-section">
+        <div className="chart-section">
+            <section>
                 <h4 className="graded-title">Price history</h4>
                 <PriceHistoryChart game={game ?? 'onepiece'} id={id ? +id : 0} />
             </section>
             {forecasts.length > 0 && (
-                <section className="chart-section">
+                <section>
                     <h4 className="graded-title">
                         Price forecast <span className="est-note">· model</span>
                     </h4>

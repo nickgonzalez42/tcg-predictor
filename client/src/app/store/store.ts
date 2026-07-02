@@ -6,12 +6,14 @@ import { uiSlice } from "../layout/uiSlice";
 import { errorApi } from "../../features/about/errorApi";
 import { catalogSlice } from "../../features/catalog/catalogSlice";
 import { accountApi } from "../../features/account/accountApi";
+import { watchlistApi } from "../../features/watchlist/watchlistApi";
 
 export const store = configureStore({
     reducer: {
         [catalogApi.reducerPath]: catalogApi.reducer,
         [errorApi.reducerPath]: errorApi.reducer,
         [accountApi.reducerPath]: accountApi.reducer,
+        [watchlistApi.reducerPath]: watchlistApi.reducer,
         counter: counterSlice.reducer,
         ui: uiSlice.reducer,
         catalog: catalogSlice.reducer
@@ -20,7 +22,8 @@ export const store = configureStore({
         getDefaultMiddleware().concat(
             catalogApi.middleware,
             errorApi.middleware,
-            accountApi.middleware)
+            accountApi.middleware,
+            watchlistApi.middleware)
 })
 
 export type RootState = ReturnType<typeof store.getState>
