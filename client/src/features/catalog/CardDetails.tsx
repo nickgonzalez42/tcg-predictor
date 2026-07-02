@@ -86,11 +86,13 @@ export default function CardDetails() {
                 {card.predictedPrice != null && (
                     <div className="estimate">
                         Model estimate: <strong>{currencyFormat(card.predictedPrice)}</strong>
-                        {pct != null && (
+                        {pct != null && Math.abs(pct) <= 40 ? (
                             <span className={`valuation ${pct >= 0 ? 'valuation--up' : 'valuation--down'}`}>
                                 {pct >= 0 ? '+' : ''}{pct.toFixed(0)}% vs market
                             </span>
-                        )}
+                        ) : pct != null ? (
+                            <span className="est-note"> · low confidence (outside the model's usual price range)</span>
+                        ) : null}
                         {card.usedImage && <span className="est-note"> · uses card art</span>}
                     </div>
                 )}

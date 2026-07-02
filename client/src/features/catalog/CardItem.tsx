@@ -30,7 +30,7 @@ export default function CardItem({ card }: Props) {
                         {card.predictedPrice != null && (
                             <div className="card__est">
                                 Model {currencyFormat(card.predictedPrice)}
-                                {pct != null && (
+                                {pct != null && Math.abs(pct) <= 40 && (
                                     <span className={`valuation ${pct >= 0 ? 'valuation--up' : 'valuation--down'}`}>
                                         {pct >= 0 ? '+' : ''}{pct.toFixed(0)}%
                                     </span>
