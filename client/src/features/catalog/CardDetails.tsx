@@ -15,9 +15,20 @@ const HORIZON_LABEL: Record<string, string> = { '6m': '6 months', '12m': '12 mon
 // Confidence from how much monthly price history the tier has. The model's
 // reliable signal came from cards with years of data; thin history = low trust.
 function confidence(months?: number) {
-    if (!months || months < 24) return { label: 'Low confidence', cls: 'conf--low' };
-    if (months < 48) return { label: 'Medium confidence', cls: 'conf--med' };
-    return { label: 'High confidence', cls: 'conf--high' };
+    const m = months ?? 0;
+    const span = `${m} month${m === 1 ? '' : 's'} of price history`;
+    if (m < 24) return {
+        label: 'Low confidence', cls: 'conf--low',
+        reason: `Only ${span} — too little for a reliable forecast (the model's signal comes from cards with years of data).`,
+    };
+    if (m < 48) return {
+        label: 'Medium confidence', cls: 'conf--med',
+        reason: `${span} — a moderate track record; treat the forecast with some caution.`,
+    };
+    return {
+        label: 'High confidence', cls: 'conf--high',
+        reason: `${span} — a long track record, where the model is most reliable.`,
+    };
 }
 
 export default function CardDetails() {
@@ -125,7 +136,7 @@ export default function CardDetails() {
                         <thead>
                             <tr>
                                 <th>Tier</th>
-                                <th>Current (mo. avg)</th>
+                                <th>Current</th>
                                 {HORIZONS.map(h => <th key={h}>{HORIZON_LABEL[h]}</th>)}
                             </tr>
                         </thead>
@@ -137,7 +148,11 @@ export default function CardDetails() {
                                     <tr key={t}>
                                         <td>
                                             {TARGET_LABEL[t] ?? t}
-                                            <div><span className={`conf ${conf.cls}`}>{conf.label}</span></div>
+                                            <div>
+                                                <span className={`conf ${conf.cls}`} title={conf.reason}>
+                                                    {conf.label}
+                                                </span>
+                                            </div>
                                         </td>
                                         <td><strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong></td>
                                         {HORIZONS.map(h => {
@@ -160,12 +175,9 @@ export default function CardDetails() {
                         </tbody>
                     </table>
                     <div className="est-note" style={{ marginTop: '0.5rem', maxWidth: '560px' }}>
-                        “Current (mo. avg)” is each tier’s latest <em>monthly-average</em> price from the
-                        price history, so it can differ slightly from the live market price shown above.
                         Each horizon is a separate model estimate, so 6- and 12-month figures can differ.
-                        The range is a confidence band; confidence reflects how much price history the card
-                        has (limited-history cards, e.g. recent alternate arts, are far less reliable).
-                        Not investment advice.
+                        The range is a confidence band; hover a confidence label for why. Limited-history
+                        cards (e.g. recent alternate arts) are far less reliable. Not investment advice.
                     </div>
                 </section>
             )}
