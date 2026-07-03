@@ -78,7 +78,8 @@ export default function CardDetails() {
                 <hr className="divider" />
                 {card.price != null && (
                     <div className="card__price" style={{ fontSize: '2rem' }}>
-                        {currencyFormat(card.price)} <span className="price-caption">market</span>
+                        {currencyFormat(card.price)}{' '}
+                        <span className="price-caption">latest TCGplayer market (Near Mint)</span>
                     </div>
                 )}
                 <table className="detail-table">
@@ -124,7 +125,7 @@ export default function CardDetails() {
                         <thead>
                             <tr>
                                 <th>Tier</th>
-                                <th>Current</th>
+                                <th>Current (mo. avg)</th>
                                 {HORIZONS.map(h => <th key={h}>{HORIZON_LABEL[h]}</th>)}
                             </tr>
                         </thead>
@@ -159,9 +160,11 @@ export default function CardDetails() {
                         </tbody>
                     </table>
                     <div className="est-note" style={{ marginTop: '0.5rem', maxWidth: '560px' }}>
+                        “Current (mo. avg)” is each tier’s latest <em>monthly-average</em> price from the
+                        price history, so it can differ slightly from the live market price shown above.
                         Each horizon is a separate model estimate, so 6- and 12-month figures can differ.
                         The range is a confidence band; confidence reflects how much price history the card
-                        has. Cards with limited history (e.g. recent alternate arts) are far less reliable.
+                        has (limited-history cards, e.g. recent alternate arts, are far less reliable).
                         Not investment advice.
                     </div>
                 </section>
