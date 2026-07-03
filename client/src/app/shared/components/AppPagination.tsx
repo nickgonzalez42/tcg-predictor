@@ -5,6 +5,25 @@ type Props = {
     onPageChange: (page: number) => void
 }
 
+// Truncated page list: 1 2 3 … i-2 i-1 i … last  (with the last page kept so you
+// can still jump to the end; gaps become an ellipsis).
+function pageList(current: number, total: number): (number | '…')[] {
+    const pages = new Set<number>();
+    [1, 2, 3].forEach(p => pages.add(p));
+    [current - 2, current - 1, current].forEach(p => pages.add(p));
+    pages.add(total);
+
+    const sorted = [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b);
+    const out: (number | '…')[] = [];
+    let prev = 0;
+    for (const p of sorted) {
+        if (p - prev > 1) out.push('…');
+        out.push(p);
+        prev = p;
+    }
+    return out;
+}
+
 export default function AppPagination({ metadata, onPageChange }: Props) {
     const { currentPage, totalPages, pageSize, totalCount } = metadata;
     const startItem = (currentPage - 1) * pageSize + 1;
@@ -16,15 +35,33 @@ export default function AppPagination({ metadata, onPageChange }: Props) {
                 Displaying {startItem}-{endItem} of {totalCount} Items
             </span>
             <div className="pagination__pages">
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                    <button
-                        key={page}
-                        className={`page-btn ${page === currentPage ? 'active' : ''}`}
-                        onClick={() => onPageChange(page)}
-                    >
-                        {page}
-                    </button>
-                ))}
+                <button
+                    className="page-btn"
+                    disabled={currentPage <= 1}
+                    onClick={() => onPageChange(currentPage - 1)}
+                >
+                    ‹
+                </button>
+                {pageList(currentPage, totalPages).map((p, i) =>
+                    p === '…' ? (
+                        <span key={`e${i}`} className="page-ellipsis">…</span>
+                    ) : (
+                        <button
+                            key={p}
+                            className={`page-btn ${p === currentPage ? 'active' : ''}`}
+                            onClick={() => onPageChange(p)}
+                        >
+                            {p}
+                        </button>
+                    )
+                )}
+                <button
+                    className="page-btn"
+                    disabled={currentPage >= totalPages}
+                    onClick={() => onPageChange(currentPage + 1)}
+                >
+                    ›
+                </button>
             </div>
         </div>
     )

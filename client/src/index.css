@@ -600,6 +600,19 @@ h1, h2, h3, h4 {
   border-color: var(--primary);
 }
 
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-ellipsis {
+  display: inline-flex;
+  align-items: center;
+  min-width: 24px;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
 .text-muted {
   color: var(--text-muted);
 }
