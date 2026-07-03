@@ -4,6 +4,7 @@ export type CardParams = {
     searchTerm?: string;
     sets: string[];
     rarities: string[];
+    grade?: string;
     pageNumber: number;
     pageSize: number;
 }

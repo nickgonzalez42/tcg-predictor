@@ -7,4 +7,5 @@ public class CardParams : PaginationParams
     public string? SearchTerm { get; set; }
     public string? Sets { get; set; }      // comma separated
     public string? Rarities { get; set; }  // comma separated
+    public string? Grade { get; set; }     // tier to price by: ungraded|lp|mp|grade7..psa10 (default: market)
 }

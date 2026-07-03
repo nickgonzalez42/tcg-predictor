@@ -8,7 +8,8 @@ const initialState: CardParams = {
     sets: [],
     rarities: [],
     searchTerm: '',
-    orderBy: 'name'
+    orderBy: 'name',
+    grade: ''
 }
 
 export const catalogSlice = createSlice({
@@ -45,6 +46,10 @@ export const catalogSlice = createSlice({
             state.searchTerm = action.payload;
             state.pageNumber = 1;
         },
+        setGrade(state, action) {
+            state.grade = action.payload;
+            state.pageNumber = 1;
+        },
         resetParams(state) {
             return { ...initialState, game: state.game };
         },
@@ -54,4 +59,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, resetParams, setParams } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, resetParams, setParams } = catalogSlice.actions;

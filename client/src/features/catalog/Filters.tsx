@@ -1,7 +1,7 @@
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setGame, setOrderBy, setRarities, setSets } from "./catalogSlice";
+import { resetParams, setGame, setGrade, setOrderBy, setRarities, setSets } from "./catalogSlice";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
 
@@ -16,18 +16,41 @@ const gameOptions = [
     { value: 'pokemon', label: 'Pokémon' },
 ]
 
+// Which tier's price to show. '' = default TCGplayer market price.
+const gradeOptions = [
+    { value: '', label: 'Market price' },
+    { value: 'lp', label: 'Lightly Played' },
+    { value: 'mp', label: 'Moderately Played' },
+    { value: 'grade7', label: 'Grade 7' },
+    { value: 'grade8', label: 'Grade 8' },
+    { value: 'grade9', label: 'Grade 9' },
+    { value: 'grade95', label: 'Grade 9.5' },
+    { value: 'psa10', label: 'PSA 10' },
+]
+
 type Props = {
     filtersData: { sets: string[], rarities: string[] }
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities, grade } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
 
     return (
         <div className="filters">
             <div className="panel">
                 <Search />
+            </div>
+            <div className="panel">
+                <label htmlFor="grade-select" className="field-label">Price shown</label>
+                <select
+                    id="grade-select"
+                    className="input"
+                    value={grade ?? ''}
+                    onChange={e => dispatch(setGrade(e.target.value))}
+                >
+                    {gradeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
             </div>
             <div className="panel">
                 <RadioButtonGroup

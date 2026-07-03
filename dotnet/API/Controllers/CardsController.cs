@@ -175,7 +175,30 @@ public class CardsController(
 
         Response.AddPaginationHeader(paged.Metadata);
 
-        return paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
+        var cards = paged.Select(c => toDto(c, ImageUrl(folder, c.Id))).ToList();
+        await ApplyGradePrice(cards, folder, cardParams.Grade);
+        return cards;
+    }
+
+    // When a grade/condition tier is selected, show that tier's latest price
+    // (same source as the forecast "Current" — price_history_unified) instead of
+    // the default TCGplayer market price.
+    private async Task ApplyGradePrice(List<CardDto> cards, string game, string? grade)
+    {
+        if (string.IsNullOrEmpty(grade) || cards.Count == 0) return;
+
+        var ids = cards.Select(c => c.Id).ToList();
+        var rows = await priceCharting.History
+            .Where(h => h.Game == game && h.Grade == grade && ids.Contains(h.ProductId))
+            .Select(h => new { h.ProductId, h.Date, h.Price })
+            .ToListAsync();
+
+        var latest = rows
+            .GroupBy(r => r.ProductId)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Date).First().Price);
+
+        foreach (var card in cards)
+            card.Price = latest.TryGetValue(card.Id, out var p) ? p : null;
     }
 
     private static async Task<object> Facets<T>(IQueryable<T> source) where T : CardBase
