@@ -108,7 +108,7 @@ public class CardsController(
         var forecasts = rows.Select(f => new
         {
             f.Target, f.Horizon, f.AsOf, f.BasePrice,
-            f.ForecastPrice, f.Low, f.High, f.Ret,
+            f.ForecastPrice, f.Low, f.High, f.Ret, f.Reason,
             Months = monthsByTier.GetValueOrDefault(f.Target, 0),
         });
 

@@ -26,6 +26,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.Low).HasColumnName("low");
             f.Property(x => x.High).HasColumnName("high");
             f.Property(x => x.Ret).HasColumnName("ret");
+            f.Property(x => x.Reason).HasColumnName("reason");
         });
     }
 }

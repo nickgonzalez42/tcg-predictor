@@ -160,7 +160,7 @@ export default function CardDetails() {
                                             if (!f) return <td key={h}>—</td>;
                                             const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                             return (
-                                                <td key={h}>
+                                                <td key={h} title={f.reason} style={f.reason ? { cursor: 'help' } : undefined}>
                                                     <strong>{currencyFormat(f.forecastPrice)}</strong>{' '}
                                                     <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
                                                         {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%

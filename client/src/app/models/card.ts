@@ -23,6 +23,7 @@ export type Forecast = {
     low: number
     high: number
     ret: number
+    reason?: string
     months?: number
 }
 

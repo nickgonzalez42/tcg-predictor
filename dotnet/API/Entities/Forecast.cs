@@ -14,4 +14,5 @@ public class Forecast
     public double Low { get; set; }              // confidence band (1 MAE)
     public double High { get; set; }
     public double Ret { get; set; }              // predicted log-return
+    public string? Reason { get; set; }          // plain-English why, from model signals
 }
