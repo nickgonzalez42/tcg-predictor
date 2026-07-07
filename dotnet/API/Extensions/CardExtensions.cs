@@ -9,8 +9,8 @@ public static class CardExtensions
     {
         return orderBy switch
         {
-            "price" => query.OrderBy(x => x.MarketPrice),
-            "priceDesc" => query.OrderByDescending(x => x.MarketPrice),
+            "price" => query.OrderBy(x => x.NearMintPrice ?? x.MarketPrice),
+            "priceDesc" => query.OrderByDescending(x => x.NearMintPrice ?? x.MarketPrice),
             _ => query.OrderBy(x => x.Name)
         };
     }
@@ -87,7 +87,7 @@ public static class CardExtensions
             CardNumber = card.CardNumber,
             CardType = card.CardType,
             Description = card.Description,
-            Price = card.MarketPrice,
+            Price = card.NearMintPrice ?? card.MarketPrice,
             PictureUrl = pictureUrl,
             ImageUrl = card.ImageUrl
         };

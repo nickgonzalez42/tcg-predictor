@@ -3,6 +3,7 @@ using System;
 using API.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace API.Data.Migrations
 {
     [DbContext(typeof(StoreContext))]
-    partial class StoreContextModelSnapshot : ModelSnapshot
+    [Migration("20260703234503_AddTrackedCardKind")]
+    partial class AddTrackedCardKind
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -62,9 +65,6 @@ namespace API.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<DateTime?>("AcquiredAt")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("AddedAt")
                         .HasColumnType("TEXT");
 
@@ -72,21 +72,12 @@ namespace API.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Grade")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Note")
-                        .HasColumnType("TEXT");
-
                     b.Property<int>("ProductId")
                         .HasColumnType("INTEGER");
-
-                    b.Property<double?>("PurchasePrice")
-                        .HasColumnType("REAL");
 
                     b.Property<string>("UserName")
                         .IsRequired()
@@ -94,11 +85,8 @@ namespace API.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserName", "Game", "ProductId")
-                        .IsUnique()
-                        .HasFilter("\"Kind\" = 'wishlist'");
-
-                    b.HasIndex("UserName", "Game", "Kind", "ProductId");
+                    b.HasIndex("UserName", "Game", "ProductId", "Kind")
+                        .IsUnique();
 
                     b.ToTable("TrackedCards");
                 });

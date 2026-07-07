@@ -13,9 +13,17 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     {
         base.OnModelCreating(builder);
 
+        // Wishlist is one-per-card, so enforce uniqueness for wishlist rows only.
+        // Owned rows are one-per-copy and may repeat (multiple copies at different
+        // grades), so they are deliberately excluded from the unique constraint.
         builder.Entity<TrackedCard>()
             .HasIndex(x => new { x.UserName, x.Game, x.ProductId })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"Kind\" = 'wishlist'");
+
+        // Non-unique index covering the owned list/lookup queries.
+        builder.Entity<TrackedCard>()
+            .HasIndex(x => new { x.UserName, x.Game, x.Kind, x.ProductId });
 
         builder.Entity<IdentityRole>()
             .HasData(

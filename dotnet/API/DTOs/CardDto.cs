@@ -17,6 +17,12 @@ public class CardDto
     public Dictionary<string, string> Attributes { get; set; } = [];
     // PriceCharting graded/ungraded prices (detail view); null when unmatched.
     public GradedPriceDto? GradedPrices { get; set; }
+    // The signed-in user's owned copies of this card; only populated by the
+    // Owned tracked list, null elsewhere. On the Owned list each DTO is one
+    // (card + condition) unit, so these are the copies at OwnedGrade only.
+    public List<OwnedCopyDto>? OwnedCopies { get; set; }
+    public string? OwnedGrade { get; set; }    // the condition this owned unit represents (copy-grade vocab)
+    public int? OwnedQuantity { get; set; }     // number of copies at that condition
 }
 
 public class GradedPriceDto

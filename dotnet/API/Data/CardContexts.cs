@@ -71,6 +71,7 @@ internal static class CardMapping
         card.Property(x => x.CardType).HasColumnName("card_type");
         card.Property(x => x.Description).HasColumnName("description");
         card.Property(x => x.MarketPrice).HasColumnName("market_price");
+        card.Property(x => x.NearMintPrice).HasColumnName("near_mint_price");
         card.Property(x => x.ImageUrl).HasColumnName("image_url");
     }
 }
