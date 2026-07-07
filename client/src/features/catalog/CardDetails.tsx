@@ -31,6 +31,14 @@ function confidence(months?: number) {
     };
 }
 
+// The stored reason is "Projects +X% over 12m. Signals: ...". The projection is
+// already shown per cell, so drop that lead sentence and keep the shared signals.
+function whyText(reason?: string) {
+    if (!reason) return '';
+    const i = reason.indexOf('. ');
+    return i >= 0 ? reason.slice(i + 2) : reason;
+}
+
 export default function CardDetails() {
     const { game, id } = useParams();
     const { data: card, isLoading } = useFetchCardDetailsQuery(
@@ -85,7 +93,7 @@ export default function CardDetails() {
             </div>
             <div>
                 <h3>{card.name}</h3>
-                <TrackButton game={game ?? 'onepiece'} productId={id ? +id : 0} />
+                <TrackButton game={game ?? 'onepiece'} productId={id ? +id : 0} chooseGrade />
                 <hr className="divider" />
                 {card.price != null && (
                     <div className="card__price" style={{ fontSize: '2rem' }}>
@@ -160,12 +168,13 @@ export default function CardDetails() {
                                             if (!f) return <td key={h}>—</td>;
                                             const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                             return (
-                                                <td key={h} title={f.reason} style={f.reason ? { cursor: 'help' } : undefined}>
+                                                <td key={h}>
                                                     <strong>{currencyFormat(f.forecastPrice)}</strong>{' '}
                                                     <span className={`valuation ${chg >= 0 ? 'valuation--up' : 'valuation--down'}`}>
                                                         {chg >= 0 ? '+' : ''}{chg.toFixed(0)}%
                                                     </span>
                                                     <div className="est-note">{currencyFormat(f.low)}–{currencyFormat(f.high)}</div>
+                                                    {f.reason && <p className="forecast-reason">{whyText(f.reason)}</p>}
                                                 </td>
                                             );
                                         })}

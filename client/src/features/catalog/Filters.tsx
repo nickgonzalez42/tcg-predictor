@@ -16,9 +16,9 @@ const gameOptions = [
     { value: 'pokemon', label: 'Pokémon' },
 ]
 
-// Which tier's price to show. '' = default TCGplayer market price.
+// Which tier's price to show. '' = default (ungraded / Near Mint).
 const gradeOptions = [
-    { value: '', label: 'Market price' },
+    { value: '', label: 'Near Mint' },
     { value: 'lp', label: 'Lightly Played' },
     { value: 'mp', label: 'Moderately Played' },
     { value: 'grade7', label: 'Grade 7' },

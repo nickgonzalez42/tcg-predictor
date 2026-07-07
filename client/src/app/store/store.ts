@@ -7,6 +7,7 @@ import { errorApi } from "../../features/about/errorApi";
 import { catalogSlice } from "../../features/catalog/catalogSlice";
 import { accountApi } from "../../features/account/accountApi";
 import { watchlistApi } from "../../features/watchlist/watchlistApi";
+import { ownedParamsSlice, wishlistParamsSlice } from "../../features/watchlist/trackedParamsSlice";
 
 export const store = configureStore({
     reducer: {
@@ -16,7 +17,9 @@ export const store = configureStore({
         [watchlistApi.reducerPath]: watchlistApi.reducer,
         counter: counterSlice.reducer,
         ui: uiSlice.reducer,
-        catalog: catalogSlice.reducer
+        catalog: catalogSlice.reducer,
+        ownedParams: ownedParamsSlice.reducer,
+        wishlistParams: wishlistParamsSlice.reducer
     },
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(

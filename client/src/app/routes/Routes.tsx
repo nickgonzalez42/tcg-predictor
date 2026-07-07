@@ -10,7 +10,7 @@ import NotFound from "../errors/NotFound";
 import LoginForm from "../../features/account/loginForm";
 import RegisterForm from "../../features/account/registerForm";
 import RequireAuth from "./RequireAuth";
-import Watchlist from "../../features/watchlist/Watchlist";
+import TrackedList from "../../features/watchlist/TrackedList";
 
 export const router = createBrowserRouter([
     {
@@ -20,7 +20,8 @@ export const router = createBrowserRouter([
             {
                 element: <RequireAuth />,
                 children: [
-                    {path: '/watchlist', element: <Watchlist />},
+                    {path: '/portfolio', element: <TrackedList kind="owned" title="Portfolio" />},
+                    {path: '/wishlist', element: <TrackedList kind="wishlist" title="Wishlist" />},
                 ]
             },
             {path: '', element: <HomePage />},

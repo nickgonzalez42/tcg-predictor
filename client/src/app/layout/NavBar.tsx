@@ -44,16 +44,21 @@ export default function NavBar() {
                             </li>
                         ))}
                         {user && (
-                            <li>
-                                <NavLink to="/watchlist" className="navbar__link">MY LIST</NavLink>
-                            </li>
+                            <>
+                                <li>
+                                    <NavLink to="/portfolio" className="navbar__link">PORTFOLIO</NavLink>
+                                </li>
+                                <li>
+                                    <NavLink to="/wishlist" className="navbar__link">WISHLIST</NavLink>
+                                </li>
+                            </>
                         )}
                     </ul>
                 </nav>
 
                 <div style={{ display: 'flex', alignItems: 'center' }}>
                     {user ? (
-                        <UserMenu user={user} />
+                        <UserMenu />
                     ) : (
                         <ul className="navbar__links">
                             {rightLinks.map(({ title, path }) => (

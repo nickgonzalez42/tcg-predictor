@@ -9,7 +9,7 @@
   --primary-hover: #3a73e0;
   --secondary: #f9a825;
   --danger: #e53935;
-  --radius: 8px;
+  --radius: 15px;
 }
 
 .theme-light {
@@ -140,6 +140,15 @@ h1, h2, h3, h4 {
   text-decoration: none;
 }
 
+/* Logout is a <button> — strip native chrome so it matches the text links. */
+button.navbar__link {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: inherit;
+}
+
 .navbar__icon-btn {
   background: transparent;
   border: none;
@@ -236,22 +245,157 @@ h1, h2, h3, h4 {
   flex-direction: column;
   justify-content: space-between;
   background: var(--surface);
-  border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
 
   grid-column: span 3;
 }
 
+.media__container {
+  position: relative;
+}
+
 .card__media {
-  height: 240px;
-  background-size: cover;
-  background-position: center;
-  background-color: var(--surface-2);
+  display: block;   /* kill the inline baseline gap so the <a>/container fit the image height */
+  width: 100%;
+  height: auto;
+}
+
+.card__rotator {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  max-height: 0;
+  width: 100%;
+  transition: all 0.5s;
+  overflow: hidden;
+}
+
+.card__rotator.active {
+  max-height: 100%;
+}
+
+.rotator {
+  background: black;
+  border-radius: var(--radius);
+  opacity: 100%;
+  height: 100px;
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+}
+
+/* Current condition (what the Add button will use) at the top of the rotator. */
+.rotator__condition {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem;
+  text-align: center;
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Add / star buttons nested at the bottom of the rotator overlay, layered on top
+   of the black .rotator (a sibling, so any opacity on .rotator doesn't dim them). */
+.rotator__actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 0.75rem;
+}
+
+/* ---------- 3D rotating card inside the rotator ---------- */
+/* Pure CSS 3D: transform-only animation runs on the compositor, and it only
+   spins while the rotator is active, so at most one card animates at a time. */
+.card3d {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 3rem;   /* nudge the centered card up, clear of the buttons */
+  perspective: 800px;
+  pointer-events: none;   /* visual only — keep the action buttons clickable */
+}
+
+.card3d__inner {
+  position: relative;
+  height: 62%;                /* leaves room for the condition (top) and buttons (bottom) */
+  aspect-ratio: 63 / 88;      /* real trading-card proportions */
+  transform-style: preserve-3d;
+  transform: rotateZ(15deg);  /* slight sideways tilt, top leaning right */
+}
+
+.card__rotator.active .card3d__inner {
+  animation: card3d-spin 6s linear infinite;
+}
+
+/* The two faces sit ±1.5px from the core, giving the card its 3px thickness. */
+.card3d__face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 15px;        /* clip the square corners of the scans */
+  backface-visibility: hidden;
+  transform: translateZ(1.5px);
+}
+
+.card3d__face--back {
+  transform: rotateY(180deg) translateZ(1.5px);
+}
+
+/* Gray core between the faces — the card's edge at oblique angles. */
+.card3d__core {
+  position: absolute;
+  inset: 0;
+  background: #8a8a8a;
+  border-radius: 15px;
+}
+
+/* rotateY first (vertical screen axis), rotateZ second (in the card's own plane):
+   the card stays cocked 15° like it's standing on a corner while the spin axis
+   itself remains perfectly upright. The reverse order tilts the spin axis, which
+   reads as the card leaning away. */
+@keyframes card3d-spin {
+  from { transform: rotateY(0deg) rotateZ(15deg); }
+  to   { transform: rotateY(360deg) rotateZ(15deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__rotator.active .card3d__inner { animation: none; }
 }
 
 .card__body {
   padding: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.card__info {
+  min-width: 0;
+}
+
+/* Right-side round "＋" toggle, vertically centered in the card body. */
+.card__add {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.4rem;
+  line-height: 1;
 }
 
 .card__title {
@@ -259,6 +403,18 @@ h1, h2, h3, h4 {
   font-size: 0.8rem;
   color: var(--text-muted);
   margin-bottom: 0.35rem;
+  width: fit-content;
+}
+
+/* Hovering the card art underlines the title (they're separate links). */
+.media__container:hover ~ .card__body .card__title {
+  text-decoration: underline;
+}
+
+.card__set {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
 }
 
 .card__price {
@@ -422,6 +578,16 @@ h1, h2, h3, h4 {
 .conf--med  { color: #92600a; background: #fef3c7; }
 .conf--low  { color: #991b1b; background: #fee2e2; }
 
+/* Plain-text prediction reasoning shown under each predicted price. */
+.forecast-reason {
+  margin: 0.35rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--text-muted);
+  max-width: 22ch;
+}
+
 .grade-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -445,7 +611,6 @@ h1, h2, h3, h4 {
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
-  border-top: 1px solid var(--border);
 }
 
 /* ---------- Catalog grid ---------- */
@@ -460,6 +625,7 @@ h1, h2, h3, h4 {
   /* display: grid; */
   /* grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); */
   /* gap: 1.5rem; */
+  row-gap: 40px;
 }
 
 .filters {
@@ -659,4 +825,167 @@ h1, h2, h3, h4 {
     width: 100%;
     max-width: 100%;
   }
+}
+
+/* Owned-copy management (Owned page card tiles) */
+.owned-copies {
+  margin-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.owned-copies__head {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.owned-copy {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.owned-copy__fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.4rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.owned-copy__fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.owned-copy__fields .input {
+  font-size: 0.8rem;
+  padding: 0.3rem 0.4rem;
+}
+
+.owned-copy__note {
+  grid-column: 1 / -1;
+}
+
+.owned-copy__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.owned-copy__actions .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+}
+
+/* (card + condition) owned tile */
+.owned-condition__tag {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.owned-condition {
+  display: inline-block;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-2, #eef2f7);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.qty-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.qty-control__buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.qty-control__buttons .btn {
+  padding: 0.15rem 0.55rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.qty-control__count {
+  min-width: 1.5rem;
+  text-align: center;
+  font-size: 1rem;
+}
+
+.owned-expand {
+  margin-top: 0.5rem;
+  width: 100%;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+/* Catalog add-to-collection control (input + Add/Cancel, shown on demand) */
+.own-qty {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.own-qty__input {
+  width: 3.4rem;
+  padding: 0.3rem 0.4rem;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.own-qty .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.78rem;
+}
+
+/* Read-only values of a detailed owned copy */
+.owned-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.owned-summary__values {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.owned-summary__label {
+  display: inline-block;
+  min-width: 4.2rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.owned-summary .btn {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.8rem;
+  flex-shrink: 0;
 }

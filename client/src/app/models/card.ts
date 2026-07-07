@@ -12,6 +12,19 @@ export type Card = {
     imageUrl?: string
     attributes: Record<string, string>
     gradedPrices?: GradedPrices
+    ownedCopies?: OwnedCopy[]   // present only in the Owned list; the copies at ownedGrade
+    ownedGrade?: string         // Owned list: the condition this tile represents ('' -> undefined)
+    ownedQuantity?: number      // Owned list: number of copies at that condition
+}
+
+// One owned physical copy of a card (grade/purchase detail all optional).
+export type OwnedCopy = {
+    id: number
+    grade?: string
+    purchasePrice?: number
+    acquiredAt?: string
+    note?: string
+    addedAt: string
 }
 
 export type Forecast = {

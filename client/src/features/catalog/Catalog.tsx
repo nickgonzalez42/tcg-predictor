@@ -7,6 +7,7 @@ import { setPageNumber, setParams } from "./catalogSlice";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
+import { catalogGradeToCondition } from "../watchlist/grades";
 
 export default function Catalog() {
   const cardParams = useAppSelector(state => state.catalog);
@@ -55,7 +56,7 @@ export default function Catalog() {
       <div className="catalog-items subgrid">
         {data.items && data.items.length > 0 ? (
           <>
-            <CardList cards={data.items} />
+            <CardList cards={data.items} ownGrade={catalogGradeToCondition(cardParams.grade)} />
             <AppPagination
               metadata={data.pagination}
               onPageChange={(page: number) => {
