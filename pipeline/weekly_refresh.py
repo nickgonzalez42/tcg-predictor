@@ -52,6 +52,7 @@ STEPS = [
     ("nm-price",      ["backfill_nm_price.py"]),
     ("ml-export",     ["export_for_ml.py"]),
     ("ml-embed",      ["embed_images.py"]),
+    ("art-comps",     ["art_comps.py"]),
     ("forecast",      ["forecast_predict.py"]),
 ]
 
