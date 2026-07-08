@@ -200,6 +200,10 @@ public class CardsController(
             .Search(cardParams.SearchTerm)
             .Filter(cardParams.Sets, cardParams.Rarities);
 
+        // Sorting by an expected forecast change (cross-DB: forecasts live in predictions.db).
+        if (ParseForecastSort(cardParams.OrderBy) is { } fc)
+            return await PageByForecast(filtered, cardParams, folder, toDto, fc.metric, fc.horizon, fc.desc);
+
         // When a specific grade tier is shown AND we're sorting by price, the sort key
         // is that tier's price — which lives in a different DbContext (priceCharting),
         // so it can't be ordered in SQL alongside the card query. Sort/paginate in memory
@@ -218,6 +222,87 @@ public class CardsController(
     }
 
     private static bool IsPriceSort(string? orderBy) => orderBy is "price" or "priceDesc";
+
+    // Forecast sorts: chg{Pct|Usd}{6|12}[Desc] -> (metric, horizon, descending).
+    private static (string metric, string horizon, bool desc)? ParseForecastSort(string? o) => o switch
+    {
+        "chgPct6" => ("pct", "6m", false),   "chgPct6Desc" => ("pct", "6m", true),
+        "chgPct12" => ("pct", "12m", false), "chgPct12Desc" => ("pct", "12m", true),
+        "chgUsd6" => ("usd", "6m", false),   "chgUsd6Desc" => ("usd", "6m", true),
+        "chgUsd12" => ("usd", "12m", false), "chgUsd12Desc" => ("usd", "12m", true),
+        _ => null,
+    };
+
+    // Which forecast target a shown grade/condition maps to. Forecasts exist for
+    // ungraded + the graded tiers; NM / played / unspecified all fall back to ungraded.
+    private static readonly HashSet<string> GradedForecastTargets =
+        ["grade7", "grade8", "grade9", "grade95", "psa10", "bgs10", "cgc10", "sgc10"];
+    private static string ForecastTarget(string? grade) =>
+        !string.IsNullOrEmpty(grade) && GradedForecastTargets.Contains(grade) ? grade : "ungraded";
+
+    // Expected change per product for one (target, horizon), from predictions.db:
+    // the % and USD delta plus the from (current) and to (forecast) prices.
+    private async Task<Dictionary<int, (double pct, double usd, double from, double to)>> ForecastChanges(
+        string game, string target, string horizon, List<int> ids)
+    {
+        if (ids.Count == 0) return [];
+        var rows = await predictions.Forecasts
+            .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon && ids.Contains(f.ProductId))
+            .Select(f => new { f.ProductId, f.BasePrice, f.ForecastPrice })
+            .ToListAsync();
+        return rows.ToDictionary(r => r.ProductId, r => (
+            pct: r.BasePrice > 0 ? (r.ForecastPrice / r.BasePrice - 1) * 100 : 0.0,
+            usd: r.ForecastPrice - r.BasePrice,
+            from: r.BasePrice,
+            to: r.ForecastPrice));
+    }
+
+    private static void SetExpected(
+        CardDto card, (double pct, double usd, double from, double to) ch, string metric, string horizon)
+    {
+        card.ExpectedChange = metric == "pct" ? ch.pct : ch.usd;
+        card.ExpectedUnit = metric == "pct" ? "percent" : "usd";
+        card.ExpectedHorizon = horizon;
+        card.ExpectedFrom = ch.from;
+        card.ExpectedTo = ch.to;
+    }
+
+    // Sort + paginate the filtered set by an expected forecast change (cross-DB, so
+    // in memory). Cards without a forecast sort to the end and keep showing their price.
+    private async Task<List<CardDto>> PageByForecast<T>(
+        IQueryable<T> filtered, CardParams p, string folder, Func<T, string, CardDto> toDto,
+        string metric, string horizon, bool desc) where T : CardBase
+    {
+        var all = await filtered.ToListAsync();
+        var changes = await ForecastChanges(folder, ForecastTarget(p.Grade), horizon, all.Select(c => c.Id).ToList());
+        double Key((double pct, double usd, double from, double to) ch) => metric == "pct" ? ch.pct : ch.usd;
+
+        var withFc = all.Where(c => changes.ContainsKey(c.Id));
+        var without = all.Where(c => !changes.ContainsKey(c.Id));
+        var sorted = (desc ? withFc.OrderByDescending(c => Key(changes[c.Id]))
+                           : withFc.OrderBy(c => Key(changes[c.Id])))
+            .Concat(without)
+            .ToList();
+
+        Response.AddPaginationHeader(new PaginationMetadata
+        {
+            TotalCount = sorted.Count,
+            PageSize = p.PageSize,
+            CurrentPage = p.PageNumber,
+            TotalPages = (int)Math.Ceiling(sorted.Count / (double)p.PageSize),
+        });
+
+        var cards = sorted
+            .Skip((p.PageNumber - 1) * p.PageSize)
+            .Take(p.PageSize)
+            .Select(c => toDto(c, ImageUrl(folder, c.Id)))
+            .ToList();
+
+        await ApplyGradePrice(cards, folder, p.Grade);
+        foreach (var card in cards)
+            if (changes.TryGetValue(card.Id, out var ch)) SetExpected(card, ch, metric, horizon);
+        return cards;
+    }
 
     // Sort + paginate the full filtered set by a selected grade tier's price. That price
     // comes from priceCharting.History (a separate context), so we pull the filtered cards
@@ -284,14 +369,28 @@ public class CardsController(
             ? (gradePrices.TryGetValue(c.Id, out var v) ? v : null)
             : c.NearMintPrice ?? c.MarketPrice;
 
-        IEnumerable<T> sorted = p.OrderBy switch
+        var fc = ParseForecastSort(p.OrderBy);
+        var changes = fc is null ? null
+            : await ForecastChanges(folder, ForecastTarget(p.Grade), fc.Value.horizon, matched.Select(c => c.Id).ToList());
+
+        List<T> ordered;
+        if (fc is { } f && changes != null)
         {
-            "price" => matched.OrderBy(PriceOf),
-            "priceDesc" => matched.OrderByDescending(PriceOf),
-            "name" => matched.OrderBy(c => c.Name),
-            _ => matched.OrderBy(c => rank.GetValueOrDefault(c.Id, int.MaxValue)),  // order added
-        };
-        var ordered = sorted.ToList();
+            double Key(T c) => changes.TryGetValue(c.Id, out var ch)
+                ? (f.metric == "pct" ? ch.pct : ch.usd)
+                : (f.desc ? double.NegativeInfinity : double.PositiveInfinity);  // no forecast -> end
+            ordered = (f.desc ? matched.OrderByDescending(Key) : matched.OrderBy(Key)).ToList();
+        }
+        else
+        {
+            ordered = (p.OrderBy switch
+            {
+                "price" => matched.OrderBy(PriceOf),
+                "priceDesc" => matched.OrderByDescending(PriceOf),
+                "name" => matched.OrderBy(c => c.Name),
+                _ => matched.OrderBy(c => rank.GetValueOrDefault(c.Id, int.MaxValue)),  // order added
+            }).ToList();
+        }
 
         Response.AddPaginationHeader(new PaginationMetadata
         {
@@ -308,6 +407,9 @@ public class CardsController(
             .ToList();
 
         await ApplyGradePrice(cards, folder, p.Grade);
+        if (fc is { } fs && changes != null)
+            foreach (var card in cards)
+                if (changes.TryGetValue(card.Id, out var ch)) SetExpected(card, ch, fs.metric, fs.horizon);
         return cards;
     }
 
@@ -373,13 +475,33 @@ public class CardsController(
         double? UnitPrice(int pid, string grade) =>
             priceByTier[PriceTier(grade)].TryGetValue(pid, out var v) ? v : null;
 
-        var ordered = (p.OrderBy switch
-        {
-            "price" => units.OrderBy(u => UnitPrice(u.ProductId, u.Grade)),
-            "priceDesc" => units.OrderByDescending(u => UnitPrice(u.ProductId, u.Grade)),
-            "name" => units.OrderBy(u => cardById[u.ProductId].Name),
-            _ => units.OrderByDescending(u => u.LastAdded),   // order added
-        }).ToList();
+        // Expected forecast change per unit, priced against the tile's own condition tier.
+        var fc = ParseForecastSort(p.OrderBy);
+        var changesByTarget = new Dictionary<string, Dictionary<int, (double pct, double usd, double from, double to)>>();
+        if (fc is not null)
+            foreach (var tgt in units.Select(u => ForecastTarget(u.Grade)).Distinct())
+            {
+                var tIds = units.Where(u => ForecastTarget(u.Grade) == tgt).Select(u => u.ProductId).Distinct().ToList();
+                changesByTarget[tgt] = await ForecastChanges(folder, tgt, fc.Value.horizon, tIds);
+            }
+        (double pct, double usd, double from, double to)? UnitChange(int pid, string grade) =>
+            changesByTarget.TryGetValue(ForecastTarget(grade), out var d) && d.TryGetValue(pid, out var ch) ? ch : null;
+        double ChangeKey(int pid, string grade, (string metric, string horizon, bool desc) f) =>
+            UnitChange(pid, grade) is { } ch
+                ? (f.metric == "pct" ? ch.pct : ch.usd)
+                : (f.desc ? double.NegativeInfinity : double.PositiveInfinity);  // no forecast -> end
+
+        var ordered = (fc is { } fk
+            ? (fk.desc
+                ? units.OrderByDescending(u => ChangeKey(u.ProductId, u.Grade, fk))
+                : units.OrderBy(u => ChangeKey(u.ProductId, u.Grade, fk)))
+            : p.OrderBy switch
+            {
+                "price" => units.OrderBy(u => UnitPrice(u.ProductId, u.Grade)),
+                "priceDesc" => units.OrderByDescending(u => UnitPrice(u.ProductId, u.Grade)),
+                "name" => units.OrderBy(u => cardById[u.ProductId].Name),
+                _ => units.OrderByDescending(u => u.LastAdded),   // order added
+            }).ToList();
 
         Response.AddPaginationHeader(new PaginationMetadata
         {
@@ -408,6 +530,8 @@ public class CardsController(
                     Note = x.Note,
                     AddedAt = x.AddedAt,
                 }).ToList();
+                if (fc is { } fp && UnitChange(u.ProductId, u.Grade) is { } chp)
+                    SetExpected(dto, chp, fp.metric, fp.horizon);
                 return dto;
             })
             .ToList();

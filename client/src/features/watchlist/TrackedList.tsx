@@ -6,6 +6,7 @@ import { ownedParamsSlice, wishlistParamsSlice } from "./trackedParamsSlice";
 import CardList from "../catalog/CardList";
 import OwnedConditionItem from "./OwnedConditionItem";
 import { catalogGradeToCondition } from "./grades";
+import { forecastSortOptions } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
@@ -14,8 +15,9 @@ import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 const sortOptions = [
     { value: '', label: 'Recently added' },
     { value: 'name', label: 'Alphabetical' },
-    { value: 'priceDesc', label: 'Price: High to low' },
-    { value: 'price', label: 'Price: Low to high' },
+    { value: 'priceDesc', label: 'Price: high to low' },
+    { value: 'price', label: 'Price: low to high' },
+    ...forecastSortOptions,
 ];
 const gameOptions = [
     { value: 'onepiece', label: 'One Piece' },
@@ -92,8 +94,11 @@ export default function TrackedList({ kind, title }: Props) {
                         onChange={e => dispatch(setGame(e.target.value))} />
                 </div>
                 <div className="panel">
-                    <RadioButtonGroup selectedValue={params.orderBy} options={sortOptions}
-                        onChange={e => dispatch(setOrderBy(e.target.value))} />
+                    <label htmlFor="tracked-sort" className="field-label">Sort by</label>
+                    <select id="tracked-sort" className="input" value={params.orderBy}
+                        onChange={e => dispatch(setOrderBy(e.target.value))}>
+                        {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
                 </div>
                 {filtersData && (
                     <>

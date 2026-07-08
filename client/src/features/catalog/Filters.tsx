@@ -4,11 +4,13 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import { resetParams, setGame, setGrade, setOrderBy, setRarities, setSets } from "./catalogSlice";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
+import { forecastSortOptions } from "./sortOptions";
 
 const sortOptions = [
     { value: 'name', label: 'Alphabetical' },
-    { value: 'priceDesc', label: 'Price: High to low' },
-    { value: 'price', label: 'Price: Low to high' },
+    { value: 'priceDesc', label: 'Price: high to low' },
+    { value: 'price', label: 'Price: low to high' },
+    ...forecastSortOptions,
 ]
 
 const gameOptions = [
@@ -60,11 +62,11 @@ export default function Filters({ filtersData: data }: Props) {
                 />
             </div>
             <div className="panel">
-                <RadioButtonGroup
-                    selectedValue={orderBy}
-                    options={sortOptions}
-                    onChange={e => dispatch(setOrderBy(e.target.value))}
-                />
+                <label htmlFor="sort-select" className="field-label">Sort by</label>
+                <select id="sort-select" className="input" value={orderBy}
+                    onChange={e => dispatch(setOrderBy(e.target.value))}>
+                    {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
             </div>
             <div className="panel">
                 <CheckBoxButtons

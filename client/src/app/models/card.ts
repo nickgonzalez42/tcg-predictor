@@ -15,6 +15,11 @@ export type Card = {
     ownedCopies?: OwnedCopy[]   // present only in the Owned list; the copies at ownedGrade
     ownedGrade?: string         // Owned list: the condition this tile represents ('' -> undefined)
     ownedQuantity?: number      // Owned list: number of copies at that condition
+    expectedChange?: number     // set only when sorting by forecast: the sorted metric's value
+    expectedUnit?: 'percent' | 'usd'
+    expectedHorizon?: string    // '6m' | '12m'
+    expectedFrom?: number       // current (forecast base) price
+    expectedTo?: number         // forecast price
 }
 
 // One owned physical copy of a card (grade/purchase detail all optional).

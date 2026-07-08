@@ -23,6 +23,13 @@ public class CardDto
     public List<OwnedCopyDto>? OwnedCopies { get; set; }
     public string? OwnedGrade { get; set; }    // the condition this owned unit represents (copy-grade vocab)
     public int? OwnedQuantity { get; set; }     // number of copies at that condition
+    // Forecast metric, populated only when sorting by expected change so the card
+    // can show the change instead of the price.
+    public double? ExpectedChange { get; set; }   // value of the sorted metric (% or USD delta)
+    public string? ExpectedUnit { get; set; }      // "percent" | "usd"
+    public string? ExpectedHorizon { get; set; }   // "6m" | "12m"
+    public double? ExpectedFrom { get; set; }      // current (forecast base) price
+    public double? ExpectedTo { get; set; }        // forecast price
 }
 
 public class GradedPriceDto

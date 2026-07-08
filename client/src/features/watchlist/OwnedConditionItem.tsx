@@ -8,6 +8,7 @@ import {
     useRemoveOwnedCopyMutation,
 } from "./watchlistApi";
 import { OWNED_CONDITIONS, conditionLabel } from "./grades";
+import ExpectedChange from "../catalog/ExpectedChange";
 
 // Per-copy grade select also offers "Unspecified" ('' clears the condition).
 const copyGradeOptions = [{ value: '', label: 'Unspecified' }, ...OWNED_CONDITIONS];
@@ -54,9 +55,15 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
                     {detailedUnit && <span className="owned-condition__tag"> · noted</span>}
                 </div>
                 <div className="card__price">
-                    {card.price != null ? currencyFormat(card.price) : '—'}
-                    {total != null && qty > 1 && (
-                        <span className="est-note"> · {currencyFormat(total)} total</span>
+                    {card.expectedChange != null ? (
+                        <ExpectedChange card={card} />
+                    ) : (
+                        <>
+                            {card.price != null ? currencyFormat(card.price) : '—'}
+                            {total != null && qty > 1 && (
+                                <span className="est-note"> · {currencyFormat(total)} total</span>
+                            )}
+                        </>
                     )}
                 </div>
 

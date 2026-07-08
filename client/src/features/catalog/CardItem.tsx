@@ -4,6 +4,7 @@ import { Link } from "react-router-dom"
 import { currencyFormat, gameKey } from "../../lib/util"
 import TrackButton from "../watchlist/TrackButton"
 import { conditionLabel } from "../watchlist/grades"
+import ExpectedChange from "./ExpectedChange"
 
 type Props = {
     card: Card
@@ -86,7 +87,11 @@ export default function CardItem({ card, ownGrade }: Props) {
                 <div className="card__info">
                     <Link className="card__title" to={detailPath} style={{ display: 'block' }}>{card.name}</Link>
                     {card.setName && <div className="card__set">{card.setName}</div>}
-                    <div className="card__price">{card.price != null ? currencyFormat(card.price) : '—'}</div>
+                    <div className="card__price">
+                        {card.expectedChange != null
+                            ? <ExpectedChange card={card} />
+                            : card.price != null ? currencyFormat(card.price) : '—'}
+                    </div>
                 </div>
                 <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
                     aria-pressed={active} title="Show / hide actions">
