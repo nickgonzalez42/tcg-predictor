@@ -327,6 +327,11 @@ public class CardsController(
         };
     }
 
+    private static bool HasPriceRange(CardParams p) => p.MinPrice != null || p.MaxPrice != null;
+
+    private static bool InPriceRange(double v, CardParams p) =>
+        (p.MinPrice is not { } min || v >= min) && (p.MaxPrice is not { } max || v <= max);
+
     private async Task<List<CardDto>> Page(
         IQueryable<CardBase> source, CardParams cardParams, string folder)
     {
@@ -334,15 +339,22 @@ public class CardsController(
             .Search(cardParams.SearchTerm)
             .Filter(cardParams.Sets, cardParams.Rarities);
 
+        // Min/max on the SHOWN price. With no tier selected that's the Near Mint
+        // column (filterable in SQL); a selected tier's price lives in another
+        // DbContext, so those paths filter in memory below.
+        if (string.IsNullOrEmpty(cardParams.Grade))
+            filtered = filtered.PriceRange(cardParams.MinPrice, cardParams.MaxPrice);
+
         // Sorting by an expected forecast change (cross-DB: forecasts live in predictions.db).
         if (ParseForecastSort(cardParams.OrderBy) is { } fc)
             return await PageByForecast(filtered, cardParams, folder, fc.metric, fc.horizon, fc.desc);
 
-        // When a specific grade tier is shown AND we're sorting by price, the sort key
-        // is that tier's price — which lives in a different DbContext (priceCharting),
-        // so it can't be ordered in SQL alongside the card query. Sort/paginate in memory
-        // instead, so the displayed price and the row order agree.
-        if (!string.IsNullOrEmpty(cardParams.Grade) && IsPriceSort(cardParams.OrderBy))
+        // When a specific grade tier is shown AND the sort or range filter keys on
+        // its price — which lives in a different DbContext (priceCharting) — it
+        // can't be handled in SQL alongside the card query. Sort/filter/paginate
+        // in memory instead, so the displayed price and the rows agree.
+        if (!string.IsNullOrEmpty(cardParams.Grade)
+            && (IsPriceSort(cardParams.OrderBy) || HasPriceRange(cardParams)))
             return await PageByGradePrice(filtered, cardParams, folder);
 
         var query = filtered.Sort(cardParams.OrderBy);
@@ -413,6 +425,15 @@ public class CardsController(
         string metric, string horizon, bool desc)
     {
         var all = await filtered.ToListAsync();
+
+        // Range on a selected tier's shown price (the ungraded case was already
+        // filtered in SQL before this call).
+        if (!string.IsNullOrEmpty(p.Grade) && HasPriceRange(p))
+        {
+            var shown = await GradePrices(folder, p.Grade, all.Select(c => c.Id).ToList());
+            all = all.Where(c => shown.TryGetValue(c.Id, out var v) && InPriceRange(v, p)).ToList();
+        }
+
         var changes = await ForecastChanges(folder, GradeTiers.ForecastTarget(p.Grade), horizon, all.Select(c => c.Id).ToList());
         double Key((double pct, double usd, double from, double to) ch) => metric == "pct" ? ch.pct : ch.usd;
 
@@ -454,11 +475,19 @@ public class CardsController(
         var all = await filtered.ToListAsync();
         var prices = await GradePrices(folder, p.Grade!, all.Select(c => c.Id).ToList());
 
-        var priced = all.Where(c => prices.ContainsKey(c.Id));
-        var unpriced = all.Where(c => !prices.ContainsKey(c.Id));
-        var sorted = (p.OrderBy == "priceDesc"
-                ? priced.OrderByDescending(c => prices[c.Id])
-                : priced.OrderBy(c => prices[c.Id]))
+        var priced = all.Where(c => prices.ContainsKey(c.Id) && InPriceRange(prices[c.Id], p));
+        // Cards with no price for the tier normally list at the end (matching
+        // their '—' display) — but never inside an explicit price range.
+        var unpriced = HasPriceRange(p)
+            ? Enumerable.Empty<CardBase>()
+            : all.Where(c => !prices.ContainsKey(c.Id));
+        var sorted = (p.OrderBy switch
+            {
+                "priceDesc" => priced.OrderByDescending(c => prices[c.Id]),
+                "price" => priced.OrderBy(c => prices[c.Id]),
+                // routed here by the range filter with a non-price sort
+                _ => priced.OrderBy(c => c.Name),
+            })
             .Concat(unpriced)
             .ToList();
 

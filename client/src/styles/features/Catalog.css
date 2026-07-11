@@ -33,3 +33,20 @@
   margin-bottom: 16px;
   min-height: 35.2px;
 }
+
+/* Min/max shown-price range inside the "Price shown" panel. */
+.price-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.price-range .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.price-range__dash {
+  color: var(--text-muted);
+}

@@ -17,6 +17,8 @@ const initialState: CardParams = {
     searchTerm: '',
     orderBy: DEFAULT_ORDER,
     grade: '',
+    minPrice: '',
+    maxPrice: '',
     trend: '1y',   // matches the default 1Y growth sort
     view: getInitialView()
 }
@@ -63,6 +65,14 @@ export const catalogSlice = createSlice({
             state.grade = action.payload;
             state.pageNumber = 1;
         },
+        setMinPrice(state, action) {
+            state.minPrice = action.payload;
+            state.pageNumber = 1;
+        },
+        setMaxPrice(state, action) {
+            state.maxPrice = action.payload;
+            state.pageNumber = 1;
+        },
         setView(state, action) {
             state.view = action.payload === 'rows' ? 'rows' : 'cards';
             localStorage.setItem('catalogView', state.view!);
@@ -80,4 +90,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setTrend, setView, resetParams, setParams } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, setParams } = catalogSlice.actions;

@@ -1,7 +1,8 @@
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setGame, setGrade, setOrderBy, setRarities, setSets } from "./catalogSlice";
+import { resetParams, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setRarities, setSets } from "./catalogSlice";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
 import { forecastSortOptions } from "./sortOptions";
@@ -22,8 +23,13 @@ type Props = {
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, grade } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities, grade, minPrice, maxPrice } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
+
+    // Debounced so each keystroke doesn't fire a query; commits follow store
+    // resets (e.g. Reset filters) automatically.
+    const min = useDebouncedSearch(minPrice ?? '', v => dispatch(setMinPrice(v)));
+    const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(v)));
 
     return (
         <div className="filters">
@@ -40,6 +46,19 @@ export default function Filters({ filtersData: data }: Props) {
                 >
                     {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
+                <div className="price-range">
+                    <input
+                        className="input" type="number" min="0" step="any" inputMode="decimal"
+                        placeholder="Min $" aria-label="Minimum shown price"
+                        value={min.term} onChange={e => min.onChange(e.target.value)}
+                    />
+                    <span className="price-range__dash">–</span>
+                    <input
+                        className="input" type="number" min="0" step="any" inputMode="decimal"
+                        placeholder="Max $" aria-label="Maximum shown price"
+                        value={max.term} onChange={e => max.onChange(e.target.value)}
+                    />
+                </div>
             </div>
             <div className="panel">
                 <RadioButtonGroup

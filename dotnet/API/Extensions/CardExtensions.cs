@@ -30,6 +30,18 @@ public static class CardExtensions
         };
     }
 
+    // Range filter on the ungraded (Near Mint) price. Cards with no price are
+    // excluded whenever a bound is set — "$10 and up" shouldn't list unpriced cards.
+    public static IQueryable<T> PriceRange<T>(this IQueryable<T> query, double? min, double? max)
+        where T : CardBase
+    {
+        if (min == null && max == null) return query;
+        query = query.Where(x => x.NearMintPrice != null);
+        if (min != null) query = query.Where(x => x.NearMintPrice >= min);
+        if (max != null) query = query.Where(x => x.NearMintPrice <= max);
+        return query;
+    }
+
     public static IQueryable<T> Search<T>(this IQueryable<T> query, string? searchTerm) where T : CardBase
     {
         if (string.IsNullOrEmpty(searchTerm)) return query;
