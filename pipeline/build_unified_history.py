@@ -26,15 +26,18 @@ GAMES = priced_games()
 
 
 def pc_history(game):
-    """grade -> product_id -> {YYYY-MM: price} from the crawled monthly history."""
-    # Ordered by date so when a month holds both a chart point and a later weekly
-    # snapshot point, the most recent (month-end) value wins deterministically.
+    """grade -> product_id -> {YYYY-MM: (real_date, price)} from the crawled history.
+
+    Ordered by date so when a month holds both a chart point and later daily
+    snapshot points, the most recent value wins — and the bucket carries that
+    point's REAL date, so "as of" displays don't undersell freshness (a July
+    bucket updated by yesterday's snapshot is dated yesterday, not July 1)."""
     rows = sqlite3.connect(PC_DB, timeout=30).execute(
         "SELECT grade, product_id, date, price FROM graded_price_history WHERE game=? "
         "ORDER BY date", (game,)).fetchall()
     out = collections.defaultdict(lambda: collections.defaultdict(dict))
     for grade, pid, d, p in rows:
-        out[grade][pid][d[:7]] = p
+        out[grade][pid][d[:7]] = (d[:10], p)
     return out
 
 
@@ -56,8 +59,8 @@ def build_game(game):
         for pid, months in by_pid.items():
             if pid in skip:
                 continue
-            for m, p in months.items():
-                rows.append((game, pid, grade, m + "-01", p, "pricecharting"))
+            for (d, p) in months.values():
+                rows.append((game, pid, grade, d, p, "pricecharting"))
                 counts[grade] += 1
     print(f"[{game}] rows per tier: " +
           ", ".join(f"{g}={n}" for g, n in sorted(counts.items())))

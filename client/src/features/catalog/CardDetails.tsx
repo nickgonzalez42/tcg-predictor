@@ -141,7 +141,12 @@ function ForecastSection({ forecasts, game, id }: {
                                         </span>
                                     </div>
                                 </td>
-                                <td><strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong></td>
+                                <td>
+                                    <strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong>
+                                    {tierForecasts[0]?.asOf && (
+                                        <div className="mono price-asof">{shortDate(tierForecasts[0].asOf)}</div>
+                                    )}
+                                </td>
                                 {HORIZONS.map(h => {
                                     const f = tierForecasts.find(x => x.horizon === h);
                                     if (!f) return <td key={h}>—</td>;
