@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { Card, Forecast } from "../../app/models/card";
+import type { Card, Forecast, PastForecast } from "../../app/models/card";
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 import type { CardParams } from "../../app/models/cardParams";
 import { toApiParams } from "../../lib/util";
@@ -38,6 +38,14 @@ export const catalogApi = createApi({
         >({
             query: ({ game, id }) => `cards/${game}/${id}/forecast`
         }),
+        // Archived forecasts whose horizon has elapsed — "what the model said
+        // back then", drawn on the chart for accuracy review.
+        fetchCardForecastHistory: builder.query<
+            { game: string, productId: number, forecasts: PastForecast[] },
+            { game: string, id: number }
+        >({
+            query: ({ game, id }) => `cards/${game}/${id}/forecast-history`
+        }),
         fetchCardReasoning: builder.query<
             { game: string, productId: number, prose: string | null },
             { game: string, id: number }
@@ -53,6 +61,6 @@ export const catalogApi = createApi({
 
 export const {
     useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery,
-    useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery,
-    useFetchMoversQuery,
+    useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardForecastHistoryQuery,
+    useFetchCardReasoningQuery, useFetchMoversQuery,
 } = catalogApi;

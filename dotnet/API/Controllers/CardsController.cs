@@ -168,6 +168,55 @@ public class CardsController(
         return Ok(new { game = key, productId = id, forecasts });
     }
 
+    // Past forecasts whose horizon has elapsed, for drawing "what the model
+    // said back then" on the chart. Target dates mirror the pipeline's
+    // scorecard: 1w counts from issue time, month horizons from the anchoring
+    // price month. The archive starts 2026-07-09, so points accumulate from
+    // one horizon-length after that.
+    [HttpGet("{game}/{id:int}/forecast-history")]
+    public async Task<IActionResult> GetForecastHistory(string game, int id)
+    {
+        var key = GameRegistry.KeyOrDefault(game);
+        var rows = await predictions.ForecastArchive
+            .Where(f => f.Game == key && f.ProductId == id && f.ForecastPrice != null)
+            .ToListAsync();
+
+        var today = DateTime.UtcNow.Date;
+        var past = rows
+            .Select(f => new { f, TargetDate = ForecastTargetDate(f) })
+            .Where(x => x.TargetDate != null && x.TargetDate <= today)
+            .Select(x => new
+            {
+                x.f.Target,
+                x.f.Horizon,
+                TargetDate = x.TargetDate!.Value.ToString("yyyy-MM-dd"),
+                x.f.ForecastPrice,
+                x.f.Low,
+                x.f.High,
+                x.f.BasePrice,
+                x.f.AsOf,
+                x.f.ScoredAt,
+                x.f.RealizedPrice,
+            })
+            .OrderBy(x => x.TargetDate)
+            .ToList();
+
+        return Ok(new { game = key, productId = id, forecasts = past });
+    }
+
+    private static readonly Dictionary<string, int> HorizonMonths =
+        new() { ["1m"] = 1, ["6m"] = 6, ["12m"] = 12 };
+
+    private static DateTime? ForecastTargetDate(ArchivedForecast f)
+    {
+        if (f.Horizon == "1w")
+            return DateTime.TryParse(f.ScoredAt, out var issued) ? issued.Date.AddDays(7) : null;
+        if (HorizonMonths.TryGetValue(f.Horizon, out var months)
+            && DateTime.TryParse(f.AsOf, out var asOf))
+            return asOf.Date.AddMonths(months);
+        return null;
+    }
+
     // Summary stats per tier (current, all-time high/low, % change windows).
     [HttpGet("{game}/{id:int}/stats")]
     public async Task<IActionResult> GetStats(string game, int id)

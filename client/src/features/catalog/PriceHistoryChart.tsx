@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "lightweight-charts";
-import { useFetchCardHistoryQuery } from "./catalogApi";
-import type { Forecast } from "../../app/models/card";
+import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
+import type { Forecast, PastForecast } from "../../app/models/card";
 
 const GRADE_ORDER = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const GRADE_LABEL: Record<string, string> = {
@@ -43,8 +43,29 @@ const HORIZON_OFFSET: Record<string, (date: string) => string> = {
     '12m': d => addMonths(d, 12),
 };
 
+// One reviewable point per horizon: the matured archived forecast whose target
+// date is closest to today, as long as it's still fresh (a 1W forecast from
+// three months ago says nothing about "the last week"). No match = no point.
+const LOOKBACK_FRESH_DAYS: Record<string, number> = {
+    '1w': 4, '1m': 12, '6m': 45, '12m': 60,
+};
+
+function pickPastForecasts(past: PastForecast[], grade: string): PastForecast[] {
+    const today = new Date().toISOString().slice(0, 10);
+    const picks: PastForecast[] = [];
+    for (const [horizon, freshDays] of Object.entries(LOOKBACK_FRESH_DAYS)) {
+        const candidates = past.filter(f =>
+            f.target === grade && f.horizon === horizon &&
+            f.targetDate <= today && f.targetDate >= addDays(today, -freshDays));
+        if (candidates.length)
+            picks.push(candidates.reduce((a, b) => (a.targetDate > b.targetDate ? a : b)));
+    }
+    return picks;
+}
+
 export default function PriceHistoryChart({ game, id, forecasts }: Props) {
     const { data, isLoading } = useFetchCardHistoryQuery({ game, id });
+    const { data: pastData } = useFetchCardForecastHistoryQuery({ game, id });
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
     const [range, setRange] = useState('all');
@@ -118,15 +139,34 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             fcSeries.setData(fcPoints);
         }
 
+        // Past-forecast review: for each horizon, the archived prediction that
+        // was aiming at (roughly) today, drawn as a lone dot at its target
+        // date so it can be eyeballed against the actual line. One tiny series
+        // per point because two horizons can mature on the same date.
+        const pastColor = v('--chart-past-forecast', '#c678dd');
+        for (const p of pickPastForecasts(pastData?.forecasts ?? [], grade)) {
+            const dot = chart.addSeries(LineSeries, {
+                color: pastColor,
+                lineVisible: false,
+                pointMarkersVisible: true,
+                pointMarkersRadius: 4,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                title: `${p.horizon.toUpperCase()} fcst`,
+            });
+            dot.setData([{ time: p.targetDate, value: p.forecastPrice }]);
+        }
+
         chart.timeScale().fitContent();
 
         return () => chart.remove();
-    }, [data, grade, range, forecasts]);
+    }, [data, grade, range, forecasts, pastData]);
 
     if (isLoading) return <div>Loading chart…</div>;
     if (!grades.length) return <div className="est-note">No price history yet for this card.</div>;
 
     const hasForecast = (forecasts ?? []).some(f => f.target === grade);
+    const hasPast = pickPastForecasts(pastData?.forecasts ?? [], grade).length > 0;
 
     return (
         <div>
@@ -157,6 +197,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             <div ref={containerRef} style={{ width: '100%' }} />
             <div className="mono" style={{ marginTop: '6.4px' }}>
                 solid blue = history{hasForecast ? ' · dashed gold = model forecast' : ''}
+                {hasPast ? ' · purple dots = past forecasts (what the model predicted for now)' : ''}
             </div>
         </div>
     );

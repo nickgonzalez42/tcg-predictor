@@ -61,6 +61,21 @@ export type Forecast = {
     months?: number
 }
 
+// An archived forecast whose horizon has elapsed — "what the model said back
+// then", plotted on the chart at its target date for accuracy review.
+export type PastForecast = {
+    target: string
+    horizon: string       // 1w | 1m | 6m | 12m
+    targetDate: string    // yyyy-MM-dd the forecast was aiming at
+    forecastPrice: number
+    low?: number
+    high?: number
+    basePrice?: number
+    asOf?: string
+    scoredAt?: string     // when it was issued
+    realizedPrice?: number
+}
+
 export type GradedPrices = {
     ungraded?: number
     grade7?: number

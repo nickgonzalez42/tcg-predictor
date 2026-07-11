@@ -27,6 +27,7 @@
   --nav-link: #dbe4f0;
   --chart-history: #3d7dca;
   --chart-forecast: #ffcb05;     /* dashed model-forecast line */
+  --chart-past-forecast: #c678dd; /* dots: past forecasts reviewed against actuals */
   --ticket-bg: #1c2438;          /* "order ticket" highlighted panel */
   --danger: #e53935;
   --radius: 15px;
