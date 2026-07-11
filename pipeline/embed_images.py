@@ -92,6 +92,9 @@ def embed_game(game: str, model, preprocess, device: str, limit: int | None):
                 print(f"   {processed} embedded...")
     flush()
 
+    if not results:
+        print(f"[{game}] no images to embed yet — skipped")
+        return
     ids = np.array(sorted(results.keys()), dtype="int64")
     emb = np.stack([results[i] for i in ids]).astype("float32")
     np.savez(out_path, product_id=ids, emb=emb)

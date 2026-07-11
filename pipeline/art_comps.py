@@ -51,7 +51,11 @@ def retention12(game):
 
 
 def build_game(game):
-    z = np.load(os.path.join(DATA, f"{game}_img_emb.npz"))
+    emb_path = os.path.join(DATA, f"{game}_img_emb.npz")
+    if not os.path.exists(emb_path):
+        print(f"[{game}] no embeddings yet — skipped")
+        return
+    z = np.load(emb_path)
     pids, emb = z["product_id"], z["emb"].astype(np.float32)
     emb /= np.linalg.norm(emb, axis=1, keepdims=True) + 1e-9
 
