@@ -6,11 +6,27 @@
   background: var(--bg);
 }
 
+/* Page container: fluid with responsive gutters, capped on desktop.
+   (Mobile-first; the duplicate declarations from the source snippet resolved
+   to the winning values: max-width 1000px, border-box.) */
 .container {
-  max-width: 1280px;
+  max-width: 100%;
+  padding: 0 16px;
   margin: 0 auto;
-  padding: 0 40px;
   box-sizing: border-box;
+}
+
+@media (min-width: 769px) {
+  .container {
+    padding: 0 24px;
+  }
+}
+
+@media (min-width: 1079px) {
+  .container {
+    padding: 0 40px;
+    max-width: 1000px;
+  }
 }
 
 .page {
