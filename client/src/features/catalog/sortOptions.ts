@@ -22,22 +22,30 @@ export const forecastSortOptions = [
 ];
 
 // PAST price growth over a trend window, matching the tiles' PAST pill.
-// Values are parsed server-side: hist{1w|1m|6m|1y}[Desc].
+// Values are parsed server-side: hist{Pct|Usd}{1w|1m|6m|1y}[Desc].
 export const historySortOptions = [
-    { value: 'hist1yDesc', label: '1Y % growth: desc' },
-    { value: 'hist1y', label: '1Y % growth: asc' },
-    { value: 'hist6mDesc', label: '6M % growth: desc' },
-    { value: 'hist6m', label: '6M % growth: asc' },
-    { value: 'hist1mDesc', label: '1M % growth: desc' },
-    { value: 'hist1m', label: '1M % growth: asc' },
-    { value: 'hist1wDesc', label: '1W % growth: desc' },
-    { value: 'hist1w', label: '1W % growth: asc' },
+    { value: 'histPct1yDesc', label: '1Y % growth: desc' },
+    { value: 'histPct1y', label: '1Y % growth: asc' },
+    { value: 'histUsd1yDesc', label: '1Y $ growth: desc' },
+    { value: 'histUsd1y', label: '1Y $ growth: asc' },
+    { value: 'histPct6mDesc', label: '6M % growth: desc' },
+    { value: 'histPct6m', label: '6M % growth: asc' },
+    { value: 'histUsd6mDesc', label: '6M $ growth: desc' },
+    { value: 'histUsd6m', label: '6M $ growth: asc' },
+    { value: 'histPct1mDesc', label: '1M % growth: desc' },
+    { value: 'histPct1m', label: '1M % growth: asc' },
+    { value: 'histUsd1mDesc', label: '1M $ growth: desc' },
+    { value: 'histUsd1m', label: '1M $ growth: asc' },
+    { value: 'histPct1wDesc', label: '1W % growth: desc' },
+    { value: 'histPct1w', label: '1W % growth: asc' },
+    { value: 'histUsd1wDesc', label: '1W $ growth: desc' },
+    { value: 'histUsd1w', label: '1W $ growth: asc' },
 ];
 
 // Trend window the chips should snap to when a forecast or history sort is
 // chosen (sort horizons and history windows share vocabulary except 12m -> 1y).
 export function trendForSort(orderBy: string): string | null {
-    const h = /^hist(1w|1m|6m|1y)(?:Desc)?$/.exec(orderBy);
+    const h = /^hist(?:Pct|Usd)(1w|1m|6m|1y)(?:Desc)?$/.exec(orderBy);
     if (h) return h[1];
     const m = /^chg(?:Pct|Usd)(1w|1m|6|12)(?:Desc)?$/.exec(orderBy);
     if (!m) return null;

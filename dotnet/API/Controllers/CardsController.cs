@@ -358,7 +358,7 @@ public class CardsController(
         // Sorting by PAST price growth over a trend window (cross-DB: history
         // lives in pricecharting.db, so it's an in-memory path like forecasts).
         if (ParseHistorySort(cardParams.OrderBy) is { } hs)
-            return await PageByHistory(filtered, cardParams, folder, hs.window, hs.desc);
+            return await PageByHistory(filtered, cardParams, folder, hs.metric, hs.window, hs.desc);
 
         // Sorting by an expected forecast change (cross-DB: forecasts live in predictions.db).
         if (ParseForecastSort(cardParams.OrderBy) is { } fc)
@@ -385,13 +385,17 @@ public class CardsController(
 
     private static bool IsPriceSort(string? orderBy) => orderBy is "price" or "priceDesc";
 
-    // Historical growth sorts: hist{1w|1m|6m|1y}[Desc] -> (trend window, descending).
-    private static (string window, bool desc)? ParseHistorySort(string? o) => o switch
+    // Historical growth sorts: hist{Pct|Usd}{1w|1m|6m|1y}[Desc].
+    private static (string metric, string window, bool desc)? ParseHistorySort(string? o) => o switch
     {
-        "hist1w" => ("1w", false),  "hist1wDesc" => ("1w", true),
-        "hist1m" => ("1m", false),  "hist1mDesc" => ("1m", true),
-        "hist6m" => ("6m", false),  "hist6mDesc" => ("6m", true),
-        "hist1y" => ("1y", false),  "hist1yDesc" => ("1y", true),
+        "histPct1w" => ("pct", "1w", false),  "histPct1wDesc" => ("pct", "1w", true),
+        "histPct1m" => ("pct", "1m", false),  "histPct1mDesc" => ("pct", "1m", true),
+        "histPct6m" => ("pct", "6m", false),  "histPct6mDesc" => ("pct", "6m", true),
+        "histPct1y" => ("pct", "1y", false),  "histPct1yDesc" => ("pct", "1y", true),
+        "histUsd1w" => ("usd", "1w", false),  "histUsd1wDesc" => ("usd", "1w", true),
+        "histUsd1m" => ("usd", "1m", false),  "histUsd1mDesc" => ("usd", "1m", true),
+        "histUsd6m" => ("usd", "6m", false),  "histUsd6mDesc" => ("usd", "6m", true),
+        "histUsd1y" => ("usd", "1y", false),  "histUsd1yDesc" => ("usd", "1y", true),
         _ => null,
     };
 
@@ -495,7 +499,8 @@ public class CardsController(
     // (last point at-or-before the window start, else the first point), so the
     // row order always agrees with the displayed movement.
     private async Task<List<CardDto>> PageByHistory(
-        IQueryable<CardBase> filtered, CardParams p, string folder, string window, bool desc)
+        IQueryable<CardBase> filtered, CardParams p, string folder,
+        string metric, string window, bool desc)
     {
         var all = await filtered.ToListAsync();
 
@@ -509,10 +514,15 @@ public class CardsController(
         var tier = GradeTiers.PriceTier(p.Grade ?? "");
         var changes = await HistoryChanges(folder, tier, all.Select(c => c.Id).ToList(), window);
 
-        var withChg = all.Where(c => changes.ContainsKey(c.Id));
-        var without = all.Where(c => !changes.ContainsKey(c.Id));   // no history -> end
-        var sorted = (desc ? withChg.OrderByDescending(c => changes[c.Id])
-                           : withChg.OrderBy(c => changes[c.Id]))
+        // % ranking excludes floor-suppressed penny cards (Pct == null); a $
+        // move can't be faked by rounding, so every card with history ranks.
+        double? Key(CardBase c) => changes.TryGetValue(c.Id, out var ch)
+            ? (metric == "pct" ? ch.Pct : ch.Usd)
+            : null;
+        var withChg = all.Where(c => Key(c) != null);
+        var without = all.Where(c => Key(c) == null);   // no history / floored -> end
+        var sorted = (desc ? withChg.OrderByDescending(c => Key(c))
+                           : withChg.OrderBy(c => Key(c)))
             .Concat(without)
             .ToList();
 
@@ -535,8 +545,9 @@ public class CardsController(
         return cards;
     }
 
-    // % price change per product over one trend window, from the tier's history.
-    private async Task<Dictionary<int, double>> HistoryChanges(
+    // Price change per product over one trend window, from the tier's history:
+    // % (null when floored) and absolute $.
+    private async Task<Dictionary<int, (double? Pct, double Usd)>> HistoryChanges(
         string game, string tier, List<int> ids, string window)
     {
         if (ids.Count == 0) return [];
@@ -547,17 +558,20 @@ public class CardsController(
             .Select(h => new { h.ProductId, h.Date, h.Price })
             .ToListAsync();
 
-        var changes = new Dictionary<int, double>();
+        var changes = new Dictionary<int, (double? Pct, double Usd)>();
         foreach (var g in rows.GroupBy(r => r.ProductId))
         {
             var series = g.OrderBy(r => r.Date).ToList();
             var latest = series[^1];
             var anchor = series.LastOrDefault(r => string.CompareOrdinal(r.Date, cutoff) <= 0)
                          ?? series[0];
-            // Same floor as the forecast sorts: penny cards turn rounding noise
-            // into +10,000% and bury every real mover (they still list, unsorted).
-            if (anchor.Price >= MinForecastSortBase)
-                changes[g.Key] = (latest.Price / anchor.Price - 1) * 100;
+            if (anchor.Price <= 0) continue;
+            // Same floor as the forecast sorts, for % only: penny cards turn
+            // rounding noise into +10,000% and bury every real mover.
+            double? pct = anchor.Price >= MinForecastSortBase
+                ? (latest.Price / anchor.Price - 1) * 100
+                : null;
+            changes[g.Key] = (pct, latest.Price - anchor.Price);
         }
         return changes;
     }
