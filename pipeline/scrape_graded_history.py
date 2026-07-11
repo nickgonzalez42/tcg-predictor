@@ -24,6 +24,7 @@ import ssl
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import certifi
@@ -103,6 +104,17 @@ def ensure_table(conn):
             price      REAL    NOT NULL,
             PRIMARY KEY (game, product_id, grade, date)
         );
+
+        -- Cards whose chart PAGE has been crawled. This must be its own table:
+        -- pc-match appends daily snapshot rows into graded_price_history BEFORE
+        -- this crawl runs, so "has any history row" would wrongly mark every
+        -- matched card as done and the deep chart backfill would never happen.
+        CREATE TABLE IF NOT EXISTS graded_crawled (
+            game       TEXT    NOT NULL,
+            product_id INTEGER NOT NULL,
+            crawled_at TEXT,
+            PRIMARY KEY (game, product_id)
+        );
         """
     )
 
@@ -111,7 +123,7 @@ def scrape_game(game, conn, workers, delay, resume, limit):
     done = set()
     if resume:
         done = set(r[0] for r in conn.execute(
-            "SELECT DISTINCT product_id FROM graded_price_history WHERE game=?", (game,)))
+            "SELECT product_id FROM graded_crawled WHERE game=?", (game,)))
 
     targets = [r for r in conn.execute(
         "SELECT product_id, pc_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL "
@@ -129,12 +141,19 @@ def scrape_game(game, conn, workers, delay, resume, limit):
         futs = [ex.submit(fetch_one, game, pid, pc, delay) for pid, pc in targets]
         for i, fut in enumerate(as_completed(futs), 1):
             product_id, rows, err = fut.result()
-            if err:
+            if err and err != "no chart_data":
                 fail += 1
                 err_samples[err] = err_samples.get(err, 0) + 1
             else:
-                conn.executemany("INSERT OR REPLACE INTO graded_price_history VALUES (?,?,?,?,?)", rows)
-                total_rows += len(rows)
+                # "no chart_data" counts as crawled: the page exists but PC has
+                # no chart for it yet — retrying nightly forever buys nothing.
+                if rows:
+                    conn.executemany(
+                        "INSERT OR REPLACE INTO graded_price_history VALUES (?,?,?,?,?)", rows)
+                    total_rows += len(rows)
+                conn.execute(
+                    "INSERT OR REPLACE INTO graded_crawled VALUES (?,?,?)",
+                    (game, product_id, datetime.now(timezone.utc).isoformat()))
                 ok += 1
                 if ok % 50 == 0:
                     conn.commit()

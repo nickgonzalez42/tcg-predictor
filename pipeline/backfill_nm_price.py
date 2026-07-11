@@ -31,7 +31,8 @@ def latest_ungraded(game):
 
 def backfill(game):
     prices = latest_ungraded(game)
-    con = sqlite3.connect(os.path.join(BASE, f"{game}_cards.db"))
+    # Generous busy timeout: a catalog scrape may be writing this DB in parallel.
+    con = sqlite3.connect(os.path.join(BASE, f"{game}_cards.db"), timeout=60)
     cols = [r[1] for r in con.execute("PRAGMA table_info(cards)")]
     if "near_mint_price" not in cols:
         con.execute("ALTER TABLE cards ADD COLUMN near_mint_price REAL")

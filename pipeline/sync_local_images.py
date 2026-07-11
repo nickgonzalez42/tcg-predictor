@@ -25,7 +25,8 @@ def sync(game, image_dir):
            and os.path.getsize(os.path.join(directory, name)) > 0
     }
 
-    con = sqlite3.connect(os.path.join(BASE, f"{game}_cards.db"))
+    # Generous busy timeout: a catalog scrape may be writing this DB in parallel.
+    con = sqlite3.connect(os.path.join(BASE, f"{game}_cards.db"), timeout=60)
     ids = [r[0] for r in con.execute("SELECT product_id FROM cards")]
     with_art = [(os.path.join(image_dir, f"{pid}.jpg"), pid) for pid in ids if pid in on_disk]
     without = [(pid,) for pid in ids if pid not in on_disk]
