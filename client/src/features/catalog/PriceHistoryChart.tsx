@@ -142,13 +142,19 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             track('history', series);
         }
 
-        // Dashed gold forecast fan: one SEGMENT per horizon, each from the last
-        // real point out to that horizon's predicted price — so 1w/1m/6m/12m
-        // read as four distinct calls instead of one zigzag line.
+        // Dashed gold forecast chain: one SEGMENT per period, each continuing
+        // from the previous horizon's endpoint — last real point -> 1w -> 1m
+        // -> 6m -> 12m — with a dot marking each horizon along the way.
         const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
             .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
         const last = points[points.length - 1];
-        for (const f of tierFc) {
+        const chainPts = [
+            { time: last.date, value: last.price },
+            ...tierFc
+                .map(f => ({ time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
+                .sort((a, b) => a.time.localeCompare(b.time)),
+        ];
+        for (let i = 0; i + 1 < chainPts.length; i++) {
             const seg = chart.addSeries(LineSeries, {
                 color: forecastColor,
                 lineWidth: 2,
@@ -159,10 +165,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 lastValueVisible: false,
                 crosshairMarkerVisible: false,
             });
-            seg.setData([
-                { time: last.date, value: last.price },
-                { time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice },
-            ]);
+            seg.setData([chainPts[i], chainPts[i + 1]]);
             track('forecast', seg);
         }
 
