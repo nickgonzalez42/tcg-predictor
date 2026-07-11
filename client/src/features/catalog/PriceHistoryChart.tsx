@@ -142,28 +142,28 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             track('history', series);
         }
 
-        // Dashed gold continuation: last real point -> the model's forecasts for
-        // this tier at every horizon (1w, 1m, 6m, 12m).
+        // Dashed gold forecast fan: one SEGMENT per horizon, each from the last
+        // real point out to that horizon's predicted price — so 1w/1m/6m/12m
+        // read as four distinct calls instead of one zigzag line.
         const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
             .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
-        if (tierFc.length) {
-            const last = points[points.length - 1];
-            const fcPoints = [
-                { time: last.date, value: last.price },
-                ...tierFc
-                    .map(f => ({ time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
-                    .sort((a, b) => a.time.localeCompare(b.time)),
-            ];
-            const fcSeries = chart.addSeries(LineSeries, {
+        const last = points[points.length - 1];
+        for (const f of tierFc) {
+            const seg = chart.addSeries(LineSeries, {
                 color: forecastColor,
                 lineWidth: 2,
                 lineStyle: LineStyle.Dashed,
+                pointMarkersVisible: true,
+                pointMarkersRadius: 3,
                 priceLineVisible: false,
                 lastValueVisible: false,
                 crosshairMarkerVisible: false,
             });
-            fcSeries.setData(fcPoints);
-            track('forecast', fcSeries);
+            seg.setData([
+                { time: last.date, value: last.price },
+                { time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice },
+            ]);
+            track('forecast', seg);
         }
 
         // Past-forecast review: for each horizon, the archived prediction that
