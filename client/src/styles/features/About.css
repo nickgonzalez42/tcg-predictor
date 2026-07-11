@@ -1,0 +1,60 @@
+/* About page: long-form help-center-style article. */
+
+.article {
+  max-width: 860px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+.article__head {
+  margin: 24px 0 20px;
+}
+
+.article__title {
+  font-size: 32px;
+  margin-bottom: 6px;
+}
+
+.article__meta {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.article__lede {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.article__section {
+  padding: 24px 28px;
+  margin-bottom: 20px;
+}
+
+.article__section h2 {
+  font-size: 22px;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.article__section h3 {
+  font-size: 16px;
+  margin: 20px 0 6px;
+  color: var(--primary);
+}
+
+.article__section p {
+  line-height: 1.65;
+  margin: 8px 0;
+}
+
+.article__section ul {
+  margin: 8px 0 8px 20px;
+}
+
+.article__section li {
+  line-height: 1.6;
+  margin: 6px 0;
+}
