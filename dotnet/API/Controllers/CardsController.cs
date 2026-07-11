@@ -339,6 +339,16 @@ public class CardsController(
             .Search(cardParams.SearchTerm)
             .Filter(cardParams.Sets, cardParams.Rarities);
 
+        // A selected tier REFILTERS the catalog: only cards actually priced at
+        // that tier are listed (no '—' rows). Tier prices live in another
+        // DbContext, so this is an id-set filter.
+        var tier = GradeTiers.PriceTier(cardParams.Grade ?? "");
+        if (tier != "ungraded")
+        {
+            var priced = await TierPricedIds(folder, tier);
+            filtered = filtered.Where(c => priced.Contains(c.Id));
+        }
+
         // Min/max on the SHOWN price. With no tier selected that's the Near Mint
         // column (filterable in SQL); a selected tier's price lives in another
         // DbContext, so those paths filter in memory below.
@@ -908,6 +918,26 @@ public class CardsController(
                 }
             }
         }
+    }
+
+    // Products with a current price at the tier, from the snapshot table (one
+    // row per card, so this is a single cheap scan).
+    private async Task<HashSet<int>> TierPricedIds(string game, string tier)
+    {
+        var q = priceCharting.GradedPrices.Where(x => x.Game == game);
+        q = tier switch
+        {
+            "grade7" => q.Where(x => x.Grade7 != null),
+            "grade8" => q.Where(x => x.Grade8 != null),
+            "grade9" => q.Where(x => x.Grade9 != null),
+            "grade95" => q.Where(x => x.Grade95 != null),
+            "psa10" => q.Where(x => x.Psa10 != null),
+            "bgs10" => q.Where(x => x.Bgs10 != null),
+            "cgc10" => q.Where(x => x.Cgc10 != null),
+            "sgc10" => q.Where(x => x.Sgc10 != null),
+            _ => q.Where(x => x.Ungraded != null),
+        };
+        return (await q.Select(x => x.ProductId).ToListAsync()).ToHashSet();
     }
 
     // Latest (most recent date) price per product for one grade tier, from history.
