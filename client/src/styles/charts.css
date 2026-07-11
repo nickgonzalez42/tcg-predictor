@@ -31,3 +31,40 @@
   font-size: 12px;
   font-family: var(--mono);
 }
+
+/* Clickable chart legend: one key per series, click to hide/show its line. */
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 6.4px;
+}
+
+.chart-legend__key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.chart-legend__key:hover {
+  color: var(--text);
+}
+
+.chart-legend__key--off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+.chart-legend__swatch {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+}

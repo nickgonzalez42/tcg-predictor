@@ -64,6 +64,13 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
     const [range, setRange] = useState('all');
+    const [hidden, setHidden] = useState<Set<string>>(new Set());
+
+    const toggleKey = (id_: string) => setHidden(prev => {
+        const next = new Set(prev);
+        if (next.has(id_)) next.delete(id_); else next.add(id_);
+        return next;
+    });
 
     const grades = data ? GRADE_ORDER.filter(g => data.series[g]?.length) : [];
 
@@ -102,18 +109,20 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             handleScroll: false,   // no pan / mouse-wheel scroll (page scrolls normally over it)
             handleScale: false,    // no zoom; chart stays fit to the full range
         });
-        const series = chart.addSeries(AreaSeries, {
-            lineColor: history,
-            topColor: 'rgba(61, 125, 202, 0.30)',
-            bottomColor: 'rgba(61, 125, 202, 0.02)',
-            lineWidth: 2,
-            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
-        });
-        series.setData(points.map(p => ({ time: p.date, value: p.price })));
+        if (!hidden.has('history')) {
+            const series = chart.addSeries(AreaSeries, {
+                lineColor: history,
+                topColor: 'rgba(61, 125, 202, 0.30)',
+                bottomColor: 'rgba(61, 125, 202, 0.02)',
+                lineWidth: 2,
+                priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+            });
+            series.setData(points.map(p => ({ time: p.date, value: p.price })));
+        }
 
         // Dashed gold continuation: last real point -> the model's forecasts for
         // this tier at every horizon (1w, 1m, 6m, 12m).
-        const tierFc = (forecasts ?? [])
+        const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
             .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
         if (tierFc.length) {
             const last = points[points.length - 1];
@@ -144,7 +153,9 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             '6m': v('--chart-past-6m', '#ff9e64'),
             '12m': v('--chart-past-12m', '#f06292'),
         };
-        for (const p of pickPastForecasts(pastData?.forecasts ?? [], grade)) {
+        const pastPicks = pickPastForecasts(pastData?.forecasts ?? [], grade)
+            .filter(p => !hidden.has(p.horizon));
+        for (const p of pastPicks) {
             const line = chart.addSeries(LineSeries, {
                 color: pastColors[p.horizon] ?? '#c678dd',
                 lineWidth: 1,
@@ -154,7 +165,6 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 priceLineVisible: false,
                 lastValueVisible: false,
                 crosshairMarkerVisible: false,
-                title: `${p.horizon.toUpperCase()} fcst`,
             });
             // If the anchor falls outside the selected range window, draw only
             // the predicted endpoint so old anchors can't stretch the axis.
@@ -169,13 +179,27 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         chart.timeScale().fitContent();
 
         return () => chart.remove();
-    }, [data, grade, range, forecasts, pastData]);
+    }, [data, grade, range, forecasts, pastData, hidden]);
 
     if (isLoading) return <div>Loading chart…</div>;
     if (!grades.length) return <div className="est-note">No price history yet for this card.</div>;
 
     const hasForecast = (forecasts ?? []).some(f => f.target === grade);
-    const hasPast = pickPastForecasts(pastData?.forecasts ?? [], grade).length > 0;
+    const pastPicks = pickPastForecasts(pastData?.forecasts ?? [], grade);
+
+    // Clickable legend: one key per drawn series; clicking toggles that line.
+    const PAST_LABEL: Record<string, string> = {
+        '1w': 'Past 1W', '1m': 'Past 1M', '6m': 'Past 6M', '12m': 'Past 1Y',
+    };
+    const legendKeys = [
+        { id: 'history', label: 'History', color: 'var(--chart-history)' },
+        ...(hasForecast ? [{ id: 'forecast', label: 'Forecast', color: 'var(--chart-forecast)' }] : []),
+        ...pastPicks.map(p => ({
+            id: p.horizon,
+            label: PAST_LABEL[p.horizon] ?? p.horizon,
+            color: `var(--chart-past-${p.horizon})`,
+        })),
+    ];
 
     return (
         <div>
@@ -204,9 +228,18 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 </div>
             </div>
             <div ref={containerRef} style={{ width: '100%' }} />
-            <div className="mono" style={{ marginTop: '6.4px' }}>
-                solid blue = history{hasForecast ? ' · dashed gold = model forecast' : ''}
-                {hasPast ? ' · thin dashed lines = past forecasts (anchor price → what was predicted): teal 1W, purple 1M, orange 6M, pink 1Y' : ''}
+            <div className="chart-legend mono">
+                {legendKeys.map(k => (
+                    <button
+                        key={k.id}
+                        className={`chart-legend__key${hidden.has(k.id) ? ' chart-legend__key--off' : ''}`}
+                        onClick={() => toggleKey(k.id)}
+                        title={hidden.has(k.id) ? 'Show this line' : 'Hide this line'}
+                    >
+                        <span className="chart-legend__swatch" style={{ background: k.color }} />
+                        {k.label}
+                    </button>
+                ))}
             </div>
         </div>
     );
