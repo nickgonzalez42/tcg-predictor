@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "lightweight-charts";
+import type { ISeriesApi, SeriesType } from "lightweight-charts";
 import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
 import type { Forecast, PastForecast } from "../../app/models/card";
 
@@ -72,6 +73,22 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         return next;
     });
 
+    // Live handles to the drawn series, so hovering a legend key can thicken
+    // its line in place (applyOptions) without rebuilding the chart.
+    const seriesByKey = useRef<Record<string, ISeriesApi<SeriesType>[]>>({});
+
+    const highlightKey = (key: string | null) => {
+        for (const [k, list] of Object.entries(seriesByKey.current)) {
+            const hot = k === key;
+            for (const s of list) {
+                if (k === 'history' || k === 'forecast')
+                    s.applyOptions({ lineWidth: hot ? 4 : 2 });
+                else
+                    s.applyOptions({ lineWidth: hot ? 3 : 1, pointMarkersRadius: hot ? 5 : 3 });
+            }
+        }
+    };
+
     const grades = data ? GRADE_ORDER.filter(g => data.series[g]?.length) : [];
 
     // default to the first available tier once data arrives
@@ -109,6 +126,10 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             handleScroll: false,   // no pan / mouse-wheel scroll (page scrolls normally over it)
             handleScale: false,    // no zoom; chart stays fit to the full range
         });
+        seriesByKey.current = {};
+        const track = (key: string, s: ISeriesApi<SeriesType>) =>
+            (seriesByKey.current[key] ??= []).push(s);
+
         if (!hidden.has('history')) {
             const series = chart.addSeries(AreaSeries, {
                 lineColor: history,
@@ -118,6 +139,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
             });
             series.setData(points.map(p => ({ time: p.date, value: p.price })));
+            track('history', series);
         }
 
         // Dashed gold continuation: last real point -> the model's forecasts for
@@ -141,6 +163,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 crosshairMarkerVisible: false,
             });
             fcSeries.setData(fcPoints);
+            track('forecast', fcSeries);
         }
 
         // Past-forecast review: for each horizon, the archived prediction that
@@ -174,11 +197,15 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 ...(anchorVisible ? [{ time: p.asOf!, value: p.basePrice! }] : []),
                 { time: p.targetDate, value: p.forecastPrice },
             ]);
+            track(p.horizon, line);
         }
 
         chart.timeScale().fitContent();
 
-        return () => chart.remove();
+        return () => {
+            seriesByKey.current = {};
+            chart.remove();
+        };
     }, [data, grade, range, forecasts, pastData, hidden]);
 
     if (isLoading) return <div>Loading chart…</div>;
@@ -234,6 +261,8 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                         key={k.id}
                         className={`chart-legend__key${hidden.has(k.id) ? ' chart-legend__key--off' : ''}`}
                         onClick={() => toggleKey(k.id)}
+                        onMouseEnter={() => highlightKey(k.id)}
+                        onMouseLeave={() => highlightKey(null)}
                         title={hidden.has(k.id) ? 'Show this line' : 'Hide this line'}
                     >
                         <span className="chart-legend__swatch" style={{ background: k.color }} />
