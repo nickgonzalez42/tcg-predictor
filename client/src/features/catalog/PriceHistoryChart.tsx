@@ -135,21 +135,35 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         }
 
         // Past-forecast review: for each horizon, the archived prediction that
-        // was aiming at (roughly) today, drawn as a lone dot at its target
-        // date so it can be eyeballed against the actual line. One tiny series
-        // per point because two horizons can mature on the same date.
-        const pastColor = v('--chart-past-forecast', '#c678dd');
+        // was aiming at (roughly) today, drawn as a line from its anchor (the
+        // price when it was made — a point ON the history line) to the price
+        // it predicted at its target date. One color per horizon.
+        const pastColors: Record<string, string> = {
+            '1w': v('--chart-past-1w', '#4dd0e1'),
+            '1m': v('--chart-past-1m', '#c678dd'),
+            '6m': v('--chart-past-6m', '#ff9e64'),
+            '12m': v('--chart-past-12m', '#f06292'),
+        };
         for (const p of pickPastForecasts(pastData?.forecasts ?? [], grade)) {
-            const dot = chart.addSeries(LineSeries, {
-                color: pastColor,
-                lineVisible: false,
+            const line = chart.addSeries(LineSeries, {
+                color: pastColors[p.horizon] ?? '#c678dd',
+                lineWidth: 1,
+                lineStyle: LineStyle.Dashed,
                 pointMarkersVisible: true,
-                pointMarkersRadius: 4,
+                pointMarkersRadius: 3,
                 priceLineVisible: false,
                 lastValueVisible: false,
+                crosshairMarkerVisible: false,
                 title: `${p.horizon.toUpperCase()} fcst`,
             });
-            dot.setData([{ time: p.targetDate, value: p.forecastPrice }]);
+            // If the anchor falls outside the selected range window, draw only
+            // the predicted endpoint so old anchors can't stretch the axis.
+            const anchorVisible = p.asOf && p.basePrice != null
+                && (!cutoff || p.asOf >= cutoff);
+            line.setData([
+                ...(anchorVisible ? [{ time: p.asOf!, value: p.basePrice! }] : []),
+                { time: p.targetDate, value: p.forecastPrice },
+            ]);
         }
 
         chart.timeScale().fitContent();
@@ -192,7 +206,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             <div ref={containerRef} style={{ width: '100%' }} />
             <div className="mono" style={{ marginTop: '6.4px' }}>
                 solid blue = history{hasForecast ? ' · dashed gold = model forecast' : ''}
-                {hasPast ? ' · purple dots = past forecasts, shown at the date they predicted' : ''}
+                {hasPast ? ' · thin dashed lines = past forecasts (anchor price → what was predicted): teal 1W, purple 1M, orange 6M, pink 1Y' : ''}
             </div>
         </div>
     );
