@@ -1,0 +1,47 @@
+/* Status pills: signed change (green/red) + forecast confidence. */
+
+/* Signed change pill: mono, 1.4px currentColor ring, green/red per sign. */
+.valuation {
+  display: inline-block;
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  line-height: 1.6;
+  padding: 0 7.2px;
+  border: 1.4px solid currentColor;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.valuation--up {
+  color: var(--up);
+  background: var(--up-bg);
+}
+
+.valuation--down {
+  color: var(--down);
+  background: var(--down-bg);
+}
+
+.conf {
+  display: inline-block;
+  margin-top: 3.2px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 0 7.2px;
+  line-height: 1.7;
+  border: 1.4px solid currentColor;
+  border-radius: 999px;
+  cursor: help;
+  white-space: nowrap;
+}
+
+.conf--high { color: var(--up); background: var(--up-bg); }
+
+.conf--med  { color: var(--warn); background: var(--warn-bg); }
+
+.conf--low  { color: var(--down); background: var(--down-bg); }

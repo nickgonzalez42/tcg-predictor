@@ -1,8 +1,8 @@
 import { NavLink } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../store/store";
-import { setDarkMode } from "./uiSlice";
 import UserMenu from "./UserMenu";
 import { useUserInfoQuery } from "../../features/account/accountApi";
+import MarketTicker from "../shared/components/MarketTicker";
 
 const midLinks = [
     { title: 'catalog', path: '/catalog' },
@@ -15,23 +15,16 @@ const rightLinks = [
     { title: 'register', path: '/register' }
 ]
 
-export default function NavBar() {
+export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     const { data: user } = useUserInfoQuery();
-    const { isLoading, darkMode } = useAppSelector(state => state.ui)
+    const { isLoading } = useAppSelector(state => state.ui)
     const dispatch = useAppDispatch();
 
     return (
         <header className="navbar">
-            <div className="navbar__inner">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div className="navbar__inner container">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <NavLink to='/' className="navbar__brand">TCG PREDICTOR</NavLink>
-                    <button
-                        className="navbar__icon-btn"
-                        onClick={() => dispatch(setDarkMode())}
-                        title="Toggle theme"
-                    >
-                        {darkMode ? '🌙' : '☀️'}
-                    </button>
                 </div>
 
                 <nav>
@@ -49,7 +42,7 @@ export default function NavBar() {
                                     <NavLink to="/portfolio" className="navbar__link">PORTFOLIO</NavLink>
                                 </li>
                                 <li>
-                                    <NavLink to="/wishlist" className="navbar__link">WISHLIST</NavLink>
+                                    <NavLink to="/watchlist" className="navbar__link">WATCHLIST</NavLink>
                                 </li>
                             </>
                         )}
@@ -73,6 +66,7 @@ export default function NavBar() {
                 </div>
             </div>
             {isLoading && <div className="progress-bar" />}
+            {showTicker && <MarketTicker />}
         </header>
     )
 }

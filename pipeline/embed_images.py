@@ -102,7 +102,8 @@ def embed_game(game: str, model, preprocess, device: str, limit: int | None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="only embed first N images per game (smoke test)")
-    ap.add_argument("--games", nargs="+", default=["onepiece", "pokemon"])
+    from games import GAMES
+    ap.add_argument("--games", nargs="+", default=list(GAMES))
     args = ap.parse_args()
 
     device = get_device()

@@ -24,7 +24,13 @@ function pageList(current: number, total: number): (number | '…')[] {
     return out;
 }
 
+// Changing pages always returns the reader to the top of the list.
 export default function AppPagination({ metadata, onPageChange }: Props) {
+    const changePage = (page: number) => {
+        onPageChange(page);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+
     const { currentPage, totalPages, pageSize, totalCount } = metadata;
     const startItem = (currentPage - 1) * pageSize + 1;
     const endItem = Math.min(currentPage * pageSize, totalCount);
@@ -38,7 +44,7 @@ export default function AppPagination({ metadata, onPageChange }: Props) {
                 <button
                     className="page-btn"
                     disabled={currentPage <= 1}
-                    onClick={() => onPageChange(currentPage - 1)}
+                    onClick={() => changePage(currentPage - 1)}
                 >
                     ‹
                 </button>
@@ -49,7 +55,7 @@ export default function AppPagination({ metadata, onPageChange }: Props) {
                         <button
                             key={p}
                             className={`page-btn ${p === currentPage ? 'active' : ''}`}
-                            onClick={() => onPageChange(p)}
+                            onClick={() => changePage(p)}
                         >
                             {p}
                         </button>
@@ -58,7 +64,7 @@ export default function AppPagination({ metadata, onPageChange }: Props) {
                 <button
                     className="page-btn"
                     disabled={currentPage >= totalPages}
-                    onClick={() => onPageChange(currentPage + 1)}
+                    onClick={() => changePage(currentPage + 1)}
                 >
                     ›
                 </button>

@@ -1,0 +1,33 @@
+/* Chart chrome: grade tabs + time-range tabs. */
+
+.grade-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6.4px;
+  margin-bottom: 12px;
+}
+
+.grade-tabs .btn {
+  padding: 4px 9.6px;
+  font-size: 12.8px;
+}
+
+/* Chart header: grade tabs left, range tabs right. */
+.chart-tabs {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.range-tabs {
+  display: inline-flex;
+  gap: 4.8px;
+}
+
+.range-tab {
+  padding: 3.2px 8.8px;
+  font-size: 12px;
+  font-family: var(--mono);
+}

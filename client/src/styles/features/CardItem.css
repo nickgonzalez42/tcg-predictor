@@ -1,0 +1,195 @@
+/* Card tile: media, 3D rotator, body. */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+
+  grid-column: span 3;
+}
+
+/* Inset the art so the card surface frames it on every side. */
+.media__container {
+  position: relative;
+  /* margin: 10px 10px 0; */
+}
+
+.card__media {
+  display: block;   /* kill the inline baseline gap so the <a>/container fit the image height */
+  width: 100%;
+  height: auto;
+  border-radius: var(--radius);   /* fully rounded inside the framed tile */
+}
+
+.card__rotator {
+  position: absolute;
+  bottom: 0;
+  height: 100%;
+  max-height: 0;
+  width: 100%;
+  transition: all 0.5s;
+  overflow: hidden;
+}
+
+.card__rotator.active {
+  max-height: 100%;
+}
+
+.rotator {
+  background: black;
+  border-radius: var(--radius);
+  opacity: 100%;
+  height: 100px;
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+}
+
+/* Current condition (what the Add button will use) at the top of the rotator. */
+.rotator__condition {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 12px;
+  text-align: center;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Add / star buttons nested at the bottom of the rotator overlay, layered on top
+   of the black .rotator (a sibling, so any opacity on .rotator doesn't dim them). */
+.rotator__actions {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+}
+
+/* Pure CSS 3D: transform-only animation runs on the compositor, and it only
+   spins while the rotator is active, so at most one card animates at a time. */
+.card3d {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 48px;   /* nudge the centered card up, clear of the buttons */
+  perspective: 800px;
+  pointer-events: none;   /* visual only — keep the action buttons clickable */
+}
+
+.card3d__inner {
+  position: relative;
+  height: 62%;                /* leaves room for the condition (top) and buttons (bottom) */
+  aspect-ratio: 63 / 88;      /* real trading-card proportions */
+  transform-style: preserve-3d;
+  transform: rotateZ(15deg);  /* slight sideways tilt, top leaning right */
+}
+
+.card__rotator.active .card3d__inner {
+  animation: card3d-spin 6s linear infinite;
+}
+
+/* The two faces sit ±1.5px from the core, giving the card its 3px thickness. */
+.card3d__face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--radius);   /* clip the square corners of the scans */
+  backface-visibility: hidden;
+  transform: translateZ(1.5px);
+}
+
+.card3d__face--back {
+  transform: rotateY(180deg) translateZ(1.5px);
+}
+
+/* Gray core between the faces — the card's edge at oblique angles. */
+.card3d__core {
+  position: absolute;
+  inset: 0;
+  background: #8a8a8a;
+  border-radius: var(--radius);
+}
+
+/* rotateY first (vertical screen axis), rotateZ second (in the card's own plane):
+   the card stays cocked 15° like it's standing on a corner while the spin axis
+   itself remains perfectly upright. The reverse order tilts the spin axis, which
+   reads as the card leaning away. */
+@keyframes card3d-spin {
+  from { transform: rotateY(0deg) rotateZ(15deg); }
+  to   { transform: rotateY(360deg) rotateZ(15deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__rotator.active .card3d__inner { animation: none; }
+}
+
+.card__body {
+  padding: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card__info {
+  min-width: 0;
+}
+
+/* Right-side round "＋" toggle, vertically centered in the card body. */
+.card__add {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 22.4px;
+  line-height: 1;
+}
+
+.card__title {
+  text-transform: uppercase;
+  font-size: 12.8px;
+  color: var(--text-muted);
+  margin-bottom: 5.6px;
+  width: fit-content;
+}
+
+/* Hovering the card art underlines the title (they're separate links). */
+.media__container:hover ~ .card__body .card__title {
+  text-decoration: underline;
+}
+
+.card__set {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 6.4px;
+}
+
+.card__price {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--price);
+}
+
+.card__market {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6.4px;
+  flex-wrap: wrap;
+}

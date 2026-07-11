@@ -88,7 +88,8 @@ def build_game(game):
 
 
 def main():
-    for game in ["pokemon", "onepiece"]:
+    from games import priced_games
+    for game in priced_games():   # comps need price history, so priced games only
         build_game(game)
 
 

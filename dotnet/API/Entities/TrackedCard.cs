@@ -23,6 +23,10 @@ public class TrackedCard
     public DateTime? AcquiredAt { get; set; }       // date the copy was acquired
     public string? Note { get; set; }              // freeform per-copy note
 
+    // Wishlist-only detail (null for owned rows).
+    public double? WatchedAtPrice { get; set; }    // NM price when the card was wishlisted
+    public double? AlertTargetPrice { get; set; }  // notify at-or-below price; null = no alert
+
     // A copy with any purchase detail displays as its own unit and is never
     // auto-deleted by quantity changes; blank copies stack. (Get-only => unmapped.)
     public bool HasDetail => PurchasePrice != null || AcquiredAt != null || !string.IsNullOrWhiteSpace(Note);

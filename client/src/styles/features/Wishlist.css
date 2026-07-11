@@ -1,0 +1,43 @@
+/* Wishlist: star toggle + price-alert chips. */
+
+.star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 17.6px;
+  color: var(--brand);
+  padding: 3.2px;
+}
+
+.star-btn:hover {
+  filter: brightness(0.85);
+}
+
+.alert-chip {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  border: 1.4px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.alert-chip:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.alert-chip--near,
+.alert-chip--hit {
+  color: var(--up);
+  border-color: var(--up);
+  background: var(--up-bg);
+}
+
+.alert-chip--unset {
+  border-style: dashed;
+}

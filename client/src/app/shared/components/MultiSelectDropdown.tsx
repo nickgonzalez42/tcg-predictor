@@ -56,7 +56,7 @@ export default function MultiSelectDropdown({ label, items, checked, onChange }:
                             </label>
                         ))}
                         {filtered.length === 0 && (
-                            <div className="est-note" style={{ padding: '0.4rem' }}>No matches</div>
+                            <div className="est-note" style={{ padding: '6.4px' }}>No matches</div>
                         )}
                     </div>
                 </div>

@@ -1,0 +1,117 @@
+/* Shared screener-style tables (catalog rows, positions, watchlist). */
+
+.screener-wrap {
+  overflow-x: auto;
+}
+
+.screener {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.screener th {
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 8px 9.6px;
+  border-bottom: 2px solid var(--primary);
+  white-space: nowrap;
+}
+
+.screener td {
+  padding: 8px 9.6px;
+  border-bottom: 1px dashed var(--border);
+  vertical-align: middle;
+}
+
+.screener__row {
+  cursor: pointer;
+}
+
+.screener__row:hover td {
+  background: var(--surface-2);
+}
+
+.screener__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.screener__name {
+  font-weight: 600;
+}
+
+.screener__price {
+  color: var(--price);
+  font-weight: 700;
+}
+
+.screener__thumbcell {
+  width: 40px;
+}
+
+.screener__thumb {
+  width: 30px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 6px;
+  display: block;
+}
+
+.screener__actions {
+  white-space: nowrap;
+}
+
+.screener__actions .btn {
+  padding: 4px 8.8px;
+  font-size: 12.8px;
+}
+
+/* Thumb hover "peek": enlarged card image popover. */
+.peek {
+  position: relative;
+  display: inline-block;
+}
+
+.peek__pop {
+  display: none;
+  position: absolute;
+  left: 44px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 180px;
+  border-radius: var(--radius);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  z-index: 30;
+  pointer-events: none;
+}
+
+.peek:hover .peek__pop {
+  display: block;
+}
+
+/* Table header row: title + search + sort + game chips. */
+.table-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.table-head__title {
+  margin: 0;
+  margin-right: auto;
+}
+
+.table-head__search {
+  width: 200px;
+}
+
+.table-head__sort {
+  width: auto;
+}

@@ -1,23 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import type { Card } from "../../app/models/card"
 import { Link } from "react-router-dom"
-import { currencyFormat, gameKey } from "../../lib/util"
+import { gameKey } from "../../lib/util"
 import TrackButton from "../watchlist/TrackButton"
-import { conditionLabel } from "../watchlist/grades"
-import ExpectedChange from "./ExpectedChange"
+import { tierLabel } from "../watchlist/grades"
+import ChangePill from "../../app/shared/components/ChangePill"
+import Sparkline from "../../app/shared/components/Sparkline"
+import PricePair from "../../app/shared/components/PricePair"
+import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 
 type Props = {
     card: Card
     ownGrade?: string   // condition the quick "Own" add defaults to
-}
-
-// Back-of-card art: One Piece leaders and DON!! cards have their own backs;
-// all other One Piece cards share the standard back, Pokémon has its own.
-function cardBackSrc(card: Card) {
-    if (gameKey(card.game) !== 'onepiece') return '/images/pokemon-back.jpg';
-    if (card.cardType === 'Leader') return '/images/one-piece-leader-back.png';
-    if (card.cardType === 'DON!!') return '/images/one-piece-don-card-back.jpg';
-    return '/images/one-piece-card-back.jpg';
 }
 
 export default function CardItem({ card, ownGrade }: Props) {
@@ -34,7 +28,7 @@ export default function CardItem({ card, ownGrade }: Props) {
         const media = mediaRef.current
         const rotator = rotatorRef.current
         if (!media || !rotator) return
-        const sync = () => { rotator.style.height = `${media.clientHeight}px` }
+        const sync = () => { rotator.style.height = `${media.clientHeight + 1}px` }
         sync()
         const ro = new ResizeObserver(sync)
         ro.observe(media)
@@ -50,30 +44,22 @@ export default function CardItem({ card, ownGrade }: Props) {
                         style={{ width: '100%', objectFit: 'contain' }}
                         src={card.pictureUrl}
                         alt={card.name}
-                        onError={(e) => {
-                            const img = e.currentTarget;
-                            if (card.imageUrl && img.src !== card.imageUrl) img.src = card.imageUrl;
-                            else img.onerror = null;
-                        }}
+                        onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                     />
                 </Link>
                 <div className={`card__rotator${active ? ' active' : ''}`}>
                     <div className="rotator" ref={rotatorRef}>
-                        <div className="rotator__condition">{conditionLabel(ownGrade || 'nm')}</div>
+                        <div className="rotator__condition">{tierLabel(ownGrade)}</div>
                         <div className="card3d">
                             <div className="card3d__inner">
                                 <img
                                     className="card3d__face"
                                     src={card.pictureUrl}
                                     alt=""
-                                    onError={(e) => {
-                                        const img = e.currentTarget;
-                                        if (card.imageUrl && img.src !== card.imageUrl) img.src = card.imageUrl;
-                                        else img.onerror = null;
-                                    }}
+                                    onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                                 />
                                 <div className="card3d__core"></div>
-                                <img className="card3d__face card3d__face--back" src={cardBackSrc(card)} alt="" />
+                                <img className="card3d__face card3d__face--back" src={cardBackSrc(card.game, card.cardType)} alt="" />
                             </div>
                         </div>
                         <div className="rotator__actions">
@@ -87,11 +73,27 @@ export default function CardItem({ card, ownGrade }: Props) {
                 <div className="card__info">
                     <Link className="card__title" to={detailPath} style={{ display: 'block' }}>{card.name}</Link>
                     {card.setName && <div className="card__set">{card.setName}</div>}
+                    {/* One display for every sort: current price (gold) +
+                        parenthesized forecast (green/red, horizon follows the
+                        trend chips — which forecast sorts also snap to), then
+                        the movement row over that same window. */}
                     <div className="card__price">
-                        {card.expectedChange != null
-                            ? <ExpectedChange card={card} />
-                            : card.price != null ? currencyFormat(card.price) : '—'}
+                        <PricePair
+                            price={card.price}
+                            forecast={card.fcstTo}
+                            horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
+                            asOf={card.priceAsOf}
+                        />
                     </div>
+                    {card.trendPct != null && (
+                        <div className="card__market"
+                            title={`Price history over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`}>
+                            <ChangePill value={card.trendPct}
+                                title={`Price change over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`} />
+                            <span className="mono">PAST {(card.trendPeriod ?? '1m').toUpperCase()}</span>
+                            <Sparkline points={card.sparkline} />
+                        </div>
+                    )}
                 </div>
                 <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
                     aria-pressed={active} title="Show / hide actions">

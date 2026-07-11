@@ -1,0 +1,57 @@
+/* Structural layout: app shell, page container, 12-column grid. */
+
+.app-shell {
+  min-height: 100vh;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 40px;
+  box-sizing: border-box;
+}
+
+.page {
+  padding-top: 96px;
+  padding-bottom: 48px;
+}
+
+.grid-box {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  column-gap: 40px;
+  width: 100%;
+}
+
+.subgrid {
+  display: grid;
+  grid-template-columns: subgrid;
+}
+
+.full-span {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1023px) {
+  .grid-box {
+    grid-template-columns: repeat(8, 1fr);
+    column-gap: 24px;
+  }
+}
+
+@media (max-width: 767px) {
+  .grid-box {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    column-gap: 16px;
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
+/* Room for the fixed navbar + ticker strip. */
+.has-ticker .page {
+  padding-top: 132px;
+}

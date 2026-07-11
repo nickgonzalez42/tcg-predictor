@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using API.Data;
 using API.Middleware;
+using API.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.FileProviders;
 
@@ -21,6 +22,27 @@ builder.Services.AddDbContext<PokemonContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("PokemonConnection"));
 });
+builder.Services.AddDbContext<YugiohContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("YugiohConnection"));
+});
+builder.Services.AddDbContext<MagicContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("MagicConnection"));
+});
+builder.Services.AddDbContext<LorcanaContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("LorcanaConnection"));
+});
+builder.Services.AddDbContext<DigimonContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("DigimonConnection"));
+});
+builder.Services.AddDbContext<GundamContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("GundamConnection"));
+});
+builder.Services.AddScoped<API.Services.CardSources>();
 // Read-only model predictions (produced offline by the ML pipeline).
 builder.Services.AddDbContext<PredictionsContext>(opt =>
 {
@@ -31,6 +53,7 @@ builder.Services.AddDbContext<PriceChartingContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("PriceChartingConnection"));
 });
+builder.Services.AddScoped<ReasoningService>();
 builder.Services.AddCors();
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();
@@ -51,30 +74,14 @@ app.UseCors(opt =>
 });
 
 // Serve card images straight from the scraper's image folders (no copy).
-ServeCardImages(app, "CardImages:OnePiece", "/card-images/onepiece");
-ServeCardImages(app, "CardImages:Pokemon", "/card-images/pokemon");
+foreach (var game in API.RequestHelpers.GameRegistry.Keys)
+    ServeCardImages(app, $"CardImages:{game}", $"/card-images/{game}");
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
 app.MapGroup("api").MapIdentityApi<User>();
-
-// Fallback for card images that aren't on disk (the static-file middleware above
-// calls next() on a miss): redirect to the card's remote image instead of letting
-// the browser get a 404 HTML page — which cross-origin trips Firefox's ORB.
-app.MapGet("/card-images/{game}/{file}", async (string game, string file,
-    OnePieceContext onePiece, PokemonContext pokemon) =>
-{
-    if (!int.TryParse(Path.GetFileNameWithoutExtension(file), out var id))
-        return Results.NotFound();
-
-    var remote = string.Equals(game, "pokemon", StringComparison.OrdinalIgnoreCase)
-        ? (await pokemon.Cards.FindAsync(id))?.ImageUrl
-        : (await onePiece.Cards.FindAsync(id))?.ImageUrl;
-
-    return string.IsNullOrEmpty(remote) ? Results.NotFound() : Results.Redirect(remote);
-});
 
 await DbInitializer.InitDb(app);   // finish migrating/seeding before serving requests
 

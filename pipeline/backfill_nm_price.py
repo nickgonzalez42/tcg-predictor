@@ -35,6 +35,9 @@ def backfill(game):
     cols = [r[1] for r in con.execute("PRAGMA table_info(cards)")]
     if "near_mint_price" not in cols:
         con.execute("ALTER TABLE cards ADD COLUMN near_mint_price REAL")
+    # Authoritative sync: cards with no unified series (unmatched or quarantined
+    # PriceCharting rows) must NOT keep a stale price from an earlier source.
+    con.execute("UPDATE cards SET near_mint_price=NULL")
     con.executemany("UPDATE cards SET near_mint_price=? WHERE product_id=?",
                     [(p, pid) for pid, p in prices.items()])
     con.commit()
@@ -45,5 +48,6 @@ def backfill(game):
 
 
 if __name__ == "__main__":
-    for g in ["pokemon", "onepiece"]:
+    from games import priced_games
+    for g in priced_games():
         backfill(g)

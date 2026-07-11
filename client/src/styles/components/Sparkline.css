@@ -1,0 +1,20 @@
+/* 64×20 inline trend line. */
+
+.sparkline {
+  width: 64px;
+  height: 20px;
+  flex: none;
+}
+
+.sparkline polyline {
+  fill: none;
+  stroke-width: 2;
+}
+
+.sparkline--up polyline { stroke: var(--up); }
+
+.sparkline--down polyline { stroke: var(--down); }
+
+.sparkline--empty {
+  display: inline-block;
+}

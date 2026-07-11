@@ -34,14 +34,6 @@ export function createTrackedParamsSlice(name: string) {
                 state.searchTerm = '';
                 state.pageNumber = 1;
             },
-            setSets(state, action) {
-                state.sets = action.payload;
-                state.pageNumber = 1;
-            },
-            setRarities(state, action) {
-                state.rarities = action.payload;
-                state.pageNumber = 1;
-            },
             setSearchTerm(state, action) {
                 state.searchTerm = action.payload;
                 state.pageNumber = 1;
@@ -49,9 +41,6 @@ export function createTrackedParamsSlice(name: string) {
             setGrade(state, action) {
                 state.grade = action.payload;
                 state.pageNumber = 1;
-            },
-            resetParams(state) {
-                return { ...initialState, game: state.game };
             },
         },
     });

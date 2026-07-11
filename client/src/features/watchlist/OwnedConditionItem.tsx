@@ -7,11 +7,12 @@ import {
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation,
 } from "./watchlistApi";
-import { OWNED_CONDITIONS, conditionLabel } from "./grades";
+import { PRICE_TIER_OPTIONS, tierLabel } from "./grades";
 import ExpectedChange from "../catalog/ExpectedChange";
+import { fallbackToCardBack } from "../../lib/cardImages";
 
-// Per-copy grade select also offers "Unspecified" ('' clears the condition).
-const copyGradeOptions = [{ value: '', label: 'Unspecified' }, ...OWNED_CONDITIONS];
+// Per-copy grade select: the PriceCharting tiers ('' = Ungraded, i.e. raw).
+const copyGradeOptions = PRICE_TIER_OPTIONS;
 
 // Mirrors the backend's HasDetail: a copy with any purchase detail is its own
 // tile; only fully blank copies stack into a quantity.
@@ -29,7 +30,7 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
     const copies = card.ownedCopies ?? [];
     const detailedUnit = copies.length === 1 && hasDetail(copies[0]);
     const qty = card.ownedQuantity ?? copies.length;
-    const grade = card.ownedGrade ?? '';   // '' = unspecified bucket
+    const grade = card.ownedGrade ?? '';   // '' = ungraded (raw) bucket
     const total = card.price != null ? card.price * qty : null;
 
     // card.game is the display name ("One Piece"); the API wants the key ("onepiece").
@@ -43,15 +44,11 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
         <div className="card">
             <img className="card__media" style={{ width: '100%', objectFit: 'contain' }}
                 src={card.pictureUrl} alt={card.name}
-                onError={(e) => {
-                    const img = e.currentTarget;
-                    if (card.imageUrl && img.src !== card.imageUrl) img.src = card.imageUrl;
-                    else img.onerror = null;
-                }} />
+                onError={e => fallbackToCardBack(e, card.game, card.cardType)} />
             <div className="card__body">
                 <div className="card__title">{card.name}</div>
                 <div className="owned-condition">
-                    {conditionLabel(card.ownedGrade)}
+                    {tierLabel(card.ownedGrade)}
                     {detailedUnit && <span className="owned-condition__tag"> · noted</span>}
                 </div>
                 <div className="card__price">
@@ -113,7 +110,8 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
     );
 }
 
-// Read-only view of a detailed copy's values.
+// Read-only view of a detailed copy's values. A copy with no explicit acquired
+// date defaults to the day it was added to the portfolio.
 function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) {
     return (
         <div className="owned-summary">
@@ -121,9 +119,12 @@ function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) 
                 {copy.purchasePrice != null && (
                     <div><span className="owned-summary__label">Paid</span>{currencyFormat(copy.purchasePrice)}</div>
                 )}
-                {copy.acquiredAt && (
-                    <div><span className="owned-summary__label">Acquired</span>{copy.acquiredAt.slice(0, 10)}</div>
-                )}
+                <div>
+                    <span className="owned-summary__label">Acquired</span>
+                    {copy.acquiredAt
+                        ? copy.acquiredAt.slice(0, 10)
+                        : `${copy.addedAt.slice(0, 10)} (added)`}
+                </div>
                 {copy.note && (
                     <div><span className="owned-summary__label">Note</span>{copy.note}</div>
                 )}
@@ -137,21 +138,28 @@ function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) 
 // condition's card; adding/clearing detail moves it between stack and standalone.
 // onDone fires after a successful save; onCancel (when given) shows a Cancel
 // button that closes the form without touching the copy.
-function OwnedCopyRow({ copy, onDone, onCancel }: {
+export function OwnedCopyRow({ copy, onDone, onCancel }: {
     copy: OwnedCopy; onDone?: () => void; onCancel?: () => void;
 }) {
     const [update, { isLoading: saving }] = useUpdateOwnedCopyMutation();
     const [remove, { isLoading: removing }] = useRemoveOwnedCopyMutation();
 
+    // A detailed copy with no explicit acquired date defaults to its added date
+    // (matching the summary display). Blank stacked copies stay empty so a save
+    // doesn't turn them into standalone detailed copies.
+    const initialAcquired = copy.acquiredAt
+        ? copy.acquiredAt.slice(0, 10)
+        : hasDetail(copy) ? copy.addedAt.slice(0, 10) : '';
+
     const [grade, setGrade] = useState(copy.grade ?? '');
     const [price, setPrice] = useState(copy.purchasePrice != null ? String(copy.purchasePrice) : '');
-    const [acquired, setAcquired] = useState(copy.acquiredAt ? copy.acquiredAt.slice(0, 10) : '');
+    const [acquired, setAcquired] = useState(initialAcquired);
     const [note, setNote] = useState(copy.note ?? '');
 
     const dirty =
         grade !== (copy.grade ?? '') ||
         price !== (copy.purchasePrice != null ? String(copy.purchasePrice) : '') ||
-        acquired !== (copy.acquiredAt ? copy.acquiredAt.slice(0, 10) : '') ||
+        acquired !== initialAcquired ||
         note !== (copy.note ?? '');
 
     const save = async () => {

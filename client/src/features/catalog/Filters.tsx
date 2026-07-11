@@ -5,30 +5,17 @@ import { resetParams, setGame, setGrade, setOrderBy, setRarities, setSets } from
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
 import { forecastSortOptions } from "./sortOptions";
+import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
 const sortOptions = [
     { value: 'name', label: 'Alphabetical' },
-    { value: 'priceDesc', label: 'Price: high to low' },
-    { value: 'price', label: 'Price: low to high' },
+    { value: 'priceDesc', label: 'Price: desc' },
+    { value: 'price', label: 'Price: asc' },
     ...forecastSortOptions,
 ]
 
-const gameOptions = [
-    { value: 'onepiece', label: 'One Piece' },
-    { value: 'pokemon', label: 'Pokémon' },
-]
+import { GAMES as gameOptions } from "../../lib/games";
 
-// Which tier's price to show. '' = default (ungraded / Near Mint).
-const gradeOptions = [
-    { value: '', label: 'Near Mint' },
-    { value: 'lp', label: 'Lightly Played' },
-    { value: 'mp', label: 'Moderately Played' },
-    { value: 'grade7', label: 'Grade 7' },
-    { value: 'grade8', label: 'Grade 8' },
-    { value: 'grade9', label: 'Grade 9' },
-    { value: 'grade95', label: 'Grade 9.5' },
-    { value: 'psa10', label: 'PSA 10' },
-]
 
 type Props = {
     filtersData: { sets: string[], rarities: string[] }
@@ -51,7 +38,7 @@ export default function Filters({ filtersData: data }: Props) {
                     value={grade ?? ''}
                     onChange={e => dispatch(setGrade(e.target.value))}
                 >
-                    {gradeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
             </div>
             <div className="panel">

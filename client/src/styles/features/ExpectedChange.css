@@ -1,0 +1,40 @@
+/* Expected forecast change (shown in place of price under forecast sorts). */
+
+/* Expected forecast change shown in the price slot when sorting by forecast. */
+.expected {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.expected__prices {
+  font-size: 16.8px;
+  font-weight: 700;
+  color: var(--price);
+}
+
+.expected__arrow {
+  color: var(--text-muted);
+  font-weight: 400;
+  margin: 0 1.6px;
+}
+
+.expected__row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6.4px;
+}
+
+.expected .valuation {
+  font-size: 15.2px;
+  padding: 1.6px 8px;
+}
+
+.expected__horizon {
+  font-size: 10.88px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+}

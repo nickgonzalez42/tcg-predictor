@@ -1,0 +1,18 @@
+/* Surfaces: panels and titled sub-panels. */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.detail-panel {
+  margin-bottom: 16px;
+}
+
+.detail-panel__title {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 11px;
+}

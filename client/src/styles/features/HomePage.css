@@ -1,0 +1,165 @@
+/* Home: hero, top movers, how-it-works. */
+
+.hero {
+  align-items: center;
+  margin-bottom: 48px;
+}
+
+.hero__copy {
+  grid-column: span 6;
+}
+
+.hero__title {
+  font-size: 41.6px;
+  letter-spacing: -0.02em;
+  margin-bottom: 12px;
+}
+
+.hero__sub {
+  color: var(--text-muted);
+  font-size: 16.8px;
+  line-height: 1.5;
+  max-width: 544px;
+  margin: 0 0 24px;
+}
+
+.hero__panel {
+  grid-column: span 6;
+  position: relative;
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  min-height: 260px;
+  overflow: hidden;
+}
+
+.hero__chart {
+  width: 100%;
+  height: 230px;
+  display: block;
+}
+
+.hero__history {
+  fill: none;
+  stroke: var(--chart-history);
+  stroke-width: 2.5;
+}
+
+.hero__forecast {
+  stroke: var(--chart-forecast);
+  stroke-width: 2.5;
+  stroke-dasharray: 7 6;
+}
+
+/* Three real card images fanned over the chart's bottom-right corner. */
+.hero__fan {
+  position: absolute;
+  right: 20px;
+  bottom: -24px;
+  width: 200px;
+  height: 170px;
+  pointer-events: none;
+}
+
+.hero__card {
+  position: absolute;
+  bottom: 0;
+  width: 96px;
+  border-radius: 5px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+}
+
+.hero__card--0 { left: 0; transform: rotate(-8deg); z-index: 1; }
+
+.hero__card--1 { left: 52px; transform: rotate(2deg); z-index: 2; bottom: 6px; }
+
+.hero__card--2 { left: 104px; transform: rotate(11deg); z-index: 3; }
+
+.home__heading {
+  margin: 0 0 16px;
+  font-size: 21.6px;
+}
+
+.movers {
+  grid-column: 1 / -1;
+  margin-bottom: 48px;
+}
+
+.mover {
+  grid-column: span 3;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: var(--text);
+  padding: 16px;
+}
+
+.mover:hover {
+  text-decoration: none;
+  border-color: var(--primary);
+}
+
+.mover__thumb {
+  width: 34px;
+  height: 47px;
+  object-fit: cover;
+  border-radius: 1px;
+  flex: none;
+}
+
+.mover__info {
+  min-width: 0;
+}
+
+.mover__name {
+  font-weight: 600;
+  font-size: 14.4px;
+  margin-bottom: 2.4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mover__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6.4px;
+  flex-wrap: wrap;
+}
+
+.mover__price {
+  color: var(--price);
+  font-weight: 700;
+}
+
+.how {
+  grid-column: 1 / -1;
+}
+
+.how__step {
+  grid-column: span 4;
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.how__title {
+  font-weight: 700;
+  margin-bottom: 6.4px;
+}
+
+.how__text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14.4px;
+  line-height: 1.5;
+}
+
+.hero__caption {
+  position: absolute;
+  left: 16px;
+  bottom: 10px;
+}

@@ -6,22 +6,20 @@ import {
     useRemoveFromWatchlistMutation,
     useSetOwnedQuantityMutation,
 } from "./watchlistApi";
-import { OWNED_CONDITIONS, conditionLabel } from "./grades";
+import { tierLabel } from "./grades";
 
 type Props = {
     game: string;
     productId: number;
     compact?: boolean;
-    ownGrade?: string;      // condition the owned quantity applies to (copy vocab); defaults to Near Mint
-    chooseGrade?: boolean;  // detail page: condition picker + add-a-copy button instead of the quantity field
+    ownGrade?: string;      // price tier the quick-add applies to ('' = ungraded -> unspecified copy)
 };
 
-export default function TrackButton({ game, productId, compact, ownGrade, chooseGrade }: Props) {
+export default function TrackButton({ game, productId, compact, ownGrade }: Props) {
     const { data: user } = useUserInfoQuery();
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
     const [add] = useAddToWatchlistMutation();
     const [remove] = useRemoveFromWatchlistMutation();
-    const [pickGrade, setPickGrade] = useState('nm');
 
     if (!user) return null; // tracking is a signed-in feature
 
@@ -34,43 +32,22 @@ export default function TrackButton({ game, productId, compact, ownGrade, choose
             onClick={() => wishlisted
                 ? remove({ game, productId, kind: 'wishlist' })
                 : add({ game, productId, kind: 'wishlist' })}
-            title={wishlisted ? 'Remove from wishlist' : 'Add to wishlist'}
+            title={wishlisted ? 'Remove from watchlist' : 'Add to watchlist'}
         >
-            {wishlisted ? '★' : '☆'}{compact ? '' : ` ${wishlisted ? 'Wishlisted' : 'Wishlist'}`}
+            {wishlisted ? '★' : '☆'}{compact ? '' : ` ${wishlisted ? 'Watching' : 'Watchlist'}`}
         </button>
     );
 
-    // Detail page: pick a condition, add one copy per click.
-    if (chooseGrade) {
-        const ownedCount = watchlist?.filter(
-            w => w.game === game && w.productId === productId && w.kind === 'owned').length ?? 0;
-        return (
-            <div className="track-buttons" style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                <select className="input" style={{ width: 'auto' }} value={pickGrade}
-                    onChange={e => setPickGrade(e.target.value)} title="Condition to add">
-                    {OWNED_CONDITIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                <button
-                    className={`btn btn--outline${ownedCount > 0 ? ' btn--active' : ''}`}
-                    onClick={() => add({ game, productId, kind: 'owned', grade: pickGrade })}
-                    title={ownedCount > 0 ? 'Add another copy (manage copies on the Portfolio page)' : 'Add a copy to your portfolio'}
-                >
-                    {ownedCount > 0 ? '✓' : '＋'} {ownedCount > 0 ? `In portfolio (${ownedCount})` : 'Add to portfolio'}
-                </button>
-                {wishlistButton}
-            </div>
-        );
-    }
 
     // Catalog: an Add button that opens a "how many to add" input. Deliberately
     // shows no owned count — the portfolio is managed on the Portfolio page.
-    const grade = ownGrade || 'nm';
+    const grade = ownGrade ?? '';
     const ownedAtGrade = watchlist?.filter(
         w => w.game === game && w.productId === productId
             && w.kind === 'owned' && (w.grade ?? '') === grade).length ?? 0;
 
     return (
-        <div className="track-buttons" style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="track-buttons" style={{ display: 'inline-flex', gap: '6.4px', alignItems: 'center', flexWrap: 'wrap' }}>
             <AddToCollection game={game} productId={productId} grade={grade} owned={ownedAtGrade} />
             {wishlistButton}
         </div>
@@ -103,14 +80,14 @@ function AddToCollection({ game, productId, grade, owned }: {
     if (!open) {
         return (
             <button className="btn btn--outline" onClick={() => setOpen(true)}
-                title={`Add copies to your portfolio (${conditionLabel(grade)})`}>
+                title={`Add copies to your portfolio (${tierLabel(grade)})`}>
                 ＋ Add
             </button>
         );
     }
 
     return (
-        <span className="own-qty" title={`Copies to add · ${conditionLabel(grade)}`}>
+        <span className="own-qty" title={`Copies to add · ${tierLabel(grade)}`}>
             <input
                 className="input own-qty__input"
                 type="number" min="1" max="999" step="1" inputMode="numeric"

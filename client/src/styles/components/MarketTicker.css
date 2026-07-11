@@ -1,0 +1,64 @@
+/* Scrolling market ticker (under the navbar on home/catalog). */
+
+.ticker {
+  overflow: hidden;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  padding: 7px 0;
+  white-space: nowrap;
+}
+
+
+.ticker__track {
+  display: inline-flex;
+  animation: ticker-scroll 30s linear infinite;
+  will-change: transform;
+}
+
+.ticker:hover .ticker__track {
+  animation-play-state: paused;
+}
+
+.ticker__group {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 10px;
+}
+
+@keyframes ticker-scroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker__track { animation: none; }
+  .ticker__group[aria-hidden="true"] { display: none; }
+}
+
+/* Ticker chip: mono, bordered, up/down colored. */
+.tkc {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1.4px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 7px;
+  background: var(--surface);
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.tkc:hover {
+  text-decoration: none;
+  border-color: var(--primary);
+}
+
+.tkc--up { color: var(--up); }
+
+.tkc--down { color: var(--down); }
+
+.ticker__tag {
+  padding: 0 6px;
+}

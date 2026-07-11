@@ -56,6 +56,38 @@ namespace API.Data.Migrations
                     b.ToTable("Address");
                 });
 
+            modelBuilder.Entity("API.Entities.ReasonProse", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Game")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("GeneratedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Prose")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ScoredAt")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Game", "ProductId")
+                        .IsUnique();
+
+                    b.ToTable("ReasonProses");
+                });
+
             modelBuilder.Entity("API.Entities.TrackedCard", b =>
                 {
                     b.Property<int>("Id")
@@ -67,6 +99,9 @@ namespace API.Data.Migrations
 
                     b.Property<DateTime>("AddedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<double?>("AlertTargetPrice")
+                        .HasColumnType("REAL");
 
                     b.Property<string>("Game")
                         .IsRequired()
@@ -91,6 +126,9 @@ namespace API.Data.Migrations
                     b.Property<string>("UserName")
                         .IsRequired()
                         .HasColumnType("TEXT");
+
+                    b.Property<double?>("WatchedAtPrice")
+                        .HasColumnType("REAL");
 
                     b.HasKey("Id");
 

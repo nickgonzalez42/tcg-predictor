@@ -1,0 +1,35 @@
+/* Design tokens — trading theme: deep navy + Pokémon yellow & electric blue.
+   Dark only — the app ships a single theme. */
+
+:root {
+  --bg: #101623;
+  --surface: #1a2333;
+  --surface-2: #0b101c;          /* nav wells, inputs */
+  --surface-tint: #141c2e;       /* tinted hero/how-it-works panels */
+  --border: #2e3a52;
+  --input-border: #2e3a52;
+  --text: #e8ecf4;
+  --text-muted: #8b96ad;
+  --brand: #ffcb05;              /* Pokémon yellow — wordmark, primary CTA bg, stars */
+  --brand-border: #e0b000;
+  --on-brand: #101623;           /* text on a yellow background */
+  --price: #ffcb05;              /* prices */
+  --primary: #3d7dca;            /* electric blue — links, outline buttons, active chips */
+  --primary-hover: #2b62a8;
+  --link: #7fb0ea;               /* lighter blue tint for text links on dark */
+  --up: #3fd98a;
+  --up-bg: rgba(52, 199, 123, 0.14);
+  --down: #ff7a7a;
+  --down-bg: rgba(255, 93, 93, 0.14);
+  --warn: #f0b429;               /* medium-confidence amber */
+  --warn-bg: rgba(240, 180, 41, 0.14);
+  --nav-bg: #1e3a5f;             /* navbar navy */
+  --nav-link: #dbe4f0;
+  --chart-history: #3d7dca;
+  --chart-forecast: #ffcb05;     /* dashed model-forecast line */
+  --ticket-bg: #1c2438;          /* "order ticket" highlighted panel */
+  --danger: #e53935;
+  --radius: 15px;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+

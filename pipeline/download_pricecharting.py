@@ -11,6 +11,8 @@ Run:  .venv/bin/python download_pricecharting.py
 
 import os
 import ssl
+import time
+import urllib.error
 import urllib.request
 
 import certifi
@@ -18,12 +20,10 @@ import certifi
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
-# category slug -> output CSV (the names build_pricecharting.py expects)
-CATEGORIES = {
-    "pokemon-cards": "pricecharting_pokemon.csv",
-    "one-piece-cards": "pricecharting_onepiece.csv",
-}
-MIN_ROWS = {"pricecharting_pokemon.csv": 50_000, "pricecharting_onepiece.csv": 5_000}
+# category slug -> output CSV (+ per-file sanity floor), from the game registry
+from games import GAMES, priced_games
+CATEGORIES = {GAMES[g]["pc_category"]: GAMES[g]["pc_csv"] for g in priced_games()}
+MIN_ROWS = {GAMES[g]["pc_csv"]: GAMES[g]["pc_min_rows"] for g in priced_games()}
 
 
 def token():
@@ -39,10 +39,7 @@ def download(cat, out_name, t):
     out = os.path.join(BASE, out_name)
     tmp = out + ".tmp"
 
-    req = urllib.request.Request(url, headers={"User-Agent": "tcg-predictor weekly refresh"})
-    with urllib.request.urlopen(req, timeout=600, context=SSL_CTX) as resp, open(tmp, "wb") as f:
-        while chunk := resp.read(1 << 20):
-            f.write(chunk)
+    _fetch_csv(url, tmp, cat)
 
     with open(tmp, encoding="utf-8", errors="ignore") as f:
         header = f.readline()
@@ -60,10 +57,39 @@ def download(cat, out_name, t):
     print(f"[{cat}] {rows} rows -> {out_name}")
 
 
+def _fetch_csv(url, tmp, cat):
+    """Download to tmp, riding out 429 rate limits (with backoff) and — in
+    TCG_PATIENT mode — full network outages (5-minute retry rounds)."""
+    patient = bool(os.environ.get("TCG_PATIENT"))
+    attempt = 0
+    while attempt < 7:
+        attempt += 1
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "tcg-predictor weekly refresh"})
+            with urllib.request.urlopen(req, timeout=600, context=SSL_CTX) as resp, open(tmp, "wb") as f:
+                while chunk := resp.read(1 << 20):
+                    f.write(chunk)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code != 429:
+                raise
+            wait = 60 * attempt
+            print(f"[{cat}] 429 rate-limited — backing off {wait}s", flush=True)
+            time.sleep(wait)
+        except Exception as e:
+            if not patient:
+                raise
+            print(f"[{cat}] network error ({type(e).__name__}) — waiting 5 min", flush=True)
+            time.sleep(300)
+            attempt = 0
+    raise SystemExit(f"[{cat}] still rate-limited after repeated backoff — giving up")
+
+
 def main():
     t = token()
     for cat, out_name in CATEGORIES.items():
         download(cat, out_name, t)
+        time.sleep(5)   # a little space between bulk downloads
 
 
 if __name__ == "__main__":

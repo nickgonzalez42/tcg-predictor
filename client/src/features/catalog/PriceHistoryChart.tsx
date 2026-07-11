@@ -1,20 +1,53 @@
 import { useEffect, useRef, useState } from "react";
-import { createChart, AreaSeries, ColorType } from "lightweight-charts";
+import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "lightweight-charts";
 import { useFetchCardHistoryQuery } from "./catalogApi";
+import type { Forecast } from "../../app/models/card";
 
-const GRADE_ORDER = ['ungraded', 'lp', 'mp', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
+const GRADE_ORDER = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const GRADE_LABEL: Record<string, string> = {
-    ungraded: 'Near Mint', lp: 'Lightly Played', mp: 'Moderately Played',
+    ungraded: 'Ungraded',
     grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
     grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
 };
 
-type Props = { game: string; id: number };
+const RANGES: { key: string; label: string; months?: number }[] = [
+    { key: '1m', label: '1M', months: 1 },
+    { key: '6m', label: '6M', months: 6 },
+    { key: '1y', label: '1Y', months: 12 },
+    { key: 'all', label: 'ALL' },
+];
 
-export default function PriceHistoryChart({ game, id }: Props) {
+type Props = {
+    game: string;
+    id: number;
+    forecasts?: Forecast[];   // model forecasts; the tier matching the shown grade is drawn dashed
+};
+
+function addMonths(date: string, months: number) {
+    const d = new Date(date + 'T00:00:00Z');
+    d.setUTCMonth(d.getUTCMonth() + months);
+    return d.toISOString().slice(0, 10);
+}
+
+function addDays(date: string, days: number) {
+    const d = new Date(date + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+}
+
+// Where each forecast horizon lands on the time axis, from the last real point.
+const HORIZON_OFFSET: Record<string, (date: string) => string> = {
+    '1w': d => addDays(d, 7),
+    '1m': d => addMonths(d, 1),
+    '6m': d => addMonths(d, 6),
+    '12m': d => addMonths(d, 12),
+};
+
+export default function PriceHistoryChart({ game, id, forecasts }: Props) {
     const { data, isLoading } = useFetchCardHistoryQuery({ game, id });
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
+    const [range, setRange] = useState('all');
 
     const grades = data ? GRADE_ORDER.filter(g => data.series[g]?.length) : [];
 
@@ -25,49 +58,106 @@ export default function PriceHistoryChart({ game, id }: Props) {
     }, [data]);
 
     useEffect(() => {
-        const points = data?.series[grade];
-        if (!containerRef.current || !points?.length) return;
+        const el = containerRef.current;
+        const all = data?.series[grade];
+        if (!el || !all?.length) return;
 
-        const chart = createChart(containerRef.current, {
+        // Range filter (monthly points, measured back from the latest one).
+        const months = RANGES.find(r => r.key === range)?.months;
+        const cutoff = months ? addMonths(all[all.length - 1].date, -months) : null;
+        const points = cutoff ? all.filter(p => p.date >= cutoff) : all;
+        if (!points.length) return;
+
+        // Theme colors come from the CSS variables so both palettes stay in sync.
+        const css = getComputedStyle(el);
+        const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+        const history = v('--chart-history', '#3d7dca');
+        const forecastColor = v('--chart-forecast', '#e0b000');
+        const textMuted = v('--text-muted', '#8b96ad');
+        const border = v('--border', '#2e3a52');
+
+        const chart = createChart(el, {
             height: 340,
             autoSize: true,
-            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: '#333' },
-            grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
-            rightPriceScale: { borderColor: '#ddd' },
-            timeScale: { borderColor: '#ddd' },
+            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: textMuted },
+            grid: { vertLines: { color: border }, horzLines: { color: border } },
+            rightPriceScale: { borderColor: border },
+            timeScale: { borderColor: border },
             handleScroll: false,   // no pan / mouse-wheel scroll (page scrolls normally over it)
             handleScale: false,    // no zoom; chart stays fit to the full range
         });
         const series = chart.addSeries(AreaSeries, {
-            lineColor: '#0176d5',
-            topColor: 'rgba(1,118,213,0.35)',
-            bottomColor: 'rgba(1,118,213,0.02)',
+            lineColor: history,
+            topColor: 'rgba(61, 125, 202, 0.30)',
+            bottomColor: 'rgba(61, 125, 202, 0.02)',
             lineWidth: 2,
             priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
         });
         series.setData(points.map(p => ({ time: p.date, value: p.price })));
+
+        // Dashed gold continuation: last real point -> the model's forecasts for
+        // this tier at every horizon (1w, 1m, 6m, 12m).
+        const tierFc = (forecasts ?? [])
+            .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
+        if (tierFc.length) {
+            const last = points[points.length - 1];
+            const fcPoints = [
+                { time: last.date, value: last.price },
+                ...tierFc
+                    .map(f => ({ time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
+                    .sort((a, b) => a.time.localeCompare(b.time)),
+            ];
+            const fcSeries = chart.addSeries(LineSeries, {
+                color: forecastColor,
+                lineWidth: 2,
+                lineStyle: LineStyle.Dashed,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+            });
+            fcSeries.setData(fcPoints);
+        }
+
         chart.timeScale().fitContent();
 
         return () => chart.remove();
-    }, [data, grade]);
+    }, [data, grade, range, forecasts]);
 
     if (isLoading) return <div>Loading chart…</div>;
     if (!grades.length) return <div className="est-note">No price history yet for this card.</div>;
 
+    const hasForecast = (forecasts ?? []).some(f => f.target === grade);
+
     return (
         <div>
-            <div className="grade-tabs">
-                {grades.map(g => (
-                    <button
-                        key={g}
-                        className={`btn btn--outline${g === grade ? ' btn--active' : ''}`}
-                        onClick={() => setGrade(g)}
-                    >
-                        {GRADE_LABEL[g] ?? g}
-                    </button>
-                ))}
+            <div className="chart-tabs">
+                <div className="grade-tabs">
+                    {grades.map(g => (
+                        <button
+                            key={g}
+                            className={`btn btn--outline${g === grade ? ' btn--active' : ''}`}
+                            onClick={() => setGrade(g)}
+                        >
+                            {GRADE_LABEL[g] ?? g}
+                        </button>
+                    ))}
+                </div>
+                <div className="range-tabs" role="group" aria-label="Time range">
+                    {RANGES.map(r => (
+                        <button
+                            key={r.key}
+                            className={`btn btn--outline range-tab${r.key === range ? ' btn--active' : ''}`}
+                            onClick={() => setRange(r.key)}
+                        >
+                            {r.label}
+                        </button>
+                    ))}
+                </div>
             </div>
             <div ref={containerRef} style={{ width: '100%' }} />
+            <div className="mono" style={{ marginTop: '6.4px' }}>
+                solid blue = history{hasForecast ? ' · dashed gold = model forecast' : ''}
+            </div>
         </div>
     );
 }

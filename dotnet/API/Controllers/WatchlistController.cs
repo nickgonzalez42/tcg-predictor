@@ -1,6 +1,8 @@
 using API.Data;
 using API.DTOS;
 using API.Entities;
+using API.RequestHelpers;
+using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -8,7 +10,7 @@ using Microsoft.EntityFrameworkCore;
 namespace API.Controllers;
 
 [Authorize]
-public class WatchlistController(StoreContext context) : BaseApiController
+public class WatchlistController(StoreContext context, CardSources sources) : BaseApiController
 {
     // All tracked refs across both lists — the client uses Kind to know which
     // toggle (Owned / Wishlist) is active for a card.
@@ -31,7 +33,7 @@ public class WatchlistController(StoreContext context) : BaseApiController
         // rows invisible to every query that filters on the key.
         var game = NormalizeGame(dto.Game);
         if (game == null)
-            return BadRequest($"Unknown game '{dto.Game}' — expected 'onepiece' or 'pokemon'.");
+            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
         dto.Game = game;
 
         // Wishlist is one-per-card, so skip if it's already there. Owned is
@@ -51,11 +53,41 @@ public class WatchlistController(StoreContext context) : BaseApiController
             ProductId = dto.ProductId,
             Kind = kind,
             Grade = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Grade) ? dto.Grade.Trim() : null,
+            // Remember the NM price at watch time so the wishlist can show "since added".
+            WatchedAtPrice = kind == TrackKind.Wishlist ? await NearMintPrice(dto.Game, dto.ProductId) : null,
             AddedAt = DateTime.UtcNow,
         });
         await context.SaveChangesAsync();
 
         return Ok();
+    }
+
+    // Set (or clear, with a null target) the price alert on a wishlist row.
+    [HttpPut("wishlist/alert")]
+    public async Task<ActionResult> SetAlert(WishlistAlertDto dto)
+    {
+        var game = NormalizeGame(dto.Game);
+        if (game == null)
+            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
+        if (dto.Target is <= 0)
+            return BadRequest("Alert target must be a positive price.");
+
+        var item = await context.TrackedCards.FirstOrDefaultAsync(
+            x => x.UserName == User.Identity!.Name && x.Game == game
+                 && x.ProductId == dto.ProductId && x.Kind == TrackKind.Wishlist);
+        if (item == null) return NotFound();
+
+        item.AlertTargetPrice = dto.Target;
+        await context.SaveChangesAsync();
+
+        return Ok();
+    }
+
+    // Latest Near Mint price from the game DB's denormalized column.
+    private async Task<double?> NearMintPrice(string game, int productId)
+    {
+        var card = await sources.Find(game, productId);
+        return card?.NearMintPrice;
     }
 
     // Set how many copies the user owns of a card at one condition. Grows by adding
@@ -66,7 +98,7 @@ public class WatchlistController(StoreContext context) : BaseApiController
     {
         var game = NormalizeGame(dto.Game);
         if (game == null)
-            return BadRequest($"Unknown game '{dto.Game}' — expected 'onepiece' or 'pokemon'.");
+            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
 
         var user = User.Identity!.Name!;
         var grade = Blank(dto.Grade) ? null : dto.Grade!.Trim();
@@ -168,9 +200,5 @@ public class WatchlistController(StoreContext context) : BaseApiController
     private static bool Blank(string? s) => string.IsNullOrWhiteSpace(s);
 
     // Canonical game key or null if unrecognized.
-    private static string? NormalizeGame(string game)
-    {
-        var key = game.Trim().ToLowerInvariant();
-        return key is "onepiece" or "pokemon" ? key : null;
-    }
+    private static string? NormalizeGame(string game) => GameRegistry.Normalize(game);
 }

@@ -1,0 +1,98 @@
+/* Fixed navy navbar (constant across themes) + loading bar. */
+
+/* Navy, ruled off with the brand yellow. */
+.navbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: var(--nav-bg);
+  color: var(--nav-link);
+  border-bottom: 2px solid var(--brand);
+}
+
+.navbar__inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+}
+
+.navbar__brand {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--brand);
+  letter-spacing: 0.5px;
+}
+
+.navbar__links {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Scoped to the nav row only — the market ticker also lives inside .navbar,
+   and a bare `.navbar a` would out-rank the chips' green/red colors. */
+.navbar__inner a,
+.navbar__icon-btn {
+  color: var(--nav-link);
+}
+
+.navbar__inner a.navbar__brand {
+  color: var(--brand);
+}
+
+.navbar__link {
+  color: var(--nav-link);
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  text-transform: uppercase;
+  font-weight: 600;
+  font-size: 14.4px;
+}
+
+.navbar__link:hover,
+.navbar__link.active {
+  background: rgba(255, 255, 255, 0.15);
+  text-decoration: none;
+}
+
+/* Logout is a <button> — strip native chrome so it matches the text links. */
+button.navbar__link {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: inherit;
+}
+
+.navbar__icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 19.2px;
+  padding: 6.4px;
+  border-radius: 50%;
+  color: var(--nav-link);
+}
+
+.navbar__icon-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.progress-bar {
+  height: 4px;
+  background: var(--brand);
+  animation: indeterminate 1.2s infinite linear;
+  transform-origin: left;
+}
+
+@keyframes indeterminate {
+  0% { transform: scaleX(0); }
+  50% { transform: scaleX(0.6); }
+  100% { transform: scaleX(1); opacity: 0.4; }
+}

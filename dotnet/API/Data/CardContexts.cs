@@ -4,8 +4,12 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace API.Data;
 
-// The One Piece and Pokémon card databases are produced by the scraper and are treated as
-// read-only here (never migrated). Each lives in its own context so the two games stay separate.
+// The per-game card databases are produced by the scrapers and are treated as
+// read-only here (never migrated). Each game lives in its own context/file.
+//
+// One Piece and Pokémon predate the generic scraper and carry typed stat
+// columns; every newer game uses the generic schema (shared columns + the
+// stat line as a custom_attributes JSON blob) via GenericCardContext.
 
 public class OnePieceContext(DbContextOptions<OnePieceContext> options) : DbContext(options)
 {
@@ -57,9 +61,34 @@ public class PokemonContext(DbContextOptions<PokemonContext> options) : DbContex
     }
 }
 
+// Shared base for every generic-schema game DB; subclasses exist only so each
+// game can register its own connection string in DI.
+public abstract class GenericCardContext(DbContextOptions options) : DbContext(options)
+{
+    public DbSet<GenericCard> Cards => Set<GenericCard>();
+
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+
+        builder.Entity<GenericCard>(card =>
+        {
+            card.ToTable("cards");
+            CardMapping.MapBase(card);
+            card.Property(x => x.CustomAttributes).HasColumnName("custom_attributes");
+        });
+    }
+}
+
+public class YugiohContext(DbContextOptions<YugiohContext> options) : GenericCardContext(options);
+public class MagicContext(DbContextOptions<MagicContext> options) : GenericCardContext(options);
+public class LorcanaContext(DbContextOptions<LorcanaContext> options) : GenericCardContext(options);
+public class DigimonContext(DbContextOptions<DigimonContext> options) : GenericCardContext(options);
+public class GundamContext(DbContextOptions<GundamContext> options) : GenericCardContext(options);
+
 internal static class CardMapping
 {
-    // Maps the columns shared by both card databases.
+    // Maps the columns shared by every card database.
     public static void MapBase<T>(EntityTypeBuilder<T> card) where T : CardBase
     {
         card.HasKey(x => x.Id);
@@ -70,8 +99,8 @@ internal static class CardMapping
         card.Property(x => x.CardNumber).HasColumnName("card_number");
         card.Property(x => x.CardType).HasColumnName("card_type");
         card.Property(x => x.Description).HasColumnName("description");
-        card.Property(x => x.MarketPrice).HasColumnName("market_price");
         card.Property(x => x.NearMintPrice).HasColumnName("near_mint_price");
         card.Property(x => x.ImageUrl).HasColumnName("image_url");
+        card.Property(x => x.ImagePath).HasColumnName("image_path");
     }
 }

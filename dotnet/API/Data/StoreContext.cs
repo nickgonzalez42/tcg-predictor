@@ -8,10 +8,15 @@ namespace API.Data;
 public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbContext<User>(options)
 {
     public DbSet<TrackedCard> TrackedCards => Set<TrackedCard>();
+    public DbSet<ReasonProse> ReasonProses => Set<ReasonProse>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<ReasonProse>()
+            .HasIndex(x => new { x.Game, x.ProductId })
+            .IsUnique();
 
         // Wishlist is one-per-card, so enforce uniqueness for wishlist rows only.
         // Owned rows are one-per-copy and may repeat (multiple copies at different

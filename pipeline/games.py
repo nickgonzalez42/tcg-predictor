@@ -1,0 +1,108 @@
+"""
+The game registry — single source of truth for every game the project tracks.
+
+Every pipeline script derives its game list and per-game paths from here, so
+adding a game is one entry in GAMES (plus a pc_category once PriceCharting
+starts covering it — until then the game is crawled and stored but has no
+prices, and the site hides unpriced cards automatically).
+
+Pokemon and One Piece keep their dedicated scrapers (typed stat columns from
+the original build); every newer game uses the generic tcg_scraper.py, which
+stores the shared columns plus the full customAttributes JSON.
+"""
+
+import os
+
+from _paths import DATA_DIR as BASE   # data lives in the sibling one-piece/ dir
+
+GAMES = {
+    "pokemon": {
+        "label": "Pokémon",
+        "tcg_line": "pokemon",                # TCGplayer productLineName filter value
+        "db": "pokemon_cards.db",
+        "images": "images_pokemon",
+        "pc_category": "pokemon-cards",       # PriceCharting price-guide slug
+        "pc_csv": "pricecharting_pokemon.csv",
+        "pc_min_rows": 50_000,                # refuse a suspiciously small download
+        "scraper": ["tcg_pokemon_scraper.py"],
+    },
+    "onepiece": {
+        "label": "One Piece",
+        "tcg_line": "one-piece-card-game",
+        "db": "onepiece_cards.db",
+        "images": "images",                   # legacy dir name from the first build
+        "pc_category": "one-piece-cards",
+        "pc_csv": "pricecharting_onepiece.csv",
+        "pc_min_rows": 5_000,
+        "scraper": ["tcg_onepiece_scraper.py"],
+    },
+    "yugioh": {
+        "label": "Yu-Gi-Oh!",
+        "tcg_line": "yugioh",
+        "db": "yugioh_cards.db",
+        "images": "images_yugioh",
+        "pc_category": "yugioh-cards",
+        "pc_csv": "pricecharting_yugioh.csv",
+        "pc_min_rows": 40_000,
+        "scraper": ["tcg_scraper.py", "--game", "yugioh"],
+    },
+    "magic": {
+        "label": "Magic",
+        "tcg_line": "magic",
+        "db": "magic_cards.db",
+        "images": "images_magic",
+        "pc_category": "magic-cards",
+        "pc_csv": "pricecharting_magic.csv",
+        "pc_min_rows": 80_000,
+        "scraper": ["tcg_scraper.py", "--game", "magic"],
+    },
+    "lorcana": {
+        "label": "Lorcana",
+        "tcg_line": "disney-lorcana",
+        "db": "lorcana_cards.db",
+        "images": "images_lorcana",
+        "pc_category": "lorcana-cards",
+        "pc_csv": "pricecharting_lorcana.csv",
+        "pc_min_rows": 3_000,
+        "scraper": ["tcg_scraper.py", "--game", "lorcana"],
+    },
+    "digimon": {
+        "label": "Digimon",
+        "tcg_line": "digimon-card-game",
+        "db": "digimon_cards.db",
+        "images": "images_digimon",
+        "pc_category": "digimon-cards",
+        "pc_csv": "pricecharting_digimon.csv",
+        "pc_min_rows": 4_000,
+        "scraper": ["tcg_scraper.py", "--game", "digimon"],
+    },
+    "gundam": {
+        "label": "Gundam",
+        "tcg_line": "gundam-card-game",
+        "db": "gundam_cards.db",
+        "images": "images_gundam",
+        # PriceCharting doesn't cover the Gundam Card Game yet (probed 2026-07):
+        # crawl the catalog + art now; prices flow in the run after PC adds a
+        # category and this field gets its slug.
+        "pc_category": None,
+        "pc_csv": None,
+        "pc_min_rows": 0,
+        "scraper": ["tcg_scraper.py", "--game", "gundam"],
+    },
+}
+
+ALL_GAMES = list(GAMES)
+
+
+def priced_games():
+    """Games PriceCharting covers — the only ones with prices, and therefore
+    the only ones the unify/nm-price/ML steps can do anything with."""
+    return [g for g, cfg in GAMES.items() if cfg["pc_category"]]
+
+
+def db_path(game):
+    return os.path.join(BASE, GAMES[game]["db"])
+
+
+def image_dir(game):
+    return os.path.join(BASE, GAMES[game]["images"])

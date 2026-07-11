@@ -84,44 +84,110 @@ def static_features(game, pids):
     return feat
 
 
-def load_volume(game):
-    """product_id -> {YYYY-MM: total units sold that month} from TCGplayer quantity_sold."""
-    db = os.path.join(BASE, f"{game}_cards.db")
-    rows = sqlite3.connect(db).execute(
-        "SELECT product_id, bucket_date, quantity_sold FROM price_history "
-        "WHERE quantity_sold IS NOT NULL").fetchall()
-    by = collections.defaultdict(lambda: collections.defaultdict(float))
-    for pid, d, q in rows:
-        by[pid][d[:7]] += q
-    return by
+_SET_LABELS_CACHE = {}
 
 
-def volume_matrix(game, pids, dates):
-    """cards x months matrix of monthly units sold, aligned to the price grid (0 where none)."""
-    by = load_volume(game)
+def _set_labels(game):
+    """product_id -> set_name, cached (the CSV is several MB and per-game constant)."""
+    if game not in _SET_LABELS_CACHE:
+        df = pd.read_csv(os.path.join(DATA, f"{game}_cards.csv"))
+        _SET_LABELS_CACHE[game] = dict(zip(df["product_id"].astype(int),
+                                           df["set_name"].astype("string").fillna("")))
+    return _SET_LABELS_CACHE[game]
+
+
+def set_matrix(game, pids, P):
+    """cards x months matrix of each card's SET price index (median member price).
+
+    Lets the model see set-level performance directly (a rising set lifts its
+    cards) and each card's price relative to its set. Time-aligned: the index
+    at month t only uses prices at month t, so training samples see exactly
+    what was knowable then. Sets with <3 priced members stay NaN.
+    """
+    import warnings
+    name_of = _set_labels(game)
+    labels = np.array([name_of.get(int(p), "") for p in pids])
+    S = np.full_like(P, np.nan)
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", category=RuntimeWarning)  # all-NaN months
+        for s in np.unique(labels):
+            rows = labels == s
+            if not s or rows.sum() < 3:
+                continue
+            S[rows] = np.nanmedian(P[rows], axis=0)
+    return S
+
+
+def extra_signal_matrices(game, pids, dates):
+    """Optional external signals -> {name: cards x months matrix}.
+
+    Drop a CSV at ml_data/{game}_extra_signals.csv with columns
+    (product_id, month YYYY-MM, <numeric signal columns...>) — e.g. tournament
+    play rates or news/hype scores — and every column joins the model as a
+    monthly feature (sig_<name>) with no code change. Absent file = no-op.
+    """
+    path = os.path.join(DATA, f"{game}_extra_signals.csv")
+    if not os.path.exists(path):
+        return {}
+    df = pd.read_csv(path)
     didx = {d: i for i, d in enumerate(dates)}
-    V = np.zeros((len(pids), len(dates)))
-    for i, pid in enumerate(pids):
-        for m, q in by.get(pid, {}).items():
-            if m in didx:
-                V[i, didx[m]] = q
-    return V
+    pidx = {int(p): i for i, p in enumerate(pids)}
+    out = {}
+    for col in df.columns:
+        if col in ("product_id", "month"):
+            continue
+        M = np.full((len(pids), len(dates)), np.nan)
+        for pid, m, v in zip(df["product_id"], df["month"], df[col]):
+            i, j = pidx.get(int(pid)), didx.get(str(m)[:7])
+            if i is not None and j is not None:
+                M[i, j] = v
+        out[col] = M
+    return out
 
 
-def traj_block(P, R, t, V=None):
+
+def cum_stats(P):
+    """Cumulative per-month stats, computed ONCE per price matrix so traj_block
+    is O(cards) per month instead of re-scanning every earlier month."""
+    finite = np.isfinite(P)
+    runmax = np.fmax.accumulate(np.where(finite, P, -np.inf), axis=1)
+    runmax = np.where(np.isfinite(runmax), runmax, np.nan)
+    first = np.where(finite.any(1), finite.argmax(1), -1)   # first priced month (-1 = never)
+    return {
+        "runmax": runmax,
+        "hist": np.cumsum(finite, axis=1).astype(float),
+        "first": first,
+    }
+
+
+def traj_block(P, R, t, V=None, S=None, EXTRA=None, CUM=None):
     n = P.shape[0]
     def m(k):
         return np.log(P[:, t] / P[:, t - k]) if t >= k else np.full(n, np.nan)
+    cum = CUM if CUM is not None else cum_stats(P[:, :t + 1])
+    tc = t if CUM is not None else -1   # cum arrays span all months only when precomputed
+    first = cum["first"]
     block = {
         "logp": np.log(P[:, t]),
         "ret1": m(1), "ret3": m(3), "ret12": m(12),
         "vol6": np.nanstd(R[:, max(0, t - 6):t], axis=1) if t >= 1 else np.full(n, np.nan),
-        "hist": np.sum(np.isfinite(P[:, :t + 1]), axis=1).astype(float),
+        "hist": cum["hist"][:, tc],
+        # months since the card first had a price (new prints behave differently)
+        "age": np.where((first >= 0) & (first <= t), t - first, np.nan).astype(float),
+        # drawdown from the running all-time high as of month t
+        "dd": np.log(P[:, t] / cum["runmax"][:, tc]),
     }
     if V is not None:
         block["logvol"] = np.log1p(V[:, t])                                    # recent monthly units sold
         block["volchg"] = (np.log1p(V[:, t]) - np.log1p(V[:, t - 3])           # 3-month volume trend
                            if t >= 3 else np.full(n, np.nan))
+    if S is not None:
+        # set performance: the card's set index momentum + price vs its set
+        block["setret3"] = np.log(S[:, t] / S[:, t - 3]) if t >= 3 else np.full(n, np.nan)
+        block["setret12"] = np.log(S[:, t] / S[:, t - 12]) if t >= 12 else np.full(n, np.nan)
+        block["setrel"] = np.log(P[:, t] / S[:, t])
+    for name, M in (EXTRA or {}).items():
+        block[f"sig_{name}"] = M[:, t]   # external signals (tournament/news/...)
     return pd.DataFrame(block)
 
 
@@ -132,7 +198,12 @@ def run(game, grade, static, model_new):
         return
     stat = static.reindex(range(len(pids)))  # static already aligned by caller per game
     R = np.log(P[:, 1:] / P[:, :-1])
-    V = None if os.environ.get("NOVOL") else volume_matrix(game, pids, dates)
+    # TCGplayer sales volume is no longer collected (an A/B showed no accuracy
+    # gain, and the legacy price_history tables were dropped).
+    V = None
+    S = set_matrix(game, pids, P)
+    EXTRA = extra_signal_matrices(game, pids, dates)
+    CUM = cum_stats(P)
     cutoff_idx = next((i for i, d in enumerate(dates) if d >= CUTOFF), len(dates))
 
     print(f"\n[{game} / {grade}]  cards={len(pids)}  months={len(dates)} ({dates[0]}..{dates[-1]})")
@@ -142,7 +213,7 @@ def run(game, grade, static, model_new):
             valid = np.isfinite(P[:, t]) & np.isfinite(P[:, t + k]) & (P[:, t] > 0) & (P[:, t + k] > 0)
             if not valid.any():
                 continue
-            tb = traj_block(P, R, t, V).loc[valid].reset_index(drop=True)
+            tb = traj_block(P, R, t, V, S, EXTRA, CUM).loc[valid].reset_index(drop=True)
             sb = stat.iloc[np.where(valid)[0]].reset_index(drop=True)
             Xr.append(pd.concat([tb, sb], axis=1))
             y.append(np.log(P[valid, t + k] / P[valid, t]))
@@ -166,6 +237,14 @@ def run(game, grade, static, model_new):
 
 def model_new():
     return HistGradientBoostingRegressor(
+        max_iter=400, learning_rate=0.05, max_leaf_nodes=63,
+        categorical_features="from_dtype", random_state=42)
+
+
+def model_quantile(q):
+    """Same architecture trained on pinball loss — per-card scenario quantiles."""
+    return HistGradientBoostingRegressor(
+        loss="quantile", quantile=q,
         max_iter=400, learning_rate=0.05, max_leaf_nodes=63,
         categorical_features="from_dtype", random_state=42)
 

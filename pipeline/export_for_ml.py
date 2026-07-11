@@ -27,10 +27,9 @@ OUT_DIR = os.path.join(BASE, "ml_data")
 
 EXCLUDE = {"raw_json", "custom_attributes"}
 
-GAMES = [
-    {"name": "onepiece", "db": "onepiece_cards.db", "images": "images"},
-    {"name": "pokemon", "db": "pokemon_cards.db", "images": "images_pokemon"},
-]
+from games import GAMES as REGISTRY
+GAMES = [{"name": g, "db": cfg["db"], "images": cfg["images"]}
+         for g, cfg in REGISTRY.items()]
 
 
 def export(game: dict) -> None:
@@ -55,7 +54,7 @@ def export(game: dict) -> None:
             writer.writerow([d[c] for c in cols] + [img if has_image else "", int(has_image)])
 
             total += 1
-            priced += d["market_price"] is not None
+            priced += d.get("near_mint_price") is not None
             with_image += has_image
 
     conn.close()

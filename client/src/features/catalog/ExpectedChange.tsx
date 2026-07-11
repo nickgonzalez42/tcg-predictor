@@ -1,15 +1,11 @@
 import type { Card } from "../../app/models/card";
 import { currencyFormat } from "../../lib/util";
+import ChangePill from "../../app/shared/components/ChangePill";
 
 // Colored expected forecast change, shown in place of the price when the list is
 // sorted by a forecast metric. Green up / red down, with the horizon (6m/12m).
 export default function ExpectedChange({ card }: { card: Card }) {
     if (card.expectedChange == null) return null;
-    const v = card.expectedChange;
-    const up = v >= 0;
-    const text = card.expectedUnit === 'usd'
-        ? `${up ? '+' : '−'}${currencyFormat(Math.abs(v))}`
-        : `${up ? '+' : ''}${v.toFixed(1)}%`;
 
     return (
         <span className="expected">
@@ -19,7 +15,7 @@ export default function ExpectedChange({ card }: { card: Card }) {
                 </span>
             )}
             <span className="expected__row">
-                <span className={`valuation ${up ? 'valuation--up' : 'valuation--down'}`}>{text}</span>
+                <ChangePill value={card.expectedChange} unit={card.expectedUnit ?? 'percent'} />
                 {card.expectedHorizon && <span className="expected__horizon">{card.expectedHorizon} forecast</span>}
             </span>
         </span>

@@ -1,0 +1,97 @@
+/* Portfolio: value hero, allocation donut, best/worst, positions. */
+
+.pf-hero {
+  grid-column: span 8;
+}
+
+.pf-hero__value {
+  font-size: 41.6px;
+  font-weight: 800;
+  color: var(--price);
+  margin: 3.2px 0 8px;
+}
+
+
+.pf-hero__pills {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.pf-side {
+  grid-column: span 4;
+}
+
+.pf-positions {
+  margin-top: 24px;
+}
+
+.position-editor td {
+  background: var(--surface-2);
+}
+
+/* Allocation donut */
+.donut {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.donut__svg {
+  width: 110px;
+  height: 110px;
+  flex: none;
+}
+
+.donut__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6.4px;
+  font-size: 13.6px;
+}
+
+.donut__dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 7.2px;
+}
+
+/* Best / worst rows */
+.bw-row {
+  display: flex;
+  align-items: center;
+  gap: 9.6px;
+  padding: 6.4px 0;
+  color: var(--text);
+}
+
+.bw-row:hover {
+  text-decoration: none;
+}
+
+.bw-row:hover .bw-row__name {
+  text-decoration: underline;
+}
+
+.bw-row__thumb {
+  width: 26px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex: none;
+}
+
+.bw-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14.08px;
+}

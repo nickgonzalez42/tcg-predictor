@@ -2,7 +2,7 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 import type { Card, Forecast } from "../../app/models/card";
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 import type { CardParams } from "../../app/models/cardParams";
-import { filterEmptyValues } from "../../lib/util";
+import { toApiParams } from "../../lib/util";
 import type { Pagination } from "../../app/models/pagination";
 
 export const catalogApi = createApi({
@@ -10,12 +10,10 @@ export const catalogApi = createApi({
     baseQuery: baseQueryWithErrorHandling,
     endpoints: (builder) => ({
         fetchCards: builder.query<{ items: Card[], pagination: Pagination }, CardParams>({
-            query: (cardParams) => {
-                return {
-                    url: 'cards',
-                    params: filterEmptyValues(cardParams)
-                }
-            },
+            query: (cardParams) => ({
+                url: 'cards',
+                params: toApiParams(cardParams)
+            }),
             transformResponse: (items: Card[], meta) => {
                 const paginationHeader = meta?.response?.headers.get('Pagination');
                 const pagination = paginationHeader ? JSON.parse(paginationHeader) : null;
@@ -39,11 +37,22 @@ export const catalogApi = createApi({
             { game: string, id: number }
         >({
             query: ({ game, id }) => `cards/${game}/${id}/forecast`
+        }),
+        fetchCardReasoning: builder.query<
+            { game: string, productId: number, prose: string | null },
+            { game: string, id: number }
+        >({
+            query: ({ game, id }) => `cards/${game}/${id}/reasoning`
+        }),
+        // Top movers by 12m forecast change, across both games (ticker + home tiles).
+        fetchMovers: builder.query<Card[], number | void>({
+            query: (count) => `cards/movers${count ? `?count=${count}` : ''}`
         })
     })
 });
 
 export const {
     useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery,
-    useFetchCardHistoryQuery, useFetchCardForecastQuery,
+    useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery,
+    useFetchMoversQuery,
 } = catalogApi;

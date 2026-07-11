@@ -1,5 +1,12 @@
 import { createSlice } from "@reduxjs/toolkit";
-import type { CardParams } from "../../app/models/cardParams";
+import type { CardParams, CatalogView } from "../../app/models/cardParams";
+import { trendForSort } from "./sortOptions";
+
+// Catalog opens on the strongest signal: projected % growth over a year.
+export const DEFAULT_ORDER = 'chgPct12Desc';
+
+const getInitialView = (): CatalogView =>
+    localStorage.getItem('catalogView') === 'rows' ? 'rows' : 'cards';
 
 const initialState: CardParams = {
     game: 'onepiece',
@@ -8,8 +15,10 @@ const initialState: CardParams = {
     sets: [],
     rarities: [],
     searchTerm: '',
-    orderBy: 'name',
-    grade: ''
+    orderBy: DEFAULT_ORDER,
+    grade: '',
+    trend: '1y',   // matches the default 1Y growth sort
+    view: getInitialView()
 }
 
 export const catalogSlice = createSlice({
@@ -25,6 +34,10 @@ export const catalogSlice = createSlice({
         setOrderBy(state, action) {
             state.orderBy = action.payload;
             state.pageNumber = 1;
+            // A forecast sort also drives the tiles' trend window, so the
+            // sparkline/movement period always matches what's being sorted.
+            const trend = trendForSort(action.payload);
+            if (trend) state.trend = trend;
         },
         setGame(state, action) {
             // Switching games invalidates the previous game's set/rarity filters.
@@ -50,8 +63,16 @@ export const catalogSlice = createSlice({
             state.grade = action.payload;
             state.pageNumber = 1;
         },
+        setView(state, action) {
+            state.view = action.payload === 'rows' ? 'rows' : 'cards';
+            localStorage.setItem('catalogView', state.view!);
+        },
+        setTrend(state, action) {
+            state.trend = action.payload;   // 1w | 1m | 6m | 1y
+        },
         resetParams(state) {
-            return { ...initialState, game: state.game };
+            // Reset filters only — the cards/rows view choice is presentation, not a filter.
+            return { ...initialState, game: state.game, view: state.view };
         },
         setParams(state, action) {
             return { ...state, ...action.payload };
@@ -59,4 +80,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, resetParams, setParams } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setTrend, setView, resetParams, setParams } = catalogSlice.actions;

@@ -1,0 +1,20 @@
+/* Auth cards (login/register). */
+
+.auth-card {
+  grid-column: 4 / -4;
+  text-align: center;
+}
+
+.auth-card form {
+  text-align: left;
+  margin-top: 24px;
+}
+
+.auth-card__teaser {
+  display: block;
+  margin: 4px 0 0;
+}
+
+.auth-teaser--up { color: var(--up); font-weight: 700; }
+
+.auth-teaser--down { color: var(--down); font-weight: 700; }

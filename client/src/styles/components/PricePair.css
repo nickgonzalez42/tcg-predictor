@@ -1,0 +1,39 @@
+/* Current price + parenthesized 12m forecast: "$75.26 ($88.83)". */
+
+.pricepair {
+  display: inline-flex;
+  flex-direction: column;   /* forecast sits on its own line under the price */
+  align-items: flex-start;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.pricepair__now {
+  color: var(--price);
+}
+
+.pricepair__fcst {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.pricepair__fcst--up { color: var(--up); }
+.pricepair__fcst--down { color: var(--down); }
+
+/* Tiny "12M FCST" tag so the parenthesized figure is unmistakably a forecast. */
+.pricepair__tag {
+  margin-left: 4px;
+  font-size: 9px;
+  color: inherit;
+  opacity: 0.75;
+}
+
+.pricepair__row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.pricepair__asof {
+  font-size: 9.5px;
+}

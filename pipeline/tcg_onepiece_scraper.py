@@ -197,9 +197,19 @@ def request_with_retries(session, method, url, base_delay, retry_forbidden=True,
     however, a 403 means the product simply has no image -- retrying just burns
     ~9 minutes of backoff per imageless card -- so callers pass False there to
     give up immediately.
+
+    With TCG_PATIENT=1 in the environment (set by the multi-day backfill),
+    NETWORK failures never exhaust the attempt budget: after each exhausted
+    round the function waits five minutes and starts a fresh round, so an
+    internet outage pauses the crawl instead of making it skip work. HTTP
+    responses (403/404/429 handling) are unaffected -- patience only applies
+    when no response arrives at all.
     """
     retry_statuses = {429} if not retry_forbidden else {403, 429}
-    for attempt in range(1, MAX_RETRIES + 1):
+    patient = bool(os.environ.get("TCG_PATIENT"))
+    attempt = 0
+    while attempt < MAX_RETRIES:
+        attempt += 1
         if RATE_LIMITER is not None:
             RATE_LIMITER.acquire()
         try:
@@ -217,12 +227,20 @@ def request_with_retries(session, method, url, base_delay, retry_forbidden=True,
                 continue
             # Non-retryable (e.g. 404 for a product with no history)
             return resp
-        except requests.RequestException as e:
+        # Anything that prevents a complete response is a retryable network
+        # error — bare urllib3 errors leak past requests' wrappers when the
+        # BODY read times out after a 200 header, so catch everything here.
+        except Exception as e:
             wait = min(base_delay * (2 ** attempt) + random.uniform(0, 2),
                        MAX_BACKOFF)
-            print(f"  [error] {e} -> retry in {wait:.1f}s "
+            print(f"  [error] {type(e).__name__}: {e} -> retry in {wait:.1f}s "
                   f"(attempt {attempt}/{MAX_RETRIES})", file=sys.stderr)
             time.sleep(wait)
+            if patient and attempt >= MAX_RETRIES:
+                print(f"  [patient] network still down — waiting 5 min, then a "
+                      f"fresh round: {url}", file=sys.stderr)
+                time.sleep(300)
+                attempt = 0
     print(f"  [give up] {url}", file=sys.stderr)
     return None
 
@@ -231,12 +249,18 @@ def request_with_retries(session, method, url, base_delay, retry_forbidden=True,
 # Search / catalog enumeration
 # ----------------------------------------------------------------------------
 
-def build_search_payload(offset, size, singles_only=True):
-    """Mirror the storefront's product-search request body."""
+def build_search_payload(offset, size, singles_only=True, set_name=None):
+    """Mirror the storefront's product-search request body.
+
+    When ``set_name`` is given, results are restricted to that set — used by
+    --new-only to re-scan just the sets whose product count changed.
+    """
     term = {"productLineName": [PRODUCT_LINE]}
     if singles_only:
         # Same filter the storefront applies via ?ProductTypeName=Cards
         term["productTypeName"] = ["Cards"]
+    if set_name is not None:
+        term["setName"] = [set_name]
     return {
         "algorithm": "sales_dedupe_v2",
         "from": offset,
@@ -274,6 +298,115 @@ def is_single_card(product):
         return True
     rarity = (product.get("rarityName") or ca.get("rarityDbName") or "").strip()
     return bool(rarity) and rarity.lower() != "none"
+
+
+def fetch_set_list(session, base_delay, singles_only=True):
+    """Return [(set_name, count), ...] from the search setName aggregation.
+
+    A single search response carries an ``aggregations.setName`` facet listing
+    every set in the product line with its product count — one request tells
+    us whether anything anywhere in the catalog is new.
+    """
+    payload = build_search_payload(0, 1, singles_only=singles_only)
+    resp = request_with_retries(
+        session, "POST", SEARCH_URL, base_delay,
+        params={"q": "", "isList": "false"}, data=json.dumps(payload),
+    )
+    if resp is None or resp.status_code != 200:
+        return []
+    try:
+        block = (resp.json().get("results") or [{}])[0]
+    except ValueError:
+        return []
+    out = []
+    for s in block.get("aggregations", {}).get("setName", []):
+        value = s.get("value")
+        if value:
+            out.append((value, int(s.get("count") or 0)))
+    return out
+
+
+def _iter_query_pages(session, base_delay, singles_only, set_name):
+    """Yield products for a single set, paginating by offset. A failure aborts
+    only this set's scan, not the whole run."""
+    offset = 0
+    while True:
+        payload = build_search_payload(offset, PAGE_SIZE,
+                                       singles_only=singles_only,
+                                       set_name=set_name)
+        resp = request_with_retries(
+            session, "POST", SEARCH_URL, base_delay,
+            params={"q": "", "isList": "false"}, data=json.dumps(payload),
+        )
+        if resp is None or resp.status_code != 200:
+            code = resp.status_code if resp is not None else "no response"
+            print(f"  Search failed for set '{set_name}' at offset {offset}: "
+                  f"{code}; skipping rest of this set.", file=sys.stderr)
+            return
+        try:
+            block = (resp.json().get("results") or [{}])[0]
+        except ValueError:
+            print(f"  Non-JSON for set '{set_name}' at offset {offset}; "
+                  f"skipping rest of this set.", file=sys.stderr)
+            return
+        results = block.get("results", [])
+        if not results:
+            return
+        for product in results:
+            pid = product.get("productId")
+            if pid is not None:
+                try:
+                    product["productId"] = int(float(pid))
+                except (TypeError, ValueError):
+                    pass
+            yield product
+        offset += len(results)
+        if offset >= (block.get("totalResults") or 0):
+            return
+
+
+def iter_new_products(session, base_delay, conn, limit=None, singles_only=True):
+    """Yield products only from sets whose product count moved since the last
+    recorded complete scan — one aggregation request when nothing changed.
+
+    All pricing comes from PriceCharting now, so an existing card's TCGplayer
+    listing carries nothing worth re-reading: an unchanged set count means no
+    new cards. A changed (or never-scanned) set is re-scanned in full — new
+    cards get picked up, its existing cards get a free detail refresh — and
+    its count is recorded only once every page arrived, so an aborted scan is
+    retried next run.
+    """
+    sets = fetch_set_list(session, base_delay, singles_only=singles_only)
+    if not sets:
+        print("Could not read the set aggregation; falling back to a full "
+              "catalog enumeration.", file=sys.stderr)
+        yield from iter_all_products(session, base_delay, limit=limit,
+                                     singles_only=singles_only)
+        return
+
+    known = dict(conn.execute(
+        "SELECT set_name, product_count FROM set_counts").fetchall())
+    todo = [(s, c) for s, c in sets if known.get(s) != c]
+    print(f"Sets with changed product counts: {len(todo)} of {len(sets)}.")
+
+    fetched = 0
+    for set_name, count in todo:
+        got = 0
+        for product in _iter_query_pages(session, base_delay, singles_only,
+                                         set_name):
+            got += 1
+            fetched += 1
+            yield product
+            if limit is not None and fetched >= limit:
+                return   # testing cut-off: leave this set's count unrecorded
+        if got >= count:
+            conn.execute("INSERT OR REPLACE INTO set_counts VALUES (?,?,?)",
+                         (set_name, count,
+                          datetime.now(timezone.utc).isoformat()))
+            conn.commit()
+        else:
+            print(f"  Set '{set_name}': {got}/{count} products arrived — "
+                  f"will re-scan next run.", file=sys.stderr)
 
 
 def iter_all_products(session, base_delay, limit=None, singles_only=True):
@@ -363,21 +496,33 @@ def fetch_price_history(session, product_id, base_delay):
 # ----------------------------------------------------------------------------
 
 def download_image(session, product_id, base_delay, image_dir):
-    """Download a card image to disk. Returns local path or None."""
+    """Download a card image to disk. Returns local path or None.
+
+    Never raises: body reads can time out AFTER a 200 header (urllib3 errors
+    that request_with_retries can't see), and one lost image must not kill a
+    multi-hour catalog run — it's simply retried on a later run.
+    """
     os.makedirs(image_dir, exist_ok=True)
     path = os.path.join(image_dir, f"{product_id}.jpg")
     if os.path.exists(path) and os.path.getsize(path) > 0:
         return path
     url = IMAGE_URL.format(pid=product_id)
-    # A 403 here means the product has no CDN image; don't retry (see note in
-    # request_with_retries) -- just skip it.
-    resp = request_with_retries(session, "GET", url, base_delay,
-                                retry_forbidden=False)
-    if resp is None or resp.status_code != 200:
+    try:
+        # A 403 here means the product has no CDN image; don't retry (see note
+        # in request_with_retries) -- just skip it.
+        resp = request_with_retries(session, "GET", url, base_delay,
+                                    retry_forbidden=False)
+        if resp is None or resp.status_code != 200:
+            return None
+        with open(path, "wb") as f:
+            f.write(resp.content)
+        return path
+    except Exception as e:
+        print(f"  [image {product_id}] {type(e).__name__} — skipped this run",
+              file=sys.stderr)
+        if os.path.exists(path):
+            os.remove(path)   # never leave a truncated file that reads as "has art"
         return None
-    with open(path, "wb") as f:
-        f.write(resp.content)
-    return path
 
 
 # ----------------------------------------------------------------------------
@@ -435,6 +580,15 @@ def init_db(conn):
 
         CREATE INDEX IF NOT EXISTS idx_hist_product ON price_history(product_id);
         CREATE INDEX IF NOT EXISTS idx_hist_date    ON price_history(bucket_date);
+
+        -- Per-set product counts at the last COMPLETE scan of that set, keyed by
+        -- the search aggregation's facet value. --new-only compares fresh
+        -- aggregation counts against these to decide which sets to re-scan.
+        CREATE TABLE IF NOT EXISTS set_counts (
+            set_name      TEXT PRIMARY KEY,
+            product_count INTEGER NOT NULL,
+            checked_at    TEXT
+        );
         """
     )
     # Migration: add history_fetched_at to older DBs that predate incremental
@@ -506,7 +660,7 @@ def upsert_card(conn, product, image_path):
             description=excluded.description,
             product_url=excluded.product_url,
             image_url=excluded.image_url,
-            image_path=excluded.image_path,
+            image_path=COALESCE(excluded.image_path, cards.image_path),
             market_price=excluded.market_price,
             lowest_price=excluded.lowest_price,
             lowest_price_ship=excluded.lowest_price_ship,
@@ -612,6 +766,10 @@ def main():
                     help="incremental refresh: skip price-history refetch for existing "
                          "cards whose market_price is below this value "
                          "(new cards are always fetched)")
+    ap.add_argument("--new-only", action="store_true",
+                    help="scan only sets whose product count changed since the last "
+                         "complete scan (new cards + their images); the fast nightly "
+                         "mode now that all pricing comes from PriceCharting")
     args = ap.parse_args()
 
     global RATE_LIMITER
@@ -624,9 +782,14 @@ def main():
     init_db(conn)
 
     singles_only = not args.include_sealed
-    print("Phase 1/2: enumerating catalog...")
-    products = list(iter_all_products(
-        session, args.delay, limit=args.limit, singles_only=singles_only))
+    if args.new_only:
+        print("Phase 1/2: enumerating changed sets only (--new-only)...")
+        products = list(iter_new_products(
+            session, args.delay, conn, limit=args.limit, singles_only=singles_only))
+    else:
+        print("Phase 1/2: enumerating catalog...")
+        products = list(iter_all_products(
+            session, args.delay, limit=args.limit, singles_only=singles_only))
 
     if singles_only:
         # Server-side productTypeName=Cards filter should already exclude sealed;

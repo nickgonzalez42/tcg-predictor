@@ -4,6 +4,12 @@ Import PriceCharting graded prices and match them to our cards.
 PriceCharting rows carry a `tcg-id` = the TCGplayer product id, which is exactly
 our cards' `product_id`, so matching is an EXACT join (no fuzzy name logic).
 
+Their tcg-id mapping is occasionally WRONG (e.g. a $6.50 deck reprint mapped to
+a $1,250 promo's id), so matches are sanity-gated against our last known
+TCGplayer market price: a >=25x disagreement on a valuable card quarantines the
+match entirely (better unpriced than wrongly priced). Anything >=10x is written
+to ml_data/pc_match_review.csv for manual review.
+
 CSV prices are dollar strings ("$373.53"); we store them as REAL USD to match
 our existing market_price. Output: a `pricecharting` table keyed (game, product_id)
 in predictions.db-adjacent `pricecharting.db`, read-only app data separate from
@@ -20,11 +26,9 @@ from datetime import datetime, timezone
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
 
-# game -> (our card DB, PriceCharting CSV)
-SOURCES = {
-    "pokemon": ("pokemon_cards.db", "pricecharting_pokemon.csv"),
-    "onepiece": ("onepiece_cards.db", "pricecharting_onepiece.csv"),
-}
+# game -> (our card DB, PriceCharting CSV), from the game registry
+from games import GAMES, priced_games
+SOURCES = {g: (GAMES[g]["db"], GAMES[g]["pc_csv"]) for g in priced_games()}
 
 # CSV column -> our column (graded tiers)
 PRICE_COLS = {
@@ -56,10 +60,28 @@ def to_int(s):
     return int(s) if s.isdigit() else None
 
 
-def import_game(game, card_db, csv_name, now):
-    ours = set(r[0] for r in sqlite3.connect(os.path.join(BASE, card_db)).execute("SELECT product_id FROM cards"))
+# Sanity gate vs our last known TCGplayer market price (frozen reference).
+# Vintage NM legitimately runs ~10x above PC's any-condition "loose", so only
+# egregious (>=25x) disagreements on valuable cards are quarantined.
+REVIEW_RATIO = 10       # log for human review
+QUARANTINE_RATIO = 25   # drop the match
+MIN_REFERENCE = 50      # only gate cards whose reference price is meaningful
 
-    rows, seen = [], set()
+
+def import_game(game, card_db, csv_name, now):
+    con = sqlite3.connect(os.path.join(BASE, card_db))
+    ours = set(r[0] for r in con.execute("SELECT product_id FROM cards"))
+    try:
+        reference = dict(con.execute(
+            "SELECT product_id, market_price FROM cards "
+            "WHERE market_price IS NOT NULL AND market_price >= ?", (MIN_REFERENCE,)))
+    except sqlite3.OperationalError:
+        # Games added after the PriceCharting cutover never had a TCGplayer
+        # market price, so there is no frozen reference to gate against.
+        reference = {}
+    con.close()
+
+    rows, seen, suspects, review = [], set(), [], []
     total_pc = matched = 0
     with open(os.path.join(BASE, csv_name), encoding="utf-8", errors="ignore") as f:
         for r in csv.DictReader(f):
@@ -70,8 +92,18 @@ def import_game(game, card_db, csv_name, now):
             if tid not in ours or tid in seen:
                 continue
             seen.add(tid)
-            matched += 1
             rec = {our: money(r.get(col)) for col, our in PRICE_COLS.items()}
+
+            ref, loose = reference.get(tid), rec["ungraded"]
+            if ref and loose:
+                ratio = max(ref / loose, loose / ref)
+                if ratio >= REVIEW_RATIO:
+                    review.append((game, tid, r.get("product-name"), ref, loose, round(ratio, 1)))
+                if ratio >= QUARANTINE_RATIO:
+                    suspects.append((game, tid, f"pc loose {loose} vs tcg market {ref} ({ratio:.0f}x)"))
+                    continue   # better unpriced than wrongly priced
+
+            matched += 1
             rows.append((
                 game, tid, to_int(r.get("id", "")),
                 rec["ungraded"], rec["grade7"], rec["grade8"], rec["grade9"], rec["grade95"],
@@ -80,15 +112,23 @@ def import_game(game, card_db, csv_name, now):
                 r.get("console-name"), r.get("product-name"), now,
             ))
     print(f"[{game}] our cards: {len(ours)} | PC rows w/ tcg-id: {total_pc} | matched: {matched} "
-          f"({matched/len(ours)*100:.1f}%)")
-    return rows
+          f"({matched/len(ours)*100:.1f}%) | quarantined: {len(suspects)} | flagged for review: {len(review)}")
+    return rows, suspects, review
 
 
 def main():
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    all_rows = []
+    all_rows, all_suspects, all_review = [], [], []
     for game, (card_db, csv_name) in SOURCES.items():
-        all_rows += import_game(game, card_db, csv_name, now)
+        rows, suspects, review = import_game(game, card_db, csv_name, now)
+        all_rows += rows
+        all_suspects += suspects
+        all_review += review
+
+    with open(os.path.join(BASE, "ml_data", "pc_match_review.csv"), "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["game", "product_id", "pc_name", "tcg_market", "pc_loose", "ratio"])
+        w.writerows(all_review)
 
     os.makedirs(os.path.dirname(OUT_DB), exist_ok=True)
     conn = sqlite3.connect(OUT_DB)
@@ -116,6 +156,16 @@ def main():
         );
         """
     )
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS pc_match_suspects;
+        CREATE TABLE pc_match_suspects (
+            game TEXT NOT NULL, product_id INTEGER NOT NULL, reason TEXT,
+            PRIMARY KEY (game, product_id)
+        );
+        """
+    )
+    conn.executemany("INSERT INTO pc_match_suspects VALUES (?,?,?)", all_suspects)
     conn.executemany(
         "INSERT INTO pricecharting VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
     append_snapshot_history(conn, all_rows)

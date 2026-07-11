@@ -65,7 +65,10 @@ def rows_from_chart(game, product_id, chart):
 def fetch_one(game, product_id, pc_id, delay):
     if delay:
         time.sleep(delay)
-    for attempt in range(3):
+    patient = bool(os.environ.get("TCG_PATIENT"))
+    attempt = 0
+    while attempt < 3:
+        attempt += 1
         try:
             chart = fetch_chart(pc_id)
             if not chart:
@@ -73,10 +76,18 @@ def fetch_one(game, product_id, pc_id, delay):
             return product_id, rows_from_chart(game, product_id, chart), None
         except urllib.error.HTTPError as e:
             if e.code == 429:          # rate limited: back off and retry
-                time.sleep(20 * (attempt + 1))
+                time.sleep(20 * attempt)
                 continue
             return product_id, None, f"HTTP {e.code}"
         except Exception as e:
+            # No response at all = network trouble. In patient mode (multi-day
+            # backfill) wait out the outage instead of burning through cards.
+            if patient:
+                print(f"    [patient] {type(e).__name__} — waiting 5 min before "
+                      f"retrying pc_id {pc_id}", flush=True)
+                time.sleep(300)
+                attempt = 0
+                continue
             return product_id, None, str(e)
     return product_id, None, "429 after retries"
 
@@ -149,7 +160,8 @@ def main():
     ap.add_argument("--resume", action="store_true")
     args = ap.parse_args()
 
-    games = ["pokemon", "onepiece"] if args.game == "all" else [args.game]
+    from games import priced_games
+    games = priced_games() if args.game == "all" else [args.game]
     conn = sqlite3.connect(PC_DB)
     ensure_table(conn)
     for game in games:

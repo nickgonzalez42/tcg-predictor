@@ -15,4 +15,6 @@ public class Forecast
     public double High { get; set; }
     public double Ret { get; set; }              // predicted log-return
     public string? Reason { get; set; }          // plain-English why, from model signals
+    public string? Confidence { get; set; }      // model-reported: high | med | low (80% interval width)
+    public string? ScoredAt { get; set; }        // batch timestamp — invalidates cached prose
 }

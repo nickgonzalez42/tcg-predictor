@@ -1,0 +1,183 @@
+/* Card details: breadcrumb, 4/8 columns, order ticket, forecast table. */
+
+.forecast-table {
+  border-collapse: collapse;
+  width: 100%;
+  max-width: 560px;
+}
+
+.forecast-table th {
+  text-align: left;
+  padding: 6.4px 9.6px;
+  font-size: 11.52px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.forecast-table td {
+  padding: 7.2px 9.6px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+/* Plain-text prediction reasoning shown under each predicted price. */
+.forecast-reason {
+  margin: 5.6px 0 0;
+  font-size: 11.52px;
+  line-height: 1.35;
+  font-weight: 400;
+  color: var(--text-muted);
+  max-width: 22ch;
+}
+
+.model-take {
+  margin: 0 0 14.4px;
+  padding: 11.2px 13.6px;
+  max-width: 560px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius);
+}
+
+.model-take__label {
+  display: block;
+  margin-bottom: 4.8px;
+  font-size: 10.56px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+.model-take p {
+  margin: 0;
+  font-size: 13.6px;
+  line-height: 1.5;
+}
+
+.model-take--loading p {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+}
+
+/* Value column: gapped from the label and ledger-style at the right edge. */
+.detail-table td + td {
+  padding-left: 10px;
+  text-align: right;
+}
+
+.detail-table td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.detail-table td:first-child {
+  font-weight: 700;
+  width: 1%;            /* shrink to content: values sit right beside labels */
+  white-space: nowrap;
+}
+
+.breadcrumb {
+  margin-bottom: 16px;
+}
+
+.breadcrumb a {
+  color: var(--text-muted);
+}
+
+.breadcrumb span {
+  color: var(--text);
+}
+
+.detail-left {
+  grid-column: span 4;
+}
+
+.detail-left__img {
+  width: 100%;
+  border-radius: 20px;
+  display: block;
+  margin-bottom: 16px;
+}
+
+.detail-center {
+  grid-column: span 8;
+  min-width: 0;
+}
+
+.detail-center__name {
+  font-size: 28.8px;
+  margin-bottom: 3.2px;
+}
+
+.detail-center__subline {
+  margin-bottom: 14.4px;
+}
+
+.detail-center__pricerow {
+  display: flex;
+  align-items: baseline;
+  gap: 9.6px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+
+.detail-center__price {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--price);
+}
+
+.detail-table__price {
+  color: var(--price);
+  font-weight: 700;
+}
+
+/* "Order ticket" — highlighted tracking panel. */
+.ticket {
+  background: var(--ticket-bg);
+  border: 1.6px solid var(--brand-border);
+  border-radius: var(--radius);
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.ticket__title {
+  display: block;
+  color: var(--price);
+  font-weight: 700;
+  font-size: 11px;
+  margin-bottom: 14.4px;
+}
+
+.ticket__note {
+  margin-top: 12.8px;
+  font-size: 12.8px;
+  color: var(--text-muted);
+}
+
+.ticket__note-price {
+  color: var(--price);
+  font-weight: 700;
+}
+
+/* Sub-section label inside the "All prices" panel (TCGplayer / PriceCharting). */
+.detail-panel__sub {
+  display: block;
+  margin: 12px 0 2px;
+  color: var(--link);
+  font-size: 10px;
+}
+
+.detail-panel__sub:first-of-type {
+  margin-top: 0;
+}

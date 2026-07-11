@@ -1,14 +1,16 @@
 import NavBar from "./NavBar";
-import { Outlet, ScrollRestoration } from "react-router-dom";
-import { useAppSelector } from "../store/store";
+import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
 
 function App() {
-  const { darkMode } = useAppSelector(state => state.ui);
+  const { pathname } = useLocation();
+
+  // The market ticker rides under the navbar on the landing + catalog screens.
+  const showTicker = pathname === "/" || pathname === "/catalog";
 
   return (
-    <div className={`app-shell ${darkMode ? "" : "theme-light"}`}>
+    <div className={`app-shell${showTicker ? " has-ticker" : ""}`}>
       <ScrollRestoration />
-      <NavBar />
+      <NavBar showTicker={showTicker} />
       <main className="container page grid-box">
         <Outlet />
       </main>
