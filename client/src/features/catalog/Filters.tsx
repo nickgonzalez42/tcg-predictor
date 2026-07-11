@@ -35,9 +35,12 @@ export default function Filters({ filtersData: data }: Props) {
     const dispatch = useAppDispatch();
 
     // Debounced so each keystroke doesn't fire a query; commits follow store
-    // resets (e.g. Reset filters) automatically.
-    const min = useDebouncedSearch(minPrice ?? '', v => dispatch(setMinPrice(v)));
-    const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(v)));
+    // resets (e.g. Reset filters) automatically. Six-figure ceiling.
+    const MAX_PRICE_INPUT = 999999;
+    const capPrice = (v: string) =>
+        v !== '' && Number(v) > MAX_PRICE_INPUT ? String(MAX_PRICE_INPUT) : v;
+    const min = useDebouncedSearch(minPrice ?? '', v => dispatch(setMinPrice(capPrice(v))));
+    const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(capPrice(v))));
 
     return (
         <div className="filters">
@@ -56,13 +59,13 @@ export default function Filters({ filtersData: data }: Props) {
                 </select>
                 <div className="price-range">
                     <input
-                        className="input" type="number" min="0" step="any" inputMode="decimal"
+                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
                         placeholder="Min $" aria-label="Minimum shown price"
                         value={min.term} onChange={e => min.onChange(e.target.value)}
                     />
                     <span className="price-range__dash">–</span>
                     <input
-                        className="input" type="number" min="0" step="any" inputMode="decimal"
+                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
                         placeholder="Max $" aria-label="Maximum shown price"
                         value={max.term} onChange={e => max.onChange(e.target.value)}
                     />
