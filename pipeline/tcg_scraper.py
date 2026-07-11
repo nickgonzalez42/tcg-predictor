@@ -155,8 +155,11 @@ def process_sets(session, line, base_delay, conn, img_dir, new_only,
                 if tp.download_image(session, pid, base_delay, img_dir):
                     conn.execute("UPDATE cards SET image_path=? WHERE product_id=?",
                                  (os.path.join(os.path.basename(img_dir), f"{pid}.jpg"), pid))
+                    # Commit per image: an open write transaction across a whole
+                    # set's downloads holds the DB lock for minutes and starves
+                    # any pipeline step touching this game in parallel.
+                    conn.commit()
                     art += 1
-            conn.commit()
 
         processed += len(cards)
         if complete:

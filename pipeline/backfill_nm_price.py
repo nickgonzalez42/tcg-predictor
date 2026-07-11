@@ -51,4 +51,9 @@ def backfill(game):
 if __name__ == "__main__":
     from games import priced_games
     for g in priced_games():
-        backfill(g)
+        try:
+            backfill(g)
+        except sqlite3.OperationalError as e:
+            # A live catalog scrape can hold this game's DB — skip rather than
+            # sink the run; the game keeps its current prices until the next pass.
+            print(f"[{g}] skipped ({e}) — prices refresh on the next run")
