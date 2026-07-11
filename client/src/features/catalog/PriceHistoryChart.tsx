@@ -43,24 +43,19 @@ const HORIZON_OFFSET: Record<string, (date: string) => string> = {
     '12m': d => addMonths(d, 12),
 };
 
-// One reviewable point per horizon: the matured archived forecast whose target
-// date is closest to today, as long as it's still fresh (a 1W forecast from
-// three months ago says nothing about "the last week"). No match = no point.
-const LOOKBACK_FRESH_DAYS: Record<string, number> = {
-    '1w': 4, '1m': 12, '6m': 45, '12m': 60,
-};
+// One reviewable point per horizon: the matured archived forecast whose
+// target date is nearest to today — the ideal is one targeting exactly now
+// (issued one horizon ago), but if none exists the next-closest older one is
+// shown instead. No matured forecast at all = no point.
+const PAST_HORIZONS = ['1w', '1m', '6m', '12m'];
 
 function pickPastForecasts(past: PastForecast[], grade: string): PastForecast[] {
-    const today = new Date().toISOString().slice(0, 10);
-    const picks: PastForecast[] = [];
-    for (const [horizon, freshDays] of Object.entries(LOOKBACK_FRESH_DAYS)) {
-        const candidates = past.filter(f =>
-            f.target === grade && f.horizon === horizon &&
-            f.targetDate <= today && f.targetDate >= addDays(today, -freshDays));
-        if (candidates.length)
-            picks.push(candidates.reduce((a, b) => (a.targetDate > b.targetDate ? a : b)));
-    }
-    return picks;
+    return PAST_HORIZONS.flatMap(horizon => {
+        const candidates = past.filter(f => f.target === grade && f.horizon === horizon);
+        return candidates.length
+            ? [candidates.reduce((a, b) => (a.targetDate > b.targetDate ? a : b))]
+            : [];
+    });
 }
 
 export default function PriceHistoryChart({ game, id, forecasts }: Props) {
@@ -197,7 +192,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             <div ref={containerRef} style={{ width: '100%' }} />
             <div className="mono" style={{ marginTop: '6.4px' }}>
                 solid blue = history{hasForecast ? ' · dashed gold = model forecast' : ''}
-                {hasPast ? ' · purple dots = past forecasts (what the model predicted for now)' : ''}
+                {hasPast ? ' · purple dots = past forecasts, shown at the date they predicted' : ''}
             </div>
         </div>
     );
