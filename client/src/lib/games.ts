@@ -1,13 +1,15 @@
 // The games the site serves — mirrors the API's GameRegistry and pipeline/games.py.
 // value = the canonical key used in routes/params; label = what users see.
+// Alphabetical by label: this order IS the display order everywhere (catalog
+// filter, portfolio/watchlist toggles).
 export const GAMES = [
+    { value: 'digimon', label: 'Digimon' },
+    { value: 'gundam', label: 'Gundam' },
+    { value: 'lorcana', label: 'Lorcana' },
+    { value: 'magic', label: 'Magic' },
     { value: 'onepiece', label: 'One Piece' },
     { value: 'pokemon', label: 'Pokémon' },
     { value: 'yugioh', label: 'Yu-Gi-Oh!' },
-    { value: 'magic', label: 'Magic' },
-    { value: 'lorcana', label: 'Lorcana' },
-    { value: 'digimon', label: 'Digimon' },
-    { value: 'gundam', label: 'Gundam' },
 ];
 
 export const GAME_LABEL: Record<string, string> = Object.fromEntries(
