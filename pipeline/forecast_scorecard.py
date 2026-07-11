@@ -110,7 +110,8 @@ def grade(conn, now_iso):
     """Fill realized_* on every archived forecast whose outcome is now known."""
     pending = conn.execute(
         "SELECT game, product_id, target, horizon, as_of, base_price, scored_at "
-        "FROM forecast_archive WHERE realized_price IS NULL").fetchall()
+        "FROM forecast_archive WHERE realized_price IS NULL"
+        "  AND substr(model_version, 1, 2) != '__'").fetchall()   # skip test/sample rows
 
     by_series = collections.defaultdict(list)   # load each price series once
     for row in pending:
@@ -165,7 +166,8 @@ def rebuild_accuracy(conn, now_iso):
                ROUND(AVG(ret - realized_ret), 4),
                ROUND(AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END), 3),
                MAX(realized_at), ?
-        FROM forecast_archive WHERE realized_ret IS NOT NULL
+        FROM forecast_archive
+        WHERE realized_ret IS NOT NULL AND substr(model_version, 1, 2) != '__'
         GROUP BY game, target, horizon
         """, (now_iso,))
 
@@ -198,7 +200,8 @@ def write_signals(conn, game):
     path = os.path.join(DATA, f"{game}_extra_signals.csv")
     graded = conn.execute(
         "SELECT product_id, horizon, ret, realized_ret, realized_at FROM forecast_archive "
-        "WHERE game=? AND realized_ret IS NOT NULL", (game,)).fetchall()
+        "WHERE game=? AND realized_ret IS NOT NULL"
+        "  AND substr(model_version, 1, 2) != '__'", (game,)).fetchall()
     if not graded:
         if os.path.exists(path):
             os.remove(path)   # never leave a stale signal file feeding the model
