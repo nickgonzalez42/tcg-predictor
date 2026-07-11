@@ -71,6 +71,10 @@ MIN_REFERENCE = 50      # only gate cards whose reference price is meaningful
 def import_game(game, card_db, csv_name, now):
     con = sqlite3.connect(os.path.join(BASE, card_db))
     ours = set(r[0] for r in con.execute("SELECT product_id FROM cards"))
+    if not ours:
+        con.close()
+        print(f"[{game}] no cards scraped yet — skipping")
+        return [], [], []
     try:
         reference = dict(con.execute(
             "SELECT product_id, market_price FROM cards "
