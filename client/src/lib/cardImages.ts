@@ -8,6 +8,7 @@ import { gameKey } from "./util";
 export function cardBackSrc(game: string, cardType?: string) {
     const key = gameKey(game);
     if (key === 'pokemon') return '/images/pokemon-back.jpg';
+    if (key === 'yugioh') return '/images/yu-gi-oh-back.jpg';
     if (key !== 'onepiece') return '/images/generic-card-back.svg';
     if (cardType === 'Leader') return '/images/one-piece-leader-back.png';
     if (cardType === 'DON!!') return '/images/one-piece-don-card-back.jpg';
