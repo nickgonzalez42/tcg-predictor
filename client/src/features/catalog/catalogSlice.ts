@@ -11,7 +11,7 @@ const getInitialView = (): CatalogView =>
 const initialState: CardParams = {
     game: 'onepiece',
     pageNumber: 1,
-    pageSize: 50,
+    pageSize: 30,
     sets: [],
     rarities: [],
     searchTerm: '',

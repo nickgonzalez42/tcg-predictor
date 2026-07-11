@@ -19,7 +19,7 @@
   flex-direction: column;
   gap: 16px;
   grid-column: span 3;
-  margin-top: 50pxi;
+  margin-top: 50px;
 }
 
 .catalog-items {
