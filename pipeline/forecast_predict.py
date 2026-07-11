@@ -42,6 +42,11 @@ RET_CLIP = np.log(10.0)
 DEFAULT_BAND = 0.5
 MIN_SAMPLES = 200
 MAX_TRAIN_SAMPLES = 3_000_000   # per (game, tier, horizon); see subsample below
+# Publication gates: a segment whose out-of-sample retMAE is worse than this
+# publishes nothing (mature games run ~0.08-0.53), and an individual card's
+# low-confidence call beyond ~±200% log-return is dropped as decorated noise.
+MAX_SEGMENT_MAE = 0.60
+EXTREME_LOW_CONF_RET = 1.1
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -376,6 +381,15 @@ def forecast_game_target(game, target, now):
         else:
             band = DEFAULT_BAND
 
+        # A segment must EARN publication: when its out-of-sample error says the
+        # model can't call this (game, tier, horizon) — typical for young games
+        # whose only training regime is their launch mania/crash — publish no
+        # forecasts at all rather than confident-looking noise.
+        if band > MAX_SEGMENT_MAE:
+            print(f"  [{game}/{target}/{hname}] retMAE {band:.2f} > {MAX_SEGMENT_MAE} "
+                  f"— segment suppressed", flush=True)
+            continue
+
         model = model_new().fit(X, y)
         # Per-card scenario quantiles (10th/90th) — the model's OWN uncertainty.
         # A tight interval = a confident forecast; a wide one = anything can happen.
@@ -409,6 +423,11 @@ def forecast_game_target(game, target, now):
         set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
 
         for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
+            # An extreme call the model itself has no confidence in is noise
+            # dressed as a headline (+700% with a 9x-wide interval) — unpublish
+            # it; the card just shows no forecast for this horizon.
+            if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
+                continue
             comp = comps.get(int(pid))
             # resolve up to two look-alike cards by name, skipping self-references
             examples = []
