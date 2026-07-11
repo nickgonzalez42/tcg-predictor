@@ -24,14 +24,15 @@ import pandas as pd
 from sklearn.metrics import mean_absolute_error
 
 from forecast_deep import (load_matrix, static_features, traj_block,
-                           set_matrix, extra_signal_matrices, cum_stats,
-                           model_new, model_quantile, CUTOFF)
+                           set_matrix, extra_signal_matrices, market_features,
+                           cum_stats, model_new, model_quantile, CUTOFF)
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
 
-MODEL_VERSION = "forecast-deep-v4.1"  # v4.1: model-reported confidence (quantile intervals),
-                                      # set/age/drawdown features, ranked card-specific reasons
+MODEL_VERSION = "forecast-deep-v4.2"  # v4.2: cross-game market features (global/game momentum)
+                                      # v4.1: model-reported confidence, set/age/drawdown
+                                      # features, ranked card-specific reasons
 HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 # Price data is monthly, so a true 1-week model has no training targets. The 1w
 # horizon is the 1-month forecast pro-rated to 7 days — disclosed in its reason.
@@ -46,7 +47,8 @@ MAX_TRAIN_SAMPLES = 3_000_000   # per (game, tier, horizon); see subsample below
 # Trajectory features are already narrated directly (momentum/volatility/volume);
 # the static features are grouped into buckets we can ablate one at a time.
 TRAJ_COLS = {"logp", "ret1", "ret3", "ret12", "vol6", "hist", "logvol", "volchg",
-             "age", "dd", "setret3", "setret12", "setrel"}
+             "age", "dd", "setret3", "setret12", "setrel",
+             "mktret3", "mktret12", "gameret12", "gamerel12"}
 STAT_COLS = {  # the card's printed stat line, both games
     "life", "power", "cost", "counter", "attribute", "subtypes", "color",
     "hp", "stage", "energy_type", "attack1", "attack2", "attack3", "attack4",
@@ -308,6 +310,7 @@ def forecast_game_target(game, target, now):
     V = None
     S = set_matrix(game, pids, P)
     EXTRA = extra_signal_matrices(game, pids, dates)
+    MKT = market_features(game, dates)   # cross-game market context (level-1 blend)
     static = static_features(game, pids)
     last_idx = np.array([np.where(np.isfinite(P[i]))[0][-1] if np.isfinite(P[i]).any() else -1
                          for i in range(len(pids))])
@@ -327,7 +330,7 @@ def forecast_game_target(game, target, now):
             if not v.any():
                 continue
             if tb_full is None:
-                tb_full = traj_block(P, R, t, V, S, EXTRA, CUM)
+                tb_full = traj_block(P, R, t, V, S, EXTRA, CUM, MKT)
             tb = tb_full.loc[v].reset_index(drop=True)
             sb = static.iloc[np.where(v)[0]].reset_index(drop=True)
             Xr, ys, tests = samples[hname]
@@ -338,9 +341,9 @@ def forecast_game_target(game, target, now):
     # "Now" features are also horizon-independent: one block per distinct
     # latest-priced month, assembled once and reused for every horizon.
     traj_now = pd.DataFrame(np.nan, index=np.arange(len(pids)),
-                            columns=traj_block(P, R, 1, V, S, EXTRA, CUM).columns)
+                            columns=traj_block(P, R, 1, V, S, EXTRA, CUM, MKT).columns)
     for tv in np.unique(last_idx[keep]):
-        blk = traj_block(P, R, int(tv), V, S, EXTRA, CUM)
+        blk = traj_block(P, R, int(tv), V, S, EXTRA, CUM, MKT)
         sel = last_idx == tv
         traj_now.loc[sel] = blk.loc[sel].to_numpy()
 

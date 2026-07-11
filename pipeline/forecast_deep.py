@@ -118,6 +118,77 @@ def set_matrix(game, pids, P):
     return S
 
 
+_MKT_CACHE = None
+
+
+def _next_month(m):
+    y, mo = int(m[:4]), int(m[5:7])
+    return f"{y + mo // 12:04d}-{mo % 12 + 1:02d}"
+
+
+def market_index():
+    """month -> {game: median 1-month log-return, "_global": pooled median}.
+
+    A hobby-wide barometer built from the ungraded series of every game —
+    computed once per process and shared by every per-game model, so each
+    model can see whether the whole market (and its own game within it) is
+    running hot or cold. Only consecutive-month pairs count, glitch swings
+    (>10x) are ignored, and a month needs enough cards for a robust median.
+    """
+    global _MKT_CACHE
+    if _MKT_CACHE is not None:
+        return _MKT_CACHE
+    rows = sqlite3.connect(PC_DB).execute(
+        "SELECT game, product_id, date, price FROM price_history_unified "
+        "WHERE grade='ungraded' AND price > 0").fetchall()
+    series = collections.defaultdict(dict)
+    for g, pid, d, p in rows:
+        series[(g, pid)][d[:7]] = p
+    per_month = collections.defaultdict(lambda: collections.defaultdict(list))
+    for (g, _), months in series.items():
+        ms = sorted(months)
+        for a, b in zip(ms, ms[1:]):
+            if _next_month(a) != b:
+                continue
+            r = np.log(months[b] / months[a])
+            if abs(r) <= np.log(10):
+                per_month[b][g].append(r)
+    out = {}
+    for m, by_game in per_month.items():
+        entry = {g: float(np.median(rs)) for g, rs in by_game.items() if len(rs) >= 50}
+        pooled = [r for rs in by_game.values() for r in rs]
+        if len(pooled) >= 100:
+            entry["_global"] = float(np.median(pooled))
+        if entry:
+            out[m] = entry
+    _MKT_CACHE = out
+    return out
+
+
+def market_features(game, dates):
+    """{feature: per-month array aligned to dates} — cross-game market context:
+    global hobby momentum (3m/12m), this game's own 12m momentum, and its
+    spread over the market (hot or cold relative to the hobby)."""
+    idx = market_index()
+    glob = np.array([idx.get(m, {}).get("_global", np.nan) for m in dates])
+    own = np.array([idx.get(m, {}).get(game, np.nan) for m in dates])
+
+    def window(a, k):
+        # cumulative log-return over the k months ending at each index; NaN
+        # until the window is fully populated (no partial-window optimism)
+        out = np.full(len(a), np.nan)
+        for i in range(k - 1, len(a)):
+            w = a[i - k + 1:i + 1]
+            if np.isfinite(w).all():
+                out[i] = w.sum()
+        return out
+
+    mkt12 = window(glob, 12)
+    game12 = window(own, 12)
+    return {"mktret3": window(glob, 3), "mktret12": mkt12,
+            "gameret12": game12, "gamerel12": game12 - mkt12}
+
+
 def extra_signal_matrices(game, pids, dates):
     """Optional external signals -> {name: cards x months matrix}.
 
@@ -160,7 +231,7 @@ def cum_stats(P):
     }
 
 
-def traj_block(P, R, t, V=None, S=None, EXTRA=None, CUM=None):
+def traj_block(P, R, t, V=None, S=None, EXTRA=None, CUM=None, MKT=None):
     n = P.shape[0]
     def m(k):
         return np.log(P[:, t] / P[:, t - k]) if t >= k else np.full(n, np.nan)
@@ -188,6 +259,8 @@ def traj_block(P, R, t, V=None, S=None, EXTRA=None, CUM=None):
         block["setrel"] = np.log(P[:, t] / S[:, t])
     for name, M in (EXTRA or {}).items():
         block[f"sig_{name}"] = M[:, t]   # external signals (tournament/news/...)
+    for name, arr in (MKT or {}).items():
+        block[name] = np.full(n, arr[t])   # market context: same for every card this month
     return pd.DataFrame(block)
 
 
@@ -203,6 +276,7 @@ def run(game, grade, static, model_new):
     V = None
     S = set_matrix(game, pids, P)
     EXTRA = extra_signal_matrices(game, pids, dates)
+    MKT = market_features(game, dates)
     CUM = cum_stats(P)
     cutoff_idx = next((i for i, d in enumerate(dates) if d >= CUTOFF), len(dates))
 
@@ -213,7 +287,7 @@ def run(game, grade, static, model_new):
             valid = np.isfinite(P[:, t]) & np.isfinite(P[:, t + k]) & (P[:, t] > 0) & (P[:, t + k] > 0)
             if not valid.any():
                 continue
-            tb = traj_block(P, R, t, V, S, EXTRA, CUM).loc[valid].reset_index(drop=True)
+            tb = traj_block(P, R, t, V, S, EXTRA, CUM, MKT).loc[valid].reset_index(drop=True)
             sb = stat.iloc[np.where(valid)[0]].reset_index(drop=True)
             Xr.append(pd.concat([tb, sb], axis=1))
             y.append(np.log(P[valid, t + k] / P[valid, t]))
