@@ -11,6 +11,8 @@ export type CardParams = {
     pageSize: number;
     trend?: string;       // trend window for sparkline/movement: 1w|1m|6m|1y
     view?: CatalogView;   // client-only presentation state (never sent to the API)
+    gameInitialized?: boolean;  // client-only: the default game has been decided
+                                // (URL param, user choice, or portfolio majority)
 }
 
 export type CatalogView = 'cards' | 'rows';

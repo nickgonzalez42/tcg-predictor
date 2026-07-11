@@ -24,7 +24,7 @@ export function filterEmptyValues(values: object) {
 }
 
 // CardParams fields that are presentation state and must never reach the API.
-const CLIENT_ONLY_PARAMS = ['view'];
+const CLIENT_ONLY_PARAMS = ['view', 'gameInitialized'];
 
 // Query-string payload for a card list request: drops client-only fields and
 // empty values in one place.

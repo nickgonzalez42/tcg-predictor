@@ -4,14 +4,18 @@ import { trendForSort } from "./sortOptions";
 
 // Catalog opens on the strongest signal: projected % growth over a year.
 export const DEFAULT_ORDER = 'chgPct12Desc';
+export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
     localStorage.getItem('catalogView') === 'rows' ? 'rows' : 'cards';
 
 const initialState: CardParams = {
-    game: 'onepiece',
+    // Pre-decision placeholder; the real default is decided once per session:
+    // URL param > the game with the most owned cards > Pokémon.
+    game: 'pokemon',
+    gameInitialized: false,
     pageNumber: 1,
-    pageSize: 30,
+    pageSize: DEFAULT_PAGE_SIZE,
     sets: [],
     rarities: [],
     searchTerm: '',
@@ -48,6 +52,14 @@ export const catalogSlice = createSlice({
             state.rarities = [];
             state.searchTerm = '';
             state.pageNumber = 1;
+            state.gameInitialized = true;   // an explicit choice wins over defaults
+        },
+        // One-time session default: the game the user owns the most cards in
+        // (Pokémon when signed out or the portfolio is empty). A no-op once any
+        // decision — URL, user click, or this — has been made.
+        initDefaultGame(state, action) {
+            if (!state.gameInitialized) state.game = action.payload;
+            state.gameInitialized = true;
         },
         setSets(state, action) {
             state.sets = action.payload;
@@ -81,8 +93,9 @@ export const catalogSlice = createSlice({
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
         },
         resetParams(state) {
-            // Reset filters only — the cards/rows view choice is presentation, not a filter.
-            return { ...initialState, game: state.game, view: state.view };
+            // Reset filters only — the cards/rows view choice is presentation,
+            // not a filter, and the game default stays decided.
+            return { ...initialState, game: state.game, view: state.view, gameInitialized: state.gameInitialized };
         },
         setParams(state, action) {
             return { ...state, ...action.payload };
@@ -90,4 +103,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, setParams } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, setParams, initDefaultGame } = catalogSlice.actions;

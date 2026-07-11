@@ -4,10 +4,12 @@ import CardTable from "./CardTable"
 import Filters from "./Filters";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
-import { DEFAULT_ORDER, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useUserInfoQuery } from "../account/accountApi";
+import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
 
 export default function Catalog() {
   const cardParams = useAppSelector(state => state.catalog);
@@ -23,7 +25,7 @@ export default function Catalog() {
     hydrated.current = true;
     const p: Partial<CardParams> = {};
     const get = (k: string) => searchParams.get(k) || undefined;
-    if (get('game')) p.game = get('game')!;
+    if (get('game')) { p.game = get('game')!; p.gameInitialized = true; }
     if (get('orderBy')) p.orderBy = get('orderBy')!;
     if (get('searchTerm')) p.searchTerm = get('searchTerm')!;
     if (get('sets')) p.sets = get('sets')!.split(',');
@@ -37,6 +39,24 @@ export default function Catalog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // First visit with no ?game= : default to the game the user owns the most
+  // cards in; Pokémon when signed out or the portfolio is empty. Decided once
+  // per session — an explicit choice or URL param always wins.
+  const { data: user, isLoading: userLoading } = useUserInfoQuery();
+  const { data: watchlist, isLoading: watchlistLoading } = useFetchWatchlistQuery(undefined, { skip: !user });
+  useEffect(() => {
+    // A URL ?game= marks gameInitialized during hydration, and the reducer
+    // itself is a no-op once any decision exists — so this can't override one.
+    if (cardParams.gameInitialized) return;
+    if (userLoading || (user && watchlistLoading)) return;   // decide once the facts are in
+    const owned: Record<string, number> = {};
+    for (const w of watchlist ?? [])
+      if (w.kind === 'owned') owned[w.game] = (owned[w.game] ?? 0) + 1;
+    const best = Object.entries(owned).sort((a, b) => b[1] - a[1])[0];
+    dispatch(initDefaultGame(best ? best[0] : 'pokemon'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, userLoading, watchlist, watchlistLoading, cardParams.gameInitialized]);
+
   // Reflect catalog state in the URL whenever it changes.
   useEffect(() => {
     const sp: Record<string, string> = { game: cardParams.game };
@@ -46,7 +66,7 @@ export default function Catalog() {
     if (cardParams.rarities.length) sp.rarities = cardParams.rarities.join(',');
     if (cardParams.grade) sp.grade = cardParams.grade;
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
-    if (cardParams.pageSize !== 50) sp.pageSize = String(cardParams.pageSize);
+    if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);
     if (cardParams.trend && cardParams.trend !== '1y') sp.trend = cardParams.trend;
     if (cardParams.view === 'rows') sp.view = 'rows';
     setSearchParams(sp, { replace: true });

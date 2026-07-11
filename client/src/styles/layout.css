@@ -10,23 +10,10 @@
    (Mobile-first; the duplicate declarations from the source snippet resolved
    to the winning values: max-width 1000px, border-box.) */
 .container {
-  max-width: 100%;
-  padding: 0 16px;
   margin: 0 auto;
   box-sizing: border-box;
-}
-
-@media (min-width: 769px) {
-  .container {
-    padding: 0 24px;
-  }
-}
-
-@media (min-width: 1079px) {
-  .container {
-    padding: 0 40px;
-    max-width: 1000px;
-  }
+  padding: 0 40px;
+  max-width: 1280px;
 }
 
 .page {
@@ -55,6 +42,10 @@
     grid-template-columns: repeat(8, 1fr);
     column-gap: 24px;
   }
+
+  .container {
+    padding: 0 24px;
+  }
 }
 
 @media (max-width: 767px) {
@@ -64,6 +55,11 @@
     column-gap: 16px;
     width: 100%;
     max-width: 100%;
+  }
+
+  .container {
+    max-width: 100%;
+    padding: 0 16px;
   }
 }
 
