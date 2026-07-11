@@ -5,14 +5,22 @@ import { resetParams, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, s
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
-import { forecastSortOptions } from "./sortOptions";
+import { forecastSortOptions, historySortOptions } from "./sortOptions";
 import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
-const sortOptions = [
-    { value: 'name', label: 'Alphabetical' },
-    { value: 'priceDesc', label: 'Price: desc' },
-    { value: 'price', label: 'Price: asc' },
-    ...forecastSortOptions,
+// Grouped sort menu: the optgroup labels disambiguate the forecast growth
+// sorts (model predictions) from the past growth sorts (actual history).
+const sortGroups = [
+    {
+        label: 'General',
+        options: [
+            { value: 'name', label: 'Alphabetical' },
+            { value: 'priceDesc', label: 'Price: desc' },
+            { value: 'price', label: 'Price: asc' },
+        ],
+    },
+    { label: 'Forecast growth', options: forecastSortOptions },
+    { label: 'Past growth', options: historySortOptions },
 ]
 
 import { GAMES as gameOptions } from "../../lib/games";
@@ -71,7 +79,11 @@ export default function Filters({ filtersData: data }: Props) {
                 <label htmlFor="sort-select" className="field-label">Sort by</label>
                 <select id="sort-select" className="input" value={orderBy}
                     onChange={e => dispatch(setOrderBy(e.target.value))}>
-                    {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {sortGroups.map(g => (
+                        <optgroup key={g.label} label={g.label}>
+                            {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        </optgroup>
+                    ))}
                 </select>
             </div>
             <div className="panel">

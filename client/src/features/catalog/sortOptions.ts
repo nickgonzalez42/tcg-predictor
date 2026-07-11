@@ -21,9 +21,24 @@ export const forecastSortOptions = [
     { value: 'chgUsd1w', label: '1W $ growth: asc' },
 ];
 
-// Trend window the chips should snap to when a forecast sort is chosen
-// (sort horizons and history windows share vocabulary except 12m -> 1y).
+// PAST price growth over a trend window, matching the tiles' PAST pill.
+// Values are parsed server-side: hist{1w|1m|6m|1y}[Desc].
+export const historySortOptions = [
+    { value: 'hist1yDesc', label: '1Y % growth: desc' },
+    { value: 'hist1y', label: '1Y % growth: asc' },
+    { value: 'hist6mDesc', label: '6M % growth: desc' },
+    { value: 'hist6m', label: '6M % growth: asc' },
+    { value: 'hist1mDesc', label: '1M % growth: desc' },
+    { value: 'hist1m', label: '1M % growth: asc' },
+    { value: 'hist1wDesc', label: '1W % growth: desc' },
+    { value: 'hist1w', label: '1W % growth: asc' },
+];
+
+// Trend window the chips should snap to when a forecast or history sort is
+// chosen (sort horizons and history windows share vocabulary except 12m -> 1y).
 export function trendForSort(orderBy: string): string | null {
+    const h = /^hist(1w|1m|6m|1y)(?:Desc)?$/.exec(orderBy);
+    if (h) return h[1];
     const m = /^chg(?:Pct|Usd)(1w|1m|6|12)(?:Desc)?$/.exec(orderBy);
     if (!m) return null;
     return { '1w': '1w', '1m': '1m', '6': '6m', '12': '1y' }[m[1]] ?? null;

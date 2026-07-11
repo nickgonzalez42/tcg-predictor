@@ -345,6 +345,11 @@ public class CardsController(
         if (string.IsNullOrEmpty(cardParams.Grade))
             filtered = filtered.PriceRange(cardParams.MinPrice, cardParams.MaxPrice);
 
+        // Sorting by PAST price growth over a trend window (cross-DB: history
+        // lives in pricecharting.db, so it's an in-memory path like forecasts).
+        if (ParseHistorySort(cardParams.OrderBy) is { } hs)
+            return await PageByHistory(filtered, cardParams, folder, hs.window, hs.desc);
+
         // Sorting by an expected forecast change (cross-DB: forecasts live in predictions.db).
         if (ParseForecastSort(cardParams.OrderBy) is { } fc)
             return await PageByForecast(filtered, cardParams, folder, fc.metric, fc.horizon, fc.desc);
@@ -369,6 +374,16 @@ public class CardsController(
     }
 
     private static bool IsPriceSort(string? orderBy) => orderBy is "price" or "priceDesc";
+
+    // Historical growth sorts: hist{1w|1m|6m|1y}[Desc] -> (trend window, descending).
+    private static (string window, bool desc)? ParseHistorySort(string? o) => o switch
+    {
+        "hist1w" => ("1w", false),  "hist1wDesc" => ("1w", true),
+        "hist1m" => ("1m", false),  "hist1mDesc" => ("1m", true),
+        "hist6m" => ("6m", false),  "hist6mDesc" => ("6m", true),
+        "hist1y" => ("1y", false),  "hist1yDesc" => ("1y", true),
+        _ => null,
+    };
 
     // Forecast sorts: chg{Pct|Usd}{1w|1m|6|12}[Desc] -> (metric, horizon, descending).
     private static (string metric, string horizon, bool desc)? ParseForecastSort(string? o) => o switch
@@ -463,6 +478,78 @@ public class CardsController(
             if (changes.TryGetValue(card.Id, out var ch)) SetExpected(card, ch, metric, horizon);
         await ApplyMarket(cards, folder, p.Grade, p.Trend);
         return cards;
+    }
+
+    // Sort + paginate by ACTUAL price growth over one trend window, computed on
+    // the shown tier's history — the same anchor rule the tiles' PAST pill uses
+    // (last point at-or-before the window start, else the first point), so the
+    // row order always agrees with the displayed movement.
+    private async Task<List<CardDto>> PageByHistory(
+        IQueryable<CardBase> filtered, CardParams p, string folder, string window, bool desc)
+    {
+        var all = await filtered.ToListAsync();
+
+        // Range on a selected tier's shown price (ungraded was filtered in SQL).
+        if (!string.IsNullOrEmpty(p.Grade) && HasPriceRange(p))
+        {
+            var shown = await GradePrices(folder, p.Grade, all.Select(c => c.Id).ToList());
+            all = all.Where(c => shown.TryGetValue(c.Id, out var v) && InPriceRange(v, p)).ToList();
+        }
+
+        var tier = GradeTiers.PriceTier(p.Grade ?? "");
+        var changes = await HistoryChanges(folder, tier, all.Select(c => c.Id).ToList(), window);
+
+        var withChg = all.Where(c => changes.ContainsKey(c.Id));
+        var without = all.Where(c => !changes.ContainsKey(c.Id));   // no history -> end
+        var sorted = (desc ? withChg.OrderByDescending(c => changes[c.Id])
+                           : withChg.OrderBy(c => changes[c.Id]))
+            .Concat(without)
+            .ToList();
+
+        Response.AddPaginationHeader(new PaginationMetadata
+        {
+            TotalCount = sorted.Count,
+            PageSize = p.PageSize,
+            CurrentPage = p.PageNumber,
+            TotalPages = (int)Math.Ceiling(sorted.Count / (double)p.PageSize),
+        });
+
+        var cards = sorted
+            .Skip((p.PageNumber - 1) * p.PageSize)
+            .Take(p.PageSize)
+            .Select(c => c.ToDto(folder, CardImageUrl(folder, c.Id)))
+            .ToList();
+
+        await ApplyGradePrice(cards, folder, p.Grade);
+        await ApplyMarket(cards, folder, p.Grade, window);   // tiles trend over the sorted window
+        return cards;
+    }
+
+    // % price change per product over one trend window, from the tier's history.
+    private async Task<Dictionary<int, double>> HistoryChanges(
+        string game, string tier, List<int> ids, string window)
+    {
+        if (ids.Count == 0) return [];
+        var cutoff = TrendWindows[window].Start().ToString("yyyy-MM-dd");
+
+        var rows = await priceCharting.History
+            .Where(h => h.Game == game && h.Grade == tier && ids.Contains(h.ProductId))
+            .Select(h => new { h.ProductId, h.Date, h.Price })
+            .ToListAsync();
+
+        var changes = new Dictionary<int, double>();
+        foreach (var g in rows.GroupBy(r => r.ProductId))
+        {
+            var series = g.OrderBy(r => r.Date).ToList();
+            var latest = series[^1];
+            var anchor = series.LastOrDefault(r => string.CompareOrdinal(r.Date, cutoff) <= 0)
+                         ?? series[0];
+            // Same floor as the forecast sorts: penny cards turn rounding noise
+            // into +10,000% and bury every real mover (they still list, unsorted).
+            if (anchor.Price >= MinForecastSortBase)
+                changes[g.Key] = (latest.Price / anchor.Price - 1) * 100;
+        }
+        return changes;
     }
 
     // Sort + paginate the full filtered set by a selected grade tier's price. That price
