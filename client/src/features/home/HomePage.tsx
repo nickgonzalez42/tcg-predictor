@@ -18,8 +18,10 @@ const HERO_W = 560, HERO_H = 210, HERO_PAD = 16;
 
 function HeroChart({ movers }: { movers?: Card[] }) {
     const cards = useMemo(() => {
+        // Same value floor as the movers feed itself ($10); the sparkline just
+        // needs enough points to trace a line worth watching.
         const ok = (movers ?? []).filter(m =>
-            (m.price ?? 0) >= 20 && (m.sparkline?.length ?? 0) >= 4 && m.fcst12To != null);
+            (m.price ?? 0) >= 10 && (m.sparkline?.length ?? 0) >= 4 && m.fcst12To != null);
         // Round-robin across games (each game's pool shuffled) so consecutive
         // scenes cycle through a variety of games, not one game's whole list.
         const byGame = new Map<string, Card[]>();
