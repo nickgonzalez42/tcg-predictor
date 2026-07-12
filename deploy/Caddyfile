@@ -1,14 +1,21 @@
 # TCG Predictor — IP-only HTTP for now. When a domain lands, replace `:80`
 # with the domain and Caddy handles TLS automatically.
+# handle blocks are mutually exclusive — the SPA's try_files can't swallow
+# /api/* (try_files is a rewrite and would otherwise run before the proxy).
 :80 {
 	encode gzip
 
-	# API + Identity endpoints + card image static routes -> Kestrel
-	@backend path /api/* /card-images/*
-	reverse_proxy @backend 127.0.0.1:5000
+	handle /api/* {
+		reverse_proxy 127.0.0.1:5000
+	}
 
-	# React SPA
-	root * /srv/tcg/client
-	try_files {path} /index.html
-	file_server
+	handle /card-images/* {
+		reverse_proxy 127.0.0.1:5000
+	}
+
+	handle {
+		root * /srv/tcg/client
+		try_files {path} /index.html
+		file_server
+	}
 }
