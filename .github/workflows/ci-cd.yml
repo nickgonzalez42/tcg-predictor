@@ -1,0 +1,76 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  DEPLOY_HOST: 35.168.177.31
+
+jobs:
+  build-api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Publish (self-contained linux-x64)
+        run: dotnet publish dotnet/API -c Release -r linux-x64 --self-contained true -o api-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: api
+          path: api-out
+          retention-days: 3
+
+  build-client:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - name: Build (tsc + vite)
+        working-directory: client
+        run: |
+          npm ci
+          npm run build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: client
+          path: client/dist
+          retention-days: 3
+
+  deploy:
+    # Deploys the APP only (API binary + client bundle). Data (SQLite DBs,
+    # card images) is pushed from the pipeline machine via deploy/push_data.sh.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [build-api, build-client]
+    runs-on: ubuntu-latest
+    concurrency: deploy-production   # one deploy at a time, in order
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: api
+          path: api-out
+      - uses: actions/download-artifact@v4
+        with:
+          name: client
+          path: client-dist
+      - name: Install deploy key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+      - name: Rsync API + client
+        run: |
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" api-out/ ubuntu@$DEPLOY_HOST:/srv/tcg/api/
+          rsync -az --delete -e "ssh -i ~/.ssh/deploy_key" client-dist/ ubuntu@$DEPLOY_HOST:/srv/tcg/client/
+      - name: Restart service
+        run: |
+          ssh -i ~/.ssh/deploy_key ubuntu@$DEPLOY_HOST \
+            'chmod +x /srv/tcg/api/API && sudo systemctl restart tcg-api && sleep 3 && systemctl is-active tcg-api'

@@ -1,0 +1,22 @@
+[Unit]
+Description=TCG Predictor API (.NET)
+After=network.target
+
+[Service]
+Type=simple
+# Same user the rsync pushes land as — SQLite needs write access to the data
+# dir (journals) and this avoids a whole class of permission drift.
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/srv/tcg/api
+ExecStart=/srv/tcg/api/API
+Environment=ASPNETCORE_ENVIRONMENT=Production
+Environment=ASPNETCORE_URLS=http://127.0.0.1:5000
+Environment=DOTNET_PrintTelemetryMessage=false
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=20
+
+[Install]
+WantedBy=multi-user.target

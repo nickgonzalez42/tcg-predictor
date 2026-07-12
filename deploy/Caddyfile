@@ -1,0 +1,14 @@
+# TCG Predictor — IP-only HTTP for now. When a domain lands, replace `:80`
+# with the domain and Caddy handles TLS automatically.
+:80 {
+	encode gzip
+
+	# API + Identity endpoints + card image static routes -> Kestrel
+	@backend path /api/* /card-images/*
+	reverse_proxy @backend 127.0.0.1:5000
+
+	# React SPA
+	root * /srv/tcg/client
+	try_files {path} /index.html
+	file_server
+}
