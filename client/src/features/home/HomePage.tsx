@@ -51,8 +51,8 @@ function MoverTile({ mover }: { mover: Card }) {
                 <div className="mono">{[mover.setName, mover.rarity].filter(Boolean).join(' · ')}</div>
                 <div className="mover__row">
                     <span className="mover__price">
-                        <PricePair price={mover.price} forecast={mover.fcst12To} horizon="12M"
-                            asOf={mover.priceAsOf} />
+                        {/* no asOf here: mover tiles stay compact, date lives on the card page */}
+                        <PricePair price={mover.price} forecast={mover.fcst12To} horizon="12M" />
                     </span>
                     <span className="mover__market"
                         title={`Price history over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`}>
