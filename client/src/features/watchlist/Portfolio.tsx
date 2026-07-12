@@ -255,7 +255,10 @@ function PositionRow({ card }: { card: Card }) {
                                 Copies at {tierLabel(card.ownedGrade)} — a copy with a paid price,
                                 date or note becomes its own position row.
                             </div>
-                            {copies.map(copy => <OwnedCopyRow key={copy.id} copy={copy} />)}
+                            {copies.map(copy => (
+                                <OwnedCopyRow key={copy.id} copy={copy}
+                                    onClose={() => setExpanded(false)} />
+                            ))}
                         </div>
                     </td>
                 </tr>

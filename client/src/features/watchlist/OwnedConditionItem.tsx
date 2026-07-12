@@ -71,7 +71,7 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
                         {editing ? (
                             <OwnedCopyRow copy={copies[0]}
                                 onDone={() => setEditing(false)}
-                                onCancel={() => setEditing(false)} />
+                                onClose={() => setEditing(false)} />
                         ) : (
                             <CopySummary copy={copies[0]} onEdit={() => setEditing(true)} />
                         )}
@@ -97,7 +97,10 @@ export default function OwnedConditionItem({ card }: { card: Card }) {
                                 <div className="owned-copies__head">
                                     Adding a note, date or price moves that copy to its own card.
                                 </div>
-                                {copies.map(copy => <OwnedCopyRow key={copy.id} copy={copy} />)}
+                                {copies.map(copy => (
+                                    <OwnedCopyRow key={copy.id} copy={copy}
+                                        onClose={() => setExpanded(false)} />
+                                ))}
                             </div>
                         )}
                     </>
@@ -136,10 +139,10 @@ function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) 
 
 // Editable row for one owned copy. Changing the grade moves the copy to another
 // condition's card; adding/clearing detail moves it between stack and standalone.
-// onDone fires after a successful save; onCancel (when given) shows a Cancel
-// button that closes the form without touching the copy.
-export function OwnedCopyRow({ copy, onDone, onCancel }: {
-    copy: OwnedCopy; onDone?: () => void; onCancel?: () => void;
+// onDone fires after a successful save; onClose (when given) shows a ✕ that
+// closes the editor without touching the copy. Deleting is its own button.
+export function OwnedCopyRow({ copy, onDone, onClose }: {
+    copy: OwnedCopy; onDone?: () => void; onClose?: () => void;
 }) {
     const [update, { isLoading: saving }] = useUpdateOwnedCopyMutation();
     const [remove, { isLoading: removing }] = useRemoveOwnedCopyMutation();
@@ -199,11 +202,14 @@ export function OwnedCopyRow({ copy, onDone, onCancel }: {
             </div>
             <div className="owned-copy__actions">
                 <button className="btn btn--outline" disabled={!dirty || saving} onClick={save}>Save</button>
-                {onCancel && (
-                    <button className="btn btn--outline" onClick={onCancel}>Cancel</button>
+                <button className="btn btn--outline btn--danger" disabled={removing}
+                    title="Delete this copy from your portfolio"
+                    onClick={() => remove({ id: copy.id })}>
+                    Delete
+                </button>
+                {onClose && (
+                    <button className="btn btn--outline" title="Close the editor" onClick={onClose}>✕</button>
                 )}
-                <button className="btn btn--outline" disabled={removing}
-                    title="Remove this copy" onClick={() => remove({ id: copy.id })}>✕</button>
             </div>
         </div>
     );
