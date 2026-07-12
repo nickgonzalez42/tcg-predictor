@@ -204,3 +204,10 @@
   font-size: 10px;
   color: var(--text-muted);
 }
+
+.mover__trend {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}

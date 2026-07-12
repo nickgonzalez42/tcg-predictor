@@ -57,11 +57,11 @@ function MoverTile({ mover }: { mover: Card }) {
                     <span className="mover__market"
                         title={`Price history over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`}>
                         {mover.trendPct != null && (
-                            <>
+                            <span className="mover__trend">
                                 <ChangePill value={mover.trendPct}
                                     title={`Price change over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`} />
                                 <span className="mono">PAST {(mover.trendPeriod ?? '1y').toUpperCase()}</span>
-                            </>
+                            </span>
                         )}
                         <Sparkline points={mover.sparkline} />
                     </span>
