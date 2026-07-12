@@ -20,7 +20,18 @@ function HeroChart({ movers }: { movers?: Card[] }) {
     const cards = useMemo(() => {
         const ok = (movers ?? []).filter(m =>
             (m.price ?? 0) >= 20 && (m.sparkline?.length ?? 0) >= 4 && m.fcst12To != null);
-        return [...ok].sort(() => Math.random() - 0.5);   // random order per visit
+        // Round-robin across games (each game's pool shuffled) so consecutive
+        // scenes cycle through a variety of games, not one game's whole list.
+        const byGame = new Map<string, Card[]>();
+        for (const m of [...ok].sort(() => Math.random() - 0.5)) {
+            const g = gameKey(m.game);
+            byGame.set(g, [...(byGame.get(g) ?? []), m]);
+        }
+        const pools = [...byGame.values()];
+        const mixed: Card[] = [];
+        for (let i = 0; pools.some(p => i < p.length); i++)
+            for (const p of pools) if (i < p.length) mixed.push(p[i]);
+        return mixed;
     }, [movers]);
     const [idx, setIdx] = useState(0);
 
@@ -127,7 +138,7 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                     <rect ref={revealRef} x="0" y="0" width="0" height={HERO_H} />
                 </clipPath>
                 <clipPath id={`${clipId}-art`}>
-                    <rect x="-19" y="-27" width="38" height="54" rx="4" />
+                    <rect x="-38" y="-54" width="76" height="108" rx="7" />
                 </clipPath>
             </defs>
             <g ref={rootRef} className="hero-scene">
@@ -153,7 +164,7 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
                         href={card.pictureUrl}
-                        x="-19" y="-27" width="38" height="54"
+                        x="-38" y="-54" width="76" height="108"
                         clipPath={`url(#${clipId}-art)`}
                         preserveAspectRatio="xMidYMid slice"
                     />
@@ -207,7 +218,6 @@ export default function HomePage() {
     const { data: movers } = useFetchMoversQuery(12);
     const { data: user } = useUserInfoQuery();
     const tiles = movers?.slice(0, 4) ?? [];
-    const fanned = movers?.slice(0, 3) ?? [];
 
     return (
         <>
@@ -227,16 +237,6 @@ export default function HomePage() {
                 </div>
                 <div className="hero__panel">
                     <HeroChart movers={movers} />
-                    <div className="hero__fan">
-                        {fanned.map((m, i) => (
-                            <img
-                                key={`${m.game}-${m.id}`}
-                                className={`hero__card hero__card--${i}`}
-                                src={m.pictureUrl} alt=""
-                                onError={e => fallbackToCardBack(e, m.game, m.cardType)}
-                            />
-                        ))}
-                    </div>
                 </div>
             </section>
 

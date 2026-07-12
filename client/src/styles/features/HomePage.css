@@ -52,30 +52,6 @@
   stroke-dasharray: 7 6;
 }
 
-/* Three real card images fanned over the chart's bottom-right corner. */
-.hero__fan {
-  position: absolute;
-  right: 20px;
-  bottom: -24px;
-  width: 200px;
-  height: 170px;
-  pointer-events: none;
-}
-
-.hero__card {
-  position: absolute;
-  bottom: 0;
-  width: 96px;
-  border-radius: 5px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
-}
-
-.hero__card--0 { left: 0; transform: rotate(-8deg); z-index: 1; }
-
-.hero__card--1 { left: 52px; transform: rotate(2deg); z-index: 2; bottom: 6px; }
-
-.hero__card--2 { left: 104px; transform: rotate(11deg); z-index: 3; }
-
 .home__heading {
   margin: 0 0 16px;
   font-size: 21.6px;
