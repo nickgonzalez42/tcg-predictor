@@ -62,38 +62,61 @@
   margin-right: 7.2px;
 }
 
-/* Best / worst rows */
-.bw-row {
+/* Best / worst position tiles: two cards side by side. */
+.bw-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bw-tile {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 9.6px;
-  padding: 6.4px 0;
+  gap: 8px;
+  padding: 14px 12px;
+  text-align: center;
   color: var(--text);
 }
 
-.bw-row:hover {
+.bw-tile:hover {
   text-decoration: none;
+  border-color: var(--primary);
 }
 
-.bw-row:hover .bw-row__name {
+.bw-tile:hover .bw-tile__name {
   text-decoration: underline;
 }
 
-.bw-row__thumb {
-  width: 26px;
-  height: 36px;
-  object-fit: cover;
-  border-radius: 6px;
-  flex: none;
+.bw-tile__thumb {
+  width: 84px;
+  border-radius: 8px;
 }
 
-.bw-row__name {
-  flex: 1;
-  min-width: 0;
+.bw-tile__name {
+  font-size: 13.5px;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 14.08px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.bw-tile__values {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.bw-tile__pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.bw-tiles__note {
+  grid-column: 1 / -1;
 }
 
 /* Tablet & mobile: the value hero and allocation panel stack. */

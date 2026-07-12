@@ -130,11 +130,12 @@ public class PortfolioController(
                 Value = g.Sum(c => LatestOf(c) ?? 0),
             })
             .Where(p => p.Paid > 0 && p.Value > 0)
-            .Select(p => (p.Game, p.Id, Pct: Math.Round((p.Value / p.Paid - 1) * 100, 1)))
+            .Select(p => (p.Game, p.Id, p.Paid, p.Value,
+                          Pct: Math.Round((p.Value / p.Paid - 1) * 100, 1)))
             .OrderByDescending(p => p.Pct)
             .ToList();
 
-        async Task<object?> Position((string Game, int Id, double Pct)? p)
+        async Task<object?> Position((string Game, int Id, double Paid, double Value, double Pct)? p)
         {
             if (p is not { } pos) return null;
             var card = await sources.Find(pos.Game, pos.Id);
@@ -145,6 +146,9 @@ public class PortfolioController(
                 name = card?.Name,
                 pictureUrl = CardImageUrl(pos.Game, pos.Id),
                 pct = pos.Pct,
+                paid = Math.Round(pos.Paid, 2),
+                value = Math.Round(pos.Value, 2),
+                plUsd = Math.Round(pos.Value - pos.Paid, 2),
             };
         }
 

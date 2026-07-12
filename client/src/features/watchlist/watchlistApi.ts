@@ -30,6 +30,9 @@ export type PortfolioPosition = {
     name?: string;
     pictureUrl?: string;
     pct: number;
+    paid?: number;
+    value?: number;
+    plUsd?: number;
 }
 
 export type PortfolioSummary = {
