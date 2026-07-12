@@ -256,13 +256,51 @@ public class CardsController(
         // movers qualify for each side; if one side runs dry the other fills in.
         var ups = gainers.Where(f => f.ForecastPrice > f.BasePrice);
         var downs = losers.Where(f => f.ForecastPrice < f.BasePrice);
-        var picked = ups.Select((f, i) => (f, rank: i * 2))
+        var globalPicks = ups.Select((f, i) => (f, rank: i * 2))
             .Concat(downs.Select((f, i) => (f, rank: i * 2 + 1)))
             .OrderBy(x => x.rank)
             .Select(x => x.f)
             .DistinctBy(f => (f.Game, f.ProductId))
             .Where(f => HasLocalImage(f.Game, f.ProductId))
-            .Take(count)
+            .ToList();
+
+        // Every game with forecasts is GUARANTEED two movers (its strongest
+        // gainer + strongest loser) so no game monopolizes the showcase; the
+        // remaining slots come from the global ranking. Small buffers per side
+        // because art-less candidates are skipped.
+        var guaranteed = new List<MoverPick>();
+        foreach (var game in GameRegistry.Keys)
+        {
+            // Progressive price floor: prefer $10+ movers, but a game whose whole
+            // ungraded market sits below that (e.g. Digimon) still gets its two.
+            foreach (var gainerSide in new[] { true, false })
+            {
+                MoverPick? pick = null;
+                foreach (var floor in new[] { 10.0, 1.0 })
+                {
+                    var q = predictions.Forecasts
+                        .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == "12m"
+                                    && f.BasePrice >= floor)
+                        .Where(f => gainerSide ? f.ForecastPrice > f.BasePrice : f.ForecastPrice < f.BasePrice);
+                    q = gainerSide
+                        ? q.OrderByDescending(f => f.ForecastPrice / f.BasePrice)
+                        : q.OrderBy(f => f.ForecastPrice / f.BasePrice);
+                    var hit = (await q.Take(5).ToListAsync())
+                        .FirstOrDefault(f => HasLocalImage(f.Game, f.ProductId));
+                    if (hit != null)
+                    {
+                        pick = new MoverPick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice);
+                        break;
+                    }
+                }
+                if (pick != null) guaranteed.Add(pick);
+            }
+        }
+
+        var picked = guaranteed
+            .Concat(globalPicks.Select(f => new MoverPick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice)))
+            .DistinctBy(f => (f.Game, f.ProductId))
+            .Take(Math.Max(count, guaranteed.Count))
             .ToList();
 
         // Join card names/sets from the right game DB, in memory (cross-DB).
@@ -296,6 +334,8 @@ public class CardsController(
 
         return Ok(movers);
     }
+
+    private sealed record MoverPick(string Game, int ProductId, double BasePrice, double ForecastPrice);
 
     private static object StatsFor(List<PriceHistoryPoint> series)
     {

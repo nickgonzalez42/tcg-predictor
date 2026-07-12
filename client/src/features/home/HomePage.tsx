@@ -68,11 +68,12 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
     const fcstEnd = card.fcst12To!;
     const all = [...hist, fcstEnd];
     const min = Math.min(...all), span = Math.max(...all) - min || 1;
-    // Extra bottom inset keeps the (tall) card art from being cut off when the
-    // line runs along the panel's lower edge.
-    const PAD_TOP = 26, PAD_BOT = 58;
-    const histW = (HERO_W - HERO_PAD * 2) * 0.7;
-    const x = (i: number) => HERO_PAD + (i / (hist.length - 1)) * histW;
+    // Insets sized to the card art (108 tall / 76 wide, centered on the line
+    // tip) so it can never be clipped: 54px of vertical clearance both ways,
+    // and the line starts far enough in that the art clears the left edge.
+    const PAD_TOP = 58, PAD_BOT = 58, PAD_LEFT = 44;
+    const histW = (HERO_W - PAD_LEFT - HERO_PAD) * 0.7;
+    const x = (i: number) => PAD_LEFT + (i / (hist.length - 1)) * histW;
     const y = (v: number) => PAD_TOP + (1 - (v - min) / span) * (HERO_H - PAD_TOP - PAD_BOT);
     const histD = hist.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
     const lastX = x(hist.length - 1), lastY = y(hist[hist.length - 1]);
