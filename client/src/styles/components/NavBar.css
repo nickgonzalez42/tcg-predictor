@@ -96,3 +96,16 @@ button.navbar__link {
   50% { transform: scaleX(0.6); }
   100% { transform: scaleX(1); opacity: 0.4; }
 }
+
+/* Mobile: tighter nav that scrolls sideways rather than wrapping (the fixed
+   navbar height is load-bearing for the page's top padding). */
+@media (max-width: 767px) {
+  .navbar__links {
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .navbar__inner a {
+    font-size: 12px;
+  }
+}

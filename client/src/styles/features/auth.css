@@ -18,3 +18,15 @@
 .auth-teaser--up { color: var(--up); font-weight: 700; }
 
 .auth-teaser--down { color: var(--down); font-weight: 700; }
+
+@media (max-width: 1023px) {
+  .auth-card {
+    grid-column: 2 / -2;
+  }
+}
+
+@media (max-width: 767px) {
+  .auth-card {
+    grid-column: 1 / -1;
+  }
+}

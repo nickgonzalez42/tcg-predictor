@@ -38,7 +38,8 @@ export type PortfolioSummary = {
     monthChangeUsd?: number | null;
     monthChangePct?: number | null;
     allTime?: { paid: number; value: number; plUsd: number; plPct: number } | null;
-    allocation?: { label: string; value: number; pct: number }[];
+    allocation?: { label: string; value: number; pct: number }[];       // by game
+    gradeAllocation?: { label: string; value: number; pct: number }[];  // by condition tier
     best?: PortfolioPosition | null;
     worst?: PortfolioPosition | null;
     series?: { date: string; value: number }[];

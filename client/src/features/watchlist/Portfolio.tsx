@@ -31,9 +31,24 @@ const RANGES: { key: string; label: string; months?: number }[] = [
 ];
 
 const DONUT_COLORS: Record<string, string> = {
+    // games
     'One Piece': '#3d7dca',
     'Pokémon': '#ffcb05',
-    'Graded': '#3fd98a',
+    'Yu-Gi-Oh!': '#c678dd',
+    'Magic': '#ff9e64',
+    'Lorcana': '#4dd0e1',
+    'Digimon': '#3fd98a',
+    'Gundam': '#f06292',
+    // condition tiers
+    'Ungraded': '#3d7dca',
+    'Grade 7': '#8b96ad',
+    'Grade 8': '#4dd0e1',
+    'Grade 9': '#ff9e64',
+    'Grade 9.5': '#c678dd',
+    'PSA 10': '#3fd98a',
+    'BGS 10': '#ffcb05',
+    'CGC 10': '#f06292',
+    'SGC 10': '#e0e6f0',
 };
 
 // Green portfolio value-over-time chart (monthly points from the summary).
@@ -100,9 +115,10 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
     );
 }
 
-// SVG donut of the allocation slices (blue OP / yellow Pokémon / green graded).
-function AllocationDonut({ summary }: { summary: PortfolioSummary }) {
-    const slices = summary.allocation ?? [];
+// SVG donut of one allocation breakdown (by game, or by condition tier).
+function AllocationDonut({ title, slices }: {
+    title: string; slices: { label: string; value: number; pct: number }[];
+}) {
     if (!slices.length) return null;
 
     const R = 40, C = 2 * Math.PI * R;
@@ -110,7 +126,7 @@ function AllocationDonut({ summary }: { summary: PortfolioSummary }) {
 
     return (
         <div className="panel detail-panel">
-            <span className="mono detail-panel__title">Allocation</span>
+            <span className="mono detail-panel__title">{title}</span>
             <div className="donut">
                 <svg viewBox="0 0 100 100" className="donut__svg" aria-hidden="true">
                     {slices.map(s => {
@@ -273,7 +289,8 @@ export default function Portfolio() {
 
             {/* ----- Right rail: allocation + best/worst ----- */}
             <div className="pf-side">
-                {summary && <AllocationDonut summary={summary} />}
+                {summary && <AllocationDonut title="Allocation · games" slices={summary.allocation ?? []} />}
+                {summary && <AllocationDonut title="Allocation · grades" slices={summary.gradeAllocation ?? []} />}
                 {summary && <BestWorst summary={summary} />}
             </div>
 

@@ -50,3 +50,29 @@
 .price-range__dash {
   color: var(--text-muted);
 }
+
+/* --- Tablet (8-col grid): filters stack above results as a 2-column panel. */
+@media (max-width: 1023px) {
+  .filters {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+    margin-top: 24px;
+  }
+
+  .filters > .btn {
+    grid-column: 1 / -1;   /* Reset filters gets its own row */
+  }
+
+  .catalog-items {
+    grid-column: 1 / -1;
+  }
+}
+
+/* --- Mobile (4-col grid): single-column filters. */
+@media (max-width: 767px) {
+  .filters {
+    grid-template-columns: 1fr;
+  }
+}

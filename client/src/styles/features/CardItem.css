@@ -193,3 +193,10 @@
   margin-top: 6.4px;
   flex-wrap: wrap;
 }
+
+/* Tablet: 4 tiles per row of the 8-col grid; mobile: 2 per row of the 4-col. */
+@media (max-width: 1023px) {
+  .card {
+    grid-column: span 2;
+  }
+}

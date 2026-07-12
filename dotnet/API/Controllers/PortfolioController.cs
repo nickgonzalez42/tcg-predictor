@@ -16,6 +16,15 @@ namespace API.Controllers;
 public class PortfolioController(
     StoreContext store, PriceChartingContext priceCharting, CardSources sources) : BaseApiController
 {
+    private static readonly Dictionary<string, string> TierLabels = new()
+    {
+        ["ungraded"] = "Ungraded", ["grade7"] = "Grade 7", ["grade8"] = "Grade 8",
+        ["grade9"] = "Grade 9", ["grade95"] = "Grade 9.5", ["psa10"] = "PSA 10",
+        ["bgs10"] = "BGS 10", ["cgc10"] = "CGC 10", ["sgc10"] = "SGC 10",
+    };
+
+    private static string TierLabel(string tier) => TierLabels.GetValueOrDefault(tier, tier);
+
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary()
     {
@@ -49,19 +58,22 @@ public class PortfolioController(
         // ----- Headline: total value + allocation -----
         var totalValue = copies.Sum(c => LatestOf(c) ?? 0);
 
-        double SliceValue(Func<TrackedCard, bool> pick) =>
-            copies.Where(pick).Sum(c => LatestOf(c) ?? 0);
-        var gradedValue = SliceValue(c => GradeTiers.Graded.Contains(GradeTiers.PriceTier(c.Grade)));
-        var allocation = GameRegistry.Keys
-            .Select(g => new
+        // Two views of the same value: by game, and by condition/grade tier.
+        List<object> Breakdown(Func<TrackedCard, string> label) => copies
+            .GroupBy(label)
+            .Select(g => new { label = g.Key, value = g.Sum(c => LatestOf(c) ?? 0) })
+            .Where(a => a.value > 0)
+            .OrderByDescending(a => a.value)
+            .Select(a => (object)new
             {
-                label = GameRegistry.Label(g),
-                value = SliceValue(c => c.Game == g && !GradeTiers.Graded.Contains(GradeTiers.PriceTier(c.Grade))),
+                a.label,
+                value = Math.Round(a.value, 2),
+                pct = totalValue > 0 ? Math.Round(a.value / totalValue * 100, 1) : 0.0,
             })
-            .Append(new { label = "Graded", value = gradedValue })
-        .Where(a => a.value > 0)
-        .Select(a => new { a.label, value = Math.Round(a.value, 2), pct = totalValue > 0 ? Math.Round(a.value / totalValue * 100, 1) : 0 })
-        .ToList();
+            .ToList();
+
+        var allocation = Breakdown(c => GameRegistry.Label(c.Game));
+        var gradeAllocation = Breakdown(c => TierLabel(GradeTiers.PriceTier(c.Grade)));
 
         // ----- Value over time (last 24 monthly points, prices carried forward) -----
         var dates = seriesByKey.Values.SelectMany(s => s.Select(p => p.Date))
@@ -139,11 +151,13 @@ public class PortfolioController(
         return Ok(new
         {
             totalValue = Math.Round(totalValue, 2),
+
             copies = copies.Count,
             monthChangeUsd,
             monthChangePct,
             allTime,
             allocation,
+            gradeAllocation,
             best = await Position(positions.Count > 0 ? positions[0] : null),
             worst = await Position(positions.Count > 1 ? positions[^1] : null),
             series = series.Select(p => new { date = p.Date, value = p.Value }),

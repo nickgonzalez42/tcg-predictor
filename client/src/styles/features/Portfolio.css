@@ -95,3 +95,11 @@
   white-space: nowrap;
   font-size: 14.08px;
 }
+
+/* Tablet & mobile: the value hero and allocation panel stack. */
+@media (max-width: 1023px) {
+  .pf-hero,
+  .pf-side {
+    grid-column: 1 / -1;
+  }
+}

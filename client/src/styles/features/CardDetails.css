@@ -181,3 +181,23 @@
 .detail-panel__sub:first-of-type {
   margin-top: 0;
 }
+
+/* --- Tablet & mobile: the 4/8 detail columns stack; card art stays capped. */
+@media (max-width: 1023px) {
+  .detail-left,
+  .detail-center {
+    grid-column: 1 / -1;
+  }
+
+  .detail-left__img {
+    max-width: 360px;
+    margin: 0 auto 16px;
+  }
+}
+
+/* The 6-column forecast table scrolls inside its panel on small screens. */
+@media (max-width: 767px) {
+  .detail-panel {
+    overflow-x: auto;
+  }
+}

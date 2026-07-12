@@ -163,3 +163,35 @@
   left: 16px;
   bottom: 10px;
 }
+
+/* --- Tablet (8-col grid): hero stacks, movers 2-up, steps 2-up. */
+@media (max-width: 1023px) {
+  .hero__copy,
+  .hero__panel {
+    grid-column: 1 / -1;
+  }
+
+  .mover {
+    grid-column: span 4;
+  }
+
+  .how__step {
+    grid-column: span 4;
+  }
+}
+
+/* --- Mobile (4-col grid): movers 2-up small, steps stacked. */
+@media (max-width: 767px) {
+  .hero__title {
+    font-size: 30px;
+  }
+
+  .mover {
+    grid-column: span 2;
+    padding: 12px;
+  }
+
+  .how__step {
+    grid-column: 1 / -1;
+  }
+}
