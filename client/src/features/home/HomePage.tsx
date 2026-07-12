@@ -5,6 +5,7 @@ import { gameKey } from "../../lib/util";
 import type { Card } from "../../app/models/card";
 import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
+import ChangePill from "../../app/shared/components/ChangePill";
 import { fallbackToCardBack } from "../../lib/cardImages";
 
 // Hero chart: solid blue history from the top mover's real sparkline, continued
@@ -53,7 +54,17 @@ function MoverTile({ mover }: { mover: Card }) {
                         <PricePair price={mover.price} forecast={mover.fcst12To} horizon="12M"
                             asOf={mover.priceAsOf} />
                     </span>
-                    <Sparkline points={mover.sparkline} />
+                    <span className="mover__market"
+                        title={`Price history over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`}>
+                        {mover.trendPct != null && (
+                            <>
+                                <ChangePill value={mover.trendPct}
+                                    title={`Price change over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`} />
+                                <span className="mono">PAST {(mover.trendPeriod ?? '1y').toUpperCase()}</span>
+                            </>
+                        )}
+                        <Sparkline points={mover.sparkline} />
+                    </span>
                 </div>
             </div>
         </Link>

@@ -195,3 +195,12 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Past-movement readout beside the mover sparkline (mirrors catalog tiles). */
+.mover__market {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
