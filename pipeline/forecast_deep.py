@@ -44,7 +44,7 @@ MAX_CATEGORIES = 250
 
 
 def load_matrix(game, grade):
-    rows = sqlite3.connect(PC_DB).execute(
+    rows = sqlite3.connect(PC_DB, timeout=180).execute(
         "SELECT product_id, date, price FROM price_history_unified WHERE game=? AND grade=?",
         (game, grade)).fetchall()
     by = collections.defaultdict(dict)
@@ -138,7 +138,7 @@ def market_index():
     global _MKT_CACHE
     if _MKT_CACHE is not None:
         return _MKT_CACHE
-    rows = sqlite3.connect(PC_DB).execute(
+    rows = sqlite3.connect(PC_DB, timeout=180).execute(
         "SELECT game, product_id, date, price FROM price_history_unified "
         "WHERE grade='ungraded' AND price > 0").fetchall()
     series = collections.defaultdict(dict)

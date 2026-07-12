@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Card, OwnedCopy } from "../../app/models/card";
-import { currencyFormat, gameKey } from "../../lib/util";
+import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import {
     useAddToWatchlistMutation,
     useUpdateOwnedCopyMutation,
@@ -125,8 +125,8 @@ function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) 
                 <div>
                     <span className="owned-summary__label">Acquired</span>
                     {copy.acquiredAt
-                        ? copy.acquiredAt.slice(0, 10)
-                        : `${copy.addedAt.slice(0, 10)} (added)`}
+                        ? shortDate(copy.acquiredAt)
+                        : `${shortDate(copy.addedAt)} (added)`}
                 </div>
                 {copy.note && (
                     <div><span className="owned-summary__label">Note</span>{copy.note}</div>

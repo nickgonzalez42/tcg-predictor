@@ -1,8 +1,10 @@
+import { useEffect, useState } from "react";
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import { resetParams, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setRarities, setSets } from "./catalogSlice";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
 import { forecastSortOptions, historySortOptions } from "./sortOptions";
@@ -31,8 +33,23 @@ type Props = {
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, grade, minPrice, maxPrice } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities, grade, minPrice, maxPrice, view } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
+
+    // Dropdown mode: the panels collapse behind a full-width toggle — on
+    // tablet/mobile always, and at any width in row view (the table wants the
+    // whole grid). Open, they cover the whole screen; a body class locks the
+    // page scroll behind the overlay.
+    const isTablet = useMediaQuery('(max-width: 1023px)');
+    const dropdown = isTablet || view === 'rows';
+    const [open, setOpen] = useState(false);
+    useEffect(() => {
+        if (!dropdown) setOpen(false);   // leaving dropdown mode closes the overlay
+    }, [dropdown]);
+    useEffect(() => {
+        document.body.classList.toggle('filters-open', open && dropdown);
+        return () => document.body.classList.remove('filters-open');
+    }, [open, dropdown]);
 
     // Debounced so each keystroke doesn't fire a query; commits follow store
     // resets (e.g. Reset filters) automatically. Six-figure ceiling.
@@ -43,7 +60,21 @@ export default function Filters({ filtersData: data }: Props) {
     const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(capPrice(v))));
 
     return (
-        <div className="filters">
+        <div className={`filters${dropdown ? ' filters--dropdown' : ''}`}>
+            <button
+                className="btn btn--outline filters__toggle"
+                aria-expanded={open}
+                onClick={() => setOpen(o => !o)}
+            >
+                Filters {open ? '▴' : '▾'}
+            </button>
+            <div className={`filters__body${open ? ' filters__body--open' : ''}`}>
+            {/* Overlay header: only rendered/visible inside the full-screen state. */}
+            <div className="filters__head">
+                <span className="filters__head-title">Filters</span>
+                <button className="btn btn--outline" title="Close filters"
+                    onClick={() => setOpen(false)}>✕</button>
+            </div>
             <div className="panel">
                 <Search />
             </div>
@@ -107,6 +138,7 @@ export default function Filters({ filtersData: data }: Props) {
             <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
                 Reset filters
             </button>
+            </div>
         </div>
     )
 }

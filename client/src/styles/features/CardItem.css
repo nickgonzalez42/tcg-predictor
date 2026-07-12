@@ -140,6 +140,10 @@
 
 .card__body {
   padding: 16px;
+}
+
+/* Price/forecast block on the left, ＋ toggle on the right, centered to the row. */
+.card__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -150,7 +154,8 @@
   min-width: 0;
 }
 
-/* Right-side round "＋" toggle, vertically centered in the card body. */
+/* Right-side round "＋" toggle, vertically centered to the price row.
+   Open (aria-pressed) it spins 45° so the ＋ reads as an ✕. */
 .card__add {
   flex-shrink: 0;
   width: 36px;
@@ -159,6 +164,17 @@
   border-radius: 50%;
   font-size: 22.4px;
   line-height: 1;
+  transition: transform 0.3s ease;
+}
+
+.card__add[aria-pressed="true"] {
+  transform: rotate(45deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card__add {
+    transition: none;
+  }
 }
 
 .card__title {
@@ -194,9 +210,22 @@
   flex-wrap: wrap;
 }
 
-/* Tablet: 4 tiles per row of the 8-col grid; mobile: 2 per row of the 4-col. */
+/* Trend sparkline centered along the bottom of the tile body. */
+.card__graph {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/* Tablet (8-col grid): 2 tiles per row; mobile (4-col): 1 per row. */
 @media (max-width: 1023px) {
   .card {
-    grid-column: span 2;
+    grid-column: span 4;
+  }
+}
+
+@media (max-width: 767px) {
+  .card {
+    grid-column: 1 / -1;
   }
 }

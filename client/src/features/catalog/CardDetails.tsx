@@ -15,6 +15,7 @@ import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 import { confidence } from "./confidence";
 import type { Forecast } from "../../app/models/card";
 import { fallbackToCardBack } from "../../lib/cardImages";
+import CardLoader from "../../app/shared/components/CardLoader";
 
 const TARGETS = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const HORIZONS = ['1w', '1m', '6m', '12m'];
@@ -37,7 +38,7 @@ function whyText(reason?: string) {
 
 // "Order ticket": condition + quantity + add-to-portfolio / wishlist, in a
 // highlighted panel. Wraps the same watchlist mutations as TrackButton.
-function OrderTicket({ game, productId, psa10 }: { game: string; productId: number; psa10?: number }) {
+function OrderTicket({ game, productId }: { game: string; productId: number; psa10?: number }) {
     const { data: user } = useUserInfoQuery();
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
     const [add, { isLoading: adding }] = useAddToWatchlistMutation();
@@ -192,7 +193,7 @@ export default function CardDetails() {
             a.target.localeCompare(b.target) || a.horizon.localeCompare(b.horizon)),
         [forecastData]);
 
-    if (isLoading || !card) return <div>Is loading...</div>
+    if (isLoading || !card) return <CardLoader game={gameId} />
     const fc12 = forecasts.find(f => f.target === 'ungraded' && f.horizon === '12m');
     const pct12 = fc12 && fc12.basePrice ? (fc12.forecastPrice / fc12.basePrice - 1) * 100 : undefined;
     const historyMonths = forecasts.find(f => f.target === 'ungraded')?.months;
@@ -226,7 +227,7 @@ export default function CardDetails() {
     return (
         <>
             <nav className="breadcrumb mono full-span">
-                <Link to="/catalog">Catalog</Link> / <Link to={`/catalog?game=${gameId}`}>{GAME_LABEL[gameId] ?? card.game}</Link> / <span>{card.name}</span>
+                <Link to="/catalog">Catalog</Link> / <Link to="/catalog">{GAME_LABEL[gameId] ?? card.game}</Link> / <span>{card.name}</span>
             </nav>
 
             {/* Left: card art + order ticket + prices + details */}

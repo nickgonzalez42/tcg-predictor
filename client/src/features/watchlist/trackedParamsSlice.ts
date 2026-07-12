@@ -13,6 +13,7 @@ const initialState: CardParams = {
     searchTerm: '',
     orderBy: '',
     grade: '',
+    trend: '1m',
 };
 
 export function createTrackedParamsSlice(name: string) {
@@ -41,6 +42,21 @@ export function createTrackedParamsSlice(name: string) {
             setGrade(state, action) {
                 state.grade = action.payload;
                 state.pageNumber = 1;
+            },
+            setTrend(state, action) {
+                state.trend = action.payload;
+            },
+            setSets(state, action) {
+                state.sets = action.payload;
+                state.pageNumber = 1;
+            },
+            setRarities(state, action) {
+                state.rarities = action.payload;
+                state.pageNumber = 1;
+            },
+            resetParams(state) {
+                // Reset filters only — the game choice stays decided (as on catalog).
+                return { ...initialState, game: state.game };
             },
         },
     });

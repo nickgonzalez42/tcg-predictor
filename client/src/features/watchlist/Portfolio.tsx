@@ -20,6 +20,7 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
+import CardLoader from "../../app/shared/components/CardLoader";
 import type { Card } from "../../app/models/card";
 
 
@@ -322,7 +323,7 @@ export default function Portfolio() {
                 </div>
 
                 {isLoading ? (
-                    <div>Loading...</div>
+                    <CardLoader />
                 ) : data && data.items.length > 0 ? (
                     <>
                         <div className="screener-wrap">

@@ -70,35 +70,43 @@ export default function CardItem({ card, ownGrade }: Props) {
             </div>
 
             <div className="card__body">
-                <div className="card__info">
-                    <Link className="card__title" to={detailPath} style={{ display: 'block' }}>{card.name}</Link>
-                    {card.setName && <div className="card__set">{card.setName}</div>}
-                    {/* One display for every sort: current price (gold) +
-                        parenthesized forecast (green/red, horizon follows the
-                        trend chips — which forecast sorts also snap to), then
-                        the movement row over that same window. */}
-                    <div className="card__price">
-                        <PricePair
-                            price={card.price}
-                            forecast={card.fcstTo}
-                            horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
-                            asOf={card.priceAsOf}
-                        />
-                    </div>
-                    {card.trendPct != null && (
-                        <div className="card__market"
-                            title={`Price history over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`}>
-                            <ChangePill value={card.trendPct}
-                                title={`Price change over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`} />
-                            <span className="mono">PAST {(card.trendPeriod ?? '1m').toUpperCase()}</span>
-                            <Sparkline points={card.sparkline} />
+                {/* Title + set run the full tile width; the price block below
+                    shares its row with the ＋ toggle, centered to that row. */}
+                <Link className="card__title" to={detailPath} style={{ display: 'block' }}>{card.name}</Link>
+                {card.setName && <div className="card__set">{card.setName}</div>}
+                <div className="card__row">
+                    <div className="card__info">
+                        {/* One display for every sort: current price (gold) +
+                            parenthesized forecast (green/red, horizon follows the
+                            trend chips — which forecast sorts also snap to), then
+                            the movement row over that same window. */}
+                        <div className="card__price">
+                            <PricePair
+                                price={card.price}
+                                forecast={card.fcstTo}
+                                horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
+                                asOf={card.priceAsOf}
+                            />
                         </div>
-                    )}
+                        {card.trendPct != null && (
+                            <div className="card__market">
+                                <ChangePill value={card.trendPct}
+                                    title={`Price change over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`} />
+                                <span className="mono">PAST {(card.trendPeriod ?? '1m').toUpperCase()}</span>
+                            </div>
+                        )}
+                    </div>
+                    <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
+                        aria-pressed={active} title="Show / hide actions">
+                        ＋
+                    </button>
                 </div>
-                <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
-                    aria-pressed={active} title="Show / hide actions">
-                    ＋
-                </button>
+                {(card.sparkline?.length ?? 0) >= 2 && (
+                    <div className="card__graph"
+                        title={`Price history over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`}>
+                        <Sparkline points={card.sparkline} />
+                    </div>
+                )}
             </div>
         </div>
     )

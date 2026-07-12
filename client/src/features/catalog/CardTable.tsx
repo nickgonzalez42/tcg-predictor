@@ -5,18 +5,24 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import TrackButton from "../watchlist/TrackButton";
 import { tierLabel } from "../watchlist/grades";
-import { confidence } from "./confidence";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 
 type Props = {
     cards: Card[]
     ownGrade?: string   // selected price tier ('' = ungraded); quick "Own" adds at this tier
+    trend?: string      // selected 1w|1m|6m|1y window (drives both change columns)
 }
+
+// The forecast horizon each trend window maps to (mirrors the API's
+// TrendWindows: the model has no 1y horizon, so 1Y shows the 12m forecast).
+export const TREND_FCST: Record<string, string> = { '1w': '1W', '1m': '1M', '6m': '6M', '1y': '12M' };
 
 // Screener-style rows view of the catalog. Row click opens the card; the
 // action buttons live in their own cell and don't bubble.
-export default function CardTable({ cards, ownGrade }: Props) {
+export default function CardTable({ cards, ownGrade, trend }: Props) {
     const navigate = useNavigate();
+    const period = (trend ?? '1m').toLowerCase();
+    const fcstLabel = TREND_FCST[period] ?? '12M';
 
     return (
         <div className="screener-wrap full-span">
@@ -29,18 +35,22 @@ export default function CardTable({ cards, ownGrade }: Props) {
                         <th className="screener__num">
                             {tierLabel(ownGrade)} price
                         </th>
-                        <th className="screener__num">6m fcst</th>
-                        <th className="screener__num">12m fcst</th>
-                        <th title="Actual price history over the selected window">
-                            Past {(cards[0]?.trendPeriod ?? '1m').toUpperCase()}
+                        <th className="screener__mid"
+                            title="Model forecast over the horizon matching the selected window">
+                            {fcstLabel} fcst
                         </th>
-                        <th>Conf.</th>
+                        <th className="screener__mid" title="Actual price history over the selected window">
+                            Past {period.toUpperCase()}
+                        </th>
                         <th aria-label="Actions" />
                     </tr>
                 </thead>
                 <tbody>
                     {cards.map(card => {
-                        const conf = confidence(card.fcstConfidence, card.historyMonths);
+                        // Forecast % over the horizon the trend buttons snapped to
+                        // (fcstTo follows the selected 1W/1M/6M/1Y window).
+                        const fcstPct = card.fcstTo != null && card.price
+                            ? (card.fcstTo / card.price - 1) * 100 : undefined;
                         const detailPath = `/catalog/${gameKey(card.game)}/${card.id}`;
                         return (
                             <tr key={card.id} className="screener__row" onClick={() => navigate(detailPath)}>
@@ -53,14 +63,11 @@ export default function CardTable({ cards, ownGrade }: Props) {
                                         <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>
                                     )}
                                 </td>
-                                <td className="screener__num"><ChangePill value={card.fcst6Pct} title="6 month model forecast" /></td>
-                                <td className="screener__num"><ChangePill value={card.fcst12Pct} title="12 month model forecast" /></td>
-                                <td><Sparkline points={card.sparkline} /></td>
-                                <td>
-                                    {card.fcst12Pct != null
-                                        ? <span className={`conf ${conf.cls}`} title={conf.reason}>{conf.short}</span>
-                                        : <span className="mono">—</span>}
+                                <td className="screener__mid">
+                                    <ChangePill value={fcstPct}
+                                        title={`${fcstLabel} model forecast`} />
                                 </td>
+                                <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
                                 <td className="screener__actions" onClick={e => e.stopPropagation()}>
                                     <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
                                 </td>

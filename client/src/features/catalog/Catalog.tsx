@@ -4,6 +4,7 @@ import CardTable from "./CardTable"
 import Filters from "./Filters";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
+import CardLoader from "../../app/shared/components/CardLoader";
 import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
@@ -72,13 +73,13 @@ export default function Catalog() {
     setSearchParams(sp, { replace: true });
   }, [cardParams, setSearchParams]);
 
-  if (isLoading || !data || filtersLoading || !filtersData) return <div>Is loading...</div>
+  if (isLoading || !data || filtersLoading || !filtersData) return <CardLoader game={cardParams.game} />
 
   const view = cardParams.view ?? 'cards';
   const totalCount = data.pagination?.totalCount;
 
   return (
-    <div className="catalog subgrid full-span">
+    <div className={`catalog subgrid full-span${view === 'rows' ? ' catalog--rows' : ''}`}>
       <Filters filtersData={filtersData} />
       <div className="catalog-items subgrid">
         <div className="results-head full-span">
@@ -117,7 +118,7 @@ export default function Catalog() {
         {data.items && data.items.length > 0 ? (
           <>
             {view === 'rows' ? (
-              <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} />
+              <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} trend={cardParams.trend} />
             ) : (
               <CardList cards={data.items} ownGrade={cardParams.grade ?? ''} />
             )}

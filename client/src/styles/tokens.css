@@ -38,3 +38,10 @@
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
+/* Tablet and below: slightly rounder corners everywhere the token is used. */
+@media (max-width: 1023px) {
+  :root {
+    --radius: 19px;
+  }
+}
+

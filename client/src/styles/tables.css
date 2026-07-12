@@ -41,6 +41,11 @@
   white-space: nowrap;
 }
 
+.screener__mid {
+  text-align: center;
+  white-space: nowrap;
+}
+
 .screener__name {
   font-weight: 600;
 }
@@ -64,6 +69,7 @@
 
 .screener__actions {
   white-space: nowrap;
+  text-align: center;
 }
 
 .screener__actions .btn {

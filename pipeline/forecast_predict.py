@@ -371,6 +371,23 @@ def forecast_game_target(game, target, now):
             X, y, test = X.iloc[idx].reset_index(drop=True), y[idx], test[idx]
             print(f"  [{game}/{target}/{hname}] subsampled {len(y)} of a larger pool", flush=True)
 
+        # A NUMERIC feature with <2 distinct finite values (e.g. a feedback
+        # signal that just switched on with a single graded forecast behind it)
+        # crashes HGB's binning (sliding_window_view over distinct values).
+        # Drop such columns; Xnow is built from X.columns so it follows
+        # automatically. Categorical columns bin differently and are exempt.
+        degenerate = []
+        for c in X.columns:
+            if isinstance(X[c].dtype, pd.CategoricalDtype):
+                continue
+            mn = X[c].min()
+            if pd.isna(mn) or mn == X[c].max():
+                degenerate.append(c)
+        if degenerate:
+            X = X.drop(columns=degenerate)
+            print(f"  [{game}/{target}/{hname}] dropped degenerate feature(s): "
+                  f"{', '.join(degenerate)}", flush=True)
+
         # confidence band from out-of-sample error, if the split is large enough
         # (HGB's binning needs a healthy sample count, so require a real train set)
         if test.sum() >= 50 and (~test).sum() >= 300:
@@ -381,14 +398,15 @@ def forecast_game_target(game, target, now):
         else:
             band = DEFAULT_BAND
 
-        # A segment must EARN publication: when its out-of-sample error says the
-        # model can't call this (game, tier, horizon) — typical for young games
-        # whose only training regime is their launch mania/crash — publish no
-        # forecasts at all rather than confident-looking noise.
-        if band > MAX_SEGMENT_MAE:
+        # Segments whose out-of-sample error says the model can't call this
+        # (game, tier, horizon) — typical for young games whose only training
+        # regime is their launch mania/crash — still publish (per product
+        # decision 2026-07-12), but every row is forced to low confidence and
+        # carries an explicit caution in its reasoning text.
+        unreliable = band > MAX_SEGMENT_MAE
+        if unreliable:
             print(f"  [{game}/{target}/{hname}] retMAE {band:.2f} > {MAX_SEGMENT_MAE} "
-                  f"— segment suppressed", flush=True)
-            continue
+                  f"— publishing flagged low-confidence", flush=True)
 
         model = model_new().fit(X, y)
         # Per-card scenario quantiles (10th/90th) — the model's OWN uncertainty.
@@ -405,6 +423,8 @@ def forecast_game_target(game, target, now):
         hi_ret = np.clip(np.maximum(q90.predict(Xnow), ret), -RET_CLIP, RET_CLIP)
         width = hi_ret - lo_ret   # 80% interval width in log-return
         conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
+        if unreliable:
+            conf = np.full(len(ret), "low", dtype=object)
 
         deltas = bucket_deltas(model, Xnow, X)   # per-card trait attribution
         comps = art_comps(game)
@@ -423,11 +443,6 @@ def forecast_game_target(game, target, now):
         set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
 
         for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
-            # An extreme call the model itself has no confidence in is noise
-            # dressed as a headline (+700% with a 9x-wide interval) — unpublish
-            # it; the card just shows no forecast for this horizon.
-            if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
-                continue
             comp = comps.get(int(pid))
             # resolve up to two look-alike cards by name, skipping self-references
             examples = []
@@ -445,6 +460,13 @@ def forecast_game_target(game, target, now):
                                  deltas_i={bkt: d[i] for bkt, d in deltas.items()},
                                  traits=traits.get(int(pid)), pid=int(pid),
                                  set12=set12[i], comp_examples=examples)
+            # Honesty caveats replace the old suppression gates: flagged, not hidden.
+            if unreliable:
+                reason += (" Caution: the model's recent out-of-sample accuracy for this"
+                           " game and horizon is poor — treat this forecast as speculative.")
+            if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
+                reason += (" This is an extreme swing the model itself has low confidence"
+                           " in — such calls have historically been unreliable.")
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
                          str(conf[i]), MODEL_VERSION, now))
@@ -464,6 +486,10 @@ def forecast_game_target(game, target, now):
                                       traits=traits.get(int(pid)), pid=int(pid),
                                       set12=set12[i], comp_examples=examples)
                 wreason += " Pro-rated from the 1-month model (price data is monthly)."
+                if unreliable:
+                    wreason += (" Caution: the model's recent out-of-sample accuracy for"
+                                " this game and horizon is poor — treat this forecast as"
+                                " speculative.")
                 rows.append((game, int(pid), target, "1w", a, round(float(b), 2),
                              round(float(b) * float(np.exp(rw)), 2),
                              round(float(b) * float(np.exp(lw)), 2),

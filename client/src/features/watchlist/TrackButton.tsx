@@ -98,8 +98,9 @@ function AddToCollection({ game, productId, grade, owned }: {
                     if (e.key === 'Escape') close();
                 }}
             />
-            <button className="btn btn--outline" disabled={!valid || isLoading} onClick={submit}>
-                Add to portfolio
+            <button className="btn btn--outline" disabled={!valid || isLoading} onClick={submit}
+                title={`Add to portfolio · ${tierLabel(grade)}`}>
+                Add
             </button>
             <button className="btn btn--outline" onClick={close}>Cancel</button>
         </span>

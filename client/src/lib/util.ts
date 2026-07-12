@@ -6,13 +6,13 @@ export function currencyFormat(amount?: number) {
 // Canonical game key (re-exported so existing imports keep working).
 export { gameKey } from './games';
 
-// "2026-07-01..." -> "Jul 1, 2026" (returns the input if it doesn't parse).
+// "2026-07-01..." -> "07/01/2026" (returns the input if it doesn't parse).
 export function shortDate(date?: string) {
     if (!date) return '';
     const d = new Date(date.slice(0, 10) + 'T00:00:00');
     return isNaN(d.getTime())
         ? date
-        : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        : d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
 }
 
 export function filterEmptyValues(values: object) {
