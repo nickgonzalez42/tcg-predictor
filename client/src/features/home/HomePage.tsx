@@ -66,9 +66,12 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
     const fcstEnd = card.fcst12To!;
     const all = [...hist, fcstEnd];
     const min = Math.min(...all), span = Math.max(...all) - min || 1;
+    // Extra bottom inset keeps the (tall) card art from being cut off when the
+    // line runs along the panel's lower edge.
+    const PAD_TOP = 26, PAD_BOT = 58;
     const histW = (HERO_W - HERO_PAD * 2) * 0.7;
     const x = (i: number) => HERO_PAD + (i / (hist.length - 1)) * histW;
-    const y = (v: number) => HERO_PAD + (1 - (v - min) / span) * (HERO_H - HERO_PAD * 2);
+    const y = (v: number) => PAD_TOP + (1 - (v - min) / span) * (HERO_H - PAD_TOP - PAD_BOT);
     const histD = hist.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
     const lastX = x(hist.length - 1), lastY = y(hist[hist.length - 1]);
     const fcstPct = card.price ? (fcstEnd / card.price - 1) * 100 : 0;
@@ -155,7 +158,7 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                 <text
                     ref={labelRef}
                     className="hero-scene__fcst"
-                    x={HERO_W - HERO_PAD} y={y(fcstEnd) - 8}
+                    x={HERO_W - HERO_PAD} y={HERO_H - 10}
                     textAnchor="end"
                     style={{ opacity: 0, fill: fcstPct >= 0 ? 'var(--up)' : 'var(--down)' }}
                 >
