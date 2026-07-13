@@ -75,6 +75,7 @@ export default function Filters({ filtersData: data }: Props) {
                 <button className="btn btn--outline" title="Close filters"
                     onClick={() => setOpen(false)}>✕</button>
             </div>
+            <div className="filters__panels">
             <div className="panel">
                 <Search />
             </div>
@@ -135,9 +136,19 @@ export default function Filters({ filtersData: data }: Props) {
                     onChange={(items: string[]) => dispatch(setSets(items))}
                 />
             </div>
-            <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
-                Reset filters
-            </button>
+            </div>
+            {/* Footer: Reset + (dropdown-only) Apply, pinned to the bottom of
+                the overlay. Filters apply live, so Apply just closes it. */}
+            <div className="filters__footer">
+                <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
+                    Reset filters
+                </button>
+                {dropdown && (
+                    <button className="btn filters__apply" onClick={() => setOpen(false)}>
+                        Apply
+                    </button>
+                )}
+            </div>
             </div>
         </div>
     )

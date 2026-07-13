@@ -6,7 +6,7 @@
   justify-content: space-between;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: calc(var(--radius) - 1px);
   overflow: hidden;
 
   grid-column: span 3;
@@ -140,14 +140,25 @@
 
 .card__body {
   padding: 16px;
+  flex: 1;                  /* fill the card's (stretched) height so the... */
+  display: flex;
+  flex-direction: column;
 }
 
-/* Price/forecast block on the left, ＋ toggle on the right, centered to the row. */
+/* Current price + forecast on the left, ＋ toggle on the right, the button
+   centered to that price line (market/graph now live in the footer). */
 .card__row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: 10px;
+}
+
+/* Title + set sit at the top; card__main (price row + footer) is pushed to the
+   bottom of the body, aligned across every card in a row. */
+.card__main {
+  margin-top: auto;
 }
 
 .card__info {
@@ -193,7 +204,7 @@
 .card__set {
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 6.4px;
+  margin-bottom: 10px;
 }
 
 .card__price {
@@ -202,19 +213,16 @@
   color: var(--price);
 }
 
+/* One line: past-movement pill, label and sparkline equally spaced across it. */
 .card__market {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
-  margin-top: 6.4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
   flex-wrap: wrap;
-}
-
-/* Trend sparkline centered along the bottom of the tile body. */
-.card__graph {
-  display: flex;
-  justify-content: center;
-  margin-top: 10px;
 }
 
 /* Tablet (8-col grid): 2 tiles per row; mobile (4-col): 1 per row. */

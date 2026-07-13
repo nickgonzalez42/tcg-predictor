@@ -33,6 +33,21 @@
   gap: 16px;
 }
 
+/* Panels (the filter controls) and footer (Reset/Apply). On the desktop rail
+   they just stack; the overlay below turns panels into a scrolling grid and
+   pins the footer to the bottom. */
+.filters__panels {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.filters__footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 /* Overlay header (title + ✕): only exists in the full-screen dropdown. */
 .filters__head {
   display: none;
@@ -72,7 +87,7 @@
    toggle; opening it reveals the panels as a full-screen 2-column overlay. */
 .filters--dropdown {
   grid-column: 1 / -1;
-  margin-top: 24px;
+  margin-top: 0;
 }
 
 .filters--dropdown .filters__toggle {
@@ -83,28 +98,44 @@
   display: none;
 }
 
-/* Open = full-screen overlay above the navbar; the page behind can't
-   scroll (body.filters-open below). */
+/* Open = full-screen overlay above the navbar (flex column: header, a
+   scrolling panels grid, then a footer pinned to the bottom). The page behind
+   can't scroll (body.filters-open below). */
 .filters--dropdown .filters__body--open {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  align-items: start;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   position: fixed;
   inset: 0;
   z-index: 20;
   background: var(--bg);
-  overflow-y: auto;
   padding: 16px;
+  gap: 16px;
 }
 
-.filters__body--open > .btn {
-  grid-column: 1 / -1;   /* Reset filters gets its own row */
+.filters--dropdown .filters__body--open .filters__panels {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-content: start;
+}
+
+/* Footer sits at the bottom; its two buttons span a 4-column strip (2 each). */
+.filters--dropdown .filters__body--open .filters__footer {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.filters--dropdown .filters__body--open .filters__footer .btn {
+  grid-column: span 2;
+  margin: 0;
 }
 
 .filters__body--open .filters__head {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -113,6 +144,11 @@
 .filters__head-title {
   font-weight: 700;
   font-size: 16px;
+}
+
+.filters__apply {
+  padding: 12px;
+  font-weight: 700;
 }
 
 /* Scroll lock while the overlay is up (class set by Filters.tsx). */
@@ -134,7 +170,7 @@ body.filters-open {
 
 /* --- Mobile (4-col grid): single-column filters inside the dropdown. */
 @media (max-width: 767px) {
-  .filters--dropdown .filters__body--open {
+  .filters--dropdown .filters__body--open .filters__panels {
     grid-template-columns: 1fr;
   }
 }

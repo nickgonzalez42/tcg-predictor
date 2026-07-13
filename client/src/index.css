@@ -23,6 +23,7 @@
 @import "./styles/components/AppPagination.css";
 @import "./styles/components/MultiSelectDropdown.css";
 @import "./styles/components/CardLoader.css";
+@import "./styles/components/Modal.css";
 
 /* Feature screens */
 @import "./styles/features/HomePage.css";

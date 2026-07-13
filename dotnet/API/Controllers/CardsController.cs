@@ -160,7 +160,11 @@ public class CardsController(
 
         var forecasts = rows.Select(f => new
         {
-            f.Target, f.Horizon, f.AsOf, f.BasePrice,
+            f.Target, f.Horizon,
+            // Display date: the REAL date of the anchor price when the pipeline
+            // recorded it; AsOf (its month bucket, stamped the 1st) as fallback.
+            AsOf = f.AnchorDate ?? f.AsOf,
+            f.BasePrice,
             f.ForecastPrice, f.Low, f.High, f.Ret, f.Reason, f.Confidence,
             Months = monthsByTier.GetValueOrDefault(f.Target, 0),
         });

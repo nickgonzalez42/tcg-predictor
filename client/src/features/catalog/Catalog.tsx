@@ -5,12 +5,13 @@ import Filters from "./Filters";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useUserInfoQuery } from "../account/accountApi";
 import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 
 export default function Catalog() {
   const cardParams = useAppSelector(state => state.catalog);
@@ -19,7 +20,11 @@ export default function Catalog() {
   const dispatch = useAppDispatch();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Hydrate catalog state from the URL once on mount (shareable/bookmarkable links).
+  // On mount, decide from the URL:
+  //  - has params (back button, or a shared/bookmarked link) -> hydrate them,
+  //    so the filters the user left behind are reapplied.
+  //  - bare /catalog (a fresh nav-link click) -> reset to defaults, so stale
+  //    Redux filters don't linger and the portfolio-majority game is re-picked.
   const hydrated = useRef(false);
   useEffect(() => {
     if (hydrated.current) return;
@@ -37,6 +42,7 @@ export default function Catalog() {
     if (get('trend')) p.trend = get('trend')!;
     if (get('view')) p.view = get('view') === 'rows' ? 'rows' : 'cards';
     if (Object.keys(p).length) dispatch(setParams(p));
+    else dispatch(resetToDefaults());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -73,9 +79,14 @@ export default function Catalog() {
     setSearchParams(sp, { replace: true });
   }, [cardParams, setSearchParams]);
 
+  // Mobile: the 6-column screener can't work at phone width, so row view is
+  // disabled and cards are forced. The stored preference isn't touched — a
+  // rows user gets rows back the moment the viewport grows past 767px.
+  const isMobile = useMediaQuery('(max-width: 767px)');
+
   if (isLoading || !data || filtersLoading || !filtersData) return <CardLoader game={cardParams.game} />
 
-  const view = cardParams.view ?? 'cards';
+  const view = isMobile ? 'cards' : (cardParams.view ?? 'cards');
   const totalCount = data.pagination?.totalCount;
 
   return (
@@ -98,22 +109,24 @@ export default function Catalog() {
               </button>
             ))}
           </div>
-          <div className="view-toggle" role="group" aria-label="Results view">
-            <button
-              className={`btn btn--outline view-toggle__btn${view === 'cards' ? ' btn--active' : ''}`}
-              onClick={() => dispatch(setView('cards'))}
-              aria-pressed={view === 'cards'}
-            >
-              ▦ Cards
-            </button>
-            <button
-              className={`btn btn--outline view-toggle__btn${view === 'rows' ? ' btn--active' : ''}`}
-              onClick={() => dispatch(setView('rows'))}
-              aria-pressed={view === 'rows'}
-            >
-              ☰ Rows
-            </button>
-          </div>
+          {!isMobile && (
+            <div className="view-toggle" role="group" aria-label="Results view">
+              <button
+                className={`btn btn--outline view-toggle__btn${view === 'cards' ? ' btn--active' : ''}`}
+                onClick={() => dispatch(setView('cards'))}
+                aria-pressed={view === 'cards'}
+              >
+                ▦ Cards
+              </button>
+              <button
+                className={`btn btn--outline view-toggle__btn${view === 'rows' ? ' btn--active' : ''}`}
+                onClick={() => dispatch(setView('rows'))}
+                aria-pressed={view === 'rows'}
+              >
+                ☰ Rows
+              </button>
+            </div>
+          )}
         </div>
         {data.items && data.items.length > 0 ? (
           <>

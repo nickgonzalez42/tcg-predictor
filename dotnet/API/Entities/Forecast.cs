@@ -17,6 +17,7 @@ public class Forecast
     public string? Reason { get; set; }          // plain-English why, from model signals
     public string? Confidence { get; set; }      // model-reported: high | med | low (80% interval width)
     public string? ScoredAt { get; set; }        // batch timestamp — invalidates cached prose
+    public string? AnchorDate { get; set; }      // REAL date of the anchor price (AsOf is its month bucket)
 }
 
 // A permanently archived first-issued forecast (forecast_archive), written by

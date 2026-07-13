@@ -47,7 +47,7 @@ export default function TrackButton({ game, productId, compact, ownGrade }: Prop
             && w.kind === 'owned' && (w.grade ?? '') === grade).length ?? 0;
 
     return (
-        <div className="track-buttons" style={{ display: 'inline-flex', gap: '6.4px', alignItems: 'center', flexWrap: 'wrap' }}>
+        <div className="track-buttons" style={{ display: 'inline-flex', gap: '6.4px', alignItems: 'center' }}>
             <AddToCollection game={game} productId={productId} grade={grade} owned={ownedAtGrade} />
             {wishlistButton}
         </div>

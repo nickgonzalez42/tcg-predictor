@@ -114,6 +114,7 @@
 
 .how {
   grid-column: 1 / -1;
+  margin-bottom: 48px;
 }
 
 .how__step {
@@ -156,6 +157,12 @@
   .how__step {
     grid-column: span 4;
   }
+
+  .movers, .how {
+    row-gap: 24px;
+  }
+
+  
 }
 
 /* --- Mobile (4-col grid): movers 2-up small, steps stacked. */
@@ -165,12 +172,16 @@
   }
 
   .mover {
-    grid-column: span 2;
+    grid-column: 1 / -1;
     padding: 12px;
   }
 
   .how__step {
     grid-column: 1 / -1;
+  }
+
+  .movers, .how {
+    row-gap: 16px;
   }
 }
 

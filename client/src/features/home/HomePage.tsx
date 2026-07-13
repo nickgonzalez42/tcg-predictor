@@ -7,7 +7,7 @@ import type { Card } from "../../app/models/card";
 import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
-import { fallbackToCardBack } from "../../lib/cardImages";
+import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 
 // Hero animation: cycles through high-value movers. Each card's art rides the
 // tip of its past-1Y price line as it draws itself; when the line reaches the
@@ -15,6 +15,19 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 // away, and the next card begins. Decorative only.
 const HERO = { draw: 3200, fcst: 900, hold: 1600, out: 500 };
 const HERO_W = 560, HERO_H = 210, HERO_PAD = 16;
+
+// Resolve once a card's art is actually decodable (SVG <image> has no onError
+// fallback, so a failed load falls back to the game's card back here).
+function preloadArt(card: Card) {
+    return new Promise<string>(resolve => {
+        const back = cardBackSrc(card.game, card.cardType);
+        if (!card.pictureUrl) { resolve(back); return; }
+        const img = new Image();
+        img.onload = () => resolve(card.pictureUrl!);
+        img.onerror = () => resolve(back);
+        img.src = card.pictureUrl;
+    });
+}
 
 function HeroChart({ movers }: { movers?: Card[] }) {
     const cards = useMemo(() => {
@@ -35,9 +48,31 @@ function HeroChart({ movers }: { movers?: Card[] }) {
             for (const p of pools) if (i < p.length) mixed.push(p[i]);
         return mixed;
     }, [movers]);
-    const [idx, setIdx] = useState(0);
+    // A scene only mounts once its art is loaded: the first one waits on the
+    // placeholder; later ones are gated by canLeave below, so the finished
+    // scene sits at its end state until the next card's art is in.
+    const [scene, setScene] = useState<{ i: number; art: string } | null>(null);
+    const [nextArt, setNextArt] = useState<string | null>(null);
 
-    if (!cards.length) {
+    useEffect(() => {   // first scene: wait for its art before playing
+        if (!cards.length) { setScene(null); return; }
+        let live = true;
+        preloadArt(cards[0]).then(art => { if (live) setScene({ i: 0, art }); });
+        return () => { live = false; };
+    }, [cards]);
+
+    const nextIdx = (scene?.i ?? 0) + 1;
+    useEffect(() => {   // preload the NEXT card's art while this scene plays
+        if (!scene || !cards.length) return;
+        let live = true;
+        setNextArt(null);
+        preloadArt(cards[nextIdx % cards.length])
+            .then(art => { if (live) setNextArt(art); });
+        return () => { live = false; };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [scene?.i, cards]);
+
+    if (!cards.length || !scene) {
         // No qualifying movers yet — draw a static placeholder line.
         const pts = [42, 45, 44, 49, 52, 50, 56, 61, 58, 66, 71, 74];
         const min = Math.min(...pts), span = Math.max(...pts) - min || 1;
@@ -50,18 +85,30 @@ function HeroChart({ movers }: { movers?: Card[] }) {
             </svg>
         );
     }
-    // key remounts the scene per card, resetting every ref and timer cleanly
-    return <HeroScene key={idx} card={cards[idx % cards.length]}
-        onDone={() => setIdx(i => i + 1)} />;
+    // key remounts the scene per card, resetting every ref and timer cleanly.
+    // canLeave: the swipe-out is held until the next card's art has loaded;
+    // onDone advances with that art, so the new scene starts instantly.
+    return <HeroScene key={scene.i} card={cards[scene.i % cards.length]}
+        artHref={scene.art}
+        canLeave={nextArt != null}
+        onDone={() => setScene({ i: nextIdx, art: nextArt! })} />;
 }
 
-function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
+function HeroScene({ card, artHref, canLeave, onDone }: {
+    card: Card; artHref: string; canLeave: boolean; onDone: () => void;
+}) {
     const clipId = useId();
+    // The rAF effect runs once at mount; these props change while the scene
+    // plays (next art finishing its load), so the loop reads them via refs.
+    const canLeaveRef = useRef(canLeave);
+    const onDoneRef = useRef(onDone);
+    useEffect(() => { canLeaveRef.current = canLeave; onDoneRef.current = onDone; });
     const svgRef = useRef<SVGSVGElement>(null);
     const rootRef = useRef<SVGGElement>(null);
     const histRef = useRef<SVGPathElement>(null);
     const revealRef = useRef<SVGRectElement>(null);
     const tipRef = useRef<SVGGElement>(null);
+    const nameRef = useRef<SVGTextElement>(null);
     const labelRef = useRef<SVGTextElement>(null);
 
     const hist = card.sparkline!;
@@ -94,6 +141,16 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
         const placeTip = (px: number, py: number) =>
             tipRef.current?.setAttribute('transform', `translate(${px} ${py}) ${artScale}`);
 
+        // Text must not stretch OR grow with the panel — pin it to a static
+        // pixel size by fully undoing the container scale (net 1:1), anchored
+        // at each label's own corner so it stays put.
+        const invX = (1 / sx).toFixed(4), invY = (1 / sy).toFixed(4);
+        const pinText = (el: SVGTextElement | null, ax: number, ay: number) =>
+            el?.setAttribute('transform',
+                `translate(${ax} ${ay}) scale(${invX} ${invY}) translate(${-ax} ${-ay})`);
+        pinText(nameRef.current, HERO_PAD, HERO_PAD - 3);
+        pinText(labelRef.current, HERO_W - HERO_PAD, HERO_H - 10);
+
         const finish = () => {   // fully-drawn state (also the reduced-motion state)
             path.style.strokeDasharray = 'none';
             placeTip(lastX, lastY);
@@ -124,12 +181,15 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                 if (labelRef.current) labelRef.current.style.opacity = String(p2);
             }
             if (el > HERO.draw + HERO.fcst + HERO.hold) {
-                if (!leaving) {
+                // Hold at the finished state until the next card's art has
+                // loaded (canLeave); only then swipe out and hand over.
+                if (canLeaveRef.current && !leaving) {
                     leaving = true;
                     rootRef.current?.classList.add('hero-scene--out');
-                    timeout = setTimeout(onDone, HERO.out);
+                    timeout = setTimeout(() => onDoneRef.current(), HERO.out);
+                    return;
                 }
-                return;
+                if (leaving) return;
             }
             raf = requestAnimationFrame(frame);
         };
@@ -150,7 +210,7 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                 </clipPath>
             </defs>
             <g ref={rootRef} className="hero-scene">
-                <text className="hero-scene__name" x={HERO_PAD} y={HERO_PAD - 3}>
+                <text ref={nameRef} className="hero-scene__name" x={HERO_PAD} y={HERO_PAD - 3}>
                     {card.name} · {currencyFormat(card.price)}
                 </text>
                 <path ref={histRef} className="hero__history" d={histD} fill="none" />
@@ -171,7 +231,7 @@ function HeroScene({ card, onDone }: { card: Card; onDone: () => void }) {
                 </text>
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
-                        href={card.pictureUrl}
+                        href={artHref}
                         x="-38" y="-54" width="76" height="108"
                         clipPath={`url(#${clipId}-art)`}
                         preserveAspectRatio="xMidYMid slice"

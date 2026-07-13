@@ -120,8 +120,9 @@ button.navbar__link {
    avatar UserMenu stays in the bar). */
 @media (max-width: 1023px) {
   .navbar__nav,
-  .navbar__auth {
-    display: none;
+  .navbar__auth,
+  .navbar__usermenu {
+    display: none;   /* text links + logout move into the ☰ dropdown */
   }
 
   .navbar__menu-btn {

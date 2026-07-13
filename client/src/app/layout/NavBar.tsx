@@ -66,7 +66,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {user ? (
-                        <UserMenu />
+                        <div className="navbar__usermenu"><UserMenu /></div>
                     ) : (
                         <ul className="navbar__links navbar__auth">
                             {rightLinks.map(({ title, path }) => (
@@ -92,6 +92,9 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                             {title.toUpperCase()}
                         </NavLink>
                     ))}
+                    {/* Signed-in: logout lives in the dropdown on mobile (the
+                        in-bar UserMenu is hidden at this breakpoint). */}
+                    {user && <UserMenu />}
                 </nav>
             )}
             {isLoading && <div className="progress-bar" />}

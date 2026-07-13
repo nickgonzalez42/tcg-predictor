@@ -11,12 +11,10 @@
 
 .ticker__track {
   display: inline-flex;
-  animation: ticker-scroll 30s linear infinite;
   will-change: transform;
-}
-
-.ticker:hover .ticker__track {
-  animation-play-state: paused;
+  cursor: grab;             /* GSAP Draggable swaps to grabbing while dragging */
+  user-select: none;        /* don't select chip text mid-drag */
+  touch-action: pan-y;      /* horizontal drags the ticker; vertical scrolls the page */
 }
 
 .ticker__group {
@@ -26,13 +24,8 @@
   padding-right: 10px;
 }
 
-@keyframes ticker-scroll {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-
+/* No motion: GSAP is skipped in JS, so just show one static group. */
 @media (prefers-reduced-motion: reduce) {
-  .ticker__track { animation: none; }
   .ticker__group[aria-hidden="true"] { display: none; }
 }
 

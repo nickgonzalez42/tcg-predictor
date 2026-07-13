@@ -34,6 +34,19 @@
   border-color: var(--primary);
 }
 
+/* Number fields (quantities, prices, alerts) keep typing only — no native
+   increment/decrement spinners anywhere in the app. */
+.input[type="number"]::-webkit-outer-spin-button,
+.input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 .field__error {
   color: var(--danger);
   font-size: 12.8px;

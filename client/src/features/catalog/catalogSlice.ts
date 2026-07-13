@@ -97,10 +97,18 @@ export const catalogSlice = createSlice({
             // not a filter, and the game default stays decided.
             return { ...initialState, game: state.game, view: state.view, gameInitialized: state.gameInitialized };
         },
+        // Fresh navigation to /catalog with NO url params (a nav-link click, not
+        // the back button): wipe filters AND the per-session game decision, so
+        // the portfolio-majority default is re-picked. Back-button navigation
+        // carries ?params and hydrates via setParams instead. View is
+        // presentation state (persisted in localStorage), so it's preserved.
+        resetToDefaults(state) {
+            return { ...initialState, view: state.view };
+        },
         setParams(state, action) {
             return { ...state, ...action.payload };
         }
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

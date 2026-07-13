@@ -6,7 +6,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 8.8px 16px;
+  padding: 8px 12px;
   border: 1px solid var(--brand-border);
   border-radius: var(--radius);
   background: var(--brand);
@@ -45,7 +45,7 @@
 
 .btn-group {
   display: flex;
-  gap: 8px;
+  gap: 16px;
   flex-wrap: wrap;
 }
 
@@ -80,3 +80,10 @@
 .btn--danger:hover:not(:disabled) {
   background: rgba(229, 57, 53, 0.12);
 }
+
+@media (max-width: 1023px) {
+  .btn-group {
+    margin-bottom: 24px;
+  }
+}
+

@@ -9,7 +9,7 @@ set -euo pipefail
 IP=${1:?usage: push_data.sh <server-ip> [--skip-images]}
 SKIP_IMAGES=${2:-}
 KEY=~/.ssh/tcg-predictor.pem
-RS="rsync -az --partial --info=stats1 -e"
+RS="rsync -az --partial --stats -e"
 SSH_CMD="ssh -i $KEY"
 DATA=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece
 API_DATA=/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/dotnet/API/Data/cards

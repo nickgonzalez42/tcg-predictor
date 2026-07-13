@@ -3,7 +3,6 @@
 .forecast-table {
   border-collapse: collapse;
   width: 100%;
-  max-width: 560px;
 }
 
 .forecast-table th {
@@ -22,14 +21,75 @@
   vertical-align: top;
 }
 
-/* Plain-text prediction reasoning shown under each predicted price. */
-.forecast-reason {
-  margin: 5.6px 0 0;
-  font-size: 11.52px;
-  line-height: 1.35;
-  font-weight: 400;
+/* Belt-and-braces: on screens too narrow even for the compact table, it
+   scrolls inside its own wrapper instead of blowing out the page. */
+.forecast-wrap {
+  overflow-x: auto;
+}
+
+/* Change % + ⓘ share a line under the forecast price. */
+.forecast-chg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+/* ⓘ opens the forecast's detail + reasoning in a modal (inline text made the
+   table too wide for smaller screens). */
+.why-btn {
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--link);
+}
+
+.why-btn:hover {
+  color: var(--primary);
+}
+
+/* Stat strip at the top of the forecast-detail modal: current vs forecast,
+   the change ($ and %), and the scenario range, with the reason below. */
+.why-stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.why-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.why-stat__label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--text-muted);
-  max-width: 22ch;
+}
+
+.why-stat__value--up { color: var(--up); }
+
+.why-stat__value--down { color: var(--down); }
+
+/* Tablet and below: tighter cells so all six columns fit comfortably. */
+@media (max-width: 1023px) {
+  .forecast-table {
+    max-width: none;
+  }
+
+  .forecast-table th,
+  .forecast-table td {
+    padding: 6px;
+    font-size: 13px;
+  }
 }
 
 .model-take {
@@ -84,6 +144,22 @@
   font-weight: 700;
   width: 1%;            /* shrink to content: values sit right beside labels */
   white-space: nowrap;
+}
+
+/* Formatted (sanitized) description HTML: tame default block margins so it
+   reads as tidy inline text inside the details cell. */
+.detail-desc p {
+  margin: 0 0 6px;
+}
+
+.detail-desc p:last-child {
+  margin-bottom: 0;
+}
+
+.detail-desc ul,
+.detail-desc ol {
+  margin: 4px 0;
+  padding-left: 18px;
 }
 
 .breadcrumb {

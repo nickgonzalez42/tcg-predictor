@@ -51,6 +51,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.Reason).HasColumnName("reason");
             f.Property(x => x.Confidence).HasColumnName("confidence");
             f.Property(x => x.ScoredAt).HasColumnName("scored_at");
+            f.Property(x => x.AnchorDate).HasColumnName("anchor_date");
         });
     }
 }

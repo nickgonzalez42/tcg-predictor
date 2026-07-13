@@ -41,7 +41,12 @@
 /* Tablet and below: slightly rounder corners everywhere the token is used. */
 @media (max-width: 1023px) {
   :root {
-    --radius: 19px;
+    --radius: 24px;
   }
 }
 
+@media (max-width: 767px) {
+  :root {
+    --radius: 26px;
+  }
+}

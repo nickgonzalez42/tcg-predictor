@@ -305,10 +305,22 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
     return f"Projects {proj:+.0f}% over {horizon}. {lead}: {'; '.join(top)}."
 
 
+def anchor_dates(game, grade):
+    """pid -> real date of the tier's newest history point. The model anchors
+    on the month bucket (whose price IS that newest point); this is the honest
+    display date for it."""
+    from forecast_deep import PC_DB
+    rows = sqlite3.connect(PC_DB, timeout=180).execute(
+        "SELECT product_id, MAX(date) FROM price_history_unified "
+        "WHERE game=? AND grade=? GROUP BY product_id", (game, grade)).fetchall()
+    return {pid: d[:10] for pid, d in rows if d}
+
+
 def forecast_game_target(game, target, now):
     pids, dates, P = load_matrix(game, target)
     if P.shape[1] < 14 or len(pids) < 30:
         return []
+    real_dates = anchor_dates(game, target)
     R = np.log(P[:, 1:] / P[:, :-1])
     # TCGplayer volume is no longer collected (pricing is PriceCharting-only);
     # the earlier volume A/B showed no accuracy gain, so the feature is dropped.
@@ -469,7 +481,7 @@ def forecast_game_target(game, target, now):
                            " in — such calls have historically been unreliable.")
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
-                         str(conf[i]), MODEL_VERSION, now))
+                         str(conf[i]), MODEL_VERSION, now, real_dates.get(int(pid), a)))
 
             # 1w: the 1-month forecast pro-rated to 7 days (monthly data has no
             # weekly targets to train on) — same drivers, disclosed in the text.
@@ -494,7 +506,8 @@ def forecast_game_target(game, target, now):
                              round(float(b) * float(np.exp(rw)), 2),
                              round(float(b) * float(np.exp(lw)), 2),
                              round(float(b) * float(np.exp(hw)), 2),
-                             round(rw, 4), wreason, str(conf[i]), MODEL_VERSION, now))
+                             round(rw, 4), wreason, str(conf[i]), MODEL_VERSION, now,
+                             real_dates.get(int(pid), a)))
     print(f"[{game}/{target}] {len(rows)} rows", flush=True)
     return rows
 
@@ -525,7 +538,9 @@ def archive(conn, rows):
         "(game, product_id, target, horizon, as_of, base_price, forecast_price,"
         " low, high, ret, confidence, model_version, scored_at)"
         " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [r[:10] + r[11:] for r in rows]).rowcount   # r[10] is the reason text — bulky, lives in `forecasts`
+        [r[:10] + r[11:14] for r in rows]).rowcount   # drops r[10] (bulky reason) and r[14] (anchor_date):
+                                                      # the archive keys on the MONTH bucket so a nightly
+                                                      # rerun on the same price month stays a no-op
     print(f"archived {added} first-issued forecast(s) for later grading")
 
 
@@ -551,11 +566,12 @@ def main():
             low REAL, high REAL, ret REAL, reason TEXT,
             confidence TEXT,          -- model-reported: high | med | low (80% interval width)
             model_version TEXT, scored_at TEXT,
+            anchor_date TEXT,         -- REAL date of the anchor price (as_of is its month bucket)
             PRIMARY KEY (game, product_id, target, horizon)
         );
         """
     )
-    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
+    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
     archive(conn, all_rows)
     conn.commit()
     conn.close()

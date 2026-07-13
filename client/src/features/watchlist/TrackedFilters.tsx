@@ -51,6 +51,7 @@ export default function TrackedFilters({ params, actions, sortOptions }: Props) 
                 <button className="btn btn--outline" title="Close filters"
                     onClick={() => setOpen(false)}>✕</button>
             </div>
+            <div className="filters__panels">
             <div className="panel">
                 <div className="field" style={{ margin: 0 }}>
                     <label htmlFor="tracked-search">Search cards</label>
@@ -103,9 +104,17 @@ export default function TrackedFilters({ params, actions, sortOptions }: Props) 
                     onChange={(items: string[]) => dispatch(actions.setSets(items))}
                 />
             </div>
-            <button className="btn btn--outline" onClick={() => dispatch(actions.resetParams())}>
-                Reset filters
-            </button>
+            </div>
+            {/* Footer: Reset + Apply, pinned to the bottom of the overlay.
+                Filters apply live, so Apply just closes it. */}
+            <div className="filters__footer">
+                <button className="btn btn--outline" onClick={() => dispatch(actions.resetParams())}>
+                    Reset filters
+                </button>
+                <button className="btn filters__apply" onClick={() => setOpen(false)}>
+                    Apply
+                </button>
+            </div>
             </div>
         </div>
     );
