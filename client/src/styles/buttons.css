@@ -5,8 +5,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--space-10);
+  padding: var(--space-10);
   border: 1px solid var(--brand-border);
   border-radius: var(--radius);
   background: var(--brand);
@@ -45,7 +45,7 @@
 
 .btn-group {
   display: flex;
-  gap: 16px;
+  gap: var(--space-15);
   flex-wrap: wrap;
 }
 
@@ -63,11 +63,11 @@
 
 .view-toggle {
   display: inline-flex;
-  gap: 6.4px;
+  gap: var(--space-5);
 }
 
 .view-toggle__btn {
-  padding: 4.8px 12.8px;
+  padding: var(--space-5) var(--space-15);
   font-size: 13.12px;
 }
 
@@ -83,7 +83,7 @@
 
 @media (max-width: 1023px) {
   .btn-group {
-    margin-bottom: 24px;
+    margin-bottom: var(--space-25);
   }
 }
 

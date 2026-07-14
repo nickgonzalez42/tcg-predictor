@@ -46,6 +46,10 @@ export type PortfolioSummary = {
     best?: PortfolioPosition | null;
     worst?: PortfolioPosition | null;
     series?: { date: string; value: number }[];
+    // "Same $ in the market": daily S&P 500 what-if line (each copy's cost
+    // basis invested in SPX on its add date), from account creation.
+    benchmark?: { date: string; value: number }[];
+    accountCreated?: string;
 }
 
 // Editable per-copy fields sent to PATCH /watchlist/owned/{id}.

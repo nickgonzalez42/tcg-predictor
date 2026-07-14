@@ -22,8 +22,12 @@ SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
 # category slug -> output CSV (+ per-file sanity floor), from the game registry
 from games import GAMES, priced_games
-CATEGORIES = {GAMES[g]["pc_category"]: GAMES[g]["pc_csv"] for g in priced_games()}
-MIN_ROWS = {GAMES[g]["pc_csv"]: GAMES[g]["pc_min_rows"] for g in priced_games()}
+# Only games with a bulk category slug — gundam's CSV comes from
+# scrape_gundam_prices.py (per-set console pages) instead.
+CATEGORIES = {GAMES[g]["pc_category"]: GAMES[g]["pc_csv"]
+              for g in priced_games() if GAMES[g]["pc_category"]}
+MIN_ROWS = {GAMES[g]["pc_csv"]: GAMES[g]["pc_min_rows"]
+            for g in priced_games() if GAMES[g]["pc_category"]}
 
 
 def token():

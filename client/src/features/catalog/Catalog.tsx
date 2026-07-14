@@ -4,6 +4,7 @@ import CardTable from "./CardTable"
 import Filters from "./Filters";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
+import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
 import type { CardParams } from "../../app/models/cardParams";
@@ -12,8 +13,11 @@ import { useSearchParams } from "react-router-dom";
 import { useUserInfoQuery } from "../account/accountApi";
 import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
 import { useMediaQuery } from "../../lib/useMediaQuery";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 export default function Catalog() {
+    usePageMeta("Card Catalog",
+        "Browse and screen cards across Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam with live prices and AI forecasts.");
   const cardParams = useAppSelector(state => state.catalog);
   const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery(cardParams.game);
   const { data, isLoading } = useFetchCardsQuery(cardParams);
@@ -139,6 +143,7 @@ export default function Catalog() {
               metadata={data.pagination}
               onPageChange={(page: number) => dispatch(setPageNumber(page))}
             />
+            <AdSlot slot="" />
           </>
         ) : (
           <h3>There are no results for this filter</h3>

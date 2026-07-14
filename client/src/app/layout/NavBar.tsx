@@ -38,7 +38,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     return (
         <header className="navbar">
             <div className="navbar__inner container">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-10)' }}>
                     <NavLink to='/' className="navbar__brand">TCG PREDICTOR</NavLink>
                 </div>
 
@@ -64,7 +64,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                     </ul>
                 </nav>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-5)' }}>
                     {user ? (
                         <div className="navbar__usermenu"><UserMenu /></div>
                     ) : (

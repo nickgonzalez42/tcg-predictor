@@ -4,7 +4,7 @@
   overflow: hidden;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
-  padding: 7px 0;
+  padding: var(--space-5) 0;
   white-space: nowrap;
 }
 
@@ -20,8 +20,8 @@
 .ticker__group {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding-right: 10px;
+  gap: var(--space-10);
+  padding-right: var(--space-10);
 }
 
 /* No motion: GSAP is skipped in JS, so just show one static group. */
@@ -37,7 +37,7 @@
   text-transform: uppercase;
   border: 1.4px solid var(--border);
   border-radius: 6px;
-  padding: 2px 7px;
+  padding: var(--space-5);
   background: var(--surface);
   color: var(--text);
   white-space: nowrap;
@@ -53,5 +53,5 @@
 .tkc--down { color: var(--down); }
 
 .ticker__tag {
-  padding: 0 6px;
+  padding: 0 var(--space-5);
 }

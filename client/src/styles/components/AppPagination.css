@@ -4,15 +4,15 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 24px;
+  margin-top: var(--space-25);
   flex-wrap: wrap;
-  gap: 16px;
+  gap: var(--space-15);
   grid-column: 1 / -1;
 }
 
 .pagination__pages {
   display: flex;
-  gap: 5.6px;
+  gap: var(--space-5);
   width: 100%;
 }
 

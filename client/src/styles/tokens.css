@@ -36,6 +36,20 @@
   --danger: #e53935;
   --radius: 15px;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Spacing scale — every margin/padding/gap snaps to a multiple of 5px
+     (named by pixel value). The page .container gutters and .grid-box
+     column gaps are deliberate exceptions and keep literal values. */
+  --space-5: 5px;
+  --space-10: 10px;
+  --space-15: 15px;
+  --space-20: 20px;
+  --space-25: 25px;
+  --space-30: 30px;
+  --space-40: 40px;
+  --space-50: 50px;
+  --space-95: 95px;    /* page clearance under the fixed navbar */
+  --space-130: 130px;  /* …when the ticker strip is showing */
 }
 
 /* Tablet and below: slightly rounder corners everywhere the token is used. */

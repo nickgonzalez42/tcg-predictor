@@ -3,8 +3,10 @@ import { registerSchema } from "../../lib/schemas/registerSchema";
 import { useRegisterMutation } from "./accountApi"
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 export default function registerForm() {
+    usePageMeta("Create account");
     const [registerUser] = useRegisterMutation();
     const { register, handleSubmit, setError, formState: { errors, isValid, isLoading } } = useForm<registerSchema>({
         mode: 'onTouched',

@@ -81,12 +81,12 @@ GAMES = {
         "tcg_line": "gundam-card-game",
         "db": "gundam_cards.db",
         "images": "images_gundam",
-        # PriceCharting doesn't cover the Gundam Card Game yet (probed 2026-07):
-        # crawl the catalog + art now; prices flow in the run after PC adds a
-        # category and this field gets its slug.
+        # PriceCharting covers gundam only as per-set "console" pages (no bulk
+        # category slug) — scrape_gundam_prices.py crawls + matches them into
+        # this CSV, which build_pricecharting.py then consumes like the rest.
         "pc_category": None,
-        "pc_csv": None,
-        "pc_min_rows": 0,
+        "pc_csv": "pricecharting_gundam.csv",
+        "pc_min_rows": 500,
         "scraper": ["tcg_scraper.py", "--game", "gundam"],
     },
 }
@@ -96,8 +96,10 @@ ALL_GAMES = list(GAMES)
 
 def priced_games():
     """Games PriceCharting covers — the only ones with prices, and therefore
-    the only ones the unify/nm-price/ML steps can do anything with."""
-    return [g for g, cfg in GAMES.items() if cfg["pc_category"]]
+    the only ones the unify/nm-price/ML steps can do anything with.
+    (Keyed on pc_csv: gundam has no bulk category, its CSV comes from the
+    console-page scraper instead.)"""
+    return [g for g, cfg in GAMES.items() if cfg["pc_csv"]]
 
 
 def db_path(game):

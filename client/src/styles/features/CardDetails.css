@@ -7,7 +7,7 @@
 
 .forecast-table th {
   text-align: left;
-  padding: 6.4px 9.6px;
+  padding: var(--space-5) var(--space-10);
   font-size: 11.52px;
   text-transform: uppercase;
   letter-spacing: 0.03em;
@@ -16,7 +16,7 @@
 }
 
 .forecast-table td {
-  padding: 7.2px 9.6px;
+  padding: var(--space-5) var(--space-10);
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -31,8 +31,8 @@
 .forecast-chg {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 6px;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 /* ⓘ opens the forecast's detail + reasoning in a modal (inline text made the
@@ -56,16 +56,16 @@
 .why-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 16px;
-  margin-bottom: 14px;
-  padding-bottom: 12px;
+  gap: var(--space-10) var(--space-15);
+  margin-bottom: var(--space-15);
+  padding-bottom: var(--space-10);
   border-bottom: 1px solid var(--border);
 }
 
 .why-stat {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-5);
 }
 
 .why-stat__label {
@@ -87,14 +87,14 @@
 
   .forecast-table th,
   .forecast-table td {
-    padding: 6px;
+    padding: var(--space-5);
     font-size: 13px;
   }
 }
 
 .model-take {
-  margin: 0 0 14.4px;
-  padding: 11.2px 13.6px;
+  margin: 0 0 var(--space-15);
+  padding: var(--space-10) var(--space-15);
   max-width: 560px;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -104,7 +104,7 @@
 
 .model-take__label {
   display: block;
-  margin-bottom: 4.8px;
+  margin-bottom: var(--space-5);
   font-size: 10.56px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -126,17 +126,17 @@
 .detail-table {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 16px;
+  margin-top: var(--space-15);
 }
 
 /* Value column: gapped from the label and ledger-style at the right edge. */
 .detail-table td + td {
-  padding-left: 10px;
+  padding-left: var(--space-10);
   text-align: right;
 }
 
 .detail-table td {
-  padding: 8px 0;
+  padding: var(--space-10) 0;
   border-bottom: 1px solid var(--border);
 }
 
@@ -149,7 +149,7 @@
 /* Formatted (sanitized) description HTML: tame default block margins so it
    reads as tidy inline text inside the details cell. */
 .detail-desc p {
-  margin: 0 0 6px;
+  margin: 0 0 var(--space-5);
 }
 
 .detail-desc p:last-child {
@@ -158,12 +158,12 @@
 
 .detail-desc ul,
 .detail-desc ol {
-  margin: 4px 0;
-  padding-left: 18px;
+  margin: var(--space-5) 0;
+  padding-left: var(--space-20);
 }
 
 .breadcrumb {
-  margin-bottom: 16px;
+  margin-bottom: var(--space-15);
 }
 
 .breadcrumb a {
@@ -182,7 +182,7 @@
   width: 100%;
   border-radius: 20px;
   display: block;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-15);
 }
 
 .detail-center {
@@ -192,19 +192,19 @@
 
 .detail-center__name {
   font-size: 28.8px;
-  margin-bottom: 3.2px;
+  margin-bottom: var(--space-5);
 }
 
 .detail-center__subline {
-  margin-bottom: 14.4px;
+  margin-bottom: var(--space-15);
 }
 
 .detail-center__pricerow {
   display: flex;
   align-items: baseline;
-  gap: 9.6px;
+  gap: var(--space-10);
   flex-wrap: wrap;
-  margin-bottom: 20px;
+  margin-bottom: var(--space-20);
 }
 
 .detail-center__price {
@@ -223,8 +223,8 @@
   background: var(--ticket-bg);
   border: 1.6px solid var(--brand-border);
   border-radius: var(--radius);
-  padding: 20px;
-  margin-bottom: 16px;
+  padding: var(--space-20);
+  margin-bottom: var(--space-15);
 }
 
 .ticket__title {
@@ -232,11 +232,11 @@
   color: var(--price);
   font-weight: 700;
   font-size: 11px;
-  margin-bottom: 14.4px;
+  margin-bottom: var(--space-15);
 }
 
 .ticket__note {
-  margin-top: 12.8px;
+  margin-top: var(--space-15);
   font-size: 12.8px;
   color: var(--text-muted);
 }
@@ -249,7 +249,7 @@
 /* Sub-section label inside the "All prices" panel (TCGplayer / PriceCharting). */
 .detail-panel__sub {
   display: block;
-  margin: 12px 0 2px;
+  margin: var(--space-10) 0 var(--space-5);
   color: var(--link);
   font-size: 10px;
 }
@@ -267,7 +267,7 @@
 
   .detail-left__img {
     max-width: 360px;
-    margin: 0 auto 16px;
+    margin: 0 auto var(--space-15);
   }
 }
 

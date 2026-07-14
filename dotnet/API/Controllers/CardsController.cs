@@ -692,12 +692,25 @@ public class CardsController(
             ? (gradePrices.TryGetValue(c.Id, out var v) ? v : null)
             : c.NearMintPrice;
 
-        var fc = ParseForecastSort(p.OrderBy);
-        var changes = fc is null ? null
-            : await ForecastChanges(folder, GradeTiers.ForecastTarget(p.Grade), fc.Value.horizon, matched.Select(c => c.Id).ToList());
+        // Sorting is by ACTUAL past growth (history), MODEL forecast growth, or a
+        // plain field — same vocabulary as the catalog, restricted to the tracked ids.
+        var hs = ParseHistorySort(p.OrderBy);
+        var fc = hs is null ? ParseForecastSort(p.OrderBy) : null;
+        var ids = matched.Select(c => c.Id).ToList();
+        var histChanges = hs is { } h ? await HistoryChanges(folder, GradeTiers.PriceTier(p.Grade ?? ""), ids, h.window) : null;
+        var changes = fc is { } fcv ? await ForecastChanges(folder, GradeTiers.ForecastTarget(p.Grade), fcv.horizon, ids) : null;
 
         List<CardBase> ordered;
-        if (fc is { } f && changes != null)
+        if (hs is { } hsv && histChanges != null)
+        {
+            double? Key(CardBase c) => histChanges.TryGetValue(c.Id, out var ch)
+                ? (hsv.metric == "pct" ? ch.Pct : ch.Usd) : null;
+            var withChg = matched.Where(c => Key(c) != null);
+            var without = matched.Where(c => Key(c) == null);   // no history / floored -> end
+            ordered = (hsv.desc ? withChg.OrderByDescending(Key) : withChg.OrderBy(Key))
+                .Concat(without).ToList();
+        }
+        else if (fc is { } f && changes != null)
         {
             double Key(CardBase c) => changes.TryGetValue(c.Id, out var ch)
                 ? (f.metric == "pct" ? ch.pct : ch.usd)
@@ -733,7 +746,9 @@ public class CardsController(
         if (fc is { } fs && changes != null)
             foreach (var card in cards)
                 if (changes.TryGetValue(card.Id, out var ch)) SetExpected(card, ch, fs.metric, fs.horizon);
-        await ApplyMarket(cards, folder, p.Grade, p.Trend);
+        // A history sort trends the tiles over the sorted window (as the catalog does);
+        // otherwise use the requested trend window.
+        await ApplyMarket(cards, folder, p.Grade, hs?.window ?? p.Trend);
         return cards;
     }
 

@@ -78,6 +78,7 @@ STEPS = [
       for g, cfg in GAMES.items()],
     ("art-sync",      ["sync_local_images.py"]),
     ("pc-download",   ["download_pricecharting.py"]),
+    ("pc-gundam",     ["scrape_gundam_prices.py"]),
     ("pc-match",      ["build_pricecharting.py"]),
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
                        "--workers", "1", "--delay", "1.0"]),

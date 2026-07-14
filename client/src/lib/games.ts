@@ -6,7 +6,8 @@ export const GAMES = [
     { value: 'digimon', label: 'Digimon' },
     { value: 'gundam', label: 'Gundam' },
     { value: 'lorcana', label: 'Lorcana' },
-    { value: 'magic', label: 'Magic' },
+    // Magic hidden while its backfill is paused (no catalog/prices yet) —
+    // restore the entry when the data lands.
     { value: 'onepiece', label: 'One Piece' },
     { value: 'pokemon', label: 'Pokémon' },
     { value: 'yugioh', label: 'Yu-Gi-Oh!' },

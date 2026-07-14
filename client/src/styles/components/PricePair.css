@@ -4,7 +4,7 @@
   display: inline-flex;
   flex-direction: column;   /* forecast sits on its own line under the price */
   align-items: flex-start;
-  gap: 2px;
+  gap: var(--space-5);
   white-space: nowrap;
 }
 
@@ -22,7 +22,7 @@
 
 /* Tiny "12M FCST" tag so the parenthesized figure is unmistakably a forecast. */
 .pricepair__tag {
-  margin-left: 4px;
+  margin-left: var(--space-5);
   font-size: 9px;
   color: inherit;
   opacity: 0.75;
@@ -31,7 +31,7 @@
 .pricepair__row {
   display: inline-flex;
   align-items: baseline;
-  gap: 6px;
+  gap: var(--space-5);
 }
 
 .pricepair__asof {

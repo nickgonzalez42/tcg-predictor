@@ -1,0 +1,10 @@
+# TCG Predictor
+User-agent: *
+Allow: /
+# Account-only pages are useless to crawlers
+Disallow: /portfolio
+Disallow: /watchlist
+Disallow: /login
+Disallow: /register
+
+Sitemap: http://35.168.177.31/sitemap.xml

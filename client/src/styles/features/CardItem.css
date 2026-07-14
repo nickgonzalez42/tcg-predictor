@@ -55,7 +55,7 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 12px;
+  padding: var(--space-10);
   text-align: center;
   color: #fff;
   font-size: 12px;
@@ -73,7 +73,7 @@
   bottom: 0;
   display: flex;
   justify-content: center;
-  padding: 12px;
+  padding: var(--space-10);
 }
 
 /* Pure CSS 3D: transform-only animation runs on the compositor, and it only
@@ -84,7 +84,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  padding-bottom: 48px;   /* nudge the centered card up, clear of the buttons */
+  padding-bottom: var(--space-50);   /* nudge the centered card up, clear of the buttons */
   perspective: 800px;
   pointer-events: none;   /* visual only — keep the action buttons clickable */
 }
@@ -139,7 +139,7 @@
 }
 
 .card__body {
-  padding: 16px;
+  padding: var(--space-15);
   flex: 1;                  /* fill the card's (stretched) height so the... */
   display: flex;
   flex-direction: column;
@@ -151,8 +151,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
+  gap: var(--space-10);
+  margin-bottom: var(--space-10);
 }
 
 /* Title + set sit at the top; card__main (price row + footer) is pushed to the
@@ -192,7 +192,7 @@
   text-transform: uppercase;
   font-size: 12.8px;
   color: var(--text-muted);
-  margin-bottom: 5.6px;
+  margin-bottom: var(--space-5);
   width: fit-content;
 }
 
@@ -204,7 +204,7 @@
 .card__set {
   font-size: 12px;
   color: var(--text-muted);
-  margin-bottom: 10px;
+  margin-bottom: var(--space-10);
 }
 
 .card__price {
@@ -218,10 +218,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 6px;
+  gap: var(--space-10);
+  margin-top: var(--space-5);
   border-top: 1px solid var(--border);
-  padding-top: 10px;
+  padding-top: var(--space-10);
   flex-wrap: wrap;
 }
 

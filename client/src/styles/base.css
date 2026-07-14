@@ -27,7 +27,7 @@ a:hover {
 }
 
 h1, h2, h3, h4 {
-  margin: 0 0 8px;
+  margin: 0 0 var(--space-10);
   line-height: 1.2;
 }
 
@@ -57,14 +57,14 @@ h1, h2, h3, h4 {
   background: rgba(229, 57, 53, 0.1);
   color: var(--text);
   border-radius: var(--radius);
-  padding: 16px;
-  margin-top: 16px;
+  padding: var(--space-15);
+  margin-top: var(--space-15);
 }
 
 .divider {
   border: none;
   border-top: 1px solid var(--border);
-  margin: 16px 0;
+  margin: var(--space-15) 0;
 }
 
 .center-box {
@@ -74,11 +74,11 @@ h1, h2, h3, h4 {
   justify-content: center;
   text-align: center;
   min-height: 400px;
-  gap: 8px;
+  gap: var(--space-10);
 }
 
 /* Freshness stamp under displayed prices ("as of Jul 1, 2026"). */
 .price-asof {
   font-size: 9.5px;
-  margin-top: 2px;
+  margin-top: var(--space-5);
 }

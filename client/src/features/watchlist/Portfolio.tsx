@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { createChart, AreaSeries, ColorType } from "lightweight-charts";
+import { createChart, AreaSeries, LineSeries, LineStyle, ColorType, type ISeriesApi } from "lightweight-charts";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import {
     useFetchTrackedCardsQuery,
@@ -12,7 +12,7 @@ import {
 import { ownedParamsSlice } from "./trackedParamsSlice";
 import { OwnedCopyRow } from "./OwnedConditionItem";
 import { tierLabel } from "./grades";
-import { trackedSortOptions } from "../catalog/sortOptions";
+import { trackedSortGroups } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
 import GameToggle from "../../app/shared/components/GameToggle";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
@@ -22,6 +22,7 @@ import Sparkline from "../../app/shared/components/Sparkline";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
 import type { Card } from "../../app/models/card";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 
 const RANGES: { key: string; label: string; months?: number }[] = [
@@ -52,19 +53,59 @@ const DONUT_COLORS: Record<string, string> = {
     'SGC 10': '#e0e6f0',
 };
 
-// Green portfolio value-over-time chart (monthly points from the summary).
+// "#rrggbb" -> rgba() at the given opacity (non-hex values pass through).
+const fade = (hex: string, alpha: number) => {
+    const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
+    if (!m) return hex;
+    const n = parseInt(m[1], 16);
+    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+};
+
+// Portfolio value-over-time chart: green collection line (zero until each
+// copy's add date) vs a dashed S&P 500 what-if line (the same dollars put
+// into SPX on the same days), both from account creation. Hovering a legend
+// entry dims the other series.
 function ValueChart({ summary }: { summary: PortfolioSummary }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [range, setRange] = useState('all');
+    const hasBench = !!summary.benchmark?.length;
+
+    // Live series handles + their base colors, for the legend-hover highlight
+    // (applyOptions directly; no state, so the chart isn't rebuilt).
+    const seriesRef = useRef<{
+        area?: ISeriesApi<'Area'>; spx?: ISeriesApi<'Line'>;
+        up?: string; spxColor?: string;
+    }>({});
+
+    const highlight = (target: 'collection' | 'spx' | null) => {
+        const s = seriesRef.current;
+        if (!s.area || !s.up) return;
+        const dimArea = target === 'spx', dimSpx = target === 'collection';
+        s.area.applyOptions({
+            lineColor: dimArea ? fade(s.up, 0.25) : s.up,
+            topColor: fade(s.up, dimArea ? 0.06 : 0.25),
+            bottomColor: fade(s.up, 0.02),
+        });
+        if (s.spx && s.spxColor)
+            s.spx.applyOptions({ color: dimSpx ? fade(s.spxColor, 0.22) : s.spxColor });
+    };
+
+    // Date cutoff (not a point count): the collection axis mixes monthly and
+    // add dates, and the benchmark is daily. Memoized so the chart effect and
+    // the stats strip share one slice per (summary, range).
+    const { points, bench } = useMemo(() => {
+        const months = RANGES.find(r => r.key === range)?.months;
+        const cutoff = months
+            ? new Date(Date.now() - months * 30.44 * 86400e3).toISOString().slice(0, 10)
+            : null;
+        const slice = (s?: { date: string; value: number }[]) =>
+            (cutoff ? s?.filter(p => p.date >= cutoff) : s) ?? [];
+        return { points: slice(summary.series), bench: slice(summary.benchmark) };
+    }, [summary, range]);
 
     useEffect(() => {
         const el = containerRef.current;
-        const all = summary.series;
-        if (!el || !all?.length) return;
-
-        const months = RANGES.find(r => r.key === range)?.months;
-        const points = months ? all.slice(-(months + 1)) : all;
-        if (points.length < 2) return;
+        if (!el || points.length < 2) return;
 
         const css = getComputedStyle(el);
         const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
@@ -90,12 +131,41 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
             priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
         });
         series.setData(points.map(p => ({ time: p.date, value: p.value })));
+        seriesRef.current = { area: series, up };
+
+        if (bench.length >= 2) {
+            const spxColor = v('--link', '#7fb0ea');
+            const spxLine = chart.addSeries(LineSeries, {
+                color: spxColor,
+                lineWidth: 2,
+                lineStyle: LineStyle.Dashed,
+                priceLineVisible: false,
+                lastValueVisible: false,
+                crosshairMarkerVisible: false,
+                priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+            });
+            spxLine.setData(bench.map(p => ({ time: p.date, value: p.value })));
+            seriesRef.current.spx = spxLine;
+            seriesRef.current.spxColor = spxColor;
+        }
+
         chart.timeScale().fitContent();
 
-        return () => chart.remove();
-    }, [summary, range]);
+        return () => {
+            seriesRef.current = {};
+            chart.remove();
+        };
+    }, [points, bench]);
 
     if (!summary.series?.length) return null;
+
+    // Stats strip: each line's current value and its change over the selected
+    // range, plus the running gap between them. % change needs a non-zero
+    // start (a range that opens at $0 only has a $ change).
+    const first = points[0], last = points[points.length - 1];
+    const bFirst = bench[0], bLast = bench[bench.length - 1];
+    const pct = (from?: { value: number }, to?: { value: number }) =>
+        from && to && from.value > 0 ? (to.value / from.value - 1) * 100 : null;
 
     return (
         <div className="panel detail-panel">
@@ -111,7 +181,67 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
                     ))}
                 </div>
             </div>
+            {hasBench && (
+                <div className="chart-legend mono">
+                    <span className="chart-legend__item"
+                        onMouseEnter={() => highlight('collection')}
+                        onMouseLeave={() => highlight(null)}>
+                        <i className="chart-legend__swatch" /> Collection
+                    </span>
+                    <span className="chart-legend__item"
+                        onMouseEnter={() => highlight('spx')}
+                        onMouseLeave={() => highlight(null)}
+                        title="What the same money would be worth if each card's cost had gone into the S&P 500 on the day you added it">
+                        <i className="chart-legend__swatch chart-legend__swatch--dashed" /> S&amp;P 500 (same $ invested)
+                    </span>
+                </div>
+            )}
             <div ref={containerRef} style={{ width: '100%' }} />
+            {last && (
+                <div className="chart-stats">
+                    <div className="chart-stat">
+                        <span className="chart-stat__label mono">Collection</span>
+                        <span className="chart-stat__value">{currencyFormat(last.value)}</span>
+                        <span className="chart-stat__delta">
+                            <ChangePill value={first ? last.value - first.value : null}
+                                unit="usd" title="Change over the selected range" />
+                            <ChangePill value={pct(first, last)} title="Change over the selected range" />
+                        </span>
+                    </div>
+                    {bLast && (
+                        <>
+                            <div className="chart-stat">
+                                <span className="chart-stat__label mono">S&amp;P 500 (same $)</span>
+                                <span className="chart-stat__value">{currencyFormat(bLast.value)}</span>
+                                <span className="chart-stat__delta">
+                                    <ChangePill value={bFirst ? bLast.value - bFirst.value : null}
+                                        unit="usd" title="Change over the selected range" />
+                                    <ChangePill value={pct(bFirst, bLast)} title="Change over the selected range" />
+                                </span>
+                            </div>
+                            <div className="chart-stat">
+                                <span className="chart-stat__label mono">Vs market</span>
+                                <span className="chart-stat__value">
+                                    {last.value >= bLast.value ? 'Ahead' : 'Behind'}
+                                </span>
+                                <span className="chart-stat__delta">
+                                    <ChangePill value={last.value - bLast.value} unit="usd"
+                                        title="Collection value minus what the same money in the S&P 500 would be worth today" />
+                                    <ChangePill value={pct(bLast, last)}
+                                        title="Collection value minus what the same money in the S&P 500 would be worth today" />
+                                </span>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+            {hasBench && (
+                <p className="est-note chart-note">
+                    S&amp;P comparison invests each card's purchase price on the day you added
+                    it; cards without a purchase price use their market price (at their
+                    grade) on that day.
+                </p>
+            )}
         </div>
     );
 }
@@ -269,6 +399,7 @@ function PositionRow({ card }: { card: Card }) {
 }
 
 export default function Portfolio() {
+    usePageMeta("Portfolio");
     const { setGame, setOrderBy, setSearchTerm, setPageNumber } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
@@ -317,7 +448,11 @@ export default function Portfolio() {
                         value={term} onChange={e => search(e.target.value)} />
                     <select className="input table-head__sort" value={params.orderBy}
                         onChange={e => dispatch(setOrderBy(e.target.value))} title="Sort positions">
-                        {trackedSortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                        {trackedSortGroups.map(g => (
+                            <optgroup key={g.label} label={g.label}>
+                                {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            </optgroup>
+                        ))}
                     </select>
                     <GameToggle game={params.game} onChange={g => dispatch(setGame(g))} />
                 </div>

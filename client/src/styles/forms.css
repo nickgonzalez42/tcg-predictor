@@ -2,7 +2,7 @@
 
 .field-label {
   display: block;
-  margin-bottom: 5.6px;
+  margin-bottom: var(--space-5);
   font-size: 12.8px;
   color: var(--text-muted);
 }
@@ -10,8 +10,8 @@
 .field {
   display: flex;
   flex-direction: column;
-  gap: 5.6px;
-  margin-bottom: 16px;
+  gap: var(--space-5);
+  margin-bottom: var(--space-15);
 }
 
 .field label {
@@ -21,7 +21,7 @@
 
 .input {
   width: 100%;
-  padding: 9.6px 12px;
+  padding: var(--space-10);
   background: var(--surface-2);
   border: 1px solid var(--input-border);
   border-radius: var(--radius);
@@ -55,14 +55,14 @@
 .check-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-10);
 }
 
 .check-list label,
 .radio-list label {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-10);
   cursor: pointer;
   color: var(--text);
 }
@@ -70,5 +70,5 @@
 .radio-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-10);
 }

@@ -9,10 +9,13 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
 {
     public DbSet<TrackedCard> TrackedCards => Set<TrackedCard>();
     public DbSet<ReasonProse> ReasonProses => Set<ReasonProse>();
+    public DbSet<SpxClose> SpxCloses => Set<SpxClose>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<SpxClose>().HasKey(x => x.Date);
 
         builder.Entity<ReasonProse>()
             .HasIndex(x => new { x.Game, x.ProductId })

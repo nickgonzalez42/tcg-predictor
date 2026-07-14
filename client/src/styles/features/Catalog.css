@@ -11,41 +11,33 @@
   /* display: grid; */
   /* grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); */
   /* gap: 24px; */
-  row-gap: 40px;
+  row-gap: var(--space-40);
 }
 
 .filters {
   grid-column: span 3;
-  margin-top: 50px;
+  margin-top: var(--space-50);
 }
 
 /* Desktop: the rail always shows; the collapse toggle is a tablet/mobile thing. */
 .filters__toggle {
   display: none;
   width: 100%;
-  padding: 12px 16px;
-  margin-bottom: 16px;
+  padding: var(--space-10) var(--space-15);
+  margin-bottom: var(--space-15);
 }
 
 .filters__body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
 }
 
-/* Panels (the filter controls) and footer (Reset/Apply). On the desktop rail
-   they just stack; the overlay below turns panels into a scrolling grid and
-   pins the footer to the bottom. */
-.filters__panels {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
 
 .filters__footer {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: subgrid;
+  grid-column: 1 / -1;
+  row-gap: 16px;
 }
 
 /* Overlay header (title + ✕): only exists in the full-screen dropdown. */
@@ -61,7 +53,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-15);
   min-height: 35.2px;
 }
 
@@ -69,8 +61,8 @@
 .price-range {
   display: flex;
   align-items: center;
-  gap: 6px;
-  margin-top: 8px;
+  gap: var(--space-5);
+  margin-top: var(--space-10);
 }
 
 .price-range .input {
@@ -102,36 +94,41 @@
    scrolling panels grid, then a footer pinned to the bottom). The page behind
    can't scroll (body.filters-open below). */
 .filters--dropdown .filters__body--open {
-  display: flex;
-  flex-direction: column;
+  display: grid;
   position: fixed;
   inset: 0;
   z-index: 20;
   background: var(--bg);
-  padding: 16px;
-  gap: 16px;
+  padding: 24px;
 }
 
 .filters--dropdown .filters__body--open .filters__panels {
-  flex: 1;
   overflow-y: auto;
+  /* Flex wrap (not a rigid 2-col grid) so each panel is only as wide as its
+     content, wrapping into two columns. Same 24px row/column gap as the grid. */
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-column: 1 / -1;
+  padding-bottom: 24px;
+  grid-template-columns: subgrid;
+}
+
+.panels__column {
+  grid-column: span 4;
+  display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-content: start;
 }
 
 /* Footer sits at the bottom; its two buttons span a 4-column strip (2 each). */
 .filters--dropdown .filters__body--open .filters__footer {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  padding-top: 12px;
+  grid-template-columns: subgrid;
+  padding-top: 24px;
   border-top: 1px solid var(--border);
 }
 
 .filters--dropdown .filters__body--open .filters__footer .btn {
-  grid-column: span 2;
+  grid-column: span 4;
   margin: 0;
 }
 
@@ -139,6 +136,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  grid-column: 1 / -1;
+  padding-bottom: var(--space-10);
+}
+
+/* Round ✕ close button: fixed equal sides beat the .btn padding. */
+.filters__head .btn {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .filters__head-title {
@@ -147,7 +157,7 @@
 }
 
 .filters__apply {
-  padding: 12px;
+  padding: var(--space-10);
   font-weight: 700;
 }
 
@@ -166,11 +176,33 @@ body.filters-open {
   .catalog-items {
     grid-column: 1 / -1;
   }
+
+  .filters.filters--dropdown {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+
+  .filters__body {
+    display: grid;
+    grid-column: 1 / -1;
+  }
+  .btn.btn--outline.filters__toggle {
+    grid-column: 2 / -2;
+  }
 }
 
 /* --- Mobile (4-col grid): single-column filters inside the dropdown. */
 @media (max-width: 767px) {
-  .filters--dropdown .filters__body--open .filters__panels {
-    grid-template-columns: 1fr;
+  .filters--dropdown .filters__body--open .filters__panels .panel {
+    flex: 0 0 auto;
   }
+
+  .btn.btn--outline.filters__toggle {
+    grid-column: 1 / -1;
+  }
+
+  .filters--dropdown .filters__body--open .filters__footer {
+  padding-top: 16px;
+}
 }

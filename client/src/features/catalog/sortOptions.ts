@@ -52,11 +52,33 @@ export function trendForSort(orderBy: string): string | null {
     return { '1w': '1w', '1m': '1m', '6': '6m', '12': '1y' }[m[1]] ?? null;
 }
 
-// Sort menu for the tracked lists (Portfolio / Wishlist).
-export const trackedSortOptions = [
-    { value: '', label: 'Recently added' },
-    { value: 'name', label: 'Alphabetical' },
-    { value: 'priceDesc', label: 'Price: desc' },
-    { value: 'price', label: 'Price: asc' },
-    ...forecastSortOptions,
+type SortOption = { value: string; label: string };
+type SortGroup = { label: string; options: SortOption[] };
+
+// Catalog sort menu, grouped: general fields, model forecast growth, actual
+// past growth. Shared so the tracked lists match it.
+export const catalogSortGroups: SortGroup[] = [
+    {
+        label: 'General',
+        options: [
+            { value: 'name', label: 'Alphabetical' },
+            { value: 'priceDesc', label: 'Price: desc' },
+            { value: 'price', label: 'Price: asc' },
+        ],
+    },
+    { label: 'Forecast growth', options: forecastSortOptions },
+    { label: 'Past growth', options: historySortOptions },
+];
+
+// Tracked lists (Portfolio / Wishlist): the same groups as the catalog, plus
+// the list-specific "Recently added" default at the top.
+export const trackedSortGroups: SortGroup[] = [
+    {
+        label: 'General',
+        options: [
+            { value: '', label: 'Recently added' },
+            ...catalogSortGroups[0].options,
+        ],
+    },
+    ...catalogSortGroups.slice(1),
 ];

@@ -1,6 +1,8 @@
+import { usePageMeta } from "../../lib/usePageMeta";
 // Long-form explainer of the forecasting model, help-center style: one pass in
 // exhaustive technical detail, then the same story in plain English.
 export default function AboutPage() {
+    usePageMeta("About", "What TCG Predictor is and how the AI price forecasts work.");
   return (
     <article className="article full-span">
       <header className="article__head">

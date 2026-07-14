@@ -17,8 +17,8 @@
 }
 
 .page {
-  padding-top: 96px;
-  padding-bottom: 48px;
+  padding-top: var(--space-95);
+  padding-bottom: var(--space-50);
 }
 
 .grid-box {
@@ -65,5 +65,5 @@
 
 /* Room for the fixed navbar + ticker strip. */
 .has-ticker .page {
-  padding-top: 132px;
+  padding-top: var(--space-130);
 }

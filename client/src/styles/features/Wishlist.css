@@ -6,7 +6,7 @@
   cursor: pointer;
   font-size: 17.6px;
   color: var(--brand);
-  padding: 3.2px;
+  padding: var(--space-5);
 }
 
 .star-btn:hover {
@@ -19,7 +19,7 @@
   letter-spacing: 0.02em;
   border: 1.4px solid var(--border);
   border-radius: 999px;
-  padding: 2px 9px;
+  padding: var(--space-5) var(--space-10);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;

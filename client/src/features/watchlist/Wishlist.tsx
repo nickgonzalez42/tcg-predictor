@@ -9,7 +9,7 @@ import {
 } from "./watchlistApi";
 import { wishlistParamsSlice } from "./trackedParamsSlice";
 import { tierLabel } from "./grades";
-import { trackedSortOptions } from "../catalog/sortOptions";
+import { trackedSortGroups } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 import TrackedFilters from "./TrackedFilters";
@@ -19,6 +19,7 @@ import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { TREND_FCST } from "../catalog/CardTable";
 import type { Card } from "../../app/models/card";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 
 // Alert chip: "🔔 ≤ $280" (highlighted when the price is at/near the target),
@@ -140,6 +141,7 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
 }
 
 export default function Wishlist() {
+    usePageMeta("Watchlist");
     const { setPageNumber, setTrend } = wishlistParamsSlice.actions;
     const params = useAppSelector(state => state.wishlistParams);
     const dispatch = useAppDispatch();
@@ -177,7 +179,7 @@ export default function Wishlist() {
             </div>
 
             <TrackedFilters params={params} actions={wishlistParamsSlice.actions}
-                sortOptions={trackedSortOptions} />
+                sortGroups={trackedSortGroups} />
 
             {isLoading ? (
                 <CardLoader />

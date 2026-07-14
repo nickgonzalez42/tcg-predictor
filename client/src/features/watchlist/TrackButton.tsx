@@ -20,6 +20,9 @@ export default function TrackButton({ game, productId, compact, ownGrade }: Prop
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
     const [add] = useAddToWatchlistMutation();
     const [remove] = useRemoveFromWatchlistMutation();
+    // While the "how many to add" input is open, the watchlist button is hidden
+    // (it comes back on Cancel), so the quantity row isn't crowded.
+    const [adding, setAdding] = useState(false);
 
     if (!user) return null; // tracking is a signed-in feature
 
@@ -47,17 +50,20 @@ export default function TrackButton({ game, productId, compact, ownGrade }: Prop
             && w.kind === 'owned' && (w.grade ?? '') === grade).length ?? 0;
 
     return (
-        <div className="track-buttons" style={{ display: 'inline-flex', gap: '6.4px', alignItems: 'center' }}>
-            <AddToCollection game={game} productId={productId} grade={grade} owned={ownedAtGrade} />
-            {wishlistButton}
+        <div className="track-buttons" style={{ display: 'inline-flex', gap: 'var(--space-5)', alignItems: 'center' }}>
+            <AddToCollection game={game} productId={productId} grade={grade} owned={ownedAtGrade}
+                onOpenChange={setAdding} />
+            {!adding && wishlistButton}
         </div>
     );
 }
 
 // "＋ Add" → number input + "Add to portfolio" / "Cancel". Adds N copies at the
 // given condition (the server endpoint sets totals, so we send owned + N).
-function AddToCollection({ game, productId, grade, owned }: {
+// onOpenChange lets the parent hide the watchlist button while the input is up.
+function AddToCollection({ game, productId, grade, owned, onOpenChange }: {
     game: string; productId: number; grade: string; owned: number;
+    onOpenChange?: (open: boolean) => void;
 }) {
     const [setQty, { isLoading }] = useSetOwnedQuantityMutation();
     const [open, setOpen] = useState(false);
@@ -66,7 +72,7 @@ function AddToCollection({ game, productId, grade, owned }: {
     const parsed = Number(value);
     const valid = value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999;
 
-    const close = () => { setOpen(false); setValue('1'); };
+    const close = () => { setOpen(false); setValue('1'); onOpenChange?.(false); };
     const submit = async () => {
         if (!valid || isLoading) return;
         try {
@@ -79,7 +85,7 @@ function AddToCollection({ game, productId, grade, owned }: {
 
     if (!open) {
         return (
-            <button className="btn btn--outline" onClick={() => setOpen(true)}
+            <button className="btn btn--outline" onClick={() => { setOpen(true); onOpenChange?.(true); }}
                 title={`Add copies to your portfolio (${tierLabel(grade)})`}>
                 ＋ Add
             </button>

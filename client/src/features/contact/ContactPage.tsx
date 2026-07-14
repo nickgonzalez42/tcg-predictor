@@ -1,7 +1,9 @@
 import { decrement, increment } from "./counterReducer";
 import { useAppSelector, useAppDispatch } from "../../app/store/store";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 export default function ContactPage() {
+    usePageMeta("Contact", "Get in touch with TCG Predictor.");
   const { data } = useAppSelector(state => state.counter);
   const dispatch = useAppDispatch();
   return (

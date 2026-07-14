@@ -19,12 +19,12 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
-  padding: 10px;
+  padding: var(--space-10);
 }
 
 .msd__search {
   width: 100%;
-  margin-bottom: 6.4px;
+  margin-bottom: var(--space-5);
 }
 
 .msd__clear {
@@ -36,7 +36,7 @@
   color: var(--link);
   font-size: 12.48px;
   cursor: pointer;
-  padding: 3.2px 1.6px 6.4px;
+  padding: var(--space-5);
 }
 
 .msd__list {
@@ -47,8 +47,8 @@
 .msd__item {
   display: flex;
   align-items: center;
-  gap: 7.2px;
-  padding: 4px 1.6px;
+  gap: var(--space-5);
+  padding: var(--space-5);
   font-size: 13.6px;
   cursor: pointer;
 }
@@ -65,12 +65,12 @@
    itself never loses its footer. */
 @media (max-width: 1023px) {
   .msd__panel {
-    padding: 12px;
+    padding: var(--space-10);
   }
 
   .msd__item {
-    gap: 10px;
-    padding: 10px 4px;
+    gap: var(--space-10);
+    padding: var(--space-10) var(--space-5);
     font-size: 15px;
     border-bottom: 1px dashed var(--border);
   }
@@ -85,11 +85,17 @@
   }
 
   .msd__clear {
-    padding: 8px 4px 10px;
+    padding: var(--space-10) var(--space-5);
     font-size: 14px;
   }
 
   .msd__list {
     max-height: 40vh;
+  }
+
+  /* In the modal the list gets the dialog's own scroll area, so let it grow
+     taller than the cramped overlay-panel cap. */
+  .msd__modal .msd__list {
+    max-height: 60vh;
   }
 }

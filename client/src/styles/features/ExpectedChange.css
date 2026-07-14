@@ -4,7 +4,7 @@
 .expected {
   display: inline-flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--space-5);
   align-items: flex-start;
 }
 
@@ -17,18 +17,18 @@
 .expected__arrow {
   color: var(--text-muted);
   font-weight: 400;
-  margin: 0 1.6px;
+  margin: 0 var(--space-5);
 }
 
 .expected__row {
   display: inline-flex;
   align-items: center;
-  gap: 6.4px;
+  gap: var(--space-5);
 }
 
 .expected .valuation {
   font-size: 15.2px;
-  padding: 1.6px 8px;
+  padding: var(--space-5) var(--space-10);
 }
 
 .expected__horizon {

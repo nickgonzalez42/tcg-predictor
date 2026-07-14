@@ -3,18 +3,18 @@
 .card__actions {
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: var(--space-10);
+  padding: var(--space-10) var(--space-15);
 }
 
 /* Owned-copy management (Owned page card tiles) */
 .owned-copies {
-  margin-top: 12px;
+  margin-top: var(--space-10);
   border-top: 1px solid var(--border);
-  padding-top: 8px;
+  padding-top: var(--space-10);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--space-10);
 }
 
 .owned-copies__head {
@@ -26,8 +26,8 @@
 .owned-copy {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
-  padding: 8px;
+  gap: var(--space-10);
+  padding: var(--space-10);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -35,7 +35,7 @@
 .owned-copy__fields {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6.4px;
+  gap: var(--space-5);
   flex: 1;
   min-width: 0;
 }
@@ -43,7 +43,7 @@
 .owned-copy__fields label {
   display: flex;
   flex-direction: column;
-  gap: 2.4px;
+  gap: var(--space-5);
   font-size: 11.52px;
   color: var(--text-muted);
   min-width: 0;
@@ -51,7 +51,7 @@
 
 .owned-copy__fields .input {
   font-size: 12.8px;
-  padding: 4.8px 6.4px;
+  padding: var(--space-5);
 }
 
 .owned-copy__note {
@@ -61,11 +61,11 @@
 .owned-copy__actions {
   display: flex;
   flex-direction: column;
-  gap: 4.8px;
+  gap: var(--space-5);
 }
 
 .owned-copy__actions .btn {
-  padding: 4.8px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 12.8px;
 }
 
@@ -77,8 +77,8 @@
 
 .owned-condition {
   display: inline-block;
-  margin: 2.4px 0 5.6px;
-  padding: 0.8px 7.2px;
+  margin: var(--space-5) 0;
+  padding: var(--space-5);
   border-radius: 999px;
   background: var(--surface-2, #eef2f7);
   font-size: 11.52px;
@@ -90,18 +90,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
+  gap: var(--space-10);
+  margin-top: var(--space-10);
 }
 
 .qty-control__buttons {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-10);
 }
 
 .qty-control__buttons .btn {
-  padding: 2.4px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 16px;
   line-height: 1;
 }
@@ -113,9 +113,9 @@
 }
 
 .owned-expand {
-  margin-top: 8px;
+  margin-top: var(--space-10);
   width: 100%;
-  padding: 4.8px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 12.48px;
 }
 
@@ -123,19 +123,19 @@
 .own-qty {
   display: inline-flex;
   align-items: center;
-  gap: 5.6px;
+  gap: var(--space-5);
   flex-wrap: wrap;
 }
 
 .own-qty__input {
   width: 54.4px;
-  padding: 4.8px 6.4px;
+  padding: var(--space-5);
   font-size: 13.6px;
   text-align: center;
 }
 
 .own-qty .btn {
-  padding: 4.8px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 12.48px;
 }
 
@@ -144,13 +144,13 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--space-10);
 }
 
 .owned-summary__values {
   display: flex;
   flex-direction: column;
-  gap: 3.2px;
+  gap: var(--space-5);
   font-size: 12.8px;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -165,7 +165,7 @@
 }
 
 .owned-summary .btn {
-  padding: 4.8px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 12.8px;
   flex-shrink: 0;
 }

@@ -17,13 +17,13 @@
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
-  padding: 8px 9.6px;
+  padding: var(--space-10);
   border-bottom: 2px solid var(--primary);
   white-space: nowrap;
 }
 
 .screener td {
-  padding: 8px 9.6px;
+  padding: var(--space-10);
   border-bottom: 1px dashed var(--border);
   vertical-align: middle;
 }
@@ -73,7 +73,7 @@
 }
 
 .screener__actions .btn {
-  padding: 4px 8.8px;
+  padding: var(--space-5) var(--space-10);
   font-size: 12.8px;
 }
 
@@ -104,9 +104,9 @@
 .table-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-10);
   flex-wrap: wrap;
-  margin-bottom: 16px;
+  margin-bottom: var(--space-15);
 }
 
 .table-head__title {

@@ -4,8 +4,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginSchema } from "../../lib/schemas/loginSchema";
 import { useLazyUserInfoQuery, useLoginMutation } from "./accountApi";
 import { useFetchMoversQuery } from "../catalog/catalogApi";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 export default function loginForm() {
+    usePageMeta("Sign in");
     // Playful teaser under the title, powered by the movers we already cache.
     const { data: movers } = useFetchMoversQuery(12);
     const teaserPct = movers?.length

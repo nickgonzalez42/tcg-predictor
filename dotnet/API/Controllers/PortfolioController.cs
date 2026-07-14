@@ -14,7 +14,8 @@ namespace API.Controllers;
 // so "day" granularity doesn't exist — the change figures are month-over-month.
 [Authorize]
 public class PortfolioController(
-    StoreContext store, PriceChartingContext priceCharting, CardSources sources) : BaseApiController
+    StoreContext store, PriceChartingContext priceCharting, CardSources sources,
+    SpxService spx) : BaseApiController
 {
     private static readonly Dictionary<string, string> TierLabels = new()
     {
@@ -75,14 +76,28 @@ public class PortfolioController(
         var allocation = Breakdown(c => GameRegistry.Label(c.Game));
         var gradeAllocation = Breakdown(c => TierLabel(GradeTiers.PriceTier(c.Grade)));
 
-        // ----- Value over time (last 24 monthly points, prices carried forward) -----
+        // ----- Value over time (ownership-gated, prices carried forward) -----
+        // The chart spans from account creation: each copy contributes nothing
+        // before its AddedAt, then its carried-forward market price. The date
+        // axis is the monthly price dates plus the exact add dates (each add is
+        // a visible step up) plus account creation (zero) and today.
+        var acctCreated = await store.Users.Where(u => u.UserName == user)
+            .Select(u => u.CreatedAt).FirstAsync();
+        var acctDate = acctCreated.ToString("yyyy-MM-dd");
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        string AddedDate(TrackedCard c) => c.AddedAt.ToString("yyyy-MM-dd");
+
         var dates = seriesByKey.Values.SelectMany(s => s.Select(p => p.Date))
-            .Distinct().OrderBy(d => d).TakeLast(24).ToList();
+            .Concat(copies.Select(AddedDate))
+            .Append(acctDate).Append(today)
+            .Where(d => string.CompareOrdinal(d, acctDate) >= 0
+                     && string.CompareOrdinal(d, today) <= 0)
+            .Distinct().OrderBy(d => d).ToList();
 
         // One forward pass: dates are ascending, so each copy just advances a
         // cursor through its own date-sorted series (prices carry forward).
         var cursors = copies
-            .Select(c => (Series: SeriesOf(c), Idx: -1))
+            .Select(c => (Series: SeriesOf(c), Added: AddedDate(c), Idx: -1))
             .ToArray();
         var series = new List<(string Date, double Value)>(dates.Count);
         foreach (var date in dates)
@@ -95,17 +110,58 @@ public class PortfolioController(
                 while (cursors[i].Idx + 1 < s.Count &&
                        string.CompareOrdinal(s[cursors[i].Idx + 1].Date, date) <= 0)
                     cursors[i].Idx++;
-                if (cursors[i].Idx >= 0) total += s[cursors[i].Idx].Price;
+                if (cursors[i].Idx >= 0 &&
+                    string.CompareOrdinal(cursors[i].Added, date) <= 0)
+                    total += s[cursors[i].Idx].Price;
             }
             series.Add((date, Math.Round(total, 2)));
         }
 
+        // Month change: latest point vs the last point at least a month back
+        // (the axis mixes monthly and add dates, so [^2] isn't "a month ago").
         double? monthChangeUsd = null, monthChangePct = null;
-        if (series.Count >= 2 && series[^2].Value > 0)
+        var monthAgo = DateTime.UtcNow.AddMonths(-1).ToString("yyyy-MM-dd");
+        var prev = series.LastOrDefault(p => string.CompareOrdinal(p.Date, monthAgo) <= 0);
+        if (series.Count >= 2 && prev.Value > 0)
         {
-            monthChangeUsd = Math.Round(series[^1].Value - series[^2].Value, 2);
-            monthChangePct = Math.Round((series[^1].Value / series[^2].Value - 1) * 100, 1);
+            monthChangeUsd = Math.Round(series[^1].Value - prev.Value, 2);
+            monthChangePct = Math.Round((series[^1].Value / prev.Value - 1) * 100, 1);
         }
+
+        // ----- Benchmark: the same dollars put into the S&P 500 instead -----
+        // Each copy "buys" SPX on its add date with its cost basis: purchase
+        // price when known, else the card's market price at its grade on the
+        // day it was added (carried forward; the client shows this disclaimer).
+        var spxCloses = await spx.GetCloses(acctDate);
+        double Basis(TrackedCard c)
+        {
+            if (c.PurchasePrice is > 0) return c.PurchasePrice.Value;
+            if (SeriesOf(c) is not { Count: > 0 } s) return 0;
+            var added = AddedDate(c);
+            var at = s.LastOrDefault(p => string.CompareOrdinal(p.Date, added) <= 0);
+            return at.Price > 0 ? at.Price : s[0].Price;  // brand-new card: first known price
+        }
+        var lots = copies
+            .Select(c => (Added: AddedDate(c), Basis: Basis(c)))
+            .Where(l => l.Basis > 0)
+            .Select(l =>
+            {
+                // Entry = last close on/before the add date (weekend adds enter
+                // at the prior close); before the first close, use the first.
+                var entry = spxCloses.LastOrDefault(
+                    p => string.CompareOrdinal(p.Date, l.Added) <= 0)?.Close
+                    ?? spxCloses.FirstOrDefault()?.Close ?? 0;
+                return (l.Added, l.Basis, Entry: entry);
+            })
+            .Where(l => l.Entry > 0)
+            .ToList();
+        var benchmark = spxCloses.Select(p => new
+        {
+            date = p.Date,
+            value = Math.Round(lots
+                .Where(l => string.CompareOrdinal(l.Added, p.Date) <= 0)
+                .Sum(l => l.Basis * p.Close / l.Entry), 2),
+        }).ToList();
 
         // ----- P/L vs what was paid (only copies with a purchase price) -----
         var paidCopies = copies.Where(c => c.PurchasePrice is > 0).ToList();
@@ -165,6 +221,8 @@ public class PortfolioController(
             best = await Position(positions.Count > 0 ? positions[0] : null),
             worst = await Position(positions.Count > 1 ? positions[^1] : null),
             series = series.Select(p => new { date = p.Date, value = p.Value }),
+            benchmark,
+            accountCreated = acctDate,
         });
     }
 }

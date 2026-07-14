@@ -8,7 +8,7 @@
   font-size: 10.5px;
   letter-spacing: 0.02em;
   line-height: 1.6;
-  padding: 0 7.2px;
+  padding: 0 var(--space-5);
   border: 1.4px solid currentColor;
   border-radius: 999px;
   white-space: nowrap;
@@ -26,13 +26,13 @@
 
 .conf {
   display: inline-block;
-  margin-top: 3.2px;
+  margin-top: var(--space-5);
   font-family: var(--mono);
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding: 0 7.2px;
+  padding: 0 var(--space-5);
   line-height: 1.7;
   border: 1.4px solid currentColor;
   border-radius: 999px;

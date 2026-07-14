@@ -1,0 +1,3 @@
+# AdSense authorization. Replace pub-0000000000000000 with the real publisher
+# id (same one as ADSENSE_CLIENT in src/lib/adsense.ts) after approval.
+google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0

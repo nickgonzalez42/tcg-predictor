@@ -7,12 +7,12 @@
 
 .auth-card form {
   text-align: left;
-  margin-top: 24px;
+  margin-top: var(--space-25);
 }
 
 .auth-card__teaser {
   display: block;
-  margin: 4px 0 0;
+  margin: var(--space-5) 0 0;
 }
 
 .auth-teaser--up { color: var(--up); font-weight: 700; }

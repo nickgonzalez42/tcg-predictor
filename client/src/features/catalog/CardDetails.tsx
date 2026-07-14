@@ -29,6 +29,8 @@ const HORIZON_LABEL: Record<string, string> = {
     '1w': '1 week', '1m': '1 month', '6m': '6 months', '12m': '12 months',
 };
 import { GAME_LABEL } from "../../lib/games";
+import { usePageMeta } from "../../lib/usePageMeta";
+import AdSlot from "../../app/shared/components/AdSlot";
 
 // The stored reason is "Projects +X% over 12m. Signals: ...". The projection is
 // already shown per cell, so drop that lead sentence and keep the shared signals.
@@ -71,15 +73,15 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
                         onChange={e => setGrade(e.target.value)}>
                         {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
-                    <label className="field-label" htmlFor="ticket-qty" style={{ marginTop: '9.6px' }}>Quantity</label>
+                    <label className="field-label" htmlFor="ticket-qty" style={{ marginTop: 'var(--space-10)' }}>Quantity</label>
                     <input id="ticket-qty" className="input" type="number" min="1" max="999" step="1"
                         inputMode="numeric" value={qty} onChange={e => setQty_(e.target.value)} />
-                    <button className="btn btn--block" style={{ marginTop: '14.4px' }}
+                    <button className="btn btn--block" style={{ marginTop: 'var(--space-15)' }}
                         disabled={!valid || settingQty} onClick={addToPortfolio}>
                         ＋ Add to Portfolio{ownedTotal > 0 ? ` (${ownedTotal} owned)` : ''}
                     </button>
                     <button className={`btn btn--outline btn--block${wishlisted ? ' btn--active' : ''}`}
-                        style={{ marginTop: '8px' }} disabled={adding}
+                        style={{ marginTop: 'var(--space-10)' }} disabled={adding}
                         onClick={() => wishlisted
                             ? remove({ game, productId, kind: 'wishlist' })
                             : add({ game, productId, kind: 'wishlist' })}>
@@ -229,6 +231,9 @@ export default function CardDetails() {
     const { data: card, isLoading } = useFetchCardDetailsQuery({ game: gameId, id: cardId });
     const { data: forecastData } = useFetchCardForecastQuery({ game: gameId, id: cardId });
 
+    usePageMeta(card ? `${card.name} — ${card.setName ?? card.game}` : undefined,
+        card ? `Price, graded history, and AI forecast for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).` : undefined);
+
     // Stable identity: the chart effect keys off this array, so a fresh copy per
     // render would tear the chart down on unrelated re-renders. (Hooks must run
     // on every render, so this stays above the loading early-return.)
@@ -342,6 +347,7 @@ export default function CardDetails() {
                     <PriceHistoryChart game={gameId} id={cardId} forecasts={forecasts} />
                 </section>
                 <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
+                <AdSlot slot="" />
             </div>
         </>
     )

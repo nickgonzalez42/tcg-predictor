@@ -8,6 +8,7 @@ import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
+import { usePageMeta } from "../../lib/usePageMeta";
 
 // Hero animation: cycles through high-value movers. Each card's art rides the
 // tip of its past-1Y price line as it draws itself; when the line reaches the
@@ -283,6 +284,8 @@ const HOW_IT_WORKS = [
 ];
 
 export default function HomePage() {
+    usePageMeta(undefined,
+        "The stock market for trading cards: AI price forecasts, market movers, and portfolio tracking across six TCGs.");
     const { data: movers } = useFetchMoversQuery(12);
     const { data: user } = useUserInfoQuery();
     const tiles = movers?.slice(0, 4) ?? [];
