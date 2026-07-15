@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Scheduled refresh (launchd entry point, 8:00 AM daily — see
+# Scheduled refresh (launchd entry point, 1:00 PM daily — see
 # ~/Library/LaunchAgents/com.tcg-predictor.daily-refresh.plist).
 #
 #   Mon–Sat: prices + model  (weekly_refresh from pc-download), pushed to
@@ -13,6 +13,15 @@
 # weekly_refresh has its own lock, so an overlapping run skips cleanly.
 set -u
 cd "$(dirname "$0")"
+
+# Keep the SYSTEM awake for the duration (the display may still sleep and the
+# screen may lock — the run continues underneath). caffeinate exits with the
+# script, so normal sleep behavior resumes the moment the refresh finishes.
+# NOTE: this does not survive a closed lid — lid-close forces sleep regardless.
+if [[ -z "${CAFFEINATED:-}" ]]; then
+  export CAFFEINATED=1
+  exec caffeinate -i /bin/zsh "$0" "$@"
+fi
 
 PY=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece/.venv/bin/python
 SERVER_IP=35.168.177.31

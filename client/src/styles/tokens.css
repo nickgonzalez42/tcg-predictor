@@ -59,6 +59,10 @@
      left gutter. */
   --content-left: calc(max(0px, (100vw - var(--container-max)) / 2) + var(--container-pad));
   --logo-w: calc(40px * 63 / 88);   /* nav logo width: 40px height × viewBox aspect */
+  /* Left edge of the logo once it topples over (pivots on its bottom-right
+     corner): the closed logo's left (content-left/2 − logo-w/2) + logo-w.
+     Drawer links align to this. */
+  --tipped-logo-left: calc(var(--content-left) / 2 + var(--logo-w) / 2);
   --ticker-h: 40px;    /* approx height of the fixed bottom market crawl */
   /* Glass nav: dark neutral tint (not blue) so white nav text stays legible in
      both themes, over a heavy backdrop blur. */

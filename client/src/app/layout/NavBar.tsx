@@ -6,8 +6,7 @@ import MarketTicker from "../shared/components/MarketTicker";
 
 const midLinks = [
     { title: 'catalog', path: '/catalog' },
-    { title: 'about', path: '/about' },
-    { title: 'contact', path: '/contact' }
+    { title: 'about', path: '/about' }
 ]
 
 const rightLinks = [

@@ -7,7 +7,6 @@ import PrivacyPage from '../../features/about/PrivacyPage';
 import ProfileSettingsPage from '../../features/social/ProfileSettingsPage';
 import PublicProfilePage from '../../features/social/PublicProfilePage';
 import AboutPage from "../../features/about/AboutPage";
-import ContactPage from "../../features/contact/ContactPage";
 import ServerError from "../errors/ServerError";
 import NotFound from "../errors/NotFound";
 import LoginForm from "../../features/account/loginForm";
@@ -37,7 +36,6 @@ export const router = createBrowserRouter([
             {path: '/privacy', element: <PrivacyPage />},
             {path: '/settings/profile', element: <ProfileSettingsPage />},
             {path: '/u/:handle', element: <PublicProfilePage />},
-            {path: '/contact', element: <ContactPage />},
             {path: '/not-found', element: <NotFound />},
             {path: '/server-error', element: <ServerError />},
             {path: '/login', element: <LoginForm />},

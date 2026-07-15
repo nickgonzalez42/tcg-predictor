@@ -25,22 +25,32 @@ from sklearn.metrics import mean_absolute_error
 
 from forecast_deep import (load_matrix, static_features, traj_block,
                            set_matrix, extra_signal_matrices, market_features,
-                           cum_stats, model_new, model_quantile, CUTOFF)
+                           cum_stats, model_new, model_quantile, rolling_cutoff)
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
 
-MODEL_VERSION = "forecast-deep-v4.2"  # v4.2: cross-game market features (global/game momentum)
-                                      # v4.1: model-reported confidence, set/age/drawdown
-                                      # features, ranked card-specific reasons
+MODEL_VERSION = "forecast-deep-v4.3"  # v4.3: rolling OOS cutoff, log-price sample
+                                      # weights, graded/raw premium features, split-
+                                      # conformal bands, sqrt-t 1w bands, no img PCA
+                                      # v4.2: cross-game market features
+                                      # v4.1: confidence, set/age/drawdown, reasons
 HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 # Price data is monthly, so a true 1-week model has no training targets. The 1w
 # horizon is the 1-month forecast pro-rated to 7 days — disclosed in its reason.
+# The POINT forecast scales linearly with time; the BAND scales with sqrt(t)
+# (volatility compounds like a random walk, not linearly — the old linear band
+# scaling made ungraded 1w bands hit only ~65% vs the 80% target).
 WEEK_FRACTION = 7 / 30.44
+WEEK_BAND_FRACTION = WEEK_FRACTION ** 0.5
 TARGETS = ["ungraded", "grade7", "grade8", "grade9", "grade95", "psa10", "bgs10", "cgc10", "sgc10"]
 RET_CLIP = np.log(10.0)
-DEFAULT_BAND = 0.5
+# Segments with no valid temporal split (young games) have NO out-of-sample
+# evidence at all — default above MAX_SEGMENT_MAE so they publish flagged
+# low-confidence with the caution note instead of passing silently.
+DEFAULT_BAND = 0.65
 MIN_SAMPLES = 200
+CONF_TARGET = 0.80      # nominal band coverage; conformal widening enforces it
 MAX_TRAIN_SAMPLES = 3_000_000   # per (game, tier, horizon); see subsample below
 # Publication gates: a segment whose out-of-sample retMAE is worse than this
 # publishes nothing (mature games run ~0.08-0.53), and an individual card's
@@ -305,6 +315,61 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
     return f"Projects {proj:+.0f}% over {horizon}. {lead}: {'; '.join(top)}."
 
 
+def price_weight(p):
+    """Training sample weight from the base price. 42-74% of ungraded cards sit
+    under $1, where a single $0.25 tick is a ±100% log-return — unweighted,
+    that noise dominates the loss. Weight ∝ log-price keeps every card in
+    training (and every card still gets a forecast) while making the model
+    attend to value-relevant moves: $0.25 -> 0.2, $1 -> 0.5, $10 -> 1, $100+ -> 1.5-2.
+    """
+    return np.clip((np.log10(np.maximum(p, 0.01)) + 1.0) / 2.0, 0.1, 2.0)
+
+
+# Cross-tier context: the graded/raw premium is one of the most informative
+# signals in the hobby (premium expansion/mean-reversion), and each tier's
+# model previously trained blind to every other tier. Cached per game — the
+# same pair serves all nine target tiers.
+_PREMIUM_CACHE = {}
+
+
+def premium_matrices(game, pids, dates):
+    """{name: cards x months} — log(psa10/ungraded) level and its 3-month
+    change, aligned to the current tier's (pids, dates) grid. NaN where either
+    side is missing; HGB handles NaN natively. Fed through the EXTRA-signal
+    path, so the features arrive as sig_premium / sig_premchg3."""
+    if game not in _PREMIUM_CACHE:
+        _PREMIUM_CACHE.clear()   # one game at a time; keep memory flat
+        _PREMIUM_CACHE[game] = (load_matrix(game, "ungraded"), load_matrix(game, "psa10"))
+    (upids, udates, U), (gpids, gdates, G) = _PREMIUM_CACHE[game]
+    if len(gpids) == 0 or len(upids) == 0:
+        return {}
+
+    uidx = {int(p): i for i, p in enumerate(upids)}
+    gidx = {int(p): i for i, p in enumerate(gpids)}
+    ud = {d: j for j, d in enumerate(udates)}
+    gd = {d: j for j, d in enumerate(gdates)}
+    ucols = np.array([ud.get(d, -1) for d in dates])
+    gcols = np.array([gd.get(d, -1) for d in dates])
+    um, gm = ucols >= 0, gcols >= 0
+
+    PREM = np.full((len(pids), len(dates)), np.nan)
+    for i, p in enumerate(pids):
+        ui, gi = uidx.get(int(p)), gidx.get(int(p))
+        if ui is None or gi is None:
+            continue
+        urow = np.full(len(dates), np.nan)
+        grow = np.full(len(dates), np.nan)
+        urow[um] = U[ui, ucols[um]]
+        grow[gm] = G[gi, gcols[gm]]
+        ok = np.isfinite(urow) & np.isfinite(grow) & (urow > 0) & (grow > 0)
+        PREM[i, ok] = np.log(grow[ok] / urow[ok])
+
+    CH3 = np.full_like(PREM, np.nan)
+    if PREM.shape[1] > 3:
+        CH3[:, 3:] = PREM[:, 3:] - PREM[:, :-3]
+    return {"premium": PREM, "premchg3": CH3}
+
+
 def anchor_dates(game, grade):
     """pid -> real date of the tier's newest history point. The model anchors
     on the month bucket (whose price IS that newest point); this is the honest
@@ -331,17 +396,23 @@ def forecast_game_target(game, target, now):
     V = None
     S = set_matrix(game, pids, P)
     EXTRA = extra_signal_matrices(game, pids, dates)
+    EXTRA.update(premium_matrices(game, pids, dates))   # graded/raw premium context
     MKT = market_features(game, dates)   # cross-game market context (level-1 blend)
-    static = static_features(game, pids)
+    static = static_features(game, pids, include_img=False)   # img PCA: ablated out (v4.3)
     last_idx = np.array([np.where(np.isfinite(P[i]))[0][-1] if np.isfinite(P[i]).any() else -1
                          for i in range(len(pids))])
     keep = last_idx >= 0
 
     CUM = cum_stats(P)
 
+    # Rolling out-of-sample window per horizon: the last few base months whose
+    # outcome has matured (a fixed calendar cutoff ages into training the gate
+    # model on a shrinking minority of the data).
+    cutoffs = {h: rolling_cutoff(dates, k) for h, k in HORIZONS.items()}
+
     # The trajectory block at month t is horizon-independent, so build it once
     # per t and slice it for every horizon (was: rebuilt 3x per pipeline run).
-    samples = {h: ([], [], []) for h in HORIZONS}   # h -> (Xr, y, is_test)
+    samples = {h: ([], [], [], []) for h in HORIZONS}   # h -> (Xr, y, is_test, w)
     for t in range(1, len(dates) - min(HORIZONS.values())):
         tb_full = None
         for hname, k in HORIZONS.items():
@@ -354,10 +425,11 @@ def forecast_game_target(game, target, now):
                 tb_full = traj_block(P, R, t, V, S, EXTRA, CUM, MKT)
             tb = tb_full.loc[v].reset_index(drop=True)
             sb = static.iloc[np.where(v)[0]].reset_index(drop=True)
-            Xr, ys, tests = samples[hname]
+            Xr, ys, tests, ws = samples[hname]
             Xr.append(pd.concat([tb, sb], axis=1))
             ys.append(np.log(P[v, t + k] / P[v, t]))
-            tests.append(np.full(int(v.sum()), dates[t] >= CUTOFF))
+            tests.append(np.full(int(v.sum()), dates[t] >= cutoffs[hname]))
+            ws.append(price_weight(P[v, t]))
 
     # "Now" features are also horizon-independent: one block per distinct
     # latest-priced month, assembled once and reused for every horizon.
@@ -370,7 +442,7 @@ def forecast_game_target(game, target, now):
 
     rows = []
     for hname, k in HORIZONS.items():
-        Xr, ys, tests = samples[hname]
+        Xr, ys, tests, ws = samples[hname]
         if not Xr:
             continue
         X = pd.concat(Xr, ignore_index=True)
@@ -378,13 +450,14 @@ def forecast_game_target(game, target, now):
         if len(y) < MIN_SAMPLES:
             continue
         test = np.concatenate(tests)
+        w = np.concatenate(ws)
 
         # Magic-scale guard: a huge game (112k+ cards x months) can assemble
         # tens of millions of samples; past a few million, HGB gains nothing
         # but memory pressure. Uniform subsample keeps train/test proportions.
         if len(y) > MAX_TRAIN_SAMPLES:
             idx = np.random.default_rng(42).choice(len(y), MAX_TRAIN_SAMPLES, replace=False)
-            X, y, test = X.iloc[idx].reset_index(drop=True), y[idx], test[idx]
+            X, y, test, w = X.iloc[idx].reset_index(drop=True), y[idx], test[idx], w[idx]
             print(f"  [{game}/{target}/{hname}] subsampled {len(y)} of a larger pool", flush=True)
 
         # A NUMERIC feature with <2 distinct finite values (e.g. a feedback
@@ -405,12 +478,33 @@ def forecast_game_target(game, target, now):
                   f"{', '.join(degenerate)}", flush=True)
 
         # confidence band from out-of-sample error, if the split is large enough
-        # (HGB's binning needs a healthy sample count, so require a real train set)
+        # (HGB's binning needs a healthy sample count, so require a real train set).
+        # Gate on the WEIGHTED error — "can the model call value-relevant cards?" —
+        # with the raw number printed alongside for continuity with older logs.
+        conf_widen = 0.0
         if test.sum() >= 50 and (~test).sum() >= 300:
-            m = model_new().fit(X[~test], y[~test])
-            band = float(mean_absolute_error(y[test], m.predict(X[test])))
-            print(f"  [{game}/{target}/{hname}] OOS retMAE {band:.3f} "
-                  f"(train {(~test).sum()}, test {test.sum()})", flush=True)
+            m = model_new().fit(X[~test], y[~test], sample_weight=w[~test])
+            pred_oos = m.predict(X[test])
+            band = float(mean_absolute_error(y[test], pred_oos, sample_weight=w[test]))
+            raw = float(mean_absolute_error(y[test], pred_oos))
+            print(f"  [{game}/{target}/{hname}] OOS retMAE {band:.3f} weighted "
+                  f"(raw {raw:.3f}; train {(~test).sum()}, test {test.sum()})", flush=True)
+
+            # Split-conformal band widening: quantile models fit on train only,
+            # nonconformity scored on the held-out window, and the final bands
+            # widen by the amount that makes recent coverage hit CONF_TARGET.
+            # (The final quantile models refit on ALL data below — applying the
+            # same widening there is the standard practical approximation.)
+            if test.sum() >= 200:
+                q10t = model_quantile(0.10).fit(X[~test], y[~test], sample_weight=w[~test])
+                q90t = model_quantile(0.90).fit(X[~test], y[~test], sample_weight=w[~test])
+                E = np.maximum(q10t.predict(X[test]) - y[test],
+                               y[test] - q90t.predict(X[test]))
+                n = len(E)
+                qlvl = min(1.0, np.ceil((n + 1) * CONF_TARGET) / n)
+                conf_widen = max(0.0, float(np.quantile(E, qlvl)))
+                print(f"  [{game}/{target}/{hname}] conformal widen +{conf_widen:.3f} "
+                      f"(held-out coverage was {float(np.mean(E <= 0)):.2f})", flush=True)
         else:
             band = DEFAULT_BAND
 
@@ -424,19 +518,20 @@ def forecast_game_target(game, target, now):
             print(f"  [{game}/{target}/{hname}] retMAE {band:.2f} > {MAX_SEGMENT_MAE} "
                   f"— publishing flagged low-confidence", flush=True)
 
-        model = model_new().fit(X, y)
+        model = model_new().fit(X, y, sample_weight=w)
         # Per-card scenario quantiles (10th/90th) — the model's OWN uncertainty.
         # A tight interval = a confident forecast; a wide one = anything can happen.
-        q10 = model_quantile(0.10).fit(X, y)
-        q90 = model_quantile(0.90).fit(X, y)
+        q10 = model_quantile(0.10).fit(X, y, sample_weight=w)
+        q90 = model_quantile(0.90).fit(X, y, sample_weight=w)
 
         Xnow = pd.concat([traj_now.loc[keep].reset_index(drop=True),
                           static.loc[keep].reset_index(drop=True)], axis=1)[X.columns]
 
         ret = np.clip(model.predict(Xnow), -RET_CLIP, RET_CLIP)
-        # quantile crossings happen at the tails — enforce lo <= ret <= hi
-        lo_ret = np.clip(np.minimum(q10.predict(Xnow), ret), -RET_CLIP, RET_CLIP)
-        hi_ret = np.clip(np.maximum(q90.predict(Xnow), ret), -RET_CLIP, RET_CLIP)
+        # quantile crossings happen at the tails — enforce lo <= ret <= hi.
+        # conf_widen is the split-conformal adjustment measured above.
+        lo_ret = np.clip(np.minimum(q10.predict(Xnow) - conf_widen, ret), -RET_CLIP, RET_CLIP)
+        hi_ret = np.clip(np.maximum(q90.predict(Xnow) + conf_widen, ret), -RET_CLIP, RET_CLIP)
         width = hi_ret - lo_ret   # 80% interval width in log-return
         conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
         if unreliable:
@@ -493,8 +588,10 @@ def forecast_game_target(game, target, now):
             # phrasing changes there can't garble this row.
             if hname == "1m":
                 rw = float(r) * WEEK_FRACTION
-                lw = rw - (float(r) - float(lo_ret[i])) * WEEK_FRACTION
-                hw = rw + (float(hi_ret[i]) - float(r)) * WEEK_FRACTION
+                # point scales with t; the band scales with sqrt(t) (vol compounds
+                # like a random walk — linear scaling under-covered badly at 1w)
+                lw = rw - (float(r) - float(lo_ret[i])) * WEEK_BAND_FRACTION
+                hw = rw + (float(hi_ret[i]) - float(r)) * WEEK_BAND_FRACTION
                 wreason = make_reason(rw, mom3[i], trend12[i], vol6[i], "1w",
                                       vol_now[i], volchg[i],
                                       comp=comp,

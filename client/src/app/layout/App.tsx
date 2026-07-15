@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import NavBar from "./NavBar";
+import ReportProblem from "../../features/report/ReportProblem";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
@@ -33,6 +34,9 @@ function App() {
     <div className={`app-shell${showTicker ? " has-ticker" : ""}`}>
       <ScrollRestoration />
       <NavBar showTicker={showTicker} />
+      {/* Fixed bottom-right tab; outside #smooth-wrapper so its position:fixed
+          isn't broken by ScrollSmoother's transform. */}
+      <ReportProblem />
       <div id="smooth-wrapper">
         <div id="smooth-content">
           <main className="container page grid-box">

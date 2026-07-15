@@ -552,7 +552,8 @@ export default function Portfolio() {
                         <p>
                             <strong>Pulled it from a pack?</strong> A fair basis is the pack price
                             (typically $4–6): assign it to the best card you pulled and let the other
-                            pulls ride at $0, or split it evenly across the cards you kept.
+                            pulls ride at $0, or split it evenly across the cards you kept — a $5 pack
+                            across five keepers is $1 each.
                         </p>
                         <p>
                             <strong>Pulled it from a box?</strong> Divide the box price by its pack

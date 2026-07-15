@@ -29,8 +29,18 @@ PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "card
 
 HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 TARGETS = ["ungraded", "psa10"]
-CUTOFF = "2025-01"      # base months >= this are the out-of-sample test set
+CUTOFF = "2025-01"      # research-script split; production uses rolling_cutoff()
 IMG_PCA = 24
+TEST_MONTHS = 4         # rolling out-of-sample window (last N matured base months)
+
+
+def rolling_cutoff(dates, k, test_months=TEST_MONTHS):
+    """Base-month cutoff whose test set is the LAST `test_months` matured
+    (t, t+k) base months for horizon k. Rolls forward with the data — a fixed
+    date ages badly (the old 2025-01 split eventually trained the gate model
+    on a minority of the samples the deployed model sees)."""
+    i = max(1, len(dates) - k - test_months)
+    return dates[min(i, len(dates) - 1)]
 
 DROP = {
     "product_id", "name", "clean_name", "set_url_name", "card_number",
@@ -60,7 +70,14 @@ def load_matrix(game, grade):
     return np.array(pids), dates, P
 
 
-def static_features(game, pids):
+def static_features(game, pids, include_img=True):
+    """Tabular card features, optionally + PCA-compressed CLIP art embedding.
+
+    Production (forecast_predict) passes include_img=False: a 2026-07 ablation
+    (full vs no-img vs shuffled-img on 3 segments) showed the art PCA block is
+    accuracy-neutral at best and slightly harmful on small segments. Embeddings
+    still power art_comps.py (reasoning text) — just not the forecast model.
+    """
     df = pd.read_csv(os.path.join(DATA, f"{game}_cards.csv"))
     if "release_date" in df.columns:
         df["release_year"] = pd.to_datetime(df["release_date"], errors="coerce").dt.year
@@ -73,6 +90,9 @@ def static_features(game, pids):
     for col in tab[tab_cols].select_dtypes(include="object").columns:
         keep = tab[col].value_counts().head(MAX_CATEGORIES).index
         tab[col] = tab[col].astype("string").fillna("MISSING").where(lambda s: s.isin(keep), "OTHER").astype("category")
+
+    if not include_img:
+        return tab.set_index("product_id").reindex(pids).reset_index(drop=True)
 
     z = np.load(os.path.join(DATA, f"{game}_img_emb.npz"))
     n = min(IMG_PCA, z["emb"].shape[1])

@@ -12,6 +12,7 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     public DbSet<SpxClose> SpxCloses => Set<SpxClose>();
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<CommentVote> CommentVotes => Set<CommentVote>();
+    public DbSet<ProblemReport> ProblemReports => Set<ProblemReport>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

@@ -228,7 +228,8 @@ button.navbar__link {
     position: absolute;
     inset: 0;
     width: 100%;
-    padding: var(--space-95) var(--space-15) var(--space-25);
+    /* Left padding lines the links up with the toppled logo's left edge. */
+    padding: var(--space-95) var(--space-15) var(--space-25) var(--tipped-logo-left);
     background: var(--nav-glass);
     -webkit-backdrop-filter: blur(24px);
     backdrop-filter: blur(24px);
@@ -316,6 +317,8 @@ button.navbar__link {
 
   .navbar__link {
     display: block;
+    width: fit-content;   /* box (and hover target) only as wide as the label */
+    padding-left: 0;      /* indent comes from the drawer's left padding instead */
   }
 
   /* Profile/logout (or login/register) pinned to the foot of the drawer. */

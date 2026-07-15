@@ -55,6 +55,7 @@ builder.Services.AddDbContext<PriceChartingContext>(opt =>
 });
 builder.Services.AddScoped<ReasoningService>();
 builder.Services.AddScoped<API.Services.ModerationService>();
+builder.Services.AddScoped<API.Services.NotificationService>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
 builder.Services.AddHttpClient<API.Services.SpxService>();
 builder.Services.AddCors();

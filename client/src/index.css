@@ -24,6 +24,7 @@
 @import "./styles/components/MultiSelectDropdown.css";
 @import "./styles/components/CardLoader.css";
 @import "./styles/components/Modal.css";
+@import "./styles/components/ReportTab.css";
 
 /* Feature screens */
 @import "./styles/features/HomePage.css";
