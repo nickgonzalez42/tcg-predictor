@@ -37,5 +37,6 @@ if [ "$SKIP_IMAGES" != "--skip-images" ]; then
 fi
 
 echo "== restart API =="
-$SSH_CMD ubuntu@$IP 'sudo systemctl restart tcg-api && sleep 2 && systemctl is-active tcg-api'
+# ${=SSH_CMD} forces zsh word-splitting so "ssh -i <key>" isn't run as one word.
+${=SSH_CMD} ubuntu@$IP 'sudo systemctl restart tcg-api && sleep 2 && systemctl is-active tcg-api'
 echo "data live on http://$IP"
