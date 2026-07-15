@@ -7,4 +7,4 @@ Disallow: /watchlist
 Disallow: /login
 Disallow: /register
 
-Sitemap: http://35.168.177.31/sitemap.xml
+Sitemap: https://cardstock.guide/sitemap.xml

@@ -15,14 +15,19 @@ public class DbInitializer
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>()
             ?? throw new InvalidOperationException("Failed to retrieve userManager context");
 
-        await SeedData(context, userManager);
+        await SeedData(context, userManager, app.Environment.IsDevelopment());
     }
 
-    private static async Task SeedData(StoreContext context, UserManager<User> userManager)
+    private static async Task SeedData(StoreContext context, UserManager<User> userManager,
+        bool isDevelopment)
     {
-        context.Database.Migrate();
+        context.Database.Migrate();   // always: migrations run in every environment
 
-        if (!userManager.Users.Any())
+        // Demo accounts (bob@/admin@ with a well-known password) are for local
+        // dev ONLY. Never create them in Production — the credentials are public
+        // in this repo, so seeding them there would leave known-password live
+        // accounts on the server.
+        if (isDevelopment && !userManager.Users.Any())
         {
             var user = new User
             {

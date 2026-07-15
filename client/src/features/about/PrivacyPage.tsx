@@ -44,7 +44,8 @@ export default function PrivacyPage() {
 
             <h2>Contact</h2>
             <p>
-                Questions about this policy? Reach out via the <a href="/contact">contact page</a>.
+                Questions about this policy? Email us at{' '}
+                <a href="mailto:hello@cardstock.guide">hello@cardstock.guide</a>.
             </p>
         </div>
     );
