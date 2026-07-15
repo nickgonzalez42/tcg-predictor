@@ -1,29 +1,109 @@
-/* Fixed navy navbar (constant across themes) + loading bar. */
+/* Glass nav. Mobile/tablet: a fixed frosted top bar with the ☰ dropdown.
+   Desktop: the logo sits static in the top-left of the page and, on hover,
+   a heavily-blurred translucent drawer slides in from the left. */
 
-/* Navy, ruled off with the brand yellow. */
 .navbar {
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 10;
-  background: var(--nav-bg);
   color: var(--nav-link);
+  background: var(--nav-glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   border-bottom: 2px solid var(--brand);
 }
 
-.navbar__inner {
+/* Logo + ☰ row (the only always-visible chrome). */
+.navbar__bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 64px;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 var(--space-20);
 }
 
-.navbar__brand {
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--brand);
-  letter-spacing: 0.5px;
+.navbar__brand,
+.navbar__brand:hover {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;   /* beats the global a:hover underline */
+  position: relative;      /* containing block for the absolute wordmark */
+}
+
+/* "card / STOCK" wordmark beside the logo. Shown statically on mobile; on
+   desktop it's hidden until the topple + trend animation finishes, then each
+   line fades in one at a time (see the desktop block). */
+.navbar__wordmark {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  /* Out of the brand's flow, so the hidden wordmark doesn't inflate the logo's
+     hover/hit area when the nav is closed — the trigger stays the SVG's width.
+     Sits just right of the logo, vertically centered. */
+  position: absolute;
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: var(--space-15);
+  line-height: 1.02;
+  color: var(--nav-link);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.navbar__word--1 {
+  font-size: 15px;
+  font-weight: 500;
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+
+.navbar__word--2 {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.navbar__logo {
+  height: 40px;
+  width: var(--logo-w);
+  display: block;
+  /* The trend arrow breaks out past the card's top-left corner (negative
+     viewBox coords), so don't clip to the viewBox. */
+  overflow: visible;
+  /* Pivot on the bottom-right corner so hovering (desktop) topples the card
+     over to the right like a falling domino, and stands back up on close.
+     No overshoot in either direction. */
+  transform-origin: bottom right;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Yellow trend line + arrowhead inside the card. Hidden by default (dash fully
+   offset / arrow transparent); the desktop hover rules draw them once the card
+   is on its side. Closing retracts quickly (short transition, no delay). */
+.navbar__logo-trend {
+  stroke: var(--brand);
+  stroke-width: 4;              /* same weight as the card border */
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  stroke-dasharray: 145;       /* ≥ the polyline's length (~139) */
+  stroke-dashoffset: 145;
+  transition: stroke-dashoffset 0.2s ease;
+}
+
+.navbar__logo-arrow {
+  stroke: var(--brand);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+  opacity: 0;
+  transition: opacity 0.15s ease;
 }
 
 .navbar__links {
@@ -35,20 +115,9 @@
   padding: 0;
 }
 
-/* Scoped to the nav row only — the market ticker also lives inside .navbar,
-   and a bare `.navbar a` would out-rank the chips' green/red colors. */
-.navbar__inner a,
-.navbar__icon-btn {
-  color: var(--nav-link);
-}
-
-.navbar__inner a.navbar__brand {
-  color: var(--brand);
-}
-
 .navbar__link {
   color: var(--nav-link);
-  padding: var(--space-10);
+  padding: var(--space-10) 0 0 20px;
   border-radius: var(--radius);
   text-transform: uppercase;
   font-weight: 600;
@@ -57,7 +126,7 @@
 
 .navbar__link:hover,
 .navbar__link.active {
-  background: rgba(255, 255, 255, 0.15);
+  color: var(--brand);
   text-decoration: none;
 }
 
@@ -68,6 +137,7 @@ button.navbar__link {
   cursor: pointer;
   font-family: inherit;
   line-height: inherit;
+  color: var(--nav-link);
 }
 
 .navbar__icon-btn {
@@ -75,7 +145,14 @@ button.navbar__link {
   border: none;
   cursor: pointer;
   font-size: 19.2px;
-  padding: var(--space-5);
+  /* Fixed square so the 50% radius reads as a true circle on hover (the ☰/✕
+     glyphs differ in width, which otherwise makes the highlight an oval). */
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 50%;
   color: var(--nav-link);
 }
@@ -84,30 +161,14 @@ button.navbar__link {
   background: rgba(255, 255, 255, 0.15);
 }
 
-.progress-bar {
-  height: 4px;
-  background: var(--brand);
-  animation: indeterminate 1.2s infinite linear;
-  transform-origin: left;
-}
-
-@keyframes indeterminate {
-  0% { transform: scaleX(0); }
-  50% { transform: scaleX(0.6); }
-  100% { transform: scaleX(1); opacity: 0.4; }
-}
-
-/* Hamburger + dropdown: hidden on desktop, replaces the text links on tablet
-   and below. The panel hangs off the fixed header, above the page. */
-.navbar__menu-btn {
-  display: none;
-}
-
+/* Mobile dropdown (frosted, hangs below the bar). */
 .navbar__menu {
   display: flex;
   flex-direction: column;
   padding: var(--space-10) var(--space-15) var(--space-15);
-  background: var(--nav-bg);
+  background: var(--nav-glass);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   border-bottom: 2px solid var(--brand);
 }
 
@@ -116,16 +177,200 @@ button.navbar__link {
   padding: var(--space-10);
 }
 
-/* Tablet and below: text links collapse into the ☰ dropdown (the signed-in
-   avatar UserMenu stays in the bar). */
-@media (max-width: 1023px) {
-  .navbar__nav,
-  .navbar__auth,
-  .navbar__usermenu {
-    display: none;   /* text links + logout move into the ☰ dropdown */
+/* The sliding drawer only exists on desktop. */
+.navbar__panel {
+  display: none;
+}
+
+/* Rail + hover-drawer styles applied at every screen width (previously these
+   were desktop-only; @media all keeps the block intact while always matching). */
+@media all {
+  .navbar {
+    right: auto;
+    bottom: 0;
+    width: var(--sidebar-w);
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-bottom: none;
+    /* The empty rail must not block the page; the logo and drawer re-enable
+       pointer events on themselves. Hovering the logo still triggers
+       .navbar:hover (hover propagates to ancestors from the real target). */
+    pointer-events: none;
   }
 
-  .navbar__menu-btn {
-    display: inline-block;
+  .navbar__bar {
+    height: auto;
+    max-width: none;
+    margin: 0;
+    /* Top aligns with page content; left centers the logo in the gutter
+       between the screen edge and where container content starts. */
+    padding: var(--page-top) var(--space-20) 0 calc(var(--content-left) / 2 - var(--logo-w) / 2);
+    justify-content: flex-start;
+    position: relative;
+    z-index: 2;                 /* logo stays above the drawer */
+    pointer-events: none;
+  }
+
+  .navbar__brand {
+    pointer-events: auto;       /* the reveal trigger + home link */
+    padding: 0;                 /* logo starts exactly at the bar's centered padding */
+  }
+
+  .navbar__menu-btn,
+  .navbar__menu {
+    display: none;              /* desktop uses the drawer, not the ☰ */
+  }
+
+  .navbar__panel {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    padding: var(--space-95) var(--space-15) var(--space-25);
+    background: var(--nav-glass);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border-right: 1px solid rgba(255, 255, 255, 0.15);
+    transform: translateX(-100%);
+    transition: transform 0.28s ease;
+    pointer-events: auto;
+    z-index: 1;
+  }
+
+  /* The crawl (home/catalog) is fixed at the viewport bottom, so lift the
+     drawer's bottom-pinned profile/logout above it when it's showing
+     (.has-ticker is set on the app shell). */
+  .has-ticker .navbar__panel {
+    padding-bottom: calc(var(--ticker-h) + var(--space-25));
+  }
+
+  /* Wordmark hidden until the animation finishes; closing hides it fast. When
+     revealed it slides right to clear the toppled card + breakout arrow. */
+  .navbar__word {
+    opacity: 0;
+    transform: translateX(12px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+
+  /* Open state. Touch devices: JS adds .navbar--open when the logo is tapped.
+     Hover devices get the same reveal from pointer/focus, but scoped to
+     (hover: hover) below so iOS "sticky :hover" can't jam the tap-to-close. The
+     "card" wordmark line reveals just after the arrow lands, then "STOCK". */
+  .navbar--open .navbar__panel { transform: translateX(0); }
+  .navbar--open .navbar__logo { transform: rotate(90deg); }
+  .navbar--open .navbar__logo-trend {
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.6s ease 0.5s;
+  }
+  .navbar--open .navbar__logo-arrow {
+    opacity: 1;
+    transition: opacity 0.2s ease 1.05s;
+  }
+  .navbar--open .navbar__word--1 {
+    opacity: 1;
+    transform: translateX(48px);
+    transition: opacity 0.3s ease 1.35s, transform 0.3s ease 1.35s;
+  }
+  .navbar--open .navbar__word--2 {
+    opacity: 1;
+    transform: translateX(48px);
+    transition: opacity 0.3s ease 1.65s, transform 0.3s ease 1.65s;
+  }
+
+  @media (hover: hover) {
+    .navbar:is(:hover, :focus-within) .navbar__panel { transform: translateX(0); }
+    .navbar:is(:hover, :focus-within) .navbar__logo { transform: rotate(90deg); }
+    .navbar:is(:hover, :focus-within) .navbar__logo-trend {
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.6s ease 0.5s;
+    }
+    .navbar:is(:hover, :focus-within) .navbar__logo-arrow {
+      opacity: 1;
+      transition: opacity 0.2s ease 1.05s;
+    }
+    .navbar:is(:hover, :focus-within) .navbar__word--1 {
+      opacity: 1;
+      transform: translateX(48px);
+      transition: opacity 0.3s ease 1.35s, transform 0.3s ease 1.35s;
+    }
+    .navbar:is(:hover, :focus-within) .navbar__word--2 {
+      opacity: 1;
+      transform: translateX(48px);
+      transition: opacity 0.3s ease 1.65s, transform 0.3s ease 1.65s;
+    }
+
+    /* The logo navigates home on hover devices, so the drawer's HOME link is
+       for touch only. */
+    .navbar__home-item {
+      display: none;
+    }
+  }
+
+  .navbar__links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-5);
+  }
+
+  .navbar__link {
+    display: block;
+  }
+
+  /* Profile/logout (or login/register) pinned to the foot of the drawer. */
+  .navbar__end {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding-top: var(--space-15);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+  }
+
+  .navbar__auth {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .navbar__usermenu {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-5);
+  }
+
+  .navbar__usermenu .navbar__link,
+  .navbar__auth .navbar__link {
+    text-align: left;
+  }
+}
+
+/* Respect reduced-motion: the drawer still opens, but the logo doesn't topple —
+   so the trend line stays hidden (it would read wrong on an upright card). */
+@media (prefers-reduced-motion: reduce) {
+  .navbar__logo {
+    transition: none;
+  }
+
+  .navbar:is(:hover, :focus-within, .navbar--open) .navbar__logo {
+    transform: none;
+  }
+
+  .navbar:is(:hover, :focus-within, .navbar--open) .navbar__logo-trend {
+    stroke-dashoffset: 145;
+    transition: none;
+  }
+
+  .navbar:is(:hover, :focus-within, .navbar--open) .navbar__logo-arrow {
+    opacity: 0;
+    transition: none;
+  }
+
+  /* Wordmark still appears with the open drawer, just without the staggered
+     fade/slide. */
+  .navbar:is(:hover, :focus-within, .navbar--open) .navbar__word {
+    opacity: 1;
+    transform: none;
+    transition: none;
   }
 }

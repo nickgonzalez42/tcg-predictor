@@ -1,9 +1,18 @@
-/* Scrolling market ticker (under the navbar on home/catalog). */
+/* Scrolling market crawl (home/catalog): fixed to the bottom of the viewport,
+   news-channel style. Full width on mobile; the desktop rail's media query in
+   NavBar.css shifts its left edge past the sidebar. It renders inside the
+   fixed .navbar, so it shares the nav's stacking level above the page. */
 
 .ticker {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 11;               /* above the page; it lives in the nav's context */
+  pointer-events: auto;      /* the nav rail is pointer-events:none — re-enable */
   overflow: hidden;
   background: var(--surface-2);
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid var(--border);
   padding: var(--space-5) 0;
   white-space: nowrap;
 }

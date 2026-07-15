@@ -4,6 +4,8 @@ import HomePage from "../../features/home/HomePage";
 import Catalog from "../../features/catalog/Catalog";
 import CardDetails from "../../features/catalog/CardDetails";
 import PrivacyPage from '../../features/about/PrivacyPage';
+import ProfileSettingsPage from '../../features/social/ProfileSettingsPage';
+import PublicProfilePage from '../../features/social/PublicProfilePage';
 import AboutPage from "../../features/about/AboutPage";
 import ContactPage from "../../features/contact/ContactPage";
 import ServerError from "../errors/ServerError";
@@ -33,6 +35,8 @@ export const router = createBrowserRouter([
             {path: '/catalog/:game/:id', element: <CardDetails />},
             {path: '/about', element: <AboutPage />},
             {path: '/privacy', element: <PrivacyPage />},
+            {path: '/settings/profile', element: <ProfileSettingsPage />},
+            {path: '/u/:handle', element: <PublicProfilePage />},
             {path: '/contact', element: <ContactPage />},
             {path: '/not-found', element: <NotFound />},
             {path: '/server-error', element: <ServerError />},

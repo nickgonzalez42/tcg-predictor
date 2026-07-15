@@ -13,10 +13,11 @@
   letter-spacing: 0.03em;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
+  white-space: nowrap;
 }
 
 .forecast-table td {
-  padding: var(--space-5) var(--space-10);
+  padding: var(--space-5) var(--space-10) var(--space-10);
   border-bottom: 1px solid var(--border);
   vertical-align: top;
 }
@@ -51,14 +52,42 @@
   color: var(--primary);
 }
 
-/* Stat strip at the top of the forecast-detail modal: current vs forecast,
+/* Tier name + its single reasoning button, side by side in the row's first cell. */
+.forecast-tier {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+/* One block per horizon inside the reasoning modal, separated by a 2px border. */
+.why-section + .why-section {
+  border-top: 2px solid var(--border);
+  margin-top: var(--space-15);
+  padding-top: var(--space-15);
+}
+
+.why-section__title {
+  margin: 0 0 var(--space-10);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.why-note {
+  border-top: 2px solid var(--border);
+  margin-top: var(--space-15);
+  padding-top: var(--space-15);
+}
+
+/* Stat strip inside each horizon block: current vs forecast,
    the change ($ and %), and the scenario range, with the reason below. */
 .why-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--space-10) var(--space-15);
   margin-bottom: var(--space-15);
-  padding-bottom: var(--space-10);
+  padding-bottom: var(--space-15);
   border-bottom: 1px solid var(--border);
 }
 
@@ -260,6 +289,11 @@
 
 /* --- Tablet & mobile: the 4/8 detail columns stack; card art stays capped. */
 @media (max-width: 1023px) {
+  /* More breathing room below the nav before the page content starts. */
+  .breadcrumb {
+    margin-top: var(--space-25);
+  }
+
   .detail-left,
   .detail-center {
     grid-column: 1 / -1;

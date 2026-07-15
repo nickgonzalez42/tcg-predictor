@@ -30,12 +30,18 @@ function preloadArt(card: Card) {
     });
 }
 
+// '12m' -> '1Y', '6m' -> '6M': the label shown next to a mover's forecast.
+const hzLabel = (h?: string) => (h === '6m' ? '6M' : '1Y');
+// A mover's headline forecast price: the window-mapped fcstTo (12m for mature
+// games, 6m for young ones), with the legacy 12m field as fallback.
+const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;
+
 function HeroChart({ movers }: { movers?: Card[] }) {
     const cards = useMemo(() => {
         // Same value floor as the movers feed itself ($10); the sparkline just
         // needs enough points to trace a line worth watching.
         const ok = (movers ?? []).filter(m =>
-            (m.price ?? 0) >= 10 && (m.sparkline?.length ?? 0) >= 4 && m.fcst12To != null);
+            (m.price ?? 0) >= 10 && (m.sparkline?.length ?? 0) >= 4 && moverFcst(m) != null);
         // Round-robin across games (each game's pool shuffled) so consecutive
         // scenes cycle through a variety of games, not one game's whole list.
         const byGame = new Map<string, Card[]>();
@@ -113,7 +119,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     const labelRef = useRef<SVGTextElement>(null);
 
     const hist = card.sparkline!;
-    const fcstEnd = card.fcst12To!;
+    const fcstEnd = moverFcst(card)!;
     const all = [...hist, fcstEnd];
     const min = Math.min(...all), span = Math.max(...all) - min || 1;
     // Insets sized to the card art (108 tall / 76 wide, centered on the line
@@ -228,7 +234,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     textAnchor="end"
                     style={{ opacity: 0, fill: fcstPct >= 0 ? 'var(--up)' : 'var(--down)' }}
                 >
-                    {fcstPct >= 0 ? '+' : ''}{fcstPct.toFixed(0)}% 1Y FCST
+                    {fcstPct >= 0 ? '+' : ''}{fcstPct.toFixed(0)}% {hzLabel(card.fcstHorizon)} FCST
                 </text>
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
@@ -258,7 +264,8 @@ function MoverTile({ mover }: { mover: Card }) {
                 <div className="mover__row">
                     <span className="mover__price">
                         {/* no asOf here: mover tiles stay compact, date lives on the card page */}
-                        <PricePair price={mover.price} forecast={mover.fcst12To} horizon="12M" />
+                        <PricePair price={mover.price} forecast={moverFcst(mover)}
+                            horizon={hzLabel(mover.fcstHorizon)} />
                     </span>
                     <span className="mover__market"
                         title={`Price history over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`}>
@@ -279,7 +286,7 @@ function MoverTile({ mover }: { mover: Card }) {
 
 const HOW_IT_WORKS = [
     { n: '1', title: 'Browse', text: 'Every card across seven TCGs — One Piece, Pokémon, Yu-Gi-Oh!, Magic, Lorcana, Digimon, Gundam — with live ungraded and graded price tiers.' },
-    { n: '2', title: 'Forecast', text: '6 and 12 month ML price predictions with confidence bands and plain-English reasoning.' },
+    { n: '2', title: 'Forecast', text: '6 month and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
     { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L, plus a watchlist with price alerts.' },
 ];
 
@@ -314,7 +321,7 @@ export default function HomePage() {
             {tiles.length > 0 && (
                 <section className="full-span subgrid">
                     <h2 className="home__heading full-span">
-                        Top movers <span className="est-note">· 12 month model forecast</span>
+                        Top movers <span className="est-note">· 1 year model forecast</span>
                     </h2>
                     <div className="movers subgrid">
                         {tiles.map(m => <MoverTile mover={m} key={`${m.game}-${m.id}`} />)}

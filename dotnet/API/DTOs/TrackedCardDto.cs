@@ -13,8 +13,9 @@ public class OwnedCopyDto
 {
     public int Id { get; set; }
     public string? Grade { get; set; }
-    public double? PurchasePrice { get; set; }
-    public DateTime? AcquiredAt { get; set; }
+    public double PurchasePrice { get; set; }      // never null: 0 = no data
+    public DateTime AcquiredAt { get; set; }       // never null: defaults to AddedAt
+    public bool AutoPrice { get; set; }            // price tracks the acquired date's market
     public string? Note { get; set; }
     public DateTime AddedAt { get; set; }
 }
@@ -35,9 +36,10 @@ public class SetOwnedQuantityDto
 public class UpdateOwnedCopyDto
 {
     public string? Grade { get; set; }
-    public double? PurchasePrice { get; set; }
-    public DateTime? AcquiredAt { get; set; }
+    public double? PurchasePrice { get; set; }    // used only when AutoPrice is off (null -> 0)
+    public DateTime? AcquiredAt { get; set; }     // null -> reset to the copy's AddedAt
     public string? Note { get; set; }
+    public bool AutoPrice { get; set; } = true;
 }
 
 // Set (or clear, with null) a wishlist row's price alert

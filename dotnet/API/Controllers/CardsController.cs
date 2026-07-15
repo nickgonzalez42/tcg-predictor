@@ -49,7 +49,7 @@ public class CardsController(
         var tracked = await store.TrackedCards
             .Where(x => x.UserName == user && x.Game == game && x.Kind == listKind)
             .OrderByDescending(x => x.AddedAt)
-            .Select(x => new { x.ProductId, x.WatchedAtPrice, x.AlertTargetPrice })
+            .Select(x => new { x.ProductId, x.WatchedAtPrice, x.AlertTargetPrice, x.AddedAt })
             .ToListAsync();
         var trackedIds = tracked.Select(x => x.ProductId).ToList();
 
@@ -61,6 +61,7 @@ public class CardsController(
             if (byId.TryGetValue(card.Id, out var t))
             {
                 card.WatchedAtPrice = t.WatchedAtPrice;
+                card.WatchedSince = t.AddedAt;
                 card.AlertTargetPrice = t.AlertTargetPrice;
             }
 
@@ -112,7 +113,23 @@ public class CardsController(
     [HttpGet("filters")]
     public async Task<IActionResult> GetFilters([FromQuery] string? game)
     {
-        return Ok(await Facets(sources.Cards(GameRegistry.KeyOrDefault(game)).VisibleInCatalog()));
+        var key = GameRegistry.KeyOrDefault(game);
+        var (sets, rarities) = await Facets(sources.Cards(key).VisibleInCatalog());
+
+        // 1Y views only make sense once the game has year-deep data: a 12m
+        // forecast horizon, or 12+ months of price history. Young games
+        // (PriceCharting picked up digimon/gundam in 2025-09) have neither,
+        // so the client disables the 1Y trend chip and hides 1Y sorts.
+        var hasYear = await predictions.Forecasts
+            .AnyAsync(f => f.Game == key && f.Horizon == "12m");
+        if (!hasYear)
+        {
+            var yearAgo = DateTime.UtcNow.AddMonths(-12).ToString("yyyy-MM-dd");
+            hasYear = await priceCharting.History
+                .AnyAsync(h => h.Game == key && string.Compare(h.Date, yearAgo) <= 0);
+        }
+
+        return Ok(new { sets, rarities, hasYear });
     }
 
     // Monthly price history per condition tier, for charting (TradingView-style).
@@ -240,16 +257,24 @@ public class CardsController(
         return Ok(new { game = key, productId = id, salesVolume = current?.SalesVolume, grades });
     }
 
-    // Top movers across both games by 12m ungraded forecast change — feeds the
-    // market ticker and the home page mover tiles. Small floor price so penny
-    // cards' huge percentages don't drown out everything.
+    // Top movers across both games by ungraded forecast change — feeds the
+    // market ticker and the home page mover tiles. Mixed horizons: 12m where a
+    // game has it, else its longest available (6m for young games — digimon /
+    // gundam have <14 months of history). Small floor price so penny cards'
+    // huge percentages don't drown out everything.
     [HttpGet("movers")]
     public async Task<IActionResult> GetMovers([FromQuery] int count = 12)
     {
         count = Math.Clamp(count, 1, 24);
 
+        var gamesWith12m = (await predictions.Forecasts
+            .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
+            .Select(f => f.Game).Distinct().ToListAsync()).ToHashSet();
+
         var baseQuery = predictions.Forecasts
-            .Where(f => f.Target == "ungraded" && f.Horizon == "12m" && f.BasePrice >= 10)
+            .Where(f => f.Target == "ungraded" && f.BasePrice >= 10
+                        && (f.Horizon == "12m"
+                            || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game))))
             .Select(f => new { f.Game, f.ProductId, f.BasePrice, f.ForecastPrice });
         // 2x buffer per side: candidates without local art are filtered below.
         var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
@@ -277,13 +302,14 @@ public class CardsController(
         {
             // Progressive price floor: prefer $10+ movers, but a game whose whole
             // ungraded market sits below that (e.g. Digimon) still gets its two.
+            var horizon = gamesWith12m.Contains(game) ? "12m" : "6m";
             foreach (var gainerSide in new[] { true, false })
             {
                 MoverPick? pick = null;
                 foreach (var floor in new[] { 10.0, 1.0 })
                 {
                     var q = predictions.Forecasts
-                        .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == "12m"
+                        .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == horizon
                                     && f.BasePrice >= floor)
                         .Where(f => gainerSide ? f.ForecastPrice > f.BasePrice : f.ForecastPrice < f.BasePrice);
                     q = gainerSide
@@ -333,13 +359,23 @@ public class CardsController(
             .OfType<CardDto>()
             .ToList();
 
+        // Fill market/forecast fields at each game's own horizon: the 1y trend
+        // window maps to the 12m forecast; young games use the 6m window so
+        // FcstTo/FcstHorizon carry their real (6m) numbers.
         foreach (var game in GameRegistry.Keys)
-            await ApplyMarket(movers.Where(m => m.Game == game).ToList(), game, trend: "1y");
+            await ApplyMarket(movers.Where(m => m.Game == game).ToList(), game,
+                trend: gamesWith12m.Contains(game) ? "1y" : "6m");
 
         return Ok(movers);
     }
 
     private sealed record MoverPick(string Game, int ProductId, double BasePrice, double ForecastPrice);
+
+    // Owned-copy condition vocabulary, worst-to-best, for the Condition header
+    // sort ('' = unspecified sorts first, top slabs last).
+    private static readonly string[] ConditionOrder =
+        ["", "mp", "lp", "nm", "grade7", "grade8", "grade9", "grade95",
+         "psa10", "bgs10", "cgc10", "sgc10"];
 
     private static object StatsFor(List<PriceHistoryPoint> series)
     {
@@ -829,15 +865,60 @@ public class CardsController(
                 ? (f.metric == "pct" ? ch.pct : ch.usd)
                 : (f.desc ? double.NegativeInfinity : double.PositiveInfinity);  // no forecast -> end
 
+        // Actual price-history change per unit (the Trend column header sort),
+        // computed against each unit's own condition tier.
+        var hs = ParseHistorySort(p.OrderBy);
+        var histByTier = new Dictionary<string, Dictionary<int, (double? Pct, double Usd)>>();
+        if (hs is not null)
+            foreach (var tier in units.Select(u => GradeTiers.PriceTier(u.Grade)).Distinct())
+            {
+                var tIds = units.Where(u => GradeTiers.PriceTier(u.Grade) == tier)
+                    .Select(u => u.ProductId).Distinct().ToList();
+                histByTier[tier] = await HistoryChanges(folder, tier, tIds, hs.Value.window);
+            }
+        double HistKey(int pid, string grade, (string metric, string window, bool desc) h)
+        {
+            var missing = h.desc ? double.NegativeInfinity : double.PositiveInfinity;
+            return histByTier.TryGetValue(GradeTiers.PriceTier(grade), out var d) && d.TryGetValue(pid, out var ch)
+                ? (h.metric == "pct" ? ch.Pct ?? missing : ch.Usd)
+                : missing;
+        }
+
+        // Unit-level sort keys for the positions table's clickable headers.
+        // Nulls (no paid data / no price) always sink to the end.
+        double? PaidOf(List<TrackedCard> cs) =>
+            cs.Any(x => x.PurchasePrice is > 0) ? cs.Sum(x => x.PurchasePrice ?? 0) : null;
+        double? ValueOf(int pid, string grade, int qty) =>
+            UnitPrice(pid, grade) is { } v ? v * qty : null;
+        double? PlOf(int pid, string grade, List<TrackedCard> cs) =>
+            PaidOf(cs) is { } paid && ValueOf(pid, grade, cs.Count) is { } val ? val - paid : null;
+        int CondRank(string grade) =>
+            Array.IndexOf(ConditionOrder, grade) is var i && i >= 0 ? i : int.MaxValue;
+
         var ordered = (fc is { } fk
             ? (fk.desc
                 ? units.OrderByDescending(u => ChangeKey(u.ProductId, u.Grade, fk))
                 : units.OrderBy(u => ChangeKey(u.ProductId, u.Grade, fk)))
+            : hs is { } hk
+            ? (hk.desc
+                ? units.OrderByDescending(u => HistKey(u.ProductId, u.Grade, hk))
+                : units.OrderBy(u => HistKey(u.ProductId, u.Grade, hk)))
             : p.OrderBy switch
             {
                 "price" => units.OrderBy(u => UnitPrice(u.ProductId, u.Grade)),
                 "priceDesc" => units.OrderByDescending(u => UnitPrice(u.ProductId, u.Grade)),
+                "value" => units.OrderBy(u => ValueOf(u.ProductId, u.Grade, u.Copies.Count) ?? double.PositiveInfinity),
+                "valueDesc" => units.OrderByDescending(u => ValueOf(u.ProductId, u.Grade, u.Copies.Count) ?? double.NegativeInfinity),
+                "paid" => units.OrderBy(u => PaidOf(u.Copies) ?? double.PositiveInfinity),
+                "paidDesc" => units.OrderByDescending(u => PaidOf(u.Copies) ?? double.NegativeInfinity),
+                "pl" => units.OrderBy(u => PlOf(u.ProductId, u.Grade, u.Copies) ?? double.PositiveInfinity),
+                "plDesc" => units.OrderByDescending(u => PlOf(u.ProductId, u.Grade, u.Copies) ?? double.NegativeInfinity),
+                "qty" => units.OrderBy(u => u.Copies.Count),
+                "qtyDesc" => units.OrderByDescending(u => u.Copies.Count),
+                "condition" => units.OrderBy(u => CondRank(u.Grade)),
+                "conditionDesc" => units.OrderByDescending(u => CondRank(u.Grade)),
                 "name" => units.OrderBy(u => cardById[u.ProductId].Name),
+                "nameDesc" => units.OrderByDescending(u => cardById[u.ProductId].Name),
                 _ => units.OrderByDescending(u => u.LastAdded),   // order added
             }).ToList();
 
@@ -863,8 +944,11 @@ public class CardsController(
                 {
                     Id = x.Id,
                     Grade = x.Grade,
-                    PurchasePrice = x.PurchasePrice,
-                    AcquiredAt = x.AcquiredAt,
+                    // Owned copies are never priceless/dateless: 0 and AddedAt
+                    // stand in for legacy rows the migration backfill missed.
+                    PurchasePrice = x.PurchasePrice ?? 0,
+                    AcquiredAt = x.AcquiredAt ?? x.AddedAt,
+                    AutoPrice = x.AutoPrice,
                     Note = x.Note,
                     AddedAt = x.AddedAt,
                 }).ToList();
@@ -878,7 +962,7 @@ public class CardsController(
         // effective tier so e.g. "nm" and unspecified share one query pair.
         foreach (var group in dtos.GroupBy(d =>
                      (GradeTiers.PriceTier(d.OwnedGrade), GradeTiers.ForecastTarget(d.OwnedGrade))))
-            await ApplyMarket(group.ToList(), folder, group.First().OwnedGrade ?? "", p.Trend);
+            await ApplyMarket(group.ToList(), folder, group.First().OwnedGrade ?? "", hs?.window ?? p.Trend);
         return dtos;
     }
 
@@ -1028,14 +1112,15 @@ public class CardsController(
             .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Date).First().Price);
     }
 
-    private static async Task<object> Facets<T>(IQueryable<T> source) where T : CardBase
+    private static async Task<(List<string> Sets, List<string> Rarities)> Facets<T>(
+        IQueryable<T> source) where T : CardBase
     {
         var sets = await source.Where(x => x.SetName != null)
             .Select(x => x.SetName!).Distinct().OrderBy(x => x).ToListAsync();
         var rarities = await source.Where(x => x.Rarity != null)
             .Select(x => x.Rarity!).Distinct().OrderBy(x => x).ToListAsync();
 
-        return new { sets, rarities };
+        return (sets, rarities);
     }
 
 }

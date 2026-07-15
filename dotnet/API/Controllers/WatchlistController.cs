@@ -10,7 +10,8 @@ using Microsoft.EntityFrameworkCore;
 namespace API.Controllers;
 
 [Authorize]
-public class WatchlistController(StoreContext context, CardSources sources) : BaseApiController
+public class WatchlistController(
+    StoreContext context, CardSources sources, PriceChartingContext priceCharting) : BaseApiController
 {
     // All tracked refs across both lists — the client uses Kind to know which
     // toggle (Owned / Wishlist) is active for a card.
@@ -46,16 +47,24 @@ public class WatchlistController(StoreContext context, CardSources sources) : Ba
             if (exists) return Ok();
         }
 
+        var now = DateTime.UtcNow;
+        var ownedGrade = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Grade) ? dto.Grade.Trim() : null;
         context.TrackedCards.Add(new TrackedCard
         {
             UserName = user,
             Game = dto.Game,
             ProductId = dto.ProductId,
             Kind = kind,
-            Grade = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Grade) ? dto.Grade.Trim() : null,
+            Grade = ownedGrade,
             // Remember the NM price at watch time so the wishlist can show "since added".
             WatchedAtPrice = kind == TrackKind.Wishlist ? await NearMintPrice(dto.Game, dto.ProductId) : null,
-            AddedAt = DateTime.UtcNow,
+            AddedAt = now,
+            // Owned copies always carry an acquired date + a cost basis: auto
+            // price resolves the market price on the acquired date (0 = no data).
+            AcquiredAt = kind == TrackKind.Owned ? now : null,
+            AutoPrice = true,
+            PurchasePrice = kind == TrackKind.Owned
+                ? await AutoPriceOf(dto.Game, dto.ProductId, ownedGrade, now) : null,
         });
         await context.SaveChangesAsync();
 
@@ -111,6 +120,8 @@ public class WatchlistController(StoreContext context, CardSources sources) : Ba
 
         if (target > copies.Count)
         {
+            var now = DateTime.UtcNow;
+            var autoPrice = await AutoPriceOf(game, dto.ProductId, grade, now);
             for (var i = copies.Count; i < target; i++)
                 context.TrackedCards.Add(new TrackedCard
                 {
@@ -119,7 +130,10 @@ public class WatchlistController(StoreContext context, CardSources sources) : Ba
                     ProductId = dto.ProductId,
                     Kind = TrackKind.Owned,
                     Grade = grade,
-                    AddedAt = DateTime.UtcNow,
+                    AddedAt = now,
+                    AcquiredAt = now,
+                    AutoPrice = true,
+                    PurchasePrice = autoPrice,
                 });
         }
         else if (target < copies.Count)
@@ -145,8 +159,16 @@ public class WatchlistController(StoreContext context, CardSources sources) : Ba
         if (copy == null) return NotFound();
 
         copy.Grade = Blank(dto.Grade) ? null : dto.Grade!.Trim();
-        copy.PurchasePrice = dto.PurchasePrice;
-        copy.AcquiredAt = dto.AcquiredAt;
+        // Acquired is never null (a cleared field resets to the added date) and
+        // can't be in the future (client enforces max=today too).
+        var acquired = dto.AcquiredAt ?? copy.AddedAt;
+        copy.AcquiredAt = acquired > DateTime.UtcNow ? DateTime.UtcNow : acquired;
+        copy.AutoPrice = dto.AutoPrice;
+        // Auto: price follows the market on the acquired date (recomputed here
+        // since grade/date may have changed). Manual: the typed price, never null.
+        copy.PurchasePrice = dto.AutoPrice
+            ? await AutoPriceOf(copy.Game, copy.ProductId, copy.Grade, copy.AcquiredAt.Value)
+            : dto.PurchasePrice ?? 0;
         copy.Note = Blank(dto.Note) ? null : dto.Note!.Trim();
         await context.SaveChangesAsync();
 
@@ -187,6 +209,22 @@ public class WatchlistController(StoreContext context, CardSources sources) : Ba
         }
 
         return Ok();
+    }
+
+    // The card's market price at the copy's condition tier on a given date:
+    // the last known history point at-or-before it, else 0 (no data that far
+    // back — young games, or dates before PriceCharting tracked the game).
+    private async Task<double> AutoPriceOf(string game, int productId, string? grade, DateTime acquired)
+    {
+        var tier = GradeTiers.PriceTier(grade);
+        var date = acquired.ToString("yyyy-MM-dd");
+        var price = await priceCharting.History
+            .Where(h => h.Game == game && h.ProductId == productId && h.Grade == tier
+                        && string.Compare(h.Date, date) <= 0)
+            .OrderByDescending(h => h.Date)
+            .Select(h => (double?)h.Price)
+            .FirstOrDefaultAsync();
+        return price ?? 0;
     }
 
     private Task<TrackedCard?> FindOwnedCopy(int id) =>

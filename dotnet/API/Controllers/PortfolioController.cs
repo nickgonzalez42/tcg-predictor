@@ -26,13 +26,21 @@ public class PortfolioController(
 
     private static string TierLabel(string tier) => TierLabels.GetValueOrDefault(tier, tier);
 
+    // Optional ?game= narrows the whole rollup to one game's copies — the
+    // value chart's game chips use this; the page's headline numbers keep
+    // using the unfiltered call.
     [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary()
+    public async Task<IActionResult> GetSummary([FromQuery] string? game = null)
     {
         var user = User.Identity!.Name!;
-        var copies = await store.TrackedCards
-            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned)
-            .ToListAsync();
+        var copiesQuery = store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned);
+        if (!string.IsNullOrEmpty(game) && game != "all")
+        {
+            var key = GameRegistry.KeyOrDefault(game);
+            copiesQuery = copiesQuery.Where(x => x.Game == key);
+        }
+        var copies = await copiesQuery.ToListAsync();
         if (copies.Count == 0)
             return Ok(new { totalValue = 0.0, copies = 0 });
 
@@ -141,9 +149,23 @@ public class PortfolioController(
             var at = s.LastOrDefault(p => string.CompareOrdinal(p.Date, added) <= 0);
             return at.Price > 0 ? at.Price : s[0].Price;  // brand-new card: first known price
         }
-        var lots = copies
+        var contribs = copies
             .Select(c => (Added: AddedDate(c), Basis: Basis(c)))
             .Where(l => l.Basis > 0)
+            .ToList();
+
+        // Cumulative money-in over time (each copy's basis on its add date):
+        // the client subtracts this from value changes so its "change" pills
+        // show appreciation, not deposits.
+        var invested = new List<object>();
+        double investedRun = 0;
+        foreach (var g in contribs.GroupBy(l => l.Added).OrderBy(g => g.Key))
+        {
+            investedRun += g.Sum(l => l.Basis);
+            invested.Add(new { date = g.Key, value = Math.Round(investedRun, 2) });
+        }
+
+        var lots = contribs
             .Select(l =>
             {
                 // Entry = last close on/before the add date (weekend adds enter
@@ -222,6 +244,7 @@ public class PortfolioController(
             worst = await Position(positions.Count > 1 ? positions[^1] : null),
             series = series.Select(p => new { date = p.Date, value = p.Value }),
             benchmark,
+            invested,
             accountCreated = acctDate,
         });
     }

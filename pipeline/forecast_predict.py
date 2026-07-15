@@ -318,7 +318,11 @@ def anchor_dates(game, grade):
 
 def forecast_game_target(game, target, now):
     pids, dates, P = load_matrix(game, target)
-    if P.shape[1] < 14 or len(pids) < 30:
+    # Young games (PriceCharting only started tracking digimon/gundam in
+    # 2025-09) have short matrices: train whatever horizons the depth allows —
+    # the per-horizon MIN_SAMPLES gate below drops the ones that can't form
+    # enough (t, t+k) pairs, so a 11-bucket game gets 1m/6m but no 12m yet.
+    if P.shape[1] < 4 or len(pids) < 30:
         return []
     real_dates = anchor_dates(game, target)
     R = np.log(P[:, 1:] / P[:, :-1])
@@ -545,10 +549,19 @@ def archive(conn, rows):
 
 
 def main():
+    import argparse
     from games import priced_games
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--game", action="append",
+                    help="retrain only this game (repeatable); merges into the "
+                         "existing forecasts table instead of rebuilding it")
+    args = ap.parse_args()
+    games = args.game if args.game else priced_games()
+
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     all_rows = []
-    for game in priced_games():
+    for game in games:
         for target in TARGETS:
             try:
                 all_rows += forecast_game_target(game, target, now)
@@ -556,10 +569,8 @@ def main():
                 print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}", flush=True)
 
     conn = sqlite3.connect(OUT_DB, timeout=60)
-    conn.executescript(
-        """
-        DROP TABLE IF EXISTS forecasts;
-        CREATE TABLE forecasts (
+    schema = """
+        CREATE TABLE IF NOT EXISTS forecasts (
             game TEXT NOT NULL, product_id INTEGER NOT NULL,
             target TEXT NOT NULL, horizon TEXT NOT NULL,
             as_of TEXT, base_price REAL, forecast_price REAL,
@@ -570,7 +581,12 @@ def main():
             PRIMARY KEY (game, product_id, target, horizon)
         );
         """
-    )
+    if args.game:
+        # Partial rerun: replace only the requested games' rows.
+        conn.executescript(schema)
+        conn.executemany("DELETE FROM forecasts WHERE game = ?", [(g,) for g in games])
+    else:
+        conn.executescript("DROP TABLE IF EXISTS forecasts;" + schema)
     conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
     archive(conn, all_rows)
     conn.commit()

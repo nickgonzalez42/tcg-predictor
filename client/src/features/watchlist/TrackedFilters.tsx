@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CardParams } from "../../app/models/cardParams";
 import { useFetchFiltersQuery } from "../catalog/catalogApi";
 import { createTrackedParamsSlice } from "./trackedParamsSlice";
@@ -45,87 +46,97 @@ export default function TrackedFilters({ params, actions, sortGroups }: Props) {
             >
                 Filters {open ? '▴' : '▾'}
             </button>
-            <div className={`filters__body grid-box${open ? ' filters__body--open' : ''}`}>
-            <div className="filters__head">
-                <span className="filters__head-title">Filters</span>
-                <button className="btn btn--outline" title="Close filters"
-                    onClick={() => setOpen(false)}>✕</button>
-            </div>
-            <div className="filters__panels">
-                <div className="panels__column">
-                    <div className="panel">
-                        <div className="field" style={{ margin: 0 }}>
-                            <label htmlFor="tracked-search">Search cards</label>
-                            <input
-                                id="tracked-search"
-                                className="input"
-                                type="search"
-                                value={search.term}
-                                onChange={e => search.onChange(e.target.value)}
-                            />
+            {(() => {
+                const body = (
+                    <div className={`filters__body grid-box${open ? ' filters__body--open' : ''}`}>
+                    <div className="filters__head">
+                        <span className="filters__head-title">Filters</span>
+                        <button className="btn btn--outline" title="Close filters"
+                            onClick={() => setOpen(false)}>✕</button>
+                    </div>
+                    <div className="filters__panels">
+                        <div className="panels__column">
+                            <div className="panel">
+                                <div className="field" style={{ margin: 0 }}>
+                                    <label htmlFor="tracked-search">Search cards</label>
+                                    <input
+                                        id="tracked-search"
+                                        className="input"
+                                        type="search"
+                                        value={search.term}
+                                        onChange={e => search.onChange(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="panel">
+                                <label htmlFor="tracked-grade" className="field-label">Price shown</label>
+                                <select
+                                    id="tracked-grade"
+                                    className="input"
+                                    value={params.grade ?? ''}
+                                    onChange={e => dispatch(actions.setGrade(e.target.value))}
+                                >
+                                    {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                            </div>
+                            <div className="panel">
+                                <RadioButtonGroup
+                                    selectedValue={params.game}
+                                    options={gameOptions}
+                                    onChange={e => dispatch(actions.setGame(e.target.value))}
+                                />
+                            </div>
                         </div>
+                        <div className="panels__column">
+                            <div className="panel">
+                                <label htmlFor="tracked-sort" className="field-label">Sort by</label>
+                                <select id="tracked-sort" className="input" value={params.orderBy}
+                                    onChange={e => dispatch(actions.setOrderBy(e.target.value))}>
+                                    {sortGroups.map(g => (
+                                        <optgroup key={g.label} label={g.label}>
+                                            {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </optgroup>
+                                    ))}
+                                </select>
+                            </div>
+                            <div className="panel">
+                                <CheckBoxButtons
+                                    items={filtersData?.rarities ?? []}
+                                    checked={params.rarities}
+                                    onChange={(items: string[]) => dispatch(actions.setRarities(items))}
+                                />
+                            </div>
+                            <div className="panel">
+                                <MultiSelectDropdown
+                                    label="Sets"
+                                    items={filtersData?.sets ?? []}
+                                    checked={params.sets}
+                                    onChange={(items: string[]) => dispatch(actions.setSets(items))}
+                                />
+                            </div>
+                        </div>
+                    
                     </div>
-                    <div className="panel">
-                        <label htmlFor="tracked-grade" className="field-label">Price shown</label>
-                        <select
-                            id="tracked-grade"
-                            className="input"
-                            value={params.grade ?? ''}
-                            onChange={e => dispatch(actions.setGrade(e.target.value))}
-                        >
-                            {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
+                    
+                    {/* Footer: Reset + Apply, pinned to the bottom of the overlay.
+                        Filters apply live, so Apply just closes it. */}
+                    <div className="filters__footer">
+                        <button className="btn btn--outline" onClick={() => dispatch(actions.resetParams())}>
+                            Reset filters
+                        </button>
+                        <button className="btn filters__apply" onClick={() => setOpen(false)}>
+                            Apply
+                        </button>
                     </div>
-                    <div className="panel">
-                        <RadioButtonGroup
-                            selectedValue={params.game}
-                            options={gameOptions}
-                            onChange={e => dispatch(actions.setGame(e.target.value))}
-                        />
                     </div>
-                </div>
-                <div className="panels__column">
-                    <div className="panel">
-                        <label htmlFor="tracked-sort" className="field-label">Sort by</label>
-                        <select id="tracked-sort" className="input" value={params.orderBy}
-                            onChange={e => dispatch(actions.setOrderBy(e.target.value))}>
-                            {sortGroups.map(g => (
-                                <optgroup key={g.label} label={g.label}>
-                                    {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </optgroup>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="panel">
-                        <CheckBoxButtons
-                            items={filtersData?.rarities ?? []}
-                            checked={params.rarities}
-                            onChange={(items: string[]) => dispatch(actions.setRarities(items))}
-                        />
-                    </div>
-                    <div className="panel">
-                        <MultiSelectDropdown
-                            label="Sets"
-                            items={filtersData?.sets ?? []}
-                            checked={params.sets}
-                            onChange={(items: string[]) => dispatch(actions.setSets(items))}
-                        />
-                    </div>
-                </div>
-            
-            </div>
-            
-            {/* Footer: Reset + Apply, pinned to the bottom of the overlay.
-                Filters apply live, so Apply just closes it. */}
-            <div className="filters__footer">
-                <button className="btn btn--outline" onClick={() => dispatch(actions.resetParams())}>
-                    Reset filters
-                </button>
-                <button className="btn filters__apply" onClick={() => setOpen(false)}>
-                    Apply
-                </button>
-            </div>
-            </div>
+                        );
+                // Escape the ScrollSmoother transform (position:fixed breaks
+                // under a transformed ancestor): the open overlay portals to
+                // <body>, wrapped so its .filters--dropdown selectors still hit.
+                return open
+                    ? createPortal(<div className="filters filters--dropdown">{body}</div>, document.body)
+                    : body;
+            })()}
         </div>
     );
 }

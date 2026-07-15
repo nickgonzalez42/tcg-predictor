@@ -49,15 +49,19 @@ export type PortfolioSummary = {
     // "Same $ in the market": daily S&P 500 what-if line (each copy's cost
     // basis invested in SPX on its add date), from account creation.
     benchmark?: { date: string; value: number }[];
+    // Cumulative money-in (each copy's cost basis on its add date) — used to
+    // strip contributions out of the chart's change figures.
+    invested?: { date: string; value: number }[];
     accountCreated?: string;
 }
 
 // Editable per-copy fields sent to PATCH /watchlist/owned/{id}.
 export type OwnedCopyEdit = {
     grade?: string | null;
-    purchasePrice?: number | null;
-    acquiredAt?: string | null;
+    purchasePrice?: number | null;   // used only when autoPrice is false
+    acquiredAt?: string | null;      // null resets to the copy's added date
     note?: string | null;
+    autoPrice?: boolean;
 }
 
 export const watchlistApi = createApi({
@@ -117,8 +121,9 @@ export const watchlistApi = createApi({
             invalidatesTags: ['Wishlist'],
         }),
         // Portfolio rollup: total value, monthly series, allocation, best/worst.
-        fetchPortfolioSummary: builder.query<PortfolioSummary, void>({
-            query: () => 'portfolio/summary',
+        fetchPortfolioSummary: builder.query<PortfolioSummary, string | void>({
+            query: (game) => game && game !== 'all'
+                ? `portfolio/summary?game=${game}` : 'portfolio/summary',
             providesTags: ['Summary'],
         }),
     }),

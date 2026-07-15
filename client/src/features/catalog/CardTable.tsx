@@ -15,14 +15,14 @@ type Props = {
 
 // The forecast horizon each trend window maps to (mirrors the API's
 // TrendWindows: the model has no 1y horizon, so 1Y shows the 12m forecast).
-export const TREND_FCST: Record<string, string> = { '1w': '1W', '1m': '1M', '6m': '6M', '1y': '12M' };
+export const TREND_FCST: Record<string, string> = { '1w': '1W', '1m': '1M', '6m': '6M', '1y': '1Y' };
 
 // Screener-style rows view of the catalog. Row click opens the card; the
 // action buttons live in their own cell and don't bubble.
 export default function CardTable({ cards, ownGrade, trend }: Props) {
     const navigate = useNavigate();
     const period = (trend ?? '1m').toLowerCase();
-    const fcstLabel = TREND_FCST[period] ?? '12M';
+    const fcstLabel = TREND_FCST[period] ?? '1Y';
 
     return (
         <div className="screener-wrap full-span">

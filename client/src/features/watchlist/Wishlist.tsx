@@ -115,6 +115,9 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
             <CardThumbCell card={card} />
             <td className="screener__name">{card.name}</td>
             <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
+            <td className="screener__mid">
+                <span className="mono">{card.watchedSince ? shortDate(card.watchedSince) : '—'}</span>
+            </td>
             <td className="screener__num">{card.watchedAtPrice != null ? currencyFormat(card.watchedAtPrice) : '—'}</td>
             <td className="screener__num screener__price">
                 {card.price != null ? currencyFormat(card.price) : '—'}
@@ -154,7 +157,7 @@ export default function Wishlist() {
     // Same window mechanics as catalog row view: the tabs drive the sparkline,
     // the Past column and the forecast column's mapped horizon.
     const period = (params.trend ?? '1m').toLowerCase();
-    const fcstLabel = TREND_FCST[period] ?? '12M';
+    const fcstLabel = TREND_FCST[period] ?? '1Y';
 
     return (
         <div className="full-span">
@@ -192,6 +195,7 @@ export default function Wishlist() {
                                     <th aria-label="Card image" />
                                     <th>Card</th>
                                     <th>Set / Rarity</th>
+                                    <th className="screener__mid">Watching since</th>
                                     <th className="screener__num">Watching at</th>
                                     <th className="screener__num">
                                         {tierLabel(ownGrade)} price

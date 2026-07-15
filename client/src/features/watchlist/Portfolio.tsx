@@ -14,15 +14,18 @@ import { OwnedCopyRow } from "./OwnedConditionItem";
 import { tierLabel } from "./grades";
 import { trackedSortGroups } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
-import GameToggle from "../../app/shared/components/GameToggle";
+import SortTh from "../../app/shared/components/SortTh";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
-import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
+import TrackedFilters from "./TrackedFilters";
+import { useFetchFiltersQuery } from "../catalog/catalogApi";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
 import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { GAMES } from "../../lib/games";
+import Modal from "../../app/shared/components/Modal";
 
 
 const RANGES: { key: string; label: string; months?: number }[] = [
@@ -68,7 +71,12 @@ const fade = (hex: string, alpha: number) => {
 function ValueChart({ summary }: { summary: PortfolioSummary }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [range, setRange] = useState('all');
-    const hasBench = !!summary.benchmark?.length;
+    // Game chips: the chart (and its stats) can narrow to one game's copies.
+    // 'all' reuses the page's summary; a game fetches its own filtered rollup.
+    const [game, setGame] = useState('all');
+    const { data: gameSummary } = useFetchPortfolioSummaryQuery(game, { skip: game === 'all' });
+    const s = game === 'all' ? summary : gameSummary;
+    const hasBench = !!s?.benchmark?.length;
 
     // Live series handles + their base colors, for the legend-hover highlight
     // (applyOptions directly; no state, so the chart isn't rebuilt).
@@ -98,10 +106,10 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
         const cutoff = months
             ? new Date(Date.now() - months * 30.44 * 86400e3).toISOString().slice(0, 10)
             : null;
-        const slice = (s?: { date: string; value: number }[]) =>
-            (cutoff ? s?.filter(p => p.date >= cutoff) : s) ?? [];
-        return { points: slice(summary.series), bench: slice(summary.benchmark) };
-    }, [summary, range]);
+        const slice = (pts?: { date: string; value: number }[]) =>
+            (cutoff ? pts?.filter(p => p.date >= cutoff) : pts) ?? [];
+        return { points: slice(s?.series), bench: slice(s?.benchmark) };
+    }, [s, range]);
 
     useEffect(() => {
         const el = containerRef.current;
@@ -159,26 +167,52 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
 
     if (!summary.series?.length) return null;
 
-    // Stats strip: each line's current value and its change over the selected
-    // range, plus the running gap between them. % change needs a non-zero
-    // start (a range that opens at $0 only has a $ change).
+    // Stats strip: each line's current value, plus its APPRECIATION over the
+    // selected range — the value change minus what was contributed (each
+    // copy's cost basis on its add date), so adding cards isn't "gain".
+    // % = appreciation over the money at work in the window.
     const first = points[0], last = points[points.length - 1];
     const bFirst = bench[0], bLast = bench[bench.length - 1];
-    const pct = (from?: { value: number }, to?: { value: number }) =>
-        from && to && from.value > 0 ? (to.value / from.value - 1) * 100 : null;
+    const investedAt = (d?: string) =>
+        d ? (s?.invested?.filter(p => p.date <= d).at(-1)?.value ?? 0) : 0;
+    const contributed = last ? investedAt(last.date) - (first ? investedAt(first.date) : 0) : 0;
+    const appreciation = (from?: { value: number }, to?: { value: number }) =>
+        to ? to.value - (from?.value ?? 0) - contributed : null;
+    const apprecPct = (from?: { value: number }, to?: { value: number }) => {
+        const a = appreciation(from, to);
+        const base = (from?.value ?? 0) + contributed;
+        return a != null && base > 0 ? (a / base) * 100 : null;
+    };
+    // Whole-life figures (not range-scoped): total money in, and unrealized
+    // P/L against it. Peak follows the selected range.
+    const investedTotal = investedAt(last?.date);
+    const plUsd = last ? last.value - investedTotal : null;
+    const plPct = plUsd != null && investedTotal > 0 ? (plUsd / investedTotal) * 100 : null;
+    const peak = points.reduce<{ date: string; value: number } | null>(
+        (m, p) => (m == null || p.value > m.value ? p : m), null);
 
     return (
         <div className="panel detail-panel">
             <div className="chart-tabs">
-                <span className="mono detail-panel__title">Value over time</span>
-                <div className="range-tabs" role="group" aria-label="Time range">
-                    {RANGES.map(r => (
-                        <button key={r.key}
-                            className={`btn btn--outline range-tab${r.key === range ? ' btn--active' : ''}`}
-                            onClick={() => setRange(r.key)}>
-                            {r.label}
-                        </button>
-                    ))}
+                <div className="chart-tabs__right">
+                    <div className="range-tabs" role="group" aria-label="Game">
+                        {[{ value: 'all', label: 'ALL' }, ...GAMES].map(g => (
+                            <button key={g.value}
+                                className={`btn btn--outline range-tab${g.value === game ? ' btn--active' : ''}`}
+                                onClick={() => setGame(g.value)}>
+                                {g.label.toUpperCase()}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="range-tabs" role="group" aria-label="Time range">
+                        {RANGES.map(r => (
+                            <button key={r.key}
+                                className={`btn btn--outline range-tab${r.key === range ? ' btn--active' : ''}`}
+                                onClick={() => setRange(r.key)}>
+                                {r.label}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
             {hasBench && (
@@ -203,9 +237,10 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
                         <span className="chart-stat__label mono">Collection</span>
                         <span className="chart-stat__value">{currencyFormat(last.value)}</span>
                         <span className="chart-stat__delta">
-                            <ChangePill value={first ? last.value - first.value : null}
-                                unit="usd" title="Change over the selected range" />
-                            <ChangePill value={pct(first, last)} title="Change over the selected range" />
+                            <ChangePill value={appreciation(first, last)} unit="usd"
+                                title="Appreciation over the selected range (cards you added don't count as gains)" />
+                            <ChangePill value={apprecPct(first, last)}
+                                title="Appreciation relative to the money at work in this range" />
                         </span>
                     </div>
                     {bLast && (
@@ -214,9 +249,10 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
                                 <span className="chart-stat__label mono">S&amp;P 500 (same $)</span>
                                 <span className="chart-stat__value">{currencyFormat(bLast.value)}</span>
                                 <span className="chart-stat__delta">
-                                    <ChangePill value={bFirst ? bLast.value - bFirst.value : null}
-                                        unit="usd" title="Change over the selected range" />
-                                    <ChangePill value={pct(bFirst, bLast)} title="Change over the selected range" />
+                                    <ChangePill value={appreciation(bFirst, bLast)} unit="usd"
+                                        title="What the S&P would have gained on the same money (contributions excluded)" />
+                                    <ChangePill value={apprecPct(bFirst, bLast)}
+                                        title="S&P appreciation relative to the money at work in this range" />
                                 </span>
                             </div>
                             <div className="chart-stat">
@@ -227,11 +263,36 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
                                 <span className="chart-stat__delta">
                                     <ChangePill value={last.value - bLast.value} unit="usd"
                                         title="Collection value minus what the same money in the S&P 500 would be worth today" />
-                                    <ChangePill value={pct(bLast, last)}
-                                        title="Collection value minus what the same money in the S&P 500 would be worth today" />
+                                    <ChangePill value={bLast.value > 0 ? (last.value / bLast.value - 1) * 100 : null}
+                                        title="Collection value relative to the S&P what-if" />
                                 </span>
                             </div>
                         </>
+                    )}
+                    <div className="chart-stat">
+                        <span className="chart-stat__label mono">Invested</span>
+                        <span className="chart-stat__value">{currencyFormat(investedTotal)}</span>
+                    </div>
+                    {plUsd != null && (
+                        <div className="chart-stat">
+                            <span className="chart-stat__label mono">Overall P/L</span>
+                            <span className="chart-stat__value"
+                                style={{ color: plUsd >= 0 ? 'var(--up)' : 'var(--down)' }}>
+                                {plUsd >= 0 ? '+' : '−'}{currencyFormat(Math.abs(plUsd))}
+                            </span>
+                            <span className="chart-stat__delta">
+                                <ChangePill value={plPct} title="Unrealized P/L vs total invested" />
+                            </span>
+                        </div>
+                    )}
+                    {peak && (
+                        <div className="chart-stat">
+                            <span className="chart-stat__label mono">Peak value</span>
+                            <span className="chart-stat__value">{currencyFormat(peak.value)}</span>
+                            <span className="chart-stat__delta">
+                                <span className="mono est-note">{shortDate(peak.date)}</span>
+                            </span>
+                        </div>
                     )}
                 </div>
             )}
@@ -324,8 +385,9 @@ function BestWorst({ summary }: { summary: PortfolioSummary }) {
 }
 
 // One position row (a card + condition unit). ✎ expands the per-copy editor inline.
-function PositionRow({ card }: { card: Card }) {
+function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
     const [expanded, setExpanded] = useState(false);
+    const [confirming, setConfirming] = useState(false);
     const [addCopy, { isLoading: adding }] = useAddToWatchlistMutation();
     const [removeCopy, { isLoading: removing }] = useRemoveOwnedCopyMutation();
 
@@ -345,9 +407,28 @@ function PositionRow({ card }: { card: Card }) {
         const target = blank ?? copies[copies.length - 1];
         if (target) removeCopy({ id: target.id });
     };
+    // Removing the LAST copy deletes the whole position — confirm that one.
+    const onMinus = () => (qty <= 1 ? setConfirming(true) : removeOne());
 
     return (
         <>
+            {confirming && (
+                <Modal title="Remove from portfolio" onClose={() => setConfirming(false)}>
+                    <p>
+                        This is the last copy of <strong>{card.name}</strong> ({tierLabel(card.ownedGrade)})
+                        — removing it deletes the position from your portfolio.
+                    </p>
+                    <div className="modal__actions">
+                        <button className="btn btn--outline" onClick={() => setConfirming(false)}>
+                            Cancel
+                        </button>
+                        <button className="btn btn--danger" disabled={removing}
+                            onClick={() => { removeOne(); setConfirming(false); }}>
+                            Remove
+                        </button>
+                    </div>
+                </Modal>
+            )}
             <tr className="screener__row" onClick={() => setExpanded(v => !v)}>
                 <CardThumbCell card={card} />
                 <td>
@@ -367,15 +448,17 @@ function PositionRow({ card }: { card: Card }) {
                 <td className="screener__num">
                     {pl != null ? <ChangePill value={pl} unit="usd" title="vs recorded cost" /> : <span className="mono">—</span>}
                 </td>
-                <td className="screener__num"><ChangePill value={card.fcst12Pct} title="12 month model forecast" /></td>
+                <td className="screener__num">
+                    <ChangePill value={hasYear ? card.fcst12Pct : card.fcst6Pct}
+                        title={`${hasYear ? '1 year' : '6 month'} model forecast`} />
+                </td>
                 <td><Sparkline points={card.sparkline} /></td>
                 <td className="screener__actions" onClick={e => e.stopPropagation()}>
-                    <button className="btn btn--outline" disabled={removing || qty === 0} onClick={removeOne}
-                        title="Remove one copy">−</button>
-                    <button className="btn btn--outline" disabled={adding} onClick={addOne}
-                        title="Add one copy">＋</button>
-                    <button className={`btn btn--outline${expanded ? ' btn--active' : ''}`}
-                        onClick={() => setExpanded(v => !v)} title="Edit copies (paid price, date, note)">✎</button>
+                    {/* Row click still expands the copy editor (paid/date/note). */}
+                    <button className="btn btn--outline btn--circle" disabled={removing || qty === 0}
+                        onClick={onMinus} title="Remove one copy">−</button>
+                    <button className="btn btn--outline btn--circle" disabled={adding}
+                        onClick={addOne} title="Add one copy">＋</button>
                 </td>
             </tr>
             {expanded && (
@@ -400,15 +483,17 @@ function PositionRow({ card }: { card: Card }) {
 
 export default function Portfolio() {
     usePageMeta("Portfolio");
-    const { setGame, setOrderBy, setSearchTerm, setPageNumber } = ownedParamsSlice.actions;
+    const [showPaidHelp, setShowPaidHelp] = useState(false);
+    const { setPageNumber, setOrderBy } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
 
     const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', ...params });
     const { data: summary } = useFetchPortfolioSummaryQuery();
-
-    const { term, onChange: search } = useDebouncedSearch(
-        params.searchTerm ?? '', v => dispatch(setSearchTerm(v)));
+    // Young games (digimon/gundam) have no 12m horizon yet — the forecast
+    // column falls back to their 6m numbers and relabels itself.
+    const { data: filtersData } = useFetchFiltersQuery(params.game);
+    const hasYear = filtersData?.hasYear ?? true;
 
     return (
         <>
@@ -444,18 +529,42 @@ export default function Portfolio() {
             <div className="pf-positions full-span">
                 <div className="table-head">
                     <h2 className="table-head__title">Positions</h2>
-                    <input className="input table-head__search" type="search" placeholder="Search…"
-                        value={term} onChange={e => search(e.target.value)} />
-                    <select className="input table-head__sort" value={params.orderBy}
-                        onChange={e => dispatch(setOrderBy(e.target.value))} title="Sort positions">
-                        {trackedSortGroups.map(g => (
-                            <optgroup key={g.label} label={g.label}>
-                                {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                            </optgroup>
-                        ))}
-                    </select>
-                    <GameToggle game={params.game} onChange={g => dispatch(setGame(g))} />
+                    <button className="btn btn--outline btn--circle" title="How is Paid set?"
+                        onClick={() => setShowPaidHelp(true)}>?</button>
                 </div>
+                {showPaidHelp && (
+                    <Modal title="How 'Paid' works" onClose={() => setShowPaidHelp(false)}>
+                        <p>
+                            <strong>Paid</strong> is each copy's cost basis — what P/L and the
+                            S&amp;P comparison measure against.
+                        </p>
+                        <p>
+                            <strong>Auto price (the default).</strong> Each copy's Paid is set to the
+                            card's market price, at its condition, on the day you acquired it. Change
+                            the acquired date or grade and it recalculates. If no price data goes back
+                            that far, Paid is $0 — meaning its full current value counts as gain.
+                        </p>
+                        <p>
+                            <strong>Set it yourself.</strong> Open a position's copies (click the row),
+                            uncheck <em>Auto price</em>, and type the real amount. Use this whenever you
+                            know what you actually paid — it makes your P/L honest.
+                        </p>
+                        <p>
+                            <strong>Pulled it from a pack?</strong> A fair basis is the pack price
+                            (typically $4–6): assign it to the best card you pulled and let the other
+                            pulls ride at $0, or split it evenly across the cards you kept.
+                        </p>
+                        <p>
+                            <strong>Pulled it from a box?</strong> Divide the box price by its pack
+                            count to get a per-pack cost — a $90 booster box of 24 packs is about
+                            $3.75 per pack — then apply the same idea: per-pack cost on each notable
+                            pull, $0 on the rest.
+                        </p>
+                    </Modal>
+                )}
+
+                <TrackedFilters params={params} actions={ownedParamsSlice.actions}
+                    sortGroups={trackedSortGroups} />
 
                 {isLoading ? (
                     <CardLoader />
@@ -466,20 +575,29 @@ export default function Portfolio() {
                                 <thead>
                                     <tr>
                                         <th aria-label="Card image" />
-                                        <th>Card</th>
-                                        <th>Condition</th>
-                                        <th className="screener__num">Qty</th>
-                                        <th className="screener__num">Paid</th>
-                                        <th className="screener__num">Mkt value</th>
-                                        <th className="screener__num">P/L</th>
-                                        <th className="screener__num">12m fcst</th>
-                                        <th>Trend</th>
+                                        <SortTh label="Card" k="name" ascFirst
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="Condition" k="condition" className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="Qty" k="qty" className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="Paid" k="paid" className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="Mkt value" k="value" className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="P/L" k="pl" className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label={`${hasYear ? '1Y' : '6M'} fcst`}
+                                            k={hasYear ? 'chgPct12' : 'chgPct6'} className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
+                                        <SortTh label="Trend" k={`histPct${params.trend ?? '1m'}`} className="screener__mid"
+                                            orderBy={params.orderBy ?? ''} onSort={v => dispatch(setOrderBy(v))} />
                                         <th aria-label="Actions" />
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {data.items.map(card => (
-                                        <PositionRow card={card} key={
+                                        <PositionRow card={card} hasYear={hasYear} key={
                                             `${card.id}:${card.ownedGrade ?? ''}:` +
                                             (card.ownedCopies?.length === 1 ? card.ownedCopies[0].id : 'stack')
                                         } />

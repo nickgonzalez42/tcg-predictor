@@ -11,7 +11,7 @@ gsap.registerPlugin(Draggable, InertiaPlugin);
 // Full-width scrolling strip of top movers under the navbar. GSAP drives a
 // continuous marquee; the user can grab and drag it, and 3s after they let go
 // the auto-scroll resumes from wherever they left it. prefers-reduced-motion
-// renders it static. Change figures are the model's 12-month forecast.
+// renders it static. Change figures are the model's 1-year forecast.
 const SPEED = 60;          // px/sec
 const RESUME_DELAY = 3;    // seconds of stillness before auto-scroll resumes
 
@@ -110,7 +110,9 @@ export default function MarketTicker() {
     if (!movers?.length) return null;
 
     const chips = movers.map(m => {
-        const pct = m.fcst12Pct ?? 0;
+        // Mixed horizons: young games carry a 6m forecast instead of 12m.
+        const pct = (m.fcstTo != null && m.price
+            ? (m.fcstTo / m.price - 1) * 100 : m.fcst12Pct) ?? 0;
         const up = pct >= 0;
         return (
             <Link
@@ -125,11 +127,11 @@ export default function MarketTicker() {
     });
 
     return (
-        <div className="ticker" aria-label="Top movers — 12 month model forecast">
+        <div className="ticker" aria-label="Top movers — model forecast (1Y, or 6M for newer games)">
             <div className="ticker__track" ref={trackRef}>
                 {/* content twice for a seamless -groupW loop */}
-                <div className="ticker__group">{chips}<span className="mono ticker__tag">— 12M FORECAST —</span></div>
-                <div className="ticker__group" aria-hidden="true">{chips}<span className="mono ticker__tag">— 12M FORECAST —</span></div>
+                <div className="ticker__group">{chips}<span className="mono ticker__tag">— 1Y FORECAST —</span></div>
+                <div className="ticker__group" aria-hidden="true">{chips}<span className="mono ticker__tag">— 1Y FORECAST —</span></div>
             </div>
         </div>
     );

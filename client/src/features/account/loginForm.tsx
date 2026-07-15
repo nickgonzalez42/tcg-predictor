@@ -37,7 +37,7 @@ export default function loginForm() {
                     <span className={teaserPct >= 0 ? 'auth-teaser--up' : 'auth-teaser--down'}>
                         {teaserPct >= 0 ? '+' : '−'}{Math.abs(teaserPct).toFixed(1)}%
                     </span>{' '}
-                    over 12 months
+                    over 1 year
                 </p>
             )}
             <form onSubmit={handleSubmit(onSubmit)}>

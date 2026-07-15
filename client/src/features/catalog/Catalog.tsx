@@ -6,7 +6,8 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
+import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -22,6 +23,15 @@ export default function Catalog() {
   const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery(cardParams.game);
   const { data, isLoading } = useFetchCardsQuery(cardParams);
   const dispatch = useAppDispatch();
+  // Games without year-deep data (no 12m forecasts, <12mo history) lose the
+  // 1Y views: the trend chip disables and any active 1Y selection snaps to 6M.
+  const hasYear = filtersData?.hasYear ?? true;
+  useEffect(() => {
+    if (hasYear) return;
+    if ((cardParams.trend ?? '1m') === '1y') dispatch(setTrend('6m'));
+    const snapped = yearSortTo6m(cardParams.orderBy ?? '');
+    if (snapped !== (cardParams.orderBy ?? '')) dispatch(setOrderBy(snapped));
+  }, [hasYear, cardParams.trend, cardParams.orderBy, dispatch]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // On mount, decide from the URL:
@@ -108,6 +118,8 @@ export default function Catalog() {
                 className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}
                 onClick={() => dispatch(setTrend(t))}
                 aria-pressed={(cardParams.trend ?? '1m') === t}
+                disabled={t === '1y' && !hasYear}
+                title={t === '1y' && !hasYear ? 'This game has under a year of price data' : undefined}
               >
                 {t.toUpperCase()}
               </button>

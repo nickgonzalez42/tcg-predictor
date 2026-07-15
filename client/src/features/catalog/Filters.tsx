@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
@@ -7,7 +8,7 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
-import { catalogSortGroups } from "./sortOptions";
+import { catalogSortGroups, withoutYearSorts } from "./sortOptions";
 import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
 
@@ -15,7 +16,7 @@ import { GAMES as gameOptions } from "../../lib/games";
 
 
 type Props = {
-    filtersData: { sets: string[], rarities: string[] }
+    filtersData: { sets: string[], rarities: string[], hasYear?: boolean }
 }
 
 export default function Filters({ filtersData: data }: Props) {
@@ -45,6 +46,10 @@ export default function Filters({ filtersData: data }: Props) {
     const min = useDebouncedSearch(minPrice ?? '', v => dispatch(setMinPrice(capPrice(v))));
     const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(capPrice(v))));
 
+    // Young games (no 12m forecasts, <12mo history) don't offer 1Y sorts.
+    const sortGroups = (data.hasYear ?? true)
+        ? catalogSortGroups : withoutYearSorts(catalogSortGroups);
+
     return (
         <div className={`filters${dropdown ? ' filters--dropdown' : ''}`}>
             <button
@@ -54,92 +59,102 @@ export default function Filters({ filtersData: data }: Props) {
             >
                 Filters {open ? '▴' : '▾'}
             </button>
-            <div className={`filters__body grid-box${open ? ' filters__body--open' : ''}`}>
-            {/* Overlay header: only rendered/visible inside the full-screen state. */}
-            <div className="filters__head">
-                <span className="filters__head-title">Filters</span>
-                <button className="btn btn--outline" title="Close filters"
-                    onClick={() => setOpen(false)}>✕</button>
-            </div>
-            <div className="filters__panels">
-                <div className="panels__column">
-                    <div className="panel">
-                        <Search />
+            {(() => {
+                const body = (
+                    <div className={`filters__body grid-box${open ? ' filters__body--open' : ''}`}>
+                    {/* Overlay header: only rendered/visible inside the full-screen state. */}
+                    <div className="filters__head">
+                        <span className="filters__head-title">Filters</span>
+                        <button className="btn btn--outline" title="Close filters"
+                            onClick={() => setOpen(false)}>✕</button>
                     </div>
-                    <div className="panel">
-                        <label htmlFor="grade-select" className="field-label">Price shown</label>
-                        <select
-                            id="grade-select"
-                            className="input"
-                            value={grade ?? ''}
-                            onChange={e => dispatch(setGrade(e.target.value))}
-                        >
-                            {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                        </select>
-                        <div className="price-range">
-                            <input
-                                className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
-                                placeholder="Min $" aria-label="Minimum shown price"
-                                value={min.term} onChange={e => min.onChange(e.target.value)}
-                            />
-                            <span className="price-range__dash">–</span>
-                            <input
-                                className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
-                                placeholder="Max $" aria-label="Maximum shown price"
-                                value={max.term} onChange={e => max.onChange(e.target.value)}
-                            />
+                    <div className="filters__panels">
+                        <div className="panels__column">
+                            <div className="panel">
+                                <Search />
+                            </div>
+                            <div className="panel">
+                                <label htmlFor="grade-select" className="field-label">Price shown</label>
+                                <select
+                                    id="grade-select"
+                                    className="input"
+                                    value={grade ?? ''}
+                                    onChange={e => dispatch(setGrade(e.target.value))}
+                                >
+                                    {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                </select>
+                                <div className="price-range">
+                                    <input
+                                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
+                                        placeholder="Min $" aria-label="Minimum shown price"
+                                        value={min.term} onChange={e => min.onChange(e.target.value)}
+                                    />
+                                    <span className="price-range__dash">–</span>
+                                    <input
+                                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
+                                        placeholder="Max $" aria-label="Maximum shown price"
+                                        value={max.term} onChange={e => max.onChange(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+                            <div className="panel">
+                                <RadioButtonGroup
+                                    selectedValue={game}
+                                    options={gameOptions}
+                                    onChange={e => dispatch(setGame(e.target.value))}
+                                />
+                            </div>
+                            <div className="panel">
+                                <MultiSelectDropdown
+                                    label="Sets"
+                                    items={data.sets}
+                                    checked={sets}
+                                    onChange={(items: string[]) => dispatch(setSets(items))}
+                                />
+                            </div>
+                            <div className="panel">
+                                <label htmlFor="sort-select" className="field-label">Sort by</label>
+                                <select id="sort-select" className="input" value={orderBy}
+                                    onChange={e => dispatch(setOrderBy(e.target.value))}>
+                                    {sortGroups.map(g => (
+                                        <optgroup key={g.label} label={g.label}>
+                                            {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </optgroup>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                        <div className="panels__column">
+                            <div className="panel">
+                                <CheckBoxButtons
+                                    items={data.rarities}
+                                    checked={rarities}
+                                    onChange={(items: string[]) => dispatch(setRarities(items))}
+                                />
+                            </div>
                         </div>
                     </div>
-                    <div className="panel">
-                        <RadioButtonGroup
-                            selectedValue={game}
-                            options={gameOptions}
-                            onChange={e => dispatch(setGame(e.target.value))}
-                        />
+                    {/* Footer: Reset + (dropdown-only) Apply, pinned to the bottom of
+                        the overlay. Filters apply live, so Apply just closes it. */}
+                    <div className="filters__footer">
+                        <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
+                            Reset filters
+                        </button>
+                        {dropdown && (
+                            <button className="btn filters__apply" onClick={() => setOpen(false)}>
+                                Apply
+                            </button>
+                        )}
                     </div>
-                    <div className="panel">
-                        <MultiSelectDropdown
-                            label="Sets"
-                            items={data.sets}
-                            checked={sets}
-                            onChange={(items: string[]) => dispatch(setSets(items))}
-                        />
                     </div>
-                    <div className="panel">
-                        <label htmlFor="sort-select" className="field-label">Sort by</label>
-                        <select id="sort-select" className="input" value={orderBy}
-                            onChange={e => dispatch(setOrderBy(e.target.value))}>
-                            {catalogSortGroups.map(g => (
-                                <optgroup key={g.label} label={g.label}>
-                                    {g.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </optgroup>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-                <div className="panels__column">
-                    <div className="panel">
-                        <CheckBoxButtons
-                            items={data.rarities}
-                            checked={rarities}
-                            onChange={(items: string[]) => dispatch(setRarities(items))}
-                        />
-                    </div>
-                </div>
-            </div>
-            {/* Footer: Reset + (dropdown-only) Apply, pinned to the bottom of
-                the overlay. Filters apply live, so Apply just closes it. */}
-            <div className="filters__footer">
-                <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
-                    Reset filters
-                </button>
-                {dropdown && (
-                    <button className="btn filters__apply" onClick={() => setOpen(false)}>
-                        Apply
-                    </button>
-                )}
-            </div>
-            </div>
+                        );
+                // Escape the ScrollSmoother transform: position:fixed breaks
+                // under a transformed ancestor, so the open overlay portals to
+                // <body> (wrapped so its .filters--dropdown selectors still hit).
+                return dropdown && open
+                    ? createPortal(<div className="filters filters--dropdown">{body}</div>, document.body)
+                    : body;
+            })()}
         </div>
     )
 }

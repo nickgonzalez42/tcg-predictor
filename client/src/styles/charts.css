@@ -23,6 +23,17 @@
 
 .range-tabs {
   display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-5);
+}
+
+/* Chart header right column: game chips row above the time-range row. */
+.chart-tabs__right {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  align-items: flex-end;
   gap: var(--space-5);
 }
 
@@ -61,11 +72,18 @@
    line, and the running gap between them. */
 .chart-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  /* Three tiles per row max — the strip reads as two tidy rows of three. */
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: var(--space-10);
   margin-top: var(--space-10);
   padding-top: var(--space-10);
   border-top: 1px solid var(--border);
+}
+
+@media (max-width: 767px) {
+  .chart-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .chart-stat {

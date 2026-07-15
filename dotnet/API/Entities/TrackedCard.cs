@@ -17,19 +17,27 @@ public class TrackedCard
     public string Kind { get; set; } = TrackKind.Wishlist;  // owned | wishlist
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 
-    // Owned-copy detail (all optional; null for wishlist rows).
+    // Owned-copy detail (null for wishlist rows; owned rows always carry a
+    // price and acquired date — write paths + backfill guarantee it).
     public string? Grade { get; set; }             // condition/grade tier (catalog vocab), null = unspecified
-    public double? PurchasePrice { get; set; }     // what the user paid, USD
-    public DateTime? AcquiredAt { get; set; }       // date the copy was acquired
+    public double? PurchasePrice { get; set; }     // cost basis, USD; 0 = unknown, never null on owned rows
+    public DateTime? AcquiredAt { get; set; }      // acquisition date; defaults to AddedAt on owned rows
     public string? Note { get; set; }              // freeform per-copy note
+
+    // Auto price: keep PurchasePrice synced to the card's market price on its
+    // acquired date (0 when no data exists that far back). Off = the user
+    // typed their own price.
+    public bool AutoPrice { get; set; } = true;
 
     // Wishlist-only detail (null for owned rows).
     public double? WatchedAtPrice { get; set; }    // NM price when the card was wishlisted
     public double? AlertTargetPrice { get; set; }  // notify at-or-below price; null = no alert
 
-    // A copy with any purchase detail displays as its own unit and is never
-    // auto-deleted by quantity changes; blank copies stack. (Get-only => unmapped.)
-    public bool HasDetail => PurchasePrice != null || AcquiredAt != null || !string.IsNullOrWhiteSpace(Note);
+    // A copy the user has personalized (manual price, note, or a hand-set
+    // acquired date) displays as its own unit and is never auto-deleted by
+    // quantity changes; untouched auto-priced copies stack. (Get-only => unmapped.)
+    public bool HasDetail => !AutoPrice || !string.IsNullOrWhiteSpace(Note)
+        || (AcquiredAt != null && AcquiredAt.Value.Date != AddedAt.Date);
 }
 
 public static class TrackKind

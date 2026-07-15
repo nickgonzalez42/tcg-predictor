@@ -1,7 +1,7 @@
 /* Home: hero, top movers, how-it-works. */
 
 .hero {
-  align-items: center;
+  /* align-items: center; */
   margin-bottom: var(--space-50);
 }
 
@@ -13,6 +13,20 @@
   font-size: 41.6px;
   letter-spacing: -0.02em;
   margin-bottom: var(--space-10);
+  /* Line the top of the letters up with the top edge of .hero__panel by
+     removing the font's over-cap leading. Baseline approach (all browsers):
+     pull the title up by that leading (~0.25em at line-height 1.2). */
+  margin-top: -0.25em;
+}
+
+/* Where supported, trim precisely instead — cross-platform-correct, no guess —
+   and drop the margin so the two don't stack. */
+@supports (text-box-trim: trim-start) {
+  .hero__title {
+    margin-top: 0;
+    text-box-trim: trim-start;
+    text-box-edge: cap alphabetic;
+  }
 }
 
 .hero__sub {

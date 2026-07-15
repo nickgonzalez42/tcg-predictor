@@ -50,6 +50,19 @@
   --space-50: 50px;
   --space-95: 95px;    /* page clearance under the fixed navbar */
   --space-130: 130px;  /* …when the ticker strip is showing */
+  --sidebar-w: 300px;  /* desktop left-rail nav width */
+  --page-top: 30px;    /* gap from the top of the page to the first element */
+  --container-max: 1280px;   /* .container max-width */
+  --container-pad: 40px;     /* .container left padding (pinned at every size) */
+  /* Screen's left edge → where container content begins (auto-centering margin
+     on wide screens + the left padding). Used to center the nav logo in the
+     left gutter. */
+  --content-left: calc(max(0px, (100vw - var(--container-max)) / 2) + var(--container-pad));
+  --logo-w: calc(40px * 63 / 88);   /* nav logo width: 40px height × viewBox aspect */
+  --ticker-h: 40px;    /* approx height of the fixed bottom market crawl */
+  /* Glass nav: dark neutral tint (not blue) so white nav text stays legible in
+     both themes, over a heavy backdrop blur. */
+  --nav-glass: rgba(12, 16, 26, 0.55);
 }
 
 /* Tablet and below: slightly rounder corners everywhere the token is used. */

@@ -23,7 +23,7 @@ export const catalogApi = createApi({
         fetchCardDetails: builder.query<Card, { game: string, id: number }>({
             query: ({ game, id }) => `cards/${game}/${id}`
         }),
-        fetchFilters: builder.query<{ sets: string[], rarities: string[] }, string>({
+        fetchFilters: builder.query<{ sets: string[], rarities: string[], hasYear?: boolean }, string>({
             query: (game) => `cards/filters?game=${game}`
         }),
         fetchCardHistory: builder.query<

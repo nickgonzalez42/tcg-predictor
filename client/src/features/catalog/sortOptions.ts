@@ -82,3 +82,17 @@ export const trackedSortGroups: SortGroup[] = [
     },
     ...catalogSortGroups.slice(1),
 ];
+
+// 1Y sort values (12m forecast growth / 1y past growth) — hidden for games
+// without year-deep data (young games: no 12m horizon, <12 months history).
+export const isYearSort = (v: string) => /^(chg(?:Pct|Usd)12|hist(?:Pct|Usd)1y)/.test(v);
+
+export function withoutYearSorts(groups: SortGroup[]): SortGroup[] {
+    return groups.map(g => ({ ...g, options: g.options.filter(o => !isYearSort(o.value)) }));
+}
+
+// The 6M equivalent of a 1Y sort (used to snap the selection when switching
+// to a game that has no 1Y data).
+export function yearSortTo6m(v: string): string {
+    return v.replace(/^(chg(?:Pct|Usd))12/, '$16').replace(/^(hist(?:Pct|Usd))1y/, '$16m');
+}

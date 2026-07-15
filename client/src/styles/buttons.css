@@ -87,3 +87,23 @@
   }
 }
 
+
+/* Equal-size circular icon button (portfolio +/− quantity controls). The
+   compound selector outranks table-level ".screener__actions .btn" padding. */
+.screener__actions .btn.btn--circle,
+.btn.btn--circle {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.btn--circle + .btn--circle {
+  margin-left: var(--space-5);
+}

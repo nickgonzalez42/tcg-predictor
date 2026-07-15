@@ -19,7 +19,9 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: var(--space-15);
+  /* No horizontal padding here so the body's scrollbar sits flush at the modal's
+     right edge; the head and body carry the side padding instead. */
+  padding: var(--space-15) 0;
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 }
 
@@ -29,6 +31,7 @@
   justify-content: space-between;
   gap: var(--space-10);
   margin-bottom: var(--space-10);
+  padding: 0 var(--space-15);
 }
 
 .modal__title {
@@ -55,6 +58,7 @@
   overflow-y: auto;
   font-size: 14px;
   line-height: 1.55;
+  padding: 0 var(--space-15);
 }
 
 .modal__body p {
@@ -63,9 +67,18 @@
 
 .modal__body p:last-child {
   margin-bottom: 0;
+  margin-top: var(--space-15);
 }
 
 /* Page scroll locks while a modal is up (class set by Modal.tsx). */
 body.modal-open {
   overflow: hidden;
+}
+
+/* Confirm-style footer inside a modal body. */
+.modal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-10);
+  margin-top: var(--space-15);
 }

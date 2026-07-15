@@ -1,5 +1,11 @@
+import { useEffect } from "react";
 import NavBar from "./NavBar";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { ScrollSmoother } from "gsap/ScrollSmoother";
+
+gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 
 function App() {
   const { pathname } = useLocation();
@@ -7,13 +13,33 @@ function App() {
   // The market ticker rides under the navbar on the landing + catalog screens.
   const showTicker = pathname === "/" || pathname === "/catalog";
 
+  // GSAP smooth scrolling: the fixed header lives OUTSIDE the smoothed
+  // wrapper (transformed ancestors break position: fixed). Touch devices
+  // keep native scrolling (smoothTouch off). Body scroll locks
+  // (modal-open / filters-open) still work — the native scrollbar remains
+  // the source of truth and overflow: hidden removes it.
+  useEffect(() => {
+    const smoother = ScrollSmoother.create({
+      wrapper: "#smooth-wrapper",
+      content: "#smooth-content",
+      smooth: 0.9,
+      effects: false,
+      smoothTouch: 0,
+    });
+    return () => smoother.kill();
+  }, []);
+
   return (
     <div className={`app-shell${showTicker ? " has-ticker" : ""}`}>
       <ScrollRestoration />
       <NavBar showTicker={showTicker} />
-      <main className="container page grid-box">
-        <Outlet />
-      </main>
+      <div id="smooth-wrapper">
+        <div id="smooth-content">
+          <main className="container page grid-box">
+            <Outlet />
+          </main>
+        </div>
+      </div>
     </div>
   );
 }

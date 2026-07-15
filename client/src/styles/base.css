@@ -8,12 +8,18 @@ html,
 body {
   margin: 0;
   padding: 0;
+  /* No rubber-band bounce past the page edges (the overscroll gap at the
+     bottom); also stops scroll chaining out of the app. */
+  overscroll-behavior-y: none;
 }
 
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
   color: var(--text);
+  /* Paint the page bg at the root: with ScrollSmoother the app-shell div is
+     pinned, so anything past the first viewport would show bare <html>. */
+  background: var(--bg);
   -webkit-font-smoothing: antialiased;
 }
 

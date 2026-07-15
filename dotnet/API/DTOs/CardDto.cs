@@ -45,6 +45,7 @@ public class CardDto
     public string? FcstConfidence { get; set; }    // model-reported: high | med | low
     // Wishlist rows only.
     public double? WatchedAtPrice { get; set; }    // price when the card was wishlisted
+    public DateTime? WatchedSince { get; set; }    // when the card was wishlisted
     public double? AlertTargetPrice { get; set; }  // user's "notify at or below" price
 }
 

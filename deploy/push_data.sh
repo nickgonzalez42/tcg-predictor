@@ -15,8 +15,10 @@ DATA=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece
 API_DATA=/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/dotnet/API/Data/cards
 
 # A -wal sidecar means a writer is mid-flight on that DB — push would ship a
-# torn database. Finish or pause the pipeline step first.
-for f in $DATA/*_cards.db-wal $API_DATA/*.db-wal; do
+# torn database. Finish or pause the pipeline step first. The (N) null-glob
+# qualifier makes a no-match (the healthy case) expand to nothing instead of
+# erroring out under `set -e`.
+for f in $DATA/*_cards.db-wal(N) $API_DATA/*.db-wal(N); do
   [ -e "$f" ] && { echo "ABORT: $f exists (active writer)"; exit 1; }
 done
 

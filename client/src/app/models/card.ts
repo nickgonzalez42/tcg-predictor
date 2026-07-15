@@ -34,6 +34,7 @@ export type Card = {
     fcstConfidence?: string     // model-reported: high | med | low
     // Wishlist rows only.
     watchedAtPrice?: number     // price when the card was wishlisted
+    watchedSince?: string       // when the card was wishlisted
     alertTargetPrice?: number   // "notify at or below" price
 }
 
@@ -41,8 +42,9 @@ export type Card = {
 export type OwnedCopy = {
     id: number
     grade?: string
-    purchasePrice?: number
-    acquiredAt?: string
+    purchasePrice: number    // never null: 0 = no data at the acquired date
+    acquiredAt: string       // never null: defaults to addedAt
+    autoPrice: boolean       // price tracks the acquired date's market price
     note?: string
     addedAt: string
 }

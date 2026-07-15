@@ -42,7 +42,7 @@
 }
 
 .screener__mid {
-  text-align: center;
+  text-align: center !important;
   white-space: nowrap;
 }
 
@@ -120,4 +120,29 @@
 
 .table-head__sort {
   width: auto;
+}
+
+/* Clickable sort headers: arrow appears on hover (previewing the direction a
+   click would apply) and stays visible while that column's sort is active. */
+.screener th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.sortable__arrow {
+  display: inline-block;
+  margin-left: var(--space-5);
+  font-size: 9px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.screener th.sortable:hover .sortable__arrow,
+.screener th.sortable--active .sortable__arrow {
+  opacity: 1;
+}
+
+.screener th.sortable--active {
+  color: var(--text);
 }

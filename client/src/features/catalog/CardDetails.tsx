@@ -26,14 +26,21 @@ const TARGET_LABEL: Record<string, string> = {
     grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
 };
 const HORIZON_LABEL: Record<string, string> = {
-    '1w': '1 week', '1m': '1 month', '6m': '6 months', '12m': '12 months',
+    '1w': '1 week', '1m': '1 month', '6m': '6 months', '12m': '1 year',
 };
 import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
 import AdSlot from "../../app/shared/components/AdSlot";
+import CommentSection from "../social/CommentSection";
 
-// The stored reason is "Projects +X% over 12m. Signals: ...". The projection is
-// already shown per cell, so drop that lead sentence and keep the shared signals.
+// The stored reason leads with "Projects +X% over 12m. <Signals|Behind it|Key
+// drivers|What moves it>: ..." — the projection is already shown per cell, so
+// strip that lead-in and keep just the signals, capitalized.
+function reasonBody(reason: string): string {
+    const body = reason.replace(/^Projects\s+[+-]?\d+%\s+over\s+\w+\.\s*[^:]*:\s*/i, '');
+    return body.charAt(0).toUpperCase() + body.slice(1);
+}
+
 // "Order ticket": condition + quantity + add-to-portfolio / wishlist, in a
 // highlighted panel. Wraps the same watchlist mutations as TrackButton.
 function OrderTicket({ game, productId }: { game: string; productId: number; psa10?: number }) {
@@ -73,7 +80,7 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
                         onChange={e => setGrade(e.target.value)}>
                         {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
-                    <label className="field-label" htmlFor="ticket-qty" style={{ marginTop: 'var(--space-10)' }}>Quantity</label>
+                    <label className="field-label" htmlFor="ticket-qty" style={{ marginTop: 'var(--space-15)' }}>Quantity</label>
                     <input id="ticket-qty" className="input" type="number" min="1" max="999" step="1"
                         inputMode="numeric" value={qty} onChange={e => setQty_(e.target.value)} />
                     <button className="btn btn--block" style={{ marginTop: 'var(--space-15)' }}
@@ -81,7 +88,7 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
                         ＋ Add to Portfolio{ownedTotal > 0 ? ` (${ownedTotal} owned)` : ''}
                     </button>
                     <button className={`btn btn--outline btn--block${wishlisted ? ' btn--active' : ''}`}
-                        style={{ marginTop: 'var(--space-10)' }} disabled={adding}
+                        style={{ marginTop: 'var(--space-15)' }} disabled={adding}
                         onClick={() => wishlisted
                             ? remove({ game, productId, kind: 'wishlist' })
                             : add({ game, productId, kind: 'wishlist' })}>
@@ -101,9 +108,9 @@ function ForecastSection({ forecasts, game, id }: {
     forecasts: Forecast[]; game: string; id: number;
 }) {
     const { data: reasoning, isFetching: reasoningLoading } = useFetchCardReasoningQuery({ game, id });
-    // Per-forecast detail lives in a modal (the inline text made the table too
-    // wide to fit comfortably on smaller screens): prices, change, range, reason.
-    const [why, setWhy] = useState<{ title: string; f: Forecast } | null>(null);
+    // One "why" button per grade row opens a modal with every horizon's detail
+    // (prices, change, range, reason) for that tier, each horizon its own block.
+    const [why, setWhy] = useState<{ tier: string; forecasts: Forecast[] } | null>(null);
     if (forecasts.length === 0) return null;
 
     return (
@@ -137,7 +144,17 @@ function ForecastSection({ forecasts, game, id }: {
                         return (
                             <tr key={t}>
                                 <td>
-                                    <strong>{TARGET_LABEL[t] ?? t}</strong>
+                                    <div className="forecast-tier">
+                                        <strong>{TARGET_LABEL[t] ?? t}</strong>
+                                        {tierForecasts.some(f => f.reason) && (
+                                            <button className="why-btn"
+                                                aria-label={`Forecast reasoning for ${TARGET_LABEL[t] ?? t}`}
+                                                title="Forecast reasoning"
+                                                onClick={() => setWhy({ tier: t, forecasts: tierForecasts })}>
+                                                ⓘ
+                                            </button>
+                                        )}
+                                    </div>
                                     <div>
                                         <span className={`conf ${conf.cls}`} title={conf.reason}>
                                             {conf.short}
@@ -159,17 +176,6 @@ function ForecastSection({ forecasts, game, id }: {
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             <div className="forecast-chg">
                                                 <ChangePill value={chg} digits={h === '1w' || h === '1m' ? 1 : 0} />
-                                                {f.reason && (
-                                                    <button className="why-btn"
-                                                        aria-label={`About the ${HORIZON_LABEL[h]} forecast`}
-                                                        title="Forecast detail & reasoning"
-                                                        onClick={() => setWhy({
-                                                            title: `${TARGET_LABEL[t] ?? t} · ${HORIZON_LABEL[h]} forecast`,
-                                                            f,
-                                                        })}>
-                                                        ⓘ
-                                                    </button>
-                                                )}
                                             </div>
                                         </td>
                                     );
@@ -180,46 +186,52 @@ function ForecastSection({ forecasts, game, id }: {
                 </tbody>
             </table>
             </div>
-            {why && (() => {
-                const { f } = why;
-                const pct = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : undefined;
-                return (
-                    <Modal title={why.title} onClose={() => setWhy(null)}>
-                        <div className="why-stats">
-                            <div className="why-stat">
-                                <span className="mono why-stat__label">Current</span>
-                                <strong>{currencyFormat(f.basePrice)}</strong>
+            {why && (
+                <Modal title={`${TARGET_LABEL[why.tier] ?? why.tier} · forecast reasoning`}
+                    onClose={() => setWhy(null)}>
+                    {HORIZONS.filter(h => why.forecasts.some(f => f.horizon === h)).map(h => {
+                        const f = why.forecasts.find(x => x.horizon === h)!;
+                        const pct = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : undefined;
+                        return (
+                            <div key={h} className="why-section">
+                                <h5 className="mono why-section__title">{HORIZON_LABEL[h]}</h5>
+                                <div className="why-stats">
+                                    <div className="why-stat">
+                                        <span className="mono why-stat__label">Current</span>
+                                        <strong>{currencyFormat(f.basePrice)}</strong>
+                                    </div>
+                                    <div className="why-stat">
+                                        <span className="mono why-stat__label">Forecast</span>
+                                        <strong className={f.forecastPrice >= f.basePrice
+                                            ? 'why-stat__value--up' : 'why-stat__value--down'}>
+                                            {currencyFormat(f.forecastPrice)}
+                                        </strong>
+                                    </div>
+                                    <div className="why-stat">
+                                        <span className="mono why-stat__label">Change</span>
+                                        <span>
+                                            <ChangePill value={f.forecastPrice - f.basePrice} unit="usd" />{' '}
+                                            <ChangePill value={pct} />
+                                        </span>
+                                    </div>
+                                    <div className="why-stat">
+                                        <span className="mono why-stat__label">Range</span>
+                                        <span className="est-note">
+                                            {currencyFormat(f.low)}–{currencyFormat(f.high)}
+                                        </span>
+                                    </div>
+                                </div>
+                                {f.reason && <p>{reasonBody(f.reason)}</p>}
                             </div>
-                            <div className="why-stat">
-                                <span className="mono why-stat__label">Forecast</span>
-                                <strong className={f.forecastPrice >= f.basePrice
-                                    ? 'why-stat__value--up' : 'why-stat__value--down'}>
-                                    {currencyFormat(f.forecastPrice)}
-                                </strong>
-                            </div>
-                            <div className="why-stat">
-                                <span className="mono why-stat__label">Change</span>
-                                <span>
-                                    <ChangePill value={f.forecastPrice - f.basePrice} unit="usd" />{' '}
-                                    <ChangePill value={pct} />
-                                </span>
-                            </div>
-                            <div className="why-stat">
-                                <span className="mono why-stat__label">Range</span>
-                                <span className="est-note">
-                                    {currencyFormat(f.low)}–{currencyFormat(f.high)}
-                                </span>
-                            </div>
-                        </div>
-                        <p>{f.reason}</p>
-                        <p className="est-note">
-                            Each horizon is a separate model estimate, so figures can differ
-                            between them. The range is the model's own 10th–90th percentile
-                            scenario band. Not investment advice.
-                        </p>
-                    </Modal>
-                );
-            })()}
+                        );
+                    })}
+                    <p className="est-note why-note">
+                        Each horizon is a separate model estimate, so figures can differ
+                        between them. The range is the model's own 10th–90th percentile
+                        scenario band. Not investment advice.
+                    </p>
+                </Modal>
+            )}
         </section>
     );
 }
@@ -335,7 +347,7 @@ export default function CardDetails() {
                 {card.price != null && (
                     <div className="detail-center__pricerow">
                         <span className="detail-center__price">{currencyFormat(card.price)}</span>
-                        {pct12 != null && <ChangePill value={pct12} title="12 month model forecast" />}
+                        {pct12 != null && <ChangePill value={pct12} title="1 year model forecast" />}
                         {pct12 != null && <span className="mono">1Y</span>}
                         <span className="price-caption">
                             latest PriceCharting ungraded{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
@@ -347,6 +359,7 @@ export default function CardDetails() {
                     <PriceHistoryChart game={gameId} id={cardId} forecasts={forecasts} />
                 </section>
                 <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
+                <CommentSection game={gameId} productId={cardId} />
                 <AdSlot slot="" />
             </div>
         </>

@@ -14,9 +14,12 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 // Per-copy grade select: the PriceCharting tiers ('' = Ungraded, i.e. raw).
 const copyGradeOptions = PRICE_TIER_OPTIONS;
 
-// Mirrors the backend's HasDetail: a copy with any purchase detail is its own
-// tile; only fully blank copies stack into a quantity.
-const hasDetail = (c: OwnedCopy) => c.purchasePrice != null || !!c.acquiredAt || !!c.note;
+// Mirrors the backend's HasDetail: a copy the user personalized (manual price,
+// note, or a hand-set acquired date) is its own tile; untouched auto-priced
+// copies stack into a quantity.
+const hasDetail = (c: OwnedCopy) =>
+    c.autoPrice === false || !!c.note ||
+    c.acquiredAt.slice(0, 10) !== c.addedAt.slice(0, 10);
 
 // One owned display unit. Either a STACK of blank copies at a (card + condition)
 // with a quantity control, or a single DETAILED copy shown as its own card with
@@ -119,14 +122,14 @@ function CopySummary({ copy, onEdit }: { copy: OwnedCopy; onEdit: () => void }) 
     return (
         <div className="owned-summary">
             <div className="owned-summary__values">
-                {copy.purchasePrice != null && (
-                    <div><span className="owned-summary__label">Paid</span>{currencyFormat(copy.purchasePrice)}</div>
-                )}
+                <div>
+                    <span className="owned-summary__label">Paid</span>
+                    {currencyFormat(copy.purchasePrice)}
+                    {copy.autoPrice && <span className="est-note"> (auto)</span>}
+                </div>
                 <div>
                     <span className="owned-summary__label">Acquired</span>
-                    {copy.acquiredAt
-                        ? shortDate(copy.acquiredAt)
-                        : `${shortDate(copy.addedAt)} (added)`}
+                    {shortDate(copy.acquiredAt)}
                 </div>
                 {copy.note && (
                     <div><span className="owned-summary__label">Note</span>{copy.note}</div>
@@ -147,21 +150,20 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
     const [update, { isLoading: saving }] = useUpdateOwnedCopyMutation();
     const [remove, { isLoading: removing }] = useRemoveOwnedCopyMutation();
 
-    // A detailed copy with no explicit acquired date defaults to its added date
-    // (matching the summary display). Blank stacked copies stay empty so a save
-    // doesn't turn them into standalone detailed copies.
-    const initialAcquired = copy.acquiredAt
-        ? copy.acquiredAt.slice(0, 10)
-        : hasDetail(copy) ? copy.addedAt.slice(0, 10) : '';
+    // Acquired is never empty: it defaults to the copy's added date, and a
+    // cleared field saves as null which the server resets to the added date.
+    const initialAcquired = (copy.acquiredAt || copy.addedAt).slice(0, 10);
 
     const [grade, setGrade] = useState(copy.grade ?? '');
-    const [price, setPrice] = useState(copy.purchasePrice != null ? String(copy.purchasePrice) : '');
+    const [auto, setAuto] = useState(copy.autoPrice ?? true);
+    const [price, setPrice] = useState(String(copy.purchasePrice ?? 0));
     const [acquired, setAcquired] = useState(initialAcquired);
     const [note, setNote] = useState(copy.note ?? '');
 
     const dirty =
         grade !== (copy.grade ?? '') ||
-        price !== (copy.purchasePrice != null ? String(copy.purchasePrice) : '') ||
+        auto !== (copy.autoPrice ?? true) ||
+        (!auto && price !== String(copy.purchasePrice ?? 0)) ||
         acquired !== initialAcquired ||
         note !== (copy.note ?? '');
 
@@ -170,8 +172,9 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
             await update({
                 id: copy.id,
                 grade: grade || null,
-                purchasePrice: price.trim() === '' ? null : Number(price),
-                acquiredAt: acquired || null,
+                autoPrice: auto,
+                purchasePrice: auto ? null : (price.trim() === '' ? 0 : Number(price)),
+                acquiredAt: acquired || null,   // null -> server resets to added date
                 note: note.trim() === '' ? null : note.trim(),
             }).unwrap();
             onDone?.();   // close the form only if the save succeeded
@@ -190,10 +193,17 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
                 </label>
                 <label>Paid
                     <input className="input" type="number" min="0" step="0.01" inputMode="decimal"
-                        placeholder="—" value={price} onChange={e => setPrice(e.target.value)} />
+                        value={auto ? String(copy.purchasePrice ?? 0) : price} disabled={auto}
+                        title={auto ? "Auto price: the market price on the acquired date" : undefined}
+                        onChange={e => setPrice(e.target.value)} />
+                </label>
+                <label className="owned-copy__auto" title="Set the paid price automatically from the market price on the acquired date ($0 if no data goes back that far)">
+                    Auto price
+                    <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
                 </label>
                 <label>Acquired
-                    <input className="input" type="date" value={acquired} onChange={e => setAcquired(e.target.value)} />
+                    <input className="input" type="date" value={acquired} max={new Date().toISOString().slice(0, 10)}
+                        onChange={e => setAcquired(e.target.value)} />
                 </label>
                 <label className="owned-copy__note">Note
                     <input className="input" type="text" maxLength={200}

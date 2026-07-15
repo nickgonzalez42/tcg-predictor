@@ -57,17 +57,17 @@ export default function AboutPage() {
         <h3>The features</h3>
         <ul>
           <li>
-            <strong>Price trajectory</strong> — log price level, 1/3/12-month momentum,
+            <strong>Price trajectory</strong> — log price level, 1-month, 3-month and 1-year momentum,
             6-month volatility, history length, months since first price (new prints behave
             differently), and drawdown from the running all-time high.
           </li>
           <li>
-            <strong>Set context</strong> — a per-set price index, the set's 3- and 12-month
+            <strong>Set context</strong> — a per-set price index, the set's 3-month and 1-year
             momentum, and the card's price relative to its set-mates.
           </li>
           <li>
             <strong>Market context</strong> — a hobby-wide index built from the median monthly
-            return of every game we track: global 3- and 12-month momentum, the card's own
+            return of every game we track: global 3-month and 1-year momentum, the card's own
             game's momentum, and the spread between them (is this game running hot or cold
             relative to the whole hobby).
           </li>

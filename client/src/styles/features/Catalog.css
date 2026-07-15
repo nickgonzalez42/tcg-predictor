@@ -113,10 +113,27 @@
 }
 
 .panels__column {
-  grid-column: span 4;
+  /* Desktop overlay rides the 12-col grid: half = 6. Tablet's 8-col grid
+     drops this back to 4 (see the tablet media block below). */
+  grid-column: span 6;
   display: flex;
   flex-direction: column;
   gap: 24px;
+}
+
+/* Desktop rail (not the dropdown overlay): the two overlay columns flatten
+   into one uniform stack — display:contents lifts the panels out of their
+   column wrappers so the panels list spaces them evenly. */
+@media (min-width: 1024px) {
+  .filters:not(.filters--dropdown) .filters__panels {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-15);
+  }
+
+  .filters:not(.filters--dropdown) .panels__column {
+    display: contents;
+  }
 }
 
 /* Footer sits at the bottom; its two buttons span a 4-column strip (2 each). */
@@ -128,7 +145,7 @@
 }
 
 .filters--dropdown .filters__body--open .filters__footer .btn {
-  grid-column: span 4;
+  grid-column: span 6;
   margin: 0;
 }
 
@@ -173,6 +190,14 @@ body.filters-open {
 
 /* --- Tablet (8-col grid): results span everything under the dropdown. */
 @media (max-width: 1023px) {
+  .panels__column {
+    grid-column: span 4;
+  }
+
+  .filters--dropdown .filters__body--open .filters__footer .btn {
+    grid-column: span 4;
+  }
+
   .catalog-items {
     grid-column: 1 / -1;
   }

@@ -12,12 +12,14 @@
 .container {
   margin: 0 auto;
   box-sizing: border-box;
-  padding: 0 40px;
-  max-width: 1280px;
+  padding: 0 var(--container-pad);
+  max-width: var(--container-max);
 }
 
 .page {
-  padding-top: var(--space-95);
+  /* The nav is a left-rail overlay (no top bar) at every size, so content
+     starts --page-top from the top of the page everywhere. */
+  padding-top: var(--page-top);
   padding-bottom: var(--space-50);
 }
 
@@ -44,7 +46,7 @@
   }
 
   .container {
-    padding: 0 24px;
+    padding: 0 24px 0 var(--container-pad);   /* left pinned at every screen size */
   }
 }
 
@@ -59,11 +61,13 @@
 
   .container {
     max-width: 100%;
-    padding: 0 20px;
+    padding: 0 20px 0 var(--container-pad);   /* left pinned at every screen size */
   }
 }
 
-/* Room for the fixed navbar + ticker strip. */
+/* The market crawl is fixed to the bottom of the viewport — keep the page's
+   tail clear of it. */
 .has-ticker .page {
-  padding-top: var(--space-130);
+  padding-bottom: var(--space-95);
 }
+

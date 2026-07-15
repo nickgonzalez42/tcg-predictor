@@ -10,12 +10,21 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     public DbSet<TrackedCard> TrackedCards => Set<TrackedCard>();
     public DbSet<ReasonProse> ReasonProses => Set<ReasonProse>();
     public DbSet<SpxClose> SpxCloses => Set<SpxClose>();
+    public DbSet<Comment> Comments => Set<Comment>();
+    public DbSet<CommentVote> CommentVotes => Set<CommentVote>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
         builder.Entity<SpxClose>().HasKey(x => x.Date);
+
+        // Handles are unique (case-insensitive via NOCASE collation).
+        builder.Entity<User>().HasIndex(x => x.Handle).IsUnique();
+        builder.Entity<User>().Property(x => x.Handle).UseCollation("NOCASE");
+
+        builder.Entity<Comment>().HasIndex(x => new { x.Game, x.ProductId, x.CreatedAt });
+        builder.Entity<CommentVote>().HasIndex(x => new { x.CommentId, x.UserName }).IsUnique();
 
         builder.Entity<ReasonProse>()
             .HasIndex(x => new { x.Game, x.ProductId })

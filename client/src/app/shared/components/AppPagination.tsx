@@ -3,6 +3,9 @@ import type { Pagination as PaginationType } from "../../models/pagination";
 type Props = {
     metadata: PaginationType
     onPageChange: (page: number) => void
+    // Pages with several paginated tables pass false so flipping one table's
+    // page doesn't jump away from it.
+    scrollToTop?: boolean
 }
 
 // Truncated page list: 1 2 3 … i-2 i-1 i … last  (with the last page kept so you
@@ -24,11 +27,11 @@ function pageList(current: number, total: number): (number | '…')[] {
     return out;
 }
 
-// Changing pages always returns the reader to the top of the list.
-export default function AppPagination({ metadata, onPageChange }: Props) {
+// Changing pages returns the reader to the top of the list by default.
+export default function AppPagination({ metadata, onPageChange, scrollToTop = true }: Props) {
     const changePage = (page: number) => {
         onPageChange(page);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (scrollToTop) window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const { currentPage, totalPages, pageSize, totalCount } = metadata;
