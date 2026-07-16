@@ -137,11 +137,9 @@ export default function Filters({ filtersData: data }: Props) {
                     {/* Footer: Reset + (dropdown-only) Apply, pinned to the bottom of
                         the overlay. Filters apply live, so Apply just closes it. */}
                     <div className="filters__footer">
-                        <button className="btn btn--outline filters__reset" title="Reset filters"
-                            aria-label="Reset filters" onClick={() => dispatch(resetParams())}>
-                            {/* Grid-view rail collapses this to a bare ✕ (see Catalog.css);
-                                the dropdown overlay keeps the full label. */}
-                            {dropdown ? 'Reset filters' : '✕'}
+                        <button className="btn btn--outline filters__reset" title="Clear filters"
+                            aria-label="Clear filters" onClick={() => dispatch(resetParams())}>
+                            Clear filters
                         </button>
                         {dropdown && (
                             <button className="btn filters__apply" onClick={() => setOpen(false)}>

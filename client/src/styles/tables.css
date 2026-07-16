@@ -83,21 +83,16 @@
   display: inline-block;
 }
 
+/* Fixed + JS-placed (top/left set inline in CardThumbCell) so it escapes the
+   table's overflow-x scroll wrapper instead of being clipped by it. */
 .peek__pop {
-  display: none;
-  position: absolute;
-  left: 44px;
-  top: 50%;
+  position: fixed;
   transform: translateY(-50%);
   width: 180px;
   border-radius: var(--radius);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
-  z-index: 30;
+  z-index: 100;
   pointer-events: none;
-}
-
-.peek:hover .peek__pop {
-  display: block;
 }
 
 /* Table header row: title + search + sort + game chips. */

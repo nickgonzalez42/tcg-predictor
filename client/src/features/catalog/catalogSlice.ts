@@ -53,6 +53,11 @@ export const catalogSlice = createSlice({
             state.searchTerm = '';
             state.pageNumber = 1;
             state.gameInitialized = true;   // an explicit choice wins over defaults
+            // Re-sync the trend window to the active sort, so the time-frame
+            // chips always match the current filter after a game switch (a
+            // young game with no 1Y then snaps 1y->6m in Catalog's effect).
+            const trend = trendForSort(state.orderBy ?? '');
+            if (trend) state.trend = trend;
         },
         // One-time session default: the game the user owns the most cards in
         // (Pokémon when signed out or the portfolio is empty). A no-op once any
