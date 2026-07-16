@@ -94,7 +94,6 @@ export default function ProfileSettingsPage() {
     const [showPortfolio, setShowPortfolio] = useState(false);
     const [showWatchlist, setShowWatchlist] = useState(false);
     const [storefront, setStorefront] = useState('');
-    const [alertEmails, setAlertEmails] = useState(false);
     const [avatar, setAvatar] = useState<{ game: string; productId: number } | null>(null);
     const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
     const [picking, setPicking] = useState(false);
@@ -107,7 +106,6 @@ export default function ProfileSettingsPage() {
         setShowPortfolio(profile.showPortfolio);
         setShowWatchlist(profile.showWatchlist);
         setStorefront(profile.storefrontUrl ?? '');
-        setAlertEmails(profile.alertEmails ?? false);
         setAvatar(profile.avatarGame && profile.avatarProductId
             ? { game: profile.avatarGame, productId: profile.avatarProductId } : null);
         setAvatarUrl(profile.avatarUrl);
@@ -127,7 +125,6 @@ export default function ProfileSettingsPage() {
                 storefrontUrl: storefront.trim() || null,
                 avatarGame: avatar?.game ?? null,
                 avatarProductId: avatar?.productId ?? null,
-                alertEmails,
             }).unwrap();
             setSaved(true);
         } catch { /* error surfaces below */ }
@@ -191,11 +188,6 @@ export default function ProfileSettingsPage() {
                         <input type="checkbox" disabled={!isPublic} checked={showPortfolio}
                             onChange={e => setShowPortfolio(e.target.checked)} />
                         Show my portfolio
-                    </label>
-                    <label title="One email when an alert crosses its target; it re-arms after the price moves back">
-                        <input type="checkbox" checked={alertEmails}
-                            onChange={e => setAlertEmails(e.target.checked)} />
-                        Email me when a price alert hits
                     </label>
                 </div>
 
