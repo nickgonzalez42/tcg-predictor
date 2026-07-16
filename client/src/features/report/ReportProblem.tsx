@@ -12,11 +12,16 @@ export default function ReportProblem() {
     const [message, setMessage] = useState('');
     const [email, setEmail] = useState('');
     const [sent, setSent] = useState(false);
+    const [hint, setHint] = useState<string | null>(null);
     const [submit, { isLoading, error }] = useSubmitReportMutation();
     const apiError = (error as { data?: string } | undefined)?.data;
 
     const send = async () => {
-        if (message.trim().length < 5) return;
+        if (message.trim().length < 5) {
+            setHint('Add a few more words so we can act on it.');
+            return;
+        }
+        setHint(null);
         try {
             await submit({
                 message: message.trim(),
@@ -30,7 +35,7 @@ export default function ReportProblem() {
     const close = () => {
         setOpen(false);
         // Reset once the modal is gone so a reopened form is fresh.
-        setTimeout(() => { setSent(false); setMessage(''); setEmail(''); }, 200);
+        setTimeout(() => { setSent(false); setMessage(''); setEmail(''); setHint(null); }, 200);
     };
 
     if (!user) return null;
@@ -60,15 +65,19 @@ export default function ReportProblem() {
                             </p>
                             <textarea className="input" rows={5} maxLength={4000} autoFocus
                                 placeholder="What went wrong?"
-                                value={message} onChange={e => setMessage(e.target.value)} />
+                                value={message}
+                                onChange={e => {
+                                    setMessage(e.target.value);
+                                    if (e.target.value.trim().length >= 5) setHint(null);
+                                }} />
                             <label className="field-label" htmlFor="report-email">Email (optional)</label>
                             <input id="report-email" className="input" type="email"
                                 placeholder="you@example.com for a reply"
                                 value={email} onChange={e => setEmail(e.target.value)} />
-                            {apiError && <p className="comment-error">{String(apiError)}</p>}
+                            {(hint || apiError) && <p className="comment-error">{hint ?? String(apiError)}</p>}
                             <div className="modal__actions">
                                 <button className="btn btn--outline" onClick={close}>Cancel</button>
-                                <button className="btn" disabled={isLoading || message.trim().length < 5}
+                                <button className="btn" disabled={isLoading}
                                     onClick={send}>Send report</button>
                             </div>
                         </>
