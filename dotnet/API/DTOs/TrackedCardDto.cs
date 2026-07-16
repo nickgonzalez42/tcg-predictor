@@ -41,12 +41,3 @@ public class UpdateOwnedCopyDto
     public string? Note { get; set; }
     public bool AutoPrice { get; set; } = true;
 }
-
-// Set (or clear, with null) a wishlist row's price alert
-// (PUT /watchlist/wishlist/alert).
-public class WishlistAlertDto
-{
-    public required string Game { get; set; }
-    public int ProductId { get; set; }
-    public double? Target { get; set; }   // alert at-or-below price; null clears
-}

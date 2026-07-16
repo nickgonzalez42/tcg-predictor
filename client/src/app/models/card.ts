@@ -30,12 +30,11 @@ export type Card = {
     fcst12Pct?: number          // 12m forecast % change
     fcst12To?: number           // 12m forecast price
     fcstTo?: number             // forecast price matched to the trend window
-    fcstHorizon?: string        // '1m' | '6m' | '12m' ('1w' legacy)| '1m' | '6m' | '12m'
+    fcstHorizon?: string        // '1m' | '6m' | '12m' ('1w' legacy)
     fcstConfidence?: string     // model-reported: high | med | low
     // Wishlist rows only.
     watchedAtPrice?: number     // price when the card was wishlisted
     watchedSince?: string       // when the card was wishlisted
-    alertTargetPrice?: number   // "notify at or below" price
 }
 
 // One owned physical copy of a card (grade/purchase detail all optional).

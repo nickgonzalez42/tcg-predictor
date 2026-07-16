@@ -31,7 +31,6 @@ public class TrackedCard
 
     // Wishlist-only detail (null for owned rows).
     public double? WatchedAtPrice { get; set; }    // NM price when the card was wishlisted
-    public double? AlertTargetPrice { get; set; }  // notify at-or-below price; null = no alert
 
     // A copy the user has personalized (manual price, note, or a hand-set
     // acquired date) displays as its own unit and is never auto-deleted by

@@ -1,5 +1,7 @@
 """
-One-command weekly refresh: TCGplayer + PriceCharting for both games, end to end.
+One-command data refresh: TCGplayer + PriceCharting for every game, end to end.
+(Named for its original weekly cadence; run_daily_refresh.sh now runs it every
+morning via launchd.)
 
 Run with the pipeline venv (which lives in the sibling one-piece/ data dir); from
 the pipeline/ directory:

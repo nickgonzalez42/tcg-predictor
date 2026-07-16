@@ -17,4 +17,19 @@ public class GradedPrice
     public double? Sgc10 { get; set; }
     public int? SalesVolume { get; set; }
     public string? UpdatedAt { get; set; }
+
+    // The tier's current price (null = no data at that tier). Blank or
+    // unrecognized tiers read the ungraded column.
+    public double? PriceFor(string? tier) => tier switch
+    {
+        "grade7" => Grade7,
+        "grade8" => Grade8,
+        "grade9" => Grade9,
+        "grade95" => Grade95,
+        "psa10" => Psa10,
+        "bgs10" => Bgs10,
+        "cgc10" => Cgc10,
+        "sgc10" => Sgc10,
+        _ => Ungraded,
+    };
 }

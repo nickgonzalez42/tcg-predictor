@@ -14,7 +14,7 @@ public class ExceptionMiddleware(IHostEnvironment env, ILogger<ExceptionMiddlewa
         }
         catch (Exception ex)
         {
-            await HandleException(context, ex)            ;
+            await HandleException(context, ex);
         }
     }
 
@@ -27,7 +27,7 @@ public class ExceptionMiddleware(IHostEnvironment env, ILogger<ExceptionMiddlewa
         var response = new ProblemDetails
         {
             Status = 500,
-            Detail = env.IsDevelopment() ? ex.StackTrace.ToString() : null,
+            Detail = env.IsDevelopment() ? ex.StackTrace : null,
             Title = ex.Message
         };
 

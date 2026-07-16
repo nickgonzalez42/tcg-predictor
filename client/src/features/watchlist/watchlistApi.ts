@@ -20,7 +20,6 @@ export type TrackedCard = {
     note?: string;
     // Wishlist detail (wishlist rows only).
     watchedAtPrice?: number;
-    alertTargetPrice?: number;
 }
 
 // Brokerage-style portfolio rollup (GET portfolio/summary).

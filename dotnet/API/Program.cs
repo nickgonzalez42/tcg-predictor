@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using API.Data;
 using API.Middleware;
+using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -43,7 +44,10 @@ builder.Services.AddDbContext<GundamContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("GundamConnection"));
 });
-builder.Services.AddScoped<API.Services.CardSources>();
+builder.Services.AddScoped<CardSources>();
+// Cross-database market context + the movers ranking built on it.
+builder.Services.AddScoped<CardMarketData>();
+builder.Services.AddScoped<MoverService>();
 // Read-only model predictions (produced offline by the ML pipeline).
 builder.Services.AddDbContext<PredictionsContext>(opt =>
 {
@@ -55,14 +59,14 @@ builder.Services.AddDbContext<PriceChartingContext>(opt =>
     opt.UseSqlite(builder.Configuration.GetConnectionString("PriceChartingConnection"));
 });
 builder.Services.AddScoped<ReasoningService>();
-builder.Services.AddScoped<API.Services.ModerationService>();
-builder.Services.AddScoped<API.Services.NotificationService>();
+builder.Services.AddScoped<ModerationService>();
+builder.Services.AddScoped<NotificationService>();
 // Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
-builder.Services.AddScoped<API.Services.AlertEvaluator>();
-builder.Services.AddSingleton<API.Services.EmailService>();
-builder.Services.AddHostedService<API.Services.AlertEmailNotifier>();
+builder.Services.AddScoped<AlertEvaluator>();
+builder.Services.AddSingleton<EmailService>();
+builder.Services.AddHostedService<AlertEmailNotifier>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
-builder.Services.AddHttpClient<API.Services.SpxService>();
+builder.Services.AddHttpClient<SpxService>();
 builder.Services.AddCors();
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();
@@ -114,7 +118,7 @@ app.UseCors(opt =>
 });
 
 // Serve card images straight from the scraper's image folders (no copy).
-foreach (var game in API.RequestHelpers.GameRegistry.Keys)
+foreach (var game in GameRegistry.Keys)
     ServeCardImages(app, $"CardImages:{game}", $"/card-images/{game}");
 
 app.UseAuthentication();

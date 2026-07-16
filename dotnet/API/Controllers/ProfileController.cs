@@ -42,6 +42,8 @@ public class ProfileController(
         var user = await userManager.FindByNameAsync(User.Identity!.Name!);
         if (user == null) return NotFound();
 
+        // A blank handle is ignored rather than cleared — once chosen it can't
+        // be unset, because comments reference it.
         var handle = dto.Handle?.Trim();
         if (!string.IsNullOrEmpty(handle))
         {
@@ -51,10 +53,6 @@ public class ProfileController(
                 u.Id != user.Id && u.Handle != null && u.Handle.ToLower() == handle.ToLower());
             if (taken) return BadRequest($"'{handle}' is taken.");
             user.Handle = handle;
-        }
-        else if (user.Handle != null && dto.Handle == null)
-        {
-            // handle can't be unset once chosen (comments reference it)
         }
 
         var storefront = dto.StorefrontUrl?.Trim();
@@ -172,13 +170,7 @@ public class ProfileController(
             : OwnedPositions(tracked);
         var rows = SortRows(await PublicCards(refs), p.OrderBy);
 
-        Response.AddPaginationHeader(new PaginationMetadata
-        {
-            TotalCount = rows.Count,
-            PageSize = p.PageSize,
-            CurrentPage = p.PageNumber,
-            TotalPages = (int)Math.Ceiling(rows.Count / (double)p.PageSize),
-        });
+        Response.AddPaginationHeader(PaginationMetadata.For(rows.Count, p.PageNumber, p.PageSize));
         return Ok(rows.Skip((p.PageNumber - 1) * p.PageSize).Take(p.PageSize));
     }
 
@@ -238,19 +230,12 @@ public class ProfileController(
                 outRows.Add(new PublicCardRow(
                     gameGroup.Key, r.ProductId, card.Name, card.SetName,
                     GradeTiers.PriceTier(r.Grade), r.Qty,
-                    TierPrice(p, GradeTiers.PriceTier(r.Grade)),
+                    p?.PriceFor(GradeTiers.PriceTier(r.Grade)),
                     CardImageUrl(gameGroup.Key, r.ProductId)));
             }
         }
         return outRows;
     }
-
-    private static double? TierPrice(GradedPrice? p, string tier) => p == null ? null : tier switch
-    {
-        "grade7" => p.Grade7, "grade8" => p.Grade8, "grade9" => p.Grade9,
-        "grade95" => p.Grade95, "psa10" => p.Psa10, "bgs10" => p.Bgs10,
-        "cgc10" => p.Cgc10, "sgc10" => p.Sgc10, _ => p.Ungraded,
-    };
 
     private string? AvatarUrl(User user) =>
         user.AvatarGame != null && user.AvatarProductId != null

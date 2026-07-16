@@ -6,13 +6,7 @@ public class PagedList<T> : List<T>
 {
     public PagedList(List<T> items, int count, int pageNumber, int pageSize)
     {
-        Metadata = new PaginationMetadata
-        {
-            TotalCount = count,
-            PageSize = pageSize,
-            CurrentPage = pageNumber,
-            TotalPages = (int)Math.Ceiling(count / (double)pageSize)
-        };
+        Metadata = PaginationMetadata.For(count, pageNumber, pageSize);
         AddRange(items);
     }
 

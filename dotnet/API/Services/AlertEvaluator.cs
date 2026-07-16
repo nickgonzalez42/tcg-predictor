@@ -33,7 +33,7 @@ public class AlertEvaluator(PredictionsContext predictions, PriceChartingContext
                 double? current = null;
                 if (a.Kind == AlertKind.Price)
                 {
-                    current = TierPrice(pricedById.GetValueOrDefault(a.ProductId), a.Grade);
+                    current = pricedById.GetValueOrDefault(a.ProductId)?.PriceFor(a.Grade);
                 }
                 else if (fcByKey.TryGetValue(
                              (a.ProductId, GradeTiers.ForecastTarget(a.Grade), a.Horizon ?? ""), out var f)
@@ -51,19 +51,4 @@ public class AlertEvaluator(PredictionsContext predictions, PriceChartingContext
         }
         return results;
     }
-
-    // The tier's current price from the snapshot table (null = no data).
-    public static double? TierPrice(GradedPrice? p, string? grade) => p == null ? null : grade switch
-    {
-        null or "" => p.Ungraded,
-        "grade7" => p.Grade7,
-        "grade8" => p.Grade8,
-        "grade9" => p.Grade9,
-        "grade95" => p.Grade95,
-        "psa10" => p.Psa10,
-        "bgs10" => p.Bgs10,
-        "cgc10" => p.Cgc10,
-        "sgc10" => p.Sgc10,
-        _ => p.Ungraded,
-    };
 }

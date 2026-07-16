@@ -11,7 +11,7 @@ import { useUserInfoQuery } from "../account/accountApi";
 import { currencyFormat, shortDate } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
 import ChangePill from "../../app/shared/components/ChangePill";
-import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
+import { PRICE_TIER_OPTIONS, GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
 import { confidence } from "./confidence";
 import type { Forecast } from "../../app/models/card";
 import { fallbackToCardBack } from "../../lib/cardImages";
@@ -19,12 +19,7 @@ import { sanitizeHtml } from "../../lib/sanitizeHtml";
 import CardLoader from "../../app/shared/components/CardLoader";
 import Modal from "../../app/shared/components/Modal";
 
-const TARGETS = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
 const HORIZONS = ['1m', '6m', '12m'];
-const TARGET_LABEL: Record<string, string> = {
-    ungraded: 'Ungraded', grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
-    grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
-};
 const HORIZON_LABEL: Record<string, string> = {
     '1m': '1 month', '6m': '6 months', '12m': '1 year',
 };
@@ -137,7 +132,7 @@ function ForecastSection({ forecasts, game, id }: {
                     </tr>
                 </thead>
                 <tbody>
-                    {TARGETS.filter(t => forecasts.some(f => f.target === t)).map(t => {
+                    {GRADE_TIERS.filter(t => forecasts.some(f => f.target === t)).map(t => {
                         const tierForecasts = forecasts.filter(f => f.target === t);
                         const lead = tierForecasts.find(f => f.horizon === '12m') ?? tierForecasts[0];
                         const conf = confidence(lead?.confidence, lead?.months);
@@ -145,10 +140,10 @@ function ForecastSection({ forecasts, game, id }: {
                             <tr key={t}>
                                 <td>
                                     <div className="forecast-tier">
-                                        <strong>{TARGET_LABEL[t] ?? t}</strong>
+                                        <strong>{GRADE_TIER_LABEL[t] ?? t}</strong>
                                         {tierForecasts.some(f => f.reason) && (
                                             <button className="why-btn"
-                                                aria-label={`Forecast reasoning for ${TARGET_LABEL[t] ?? t}`}
+                                                aria-label={`Forecast reasoning for ${GRADE_TIER_LABEL[t] ?? t}`}
                                                 title="Forecast reasoning"
                                                 onClick={() => setWhy({ tier: t, forecasts: tierForecasts })}>
                                                 ⓘ
@@ -187,7 +182,7 @@ function ForecastSection({ forecasts, game, id }: {
             </table>
             </div>
             {why && (
-                <Modal title={`${TARGET_LABEL[why.tier] ?? why.tier} · forecast reasoning`}
+                <Modal title={`${GRADE_TIER_LABEL[why.tier] ?? why.tier} · forecast reasoning`}
                     onClose={() => setWhy(null)}>
                     {HORIZONS.filter(h => why.forecasts.some(f => f.horizon === h)).map(h => {
                         const f = why.forecasts.find(x => x.horizon === h)!;

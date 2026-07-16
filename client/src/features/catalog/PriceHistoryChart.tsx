@@ -3,13 +3,7 @@ import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "light
 import type { ISeriesApi, SeriesType, Time } from "lightweight-charts";
 import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
 import type { Forecast, PastForecast } from "../../app/models/card";
-
-const GRADE_ORDER = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
-const GRADE_LABEL: Record<string, string> = {
-    ungraded: 'Ungraded',
-    grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
-    grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
-};
+import { GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
 
 const RANGES: { key: string; label: string; months?: number }[] = [
     { key: '1m', label: '1M', months: 1 },
@@ -96,7 +90,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         }
     };
 
-    const grades = data ? GRADE_ORDER.filter(g => data.series[g]?.length) : [];
+    const grades = data ? GRADE_TIERS.filter(g => data.series[g]?.length) : [];
 
     // default to the first available tier once data arrives
     useEffect(() => {
@@ -313,7 +307,7 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                             className={`btn btn--outline${g === grade ? ' btn--active' : ''}`}
                             onClick={() => setGrade(g)}
                         >
-                            {GRADE_LABEL[g] ?? g}
+                            {GRADE_TIER_LABEL[g] ?? g}
                         </button>
                     ))}
                 </div>

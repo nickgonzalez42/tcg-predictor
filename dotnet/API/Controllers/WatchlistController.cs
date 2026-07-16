@@ -35,8 +35,7 @@ public class WatchlistController(
         // Only store canonical game keys — a display name ("One Piece") would create
         // rows invisible to every query that filters on the key.
         var game = NormalizeGame(dto.Game);
-        if (game == null)
-            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
+        if (game == null) return BadRequest(UnknownGame(dto.Game));
         dto.Game = game;
 
         // Wishlist is one-per-card, so skip if it's already there. Owned is
@@ -73,27 +72,6 @@ public class WatchlistController(
         return Ok();
     }
 
-    // Set (or clear, with a null target) the price alert on a wishlist row.
-    [HttpPut("wishlist/alert")]
-    public async Task<ActionResult> SetAlert(WishlistAlertDto dto)
-    {
-        var game = NormalizeGame(dto.Game);
-        if (game == null)
-            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
-        if (dto.Target is <= 0)
-            return BadRequest("Alert target must be a positive price.");
-
-        var item = await context.TrackedCards.FirstOrDefaultAsync(
-            x => x.UserName == User.Identity!.Name && x.Game == game
-                 && x.ProductId == dto.ProductId && x.Kind == TrackKind.Wishlist);
-        if (item == null) return NotFound();
-
-        item.AlertTargetPrice = dto.Target;
-        await context.SaveChangesAsync();
-
-        return Ok();
-    }
-
     // Latest Near Mint price from the game DB's denormalized column.
     private async Task<double?> NearMintPrice(string game, int productId)
     {
@@ -108,8 +86,7 @@ public class WatchlistController(
     public async Task<ActionResult> SetOwnedQuantity(SetOwnedQuantityDto dto)
     {
         var game = NormalizeGame(dto.Game);
-        if (game == null)
-            return BadRequest($"Unknown game '{dto.Game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.");
+        if (game == null) return BadRequest(UnknownGame(dto.Game));
 
         var user = User.Identity!.Name!;
         var grade = Blank(dto.Grade) ? null : dto.Grade!.Trim();
@@ -429,4 +406,7 @@ public class WatchlistController(
 
     // Canonical game key or null if unrecognized.
     private static string? NormalizeGame(string game) => GameRegistry.Normalize(game);
+
+    private static string UnknownGame(string? game) =>
+        $"Unknown game '{game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.";
 }
