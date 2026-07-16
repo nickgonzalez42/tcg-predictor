@@ -23,9 +23,21 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     // Touch devices can't hover, so tapping the logo toggles the rail drawer
     // (hover devices open it on hover — see NavBar.css). Reset on navigation.
     const [navOpen, setNavOpen] = useState(false);
+    // Desktop drawer is hover/focus-driven, so after clicking a link it lingers
+    // open (the link keeps focus / the pointer is still over it). On navigation
+    // we blur focus and briefly suppress hover (see .navbar--suppress) so it
+    // collapses. mobile dropdown + touch drawer just reset their state.
+    const [suppress, setSuppress] = useState(false);
     const navRef = useRef<HTMLElement>(null);
     const { pathname } = useLocation();
-    useEffect(() => { setMenuOpen(false); setNavOpen(false); }, [pathname]);
+    useEffect(() => {
+        setMenuOpen(false);
+        setNavOpen(false);
+        (document.activeElement as HTMLElement | null)?.blur();
+        setSuppress(true);
+        const t = setTimeout(() => setSuppress(false), 600);
+        return () => clearTimeout(t);
+    }, [pathname]);
 
     // Touch: a tap/click anywhere outside the open drawer closes it. The click
     // isn't prevented, so it still lands on whatever was tapped (not modal).
@@ -50,12 +62,13 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     ];
 
     return (
-        <header ref={navRef} className={`navbar${navOpen ? ' navbar--open' : ''}`}>
+        <header ref={navRef}
+            className={`navbar${navOpen ? ' navbar--open' : ''}${suppress ? ' navbar--suppress' : ''}`}>
             {/* Always-visible: the logo (static, top-left) and the mobile ☰. The
                 logo lives OUTSIDE the sliding panel so the panel's transform
                 doesn't drag it off-screen — and hovering it reveals the panel. */}
             <div className="navbar__bar">
-                <NavLink to='/' className="navbar__brand" aria-label="card.stock — home"
+                <NavLink to='/' className="navbar__brand" aria-label="cardstock home"
                     aria-expanded={navOpen}
                     onClick={(e) => {
                         // Touch: tap toggles the drawer instead of navigating
@@ -83,7 +96,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                         <path className="navbar__logo-arrow" d="M-4 -11 L-6 -22 L5 -20" />
                     </svg>
                     {/* Wordmark, revealed one line at a time after the animation. */}
-                    <span className="navbar__wordmark" aria-hidden="true" style={{marginTop: "7px"}}>
+                    <span className="navbar__wordmark" aria-hidden="true" style={{marginTop: "5px"}}>
                         <span className="navbar__word navbar__word--1">card</span>
                         <span className="navbar__word navbar__word--2">STOCK</span>
                     </span>

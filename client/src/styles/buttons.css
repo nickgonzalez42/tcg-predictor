@@ -2,6 +2,10 @@
 
 /* Primary CTA = brand yellow with dark text; outline = electric blue. */
 .btn {
+  /* iOS Safari applies native button chrome unless this is reset, which can
+     make custom-styled buttons render oddly or appear missing. */
+  -webkit-appearance: none;
+  appearance: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -106,4 +110,10 @@
 
 .btn--circle + .btn--circle {
   margin-left: var(--space-5);
+}
+
+/* Non-interactive button-styled control (e.g. a <label> acting as a button). */
+.btn--disabled {
+  opacity: 0.6;
+  pointer-events: none;
 }

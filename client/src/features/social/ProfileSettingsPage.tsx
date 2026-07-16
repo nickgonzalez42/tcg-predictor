@@ -62,12 +62,12 @@ function AvatarPicker({ onPick, onClose }: {
                 )
             ) : unique.length === 0 ? (
                 <p className="est-note">
-                    Search for any card above, or track some cards — anything in your
+                    Search for any card above, or track some cards. Anything in your
                     portfolio or watchlist shows up here.
                 </p>
             ) : (
                 <>
-                    <p className="est-note">Your tracked cards — or search above for any card.</p>
+                    <p className="est-note">Your tracked cards, or search above for any card.</p>
                     <div className="avatar-picker">
                         {unique.map(t => (
                             <button key={`${t.game}-${t.productId}`} className="avatar-picker__card"
@@ -165,7 +165,7 @@ export default function ProfileSettingsPage() {
                 <input id="handle" className="input" maxLength={24} placeholder="e.g. cardshark_42"
                     value={handle} onChange={e => setHandle(e.target.value)} />
                 <p className="est-note">3–24 characters: letters, numbers, underscores. Shown on
-                    comments and your public profile — your email is never shown.</p>
+                    comments and your public profile. Your email is never shown.</p>
 
                 <label className="field-label" htmlFor="storefront">Storefront link</label>
                 <input id="storefront" className="input" type="url" placeholder="https://…"
@@ -192,7 +192,7 @@ export default function ProfileSettingsPage() {
 
                 {apiError && <p className="profile-settings__error">{String(apiError)}</p>}
                 {saved && <p className="est-note">Saved ✓{isPublic && handle.trim() && (
-                    <> — view it at <Link to={`/u/${handle.trim()}`}>/u/{handle.trim()}</Link></>
+                    <>. View it at <Link to={`/u/${handle.trim()}`}>/u/{handle.trim()}</Link></>
                 )}</p>}
                 <button className="btn" disabled={saving} onClick={submit}>Save profile</button>
             </div>

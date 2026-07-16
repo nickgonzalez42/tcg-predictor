@@ -1,5 +1,6 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { registerSchema } from "../../lib/schemas/registerSchema";
+import GoogleSignInButton from "./GoogleSignInButton";
 import { useRegisterMutation } from "./accountApi"
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
@@ -49,6 +50,8 @@ export default function registerForm() {
                 <button className="btn btn--block" disabled={isLoading || !isValid} type="submit">
                     Register
                 </button>
+                <div className="auth-divider"><span>or</span></div>
+                <GoogleSignInButton label="Sign up with Google" />
                 <p style={{ textAlign: 'center' }}>
                     Already have an account? <Link to='/login'>Login</Link>
                 </p>

@@ -104,7 +104,7 @@ export default function PublicProfilePage() {
     const { handle = '' } = useParams();
     const { data: profile, isLoading, isError } = useFetchPublicProfileQuery(handle, { skip: !handle });
     usePageMeta(profile ? `@${profile.handle}` : 'Profile',
-        profile ? `${profile.handle}'s public card collection on TCG Predictor.` : undefined);
+        profile ? `${profile.handle}'s public card collection on cardstock.` : undefined);
 
     if (isLoading) return <CardLoader />;
     if (isError || !profile) return (

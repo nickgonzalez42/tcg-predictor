@@ -1,0 +1,31 @@
+/* Minimal site footer — a single compact row of info/legal links, in normal
+   flow at the bottom of the page (never stickied to the viewport). On pages
+   with the fixed market crawl it gets extra bottom padding to clear it. */
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  padding: var(--space-10) 0;
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5) var(--space-20);
+}
+
+.site-footer__links a {
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.site-footer__links a:hover {
+  color: var(--text);
+}
+
+/* Clear the fixed market crawl on pages that show it. */
+.has-ticker .site-footer {
+  padding-bottom: calc(var(--space-10) + var(--ticker-h));
+}

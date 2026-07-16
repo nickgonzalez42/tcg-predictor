@@ -657,13 +657,20 @@ def main():
     games = args.game if args.game else priced_games()
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    total_seg = len(games) * len(TARGETS)
+    done_seg = 0
+    print(f"[forecast] plan: {len(games)} games x {len(TARGETS)} tiers = {total_seg} segments", flush=True)
     all_rows = []
     for game in games:
         for target in TARGETS:
+            done_seg += 1
             try:
                 all_rows += forecast_game_target(game, target, now)
             except Exception as e:
                 print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}", flush=True)
+            # Parseable progress for the dashboard (counts every segment, so it
+            # reaches N/N even when a young-game tier is skipped without rows).
+            print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)
 
     conn = sqlite3.connect(OUT_DB, timeout=60)
     schema = """

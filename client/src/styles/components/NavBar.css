@@ -69,7 +69,7 @@
 }
 
 .navbar__logo {
-  height: 40px;
+  height: var(--logo-h);
   width: var(--logo-w);
   display: block;
   /* The trend arrow breaks out past the card's top-left corner (negative
@@ -375,5 +375,15 @@ button.navbar__link {
     opacity: 1;
     transform: none;
     transition: none;
+  }
+}
+
+/* After navigating, release hover on the logo + drawer so the desktop drawer
+   collapses even if the pointer is still parked over it. Paired with a focus
+   blur in NavBar.tsx; cleared ~600ms later so normal hover resumes. */
+@media (hover: hover) {
+  .navbar--suppress .navbar__brand,
+  .navbar--suppress .navbar__panel {
+    pointer-events: none;
   }
 }

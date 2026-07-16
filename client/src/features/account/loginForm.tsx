@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { loginSchema, type LoginSchema } from "../../lib/schemas/loginSchema";
+import GoogleSignInButton from "./GoogleSignInButton";
 import { useLazyUserInfoQuery, useLoginMutation } from "./accountApi";
 import { useFetchMoversQuery } from "../catalog/catalogApi";
 import { usePageMeta } from "../../lib/usePageMeta";
@@ -33,7 +34,7 @@ export default function loginForm() {
             <h3>🔒 Sign in</h3>
             {teaserPct != null && (
                 <p className="mono auth-card__teaser">
-                    markets don't sleep — top movers point{' '}
+                    markets don't sleep, top movers point{' '}
                     <span className={teaserPct >= 0 ? 'auth-teaser--up' : 'auth-teaser--down'}>
                         {teaserPct >= 0 ? '+' : '−'}{Math.abs(teaserPct).toFixed(1)}%
                     </span>{' '}
@@ -54,6 +55,8 @@ export default function loginForm() {
                 <button className="btn btn--block" disabled={isLoading} type="submit">
                     Sign in
                 </button>
+                <div className="auth-divider"><span>or</span></div>
+                <GoogleSignInButton />
                 <p style={{ textAlign: 'center' }}>
                     Don't have an account? <Link to='/register'>Sign up</Link>
                 </p>

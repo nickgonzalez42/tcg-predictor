@@ -26,6 +26,7 @@ import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { GAMES } from "../../lib/games";
 import Modal from "../../app/shared/components/Modal";
+import ImportModal from "./ImportModal";
 
 
 const RANGES: { key: string; label: string; months?: number }[] = [
@@ -415,8 +416,8 @@ function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
             {confirming && (
                 <Modal title="Remove from portfolio" onClose={() => setConfirming(false)}>
                     <p>
-                        This is the last copy of <strong>{card.name}</strong> ({tierLabel(card.ownedGrade)})
-                        — removing it deletes the position from your portfolio.
+                        This is the last copy of <strong>{card.name}</strong> ({tierLabel(card.ownedGrade)}).
+                        Removing it deletes the position from your portfolio.
                     </p>
                     <div className="modal__actions">
                         <button className="btn btn--outline" onClick={() => setConfirming(false)}>
@@ -466,7 +467,7 @@ function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
                     <td colSpan={10}>
                         <div className="owned-copies" style={{ borderTop: 'none', marginTop: 0 }}>
                             <div className="owned-copies__head">
-                                Copies at {tierLabel(card.ownedGrade)} — a copy with a paid price,
+                                Copies at {tierLabel(card.ownedGrade)}. A copy with a paid price,
                                 date or note becomes its own position row.
                             </div>
                             {copies.map(copy => (
@@ -484,6 +485,7 @@ function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
 export default function Portfolio() {
     usePageMeta("Portfolio");
     const [showPaidHelp, setShowPaidHelp] = useState(false);
+    const [showImport, setShowImport] = useState(false);
     const { setPageNumber, setOrderBy } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
@@ -529,36 +531,40 @@ export default function Portfolio() {
             <div className="pf-positions full-span">
                 <div className="table-head">
                     <h2 className="table-head__title">Positions</h2>
+                    <button className="btn btn--outline" onClick={() => setShowImport(true)}>
+                        Import
+                    </button>
                     <button className="btn btn--outline btn--circle" title="How is Paid set?"
                         onClick={() => setShowPaidHelp(true)}>?</button>
                 </div>
+                {showImport && <ImportModal onClose={() => setShowImport(false)} />}
                 {showPaidHelp && (
                     <Modal title="How 'Paid' works" onClose={() => setShowPaidHelp(false)}>
                         <p>
-                            <strong>Paid</strong> is each copy's cost basis — what P/L and the
+                            <strong>Paid</strong> is each copy's cost basis, what P/L and the
                             S&amp;P comparison measure against.
                         </p>
                         <p>
                             <strong>Auto price (the default).</strong> Each copy's Paid is set to the
                             card's market price, at its condition, on the day you acquired it. Change
                             the acquired date or grade and it recalculates. If no price data goes back
-                            that far, Paid is $0 — meaning its full current value counts as gain.
+                            that far, Paid is $0, meaning its full current value counts as gain.
                         </p>
                         <p>
                             <strong>Set it yourself.</strong> Open a position's copies (click the row),
                             uncheck <em>Auto price</em>, and type the real amount. Use this whenever you
-                            know what you actually paid — it makes your P/L honest.
+                            know what you actually paid. It keeps your P/L honest.
                         </p>
                         <p>
                             <strong>Pulled it from a pack?</strong> A fair basis is the pack price
                             (typically $4–6): assign it to the best card you pulled and let the other
-                            pulls ride at $0, or split it evenly across the cards you kept — a $5 pack
+                            pulls ride at $0, or split it evenly across the cards you kept: a $5 pack
                             across five keepers is $1 each.
                         </p>
                         <p>
                             <strong>Pulled it from a box?</strong> Divide the box price by its pack
-                            count to get a per-pack cost — a $90 booster box of 24 packs is about
-                            $3.75 per pack — then apply the same idea: per-pack cost on each notable
+                            count to get a per-pack cost (a $90 booster box of 24 packs is about
+                            $3.75 per pack), then apply the same idea: per-pack cost on each notable
                             pull, $0 on the rest.
                         </p>
                     </Modal>
@@ -613,7 +619,7 @@ export default function Portfolio() {
                     </>
                 ) : (
                     <p className="est-note">
-                        No cards in your portfolio yet — browse the <Link to="/catalog">catalog</Link> and
+                        No cards in your portfolio yet. Browse the <Link to="/catalog">catalog</Link> and
                         tap "＋ Add" on any card.
                     </p>
                 )}

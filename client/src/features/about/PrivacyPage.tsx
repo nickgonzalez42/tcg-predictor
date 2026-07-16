@@ -1,9 +1,10 @@
+import { Link } from "react-router-dom";
 import { usePageMeta } from "../../lib/usePageMeta";
 
 // Privacy policy — required for AdSense approval (ads/cookies disclosure)
 // and good practice regardless. Plain content page on the standard grid.
 export default function PrivacyPage() {
-    usePageMeta("Privacy Policy", "How TCG Predictor handles your data, cookies, and advertising.");
+    usePageMeta("Privacy Policy", "How cardstock handles your data, cookies, and advertising.");
 
     return (
         <div className="full-span legal">
@@ -14,7 +15,7 @@ export default function PrivacyPage() {
             <p>
                 If you create an account, we store your email address and the cards you
                 track (portfolio and watchlist entries, including quantities, grades, and
-                any purchase prices or notes you enter). That's it — we don't collect
+                any purchase prices or notes you enter). That's it. We don't collect
                 names, addresses, or payment details.
             </p>
 
@@ -39,13 +40,13 @@ export default function PrivacyPage() {
             <h2>Price data</h2>
             <p>
                 Card prices and market data shown on this site are aggregated from public
-                sources and are informational only — nothing here is financial advice.
+                sources and are informational only. Nothing here is financial advice.
             </p>
 
             <h2>Contact</h2>
             <p>
-                Questions about this policy? Email us at{' '}
-                <a href="mailto:hello@cardstock.guide">hello@cardstock.guide</a>.
+                Questions about this policy? Use our <Link to="/contact">contact page</Link>{' '}
+                or email <a href="mailto:hello@cardstock.guide">hello@cardstock.guide</a>.
             </p>
         </div>
     );

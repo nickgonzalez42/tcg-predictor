@@ -153,7 +153,7 @@ export default function CommentSection({ game, productId }: { game: string; prod
                 <Composer game={game} productId={productId} />
             )}
             {tree.length === 0
-                ? <p className="est-note">No comments yet — be the first.</p>
+                ? <p className="est-note">No comments yet. Be the first.</p>
                 : tree.map(n => (
                     <CommentNode key={n.id} node={n} game={game} productId={productId}
                         canInteract={canComment} />

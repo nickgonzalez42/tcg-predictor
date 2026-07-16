@@ -127,11 +127,11 @@ export default function MarketTicker() {
     });
 
     return (
-        <div className="ticker" aria-label="Top movers — model forecast (1Y, or 6M for newer games)">
+        <div className="ticker" aria-label="Top movers, model forecast (1Y, or 6M for newer games)">
             <div className="ticker__track" ref={trackRef}>
                 {/* content twice for a seamless -groupW loop */}
-                <div className="ticker__group">{chips}<span className="mono ticker__tag">— 1Y FORECAST —</span></div>
-                <div className="ticker__group" aria-hidden="true">{chips}<span className="mono ticker__tag">— 1Y FORECAST —</span></div>
+                <div className="ticker__group">{chips}<span className="mono ticker__tag">· 1Y FORECAST ·</span></div>
+                <div className="ticker__group" aria-hidden="true">{chips}<span className="mono ticker__tag">· 1Y FORECAST ·</span></div>
             </div>
         </div>
     );

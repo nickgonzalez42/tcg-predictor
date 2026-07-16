@@ -25,6 +25,7 @@
 @import "./styles/components/CardLoader.css";
 @import "./styles/components/Modal.css";
 @import "./styles/components/ReportTab.css";
+@import "./styles/components/Footer.css";
 
 /* Feature screens */
 @import "./styles/features/HomePage.css";

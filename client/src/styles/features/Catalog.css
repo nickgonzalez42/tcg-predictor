@@ -23,7 +23,8 @@
 .filters__toggle {
   display: none;
   width: 100%;
-  padding: var(--space-10) var(--space-15);
+  height: var(--logo-h);   /* same height as the logo */
+  padding: 0 var(--space-15);
   margin-bottom: var(--space-15);
 }
 
@@ -79,11 +80,13 @@
    toggle; opening it reveals the panels as a full-screen 2-column overlay. */
 .filters--dropdown {
   grid-column: 1 / -1;
+  /* Top padding lines the filter bar up with the logo on mobile/tablet. */
   margin-top: 0;
+  /* padding-top: var(--page-top); */
 }
 
 .filters--dropdown .filters__toggle {
-  display: block;
+  display: flex;   /* keep .btn flex-centering at the fixed height (not block) */
 }
 
 .filters--dropdown .filters__body {
@@ -133,6 +136,27 @@
 
   .filters:not(.filters--dropdown) .panels__column {
     display: contents;
+  }
+
+  /* Grid (cards) view: line the filter rail's top up with the logo (drop the
+     margin that otherwise lowers it to meet the card grid). */
+  .filters:not(.filters--dropdown) {
+    margin-top: 0;
+  }
+
+  /* Desktop rail: breathing room above the Reset filters button. */
+  .filters:not(.filters--dropdown) .filters__footer .btn {
+    margin-top: var(--space-15);
+  }
+
+  /* Grid-view rail: the reset control collapses to a compact ✕ icon button
+     (the label only shows in the tablet/rows dropdown overlay). */
+  .filters:not(.filters--dropdown) .filters__reset {
+    width: var(--logo-h);
+    height: var(--logo-h);
+    padding: 0;
+    font-size: 16px;
+    justify-self: start;
   }
 }
 

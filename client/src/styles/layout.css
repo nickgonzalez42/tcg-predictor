@@ -19,8 +19,8 @@
 .page {
   /* The nav is a left-rail overlay (no top bar) at every size, so content
      starts --page-top from the top of the page everywhere. */
-  padding-top: var(--page-top);
-  padding-bottom: var(--space-50);
+  padding-top: var(--page-top) !important;
+  padding-bottom: var(--space-50) !important;
 }
 
 .grid-box {
@@ -65,9 +65,21 @@
   }
 }
 
-/* The market crawl is fixed to the bottom of the viewport — keep the page's
-   tail clear of it. */
-.has-ticker .page {
-  padding-bottom: var(--space-95);
+/* The footer is now the last element on every page and carries the crawl
+   clearance (see Footer.css), so the page keeps its normal bottom padding
+   regardless of the ticker — no giant gap before the footer. */
+
+/* Sticky footer: the smoothed content fills at least the viewport, so on a
+   short page the main region grows to take up the slack and the footer is
+   pushed to the bottom instead of floating mid-screen. */
+#smooth-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  min-height: 100dvh;   /* excludes mobile browser chrome where supported */
+}
+
+#smooth-content > main {
+  flex: 1 0 auto;
 }
 

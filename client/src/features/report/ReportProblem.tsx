@@ -33,23 +33,25 @@ export default function ReportProblem() {
 
     return (
         <>
-            <button className="report-tab" onClick={() => setOpen(true)}
-                title="Report a problem" aria-label="Report a problem">
-                <span className="report-tab__icon" aria-hidden="true">⚠</span>
-                <span className="report-tab__label">Report</span>
-            </button>
+            <div className="report-bar">
+                <button className="report-tab" onClick={() => setOpen(true)}
+                    title="Report a problem" aria-label="Report a problem">
+                    <span className="report-tab__icon" aria-hidden="true">⚠</span>
+                    <span className="report-tab__label">Report</span>
+                </button>
+            </div>
 
             {open && (
                 <Modal title="Report a problem" onClose={close}>
                     {sent ? (
                         <p>
-                            Thanks — your report came through.
+                            Thanks, your report came through.
                             {email.trim() && " We'll follow up if we need more detail."}
                         </p>
                     ) : (
                         <>
                             <p className="est-note">
-                                Found a bug or something off? Tell us what happened — the page
+                                Found a bug or something off? Tell us what happened. The page
                                 you're on is included automatically.
                             </p>
                             <textarea className="input" rows={5} maxLength={4000} autoFocus
@@ -57,7 +59,7 @@ export default function ReportProblem() {
                                 value={message} onChange={e => setMessage(e.target.value)} />
                             <label className="field-label" htmlFor="report-email">Email (optional)</label>
                             <input id="report-email" className="input" type="email"
-                                placeholder="you@example.com — for a reply"
+                                placeholder="you@example.com for a reply"
                                 value={email} onChange={e => setEmail(e.target.value)} />
                             {apiError && <p className="comment-error">{String(apiError)}</p>}
                             <div className="modal__actions">

@@ -58,7 +58,8 @@
      on wide screens + the left padding). Used to center the nav logo in the
      left gutter. */
   --content-left: calc(max(0px, (100vw - var(--container-max)) / 2) + var(--container-pad));
-  --logo-w: calc(40px * 63 / 88);   /* nav logo width: 40px height × viewBox aspect */
+  --logo-h: 40px;                        /* nav logo height (filter toggle matches it) */
+  --logo-w: calc(var(--logo-h) * 63 / 88);   /* nav logo width: height × viewBox aspect */
   /* Left edge of the logo once it topples over (pivots on its bottom-right
      corner): the closed logo's left (content-left/2 − logo-w/2) + logo-w.
      Drawer links align to this. */

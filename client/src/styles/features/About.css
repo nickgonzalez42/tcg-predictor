@@ -7,7 +7,7 @@
 }
 
 .article__head {
-  margin: var(--space-25) 0 var(--space-20);
+  margin: 0 0 var(--space-20);
 }
 
 .article__title {
@@ -57,4 +57,19 @@
 .article__section li {
   line-height: 1.6;
   margin: var(--space-5) 0;
+}
+
+/* Legal / info content pages: privacy, terms, contact — a flex column with one
+   consistent gap between every block (spacing comes from the gap, not per-
+   element margins). */
+.legal {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-15);
+  max-width: 680px;
+  line-height: 1.6;
+}
+
+.legal * {
+  margin: 0;   /* every element within — spacing comes only from the gap */
 }

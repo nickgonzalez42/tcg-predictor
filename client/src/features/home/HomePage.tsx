@@ -285,7 +285,7 @@ function MoverTile({ mover }: { mover: Card }) {
 }
 
 const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across seven TCGs — One Piece, Pokémon, Yu-Gi-Oh!, Magic, Lorcana, Digimon, Gundam — with live ungraded and graded price tiers.' },
+    { n: '1', title: 'Browse', text: 'Every card across seven TCGs (One Piece, Pokémon, Yu-Gi-Oh!, Magic, Lorcana, Digimon, Gundam), with live ungraded and graded price tiers.' },
     { n: '2', title: 'Forecast', text: '6 month and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
     { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L, plus a watchlist with price alerts.' },
 ];
@@ -303,7 +303,7 @@ export default function HomePage() {
                 <div className="hero__copy">
                     <h1 className="hero__title">The stock market for trading cards.</h1>
                     <p className="hero__sub">
-                        Machine-learned price forecasts for cards across seven TCGs —
+                        Machine-learned price forecasts for cards across seven TCGs, with
                         graded tiers, price history, and a portfolio that tracks your P/L.
                     </p>
                     <div className="btn-group">

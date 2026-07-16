@@ -19,6 +19,41 @@
 
 .auth-teaser--down { color: var(--down); font-weight: 700; }
 
+/* "or" divider between the email/password form and the Google button. */
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  margin: var(--space-20) 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+/* Google button: white surface + card-color text, the provider's own G mark. */
+.btn--google {
+  background: #fff;
+  border-color: var(--border);
+  color: #1f1f1f;
+  font-weight: 600;
+}
+
+.btn--google:hover {
+  background: #f5f5f5;
+  filter: none;
+}
+
+.btn--google__icon {
+  flex: none;
+}
+
 @media (max-width: 1023px) {
   .auth-card {
     grid-column: 2 / -2;

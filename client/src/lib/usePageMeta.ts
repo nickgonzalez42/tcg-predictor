@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const SITE = "TCG Predictor";
+const SITE = "cardstock";
 const DEFAULT_DESCRIPTION =
     "AI price forecasts, graded price history, and portfolio tracking for " +
     "Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";
@@ -10,11 +10,11 @@ const DEFAULT_DESCRIPTION =
 // falls back to the static tags in index.html.
 export function usePageMeta(title?: string, description?: string) {
     useEffect(() => {
-        document.title = title ? `${title} · ${SITE}` : `${SITE} — The Stock Market for Trading Cards`;
+        document.title = title ? `${title} · ${SITE}` : `${SITE}: The Stock Market for Trading Cards`;
         const meta = document.querySelector('meta[name="description"]');
         if (meta) meta.setAttribute('content', description ?? DEFAULT_DESCRIPTION);
         return () => {
-            document.title = `${SITE} — The Stock Market for Trading Cards`;
+            document.title = `${SITE}: The Stock Market for Trading Cards`;
             if (meta) meta.setAttribute('content', DEFAULT_DESCRIPTION);
         };
     }, [title, description]);

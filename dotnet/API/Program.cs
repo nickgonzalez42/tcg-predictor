@@ -3,6 +3,7 @@ using API.Data;
 using API.Middleware;
 using API.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -68,7 +69,29 @@ builder.Services.AddIdentityApiEndpoints<User>(opt =>
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<StoreContext>();
 
+// Google OAuth sign-in. Credentials come from configuration (user-secrets or
+// appsettings.Development.json in dev, environment variables in prod) — the
+// client secret is never committed. The external identity lands in Identity's
+// external cookie; AccountController's callback turns it into a signed-in
+// application cookie. CallbackPath sits under /api so Caddy proxies it in prod.
+builder.Services.AddAuthentication()
+    .AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "";
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "";
+        options.CallbackPath = "/api/signin-google";
+        options.SignInScheme = IdentityConstants.ExternalScheme;
+    });
+
 var app = builder.Build();
+
+// Honor X-Forwarded-Proto/For from the Caddy reverse proxy (loopback, trusted
+// by default) so Request.Scheme is https in prod. Without this the OAuth
+// redirect URI would be built as http and rejected by Google.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
 
 // Configure the HTTP request pipeline
 app.UseMiddleware<ExceptionMiddleware>();

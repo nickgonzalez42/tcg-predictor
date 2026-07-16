@@ -226,7 +226,7 @@ export default function Wishlist() {
                 </>
             ) : (
                 <p className="est-note">
-                    No cards on your watchlist yet — browse the <Link to="/catalog">catalog</Link> and
+                    No cards on your watchlist yet. Browse the <Link to="/catalog">catalog</Link> and
                     tap "☆ Watchlist" on any card.
                 </p>
             )}

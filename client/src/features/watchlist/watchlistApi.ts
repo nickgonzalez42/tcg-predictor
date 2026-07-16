@@ -55,6 +55,40 @@ export type PortfolioSummary = {
     accountCreated?: string;
 }
 
+// --- Bulk CSV import (POST /watchlist/owned/import) ---
+// A parsed CSV row: identify a card by productId or by name, with optional
+// grade, quantity, price paid, and acquired date.
+export type ImportRow = {
+    game: string;
+    productId?: number;
+    name?: string;
+    grade?: string;
+    quantity: number;
+    purchasePrice?: number;
+    acquiredAt?: string;   // yyyy-MM-dd
+}
+
+// A candidate card returned when a name matched more than one card.
+export type ImportCandidate = {
+    game: string;
+    productId: number;
+    name?: string;
+    setName?: string;
+    rarity?: string;
+    price?: number;
+    imageUrl?: string;
+}
+
+export type ImportRowResult = {
+    index: number;
+    status: 'imported' | 'ambiguous' | 'error';
+    added: number;
+    message?: string;
+    candidates?: ImportCandidate[];
+}
+
+export type ImportResult = { added: number; rows: ImportRowResult[] };
+
 // Editable per-copy fields sent to PATCH /watchlist/owned/{id}.
 export type OwnedCopyEdit = {
     grade?: string | null;
@@ -106,6 +140,12 @@ export const watchlistApi = createApi({
             query: (body) => ({ url: 'watchlist/owned/quantity', method: 'PUT', body }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
+        // Bulk import owned copies parsed from a CSV. Rows identified by name that
+        // match several cards come back as 'ambiguous' with candidates to pick.
+        importOwned: builder.mutation<ImportResult, { rows: ImportRow[] }>({
+            query: (body) => ({ url: 'watchlist/owned/import', method: 'POST', body }),
+            invalidatesTags: ['Owned', 'Summary'],
+        }),
         // Owned copies are edited/removed individually by copy id (Owned page only).
         updateOwnedCopy: builder.mutation<void, { id: number } & OwnedCopyEdit>({
             query: ({ id, ...body }) => ({ url: `watchlist/owned/${id}`, method: 'PATCH', body }),
@@ -135,6 +175,7 @@ export const {
     useAddToWatchlistMutation,
     useRemoveFromWatchlistMutation,
     useSetOwnedQuantityMutation,
+    useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation,
     useSetWishlistAlertMutation,
