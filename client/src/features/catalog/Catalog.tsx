@@ -17,8 +17,8 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 import { usePageMeta } from "../../lib/usePageMeta";
 
 export default function Catalog() {
-    usePageMeta("Card Catalog",
-        "Browse and screen cards across Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam with live prices and AI forecasts.");
+    usePageMeta("Card Prices and Predictions",
+        "Browse and screen Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards by price prediction, trend, and graded tier.");
   const cardParams = useAppSelector(state => state.catalog);
   const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery(cardParams.game);
   const { data, isLoading } = useFetchCardsQuery(cardParams);

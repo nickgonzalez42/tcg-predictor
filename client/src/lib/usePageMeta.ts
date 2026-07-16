@@ -1,8 +1,9 @@
 import { useEffect } from "react";
 
 const SITE = "CardStock";
+const DEFAULT_TITLE = `${SITE}: Trading Card Price Predictions`;
 const DEFAULT_DESCRIPTION =
-    "AI price forecasts, graded price history, and portfolio tracking for " +
+    "AI price predictions, graded price history, and portfolio tracking for " +
     "Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";
 
 // Per-page <title> + meta description for an SPA: crawlers that execute JS
@@ -10,11 +11,11 @@ const DEFAULT_DESCRIPTION =
 // falls back to the static tags in index.html.
 export function usePageMeta(title?: string, description?: string) {
     useEffect(() => {
-        document.title = title ? `${title} · ${SITE}` : `${SITE}: The Stock Market for Trading Cards`;
+        document.title = title ? `${title} · ${SITE}` : DEFAULT_TITLE;
         const meta = document.querySelector('meta[name="description"]');
         if (meta) meta.setAttribute('content', description ?? DEFAULT_DESCRIPTION);
         return () => {
-            document.title = `${SITE}: The Stock Market for Trading Cards`;
+            document.title = DEFAULT_TITLE;
             if (meta) meta.setAttribute('content', DEFAULT_DESCRIPTION);
         };
     }, [title, description]);

@@ -238,8 +238,8 @@ export default function CardDetails() {
     const { data: card, isLoading } = useFetchCardDetailsQuery({ game: gameId, id: cardId });
     const { data: forecastData } = useFetchCardForecastQuery({ game: gameId, id: cardId });
 
-    usePageMeta(card ? `${card.name} · ${card.setName ?? card.game}` : undefined,
-        card ? `Price, graded history, and AI forecast for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).` : undefined);
+    usePageMeta(card ? `${card.name} Price Prediction · ${card.setName ?? card.game}` : undefined,
+        card ? `AI price prediction, market price, and graded history for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).` : undefined);
 
     // Stable identity: the chart effect keys off this array, so a fresh copy per
     // render would tear the chart down on unrelated re-renders. (Hooks must run

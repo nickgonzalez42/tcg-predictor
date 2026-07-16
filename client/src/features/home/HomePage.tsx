@@ -292,7 +292,7 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
     usePageMeta(undefined,
-        "The stock market for trading cards: AI price forecasts, market movers, and portfolio tracking across six TCGs.");
+        "Trading card price predictions from a machine-learned model: market movers, graded history, and portfolio tracking across six TCGs.");
     const { data: movers } = useFetchMoversQuery({ count: 12, horizon: '1m' });
     // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) across
     // games; the tiles below stay on the 1-month ranking.
@@ -306,7 +306,7 @@ export default function HomePage() {
                 <div className="hero__copy">
                     <h1 className="hero__title">The stock market for trading cards.</h1>
                     <p className="hero__sub">
-                        Machine-learned price forecasts for cards across seven TCGs, with
+                        Machine-learned price predictions for cards across six TCGs, with
                         graded tiers, price history, and a portfolio that tracks your P/L.
                     </p>
                     <div className="btn-group">

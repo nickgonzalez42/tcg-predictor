@@ -6,8 +6,10 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace API.Controllers;
 
-// "Report a problem" intake. Open to anyone (auth optional); stores the report
-// in store.db and fires a best-effort notification (see NotificationService).
+// "Report a problem" intake. Signed-in users only (the client hides the tab
+// when signed out); stores the report in store.db and fires a best-effort
+// notification (see NotificationService).
+[Authorize]
 public class ReportsController(StoreContext store, NotificationService notifier) : BaseApiController
 {
     public record ReportDto(string Message, string? PageUrl, string? Email);
@@ -18,7 +20,6 @@ public class ReportsController(StoreContext store, NotificationService notifier)
     private const int MaxPerWindow = 5;
     private static readonly TimeSpan Window = TimeSpan.FromMinutes(10);
 
-    [AllowAnonymous]
     [HttpPost]
     public async Task<IActionResult> Submit(ReportDto dto)
     {
@@ -40,7 +41,7 @@ public class ReportsController(StoreContext store, NotificationService notifier)
             Message = message,
             PageUrl = Clip(dto.PageUrl?.Trim(), 500),
             Email = email,
-            UserName = User.Identity?.IsAuthenticated == true ? User.Identity!.Name : null,
+            UserName = User.Identity!.Name,
             UserAgent = Clip(Request.Headers.UserAgent.ToString(), 400),
         };
         store.ProblemReports.Add(report);

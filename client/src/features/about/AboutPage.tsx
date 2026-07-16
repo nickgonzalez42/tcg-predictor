@@ -3,7 +3,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 // means for the collector, with the technical specifics kept alongside as
 // optional depth for anyone who wants to audit the method.
 export default function AboutPage() {
-    usePageMeta("About", "What CardStock is and how the AI price forecasts work.");
+    usePageMeta("About", "What CardStock is and how its trading card price predictions work.");
   return (
     <article className="article full-span">
       <header className="article__head">

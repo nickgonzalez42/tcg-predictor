@@ -1,11 +1,13 @@
 import { useState } from "react";
 import Modal from "../../app/shared/components/Modal";
 import { useSubmitReportMutation } from "./reportApi";
+import { useUserInfoQuery } from "../account/accountApi";
 
 // Small fixed tab (bottom-right) that opens a modal to report an issue. The
-// current page URL is captured automatically; email is optional. Available to
-// everyone, signed in or not.
+// current page URL is captured automatically; email is optional. Signed-in
+// users only (each report notifies the site owner, so it's kept accountable).
 export default function ReportProblem() {
+    const { data: user } = useUserInfoQuery();
     const [open, setOpen] = useState(false);
     const [message, setMessage] = useState('');
     const [email, setEmail] = useState('');
@@ -30,6 +32,8 @@ export default function ReportProblem() {
         // Reset once the modal is gone so a reopened form is fresh.
         setTimeout(() => { setSent(false); setMessage(''); setEmail(''); }, 200);
     };
+
+    if (!user) return null;
 
     return (
         <>
