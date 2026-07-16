@@ -189,6 +189,11 @@ export const watchlistApi = createApi({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
+        // Wipe the whole portfolio (double-confirmed in the UI; no undo).
+        clearOwned: builder.mutation<{ removed: number }, void>({
+            query: () => ({ url: 'watchlist/owned', method: 'DELETE' }),
+            invalidatesTags: ['Owned', 'Summary'],
+        }),
         // All of the user's card alerts, evaluated (current value + hit) server-side.
         fetchAlerts: builder.query<CardAlert[], void>({
             query: () => 'alerts',
@@ -220,6 +225,7 @@ export const {
     useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation,
+    useClearOwnedMutation,
     useFetchAlertsQuery,
     useAddAlertMutation,
     useDeleteAlertMutation,

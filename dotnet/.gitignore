@@ -483,3 +483,5 @@ $RECYCLE.BIN/
 
 # App settings with secrets (e.g. connection strings)
 appsettings.Development.json
+store.db.bak.*
+*.db.bak.*

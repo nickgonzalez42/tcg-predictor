@@ -9,30 +9,80 @@ const isGame = (s: string) =>
 // One unresolved name that matched several cards, awaiting the user's pick.
 type Ambig = { key: number; row: ImportRow; label: string; candidates: ImportCandidate[] };
 
-// Parse a CSV of (game, card, condition, quantity, pricePaid, acquiredDate).
-// `card` is either the numeric product id from a card's URL or the card's name;
-// names are resolved server-side, with a picker for any that match several cards.
+// One CSV line -> fields, honoring double-quoted fields (the exporter quotes
+// card names, which may hold commas).
+function splitCsv(line: string): string[] {
+    const out: string[] = [];
+    let cur = '', quoted = false;
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (quoted) {
+            if (ch === '"') {
+                if (line[i + 1] === '"') { cur += '"'; i++; }
+                else quoted = false;
+            } else cur += ch;
+        }
+        else if (ch === '"') quoted = true;
+        else if (ch === ',') { out.push(cur); cur = ''; }
+        else cur += ch;
+    }
+    out.push(cur);
+    return out;
+}
+
+// Parse the import CSV. Headerless files use the documented column order
+// (game, card, condition, quantity, pricePaid, acquiredDate). A header row
+// switches to name-based mapping — any column order, unknown columns ignored —
+// which is also how the optional tcgplayerId column rides in (product ids ARE
+// TCGplayer product ids, so it's an alternative to `card`). `card` takes a
+// numeric id or a card name; names resolve server-side with a picker when
+// several cards match.
 function parseRows(text: string): ImportRow[] {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    if (lines.length && !isGame(lines[0].split(',')[0])) lines.shift();   // drop a header row
+    if (!lines.length) return [];
+
+    let idx = { game: 0, card: 1, condition: 2, quantity: 3, pricePaid: 4, acquiredDate: 5, tcgplayerId: -1 };
+    const first = splitCsv(lines[0]);
+    if (!isGame(first[0])) {
+        const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
+        const heads = first.map(norm);
+        const find = (...names: string[]) => heads.findIndex(h => names.includes(h));
+        idx = {
+            game: find('game'),
+            card: find('card', 'productid', 'id'),
+            condition: find('condition', 'grade'),
+            quantity: find('quantity', 'qty', 'count'),
+            pricePaid: find('pricepaid', 'price', 'paid'),
+            acquiredDate: find('acquireddate', 'acquired', 'date'),
+            tcgplayerId: find('tcgplayerid', 'tcgplayer'),
+        };
+        lines.shift();
+    }
 
     return lines.map(line => {
-        const [gameRaw = '', cardRaw = '', condRaw = '', qtyRaw = '', priceRaw = '', dateRaw = ''] =
-            line.split(',').map(c => c.trim());
-        const cond = condRaw.toLowerCase();
-        const grade = cond === '' || cond === 'ungraded' ? undefined : cond;   // server validates
-        const qty = Number(qtyRaw);
+        const cells = splitCsv(line);
+        const get = (i: number) => (i >= 0 ? (cells[i] ?? '').trim() : '');
+
+        const cardRaw = get(idx.card);
+        const tcgRaw = get(idx.tcgplayerId);
+        const cond = get(idx.condition).toLowerCase();
+        const qty = Number(get(idx.quantity));
+        const priceRaw = get(idx.pricePaid);
         const priceNum = Number(priceRaw.replace(/[$,]/g, ''));
+
+        // Identify the card: numeric card cell, else the tcgplayerId column
+        // (same id space), else treat the card cell as a name.
         const isId = /^\d+$/.test(cardRaw);
+        const tcgId = /^\d+$/.test(tcgRaw) ? Number(tcgRaw) : undefined;
 
         return {
-            game: gameRaw.toLowerCase(),
-            productId: isId ? Number(cardRaw) : undefined,
-            name: isId ? undefined : (cardRaw || undefined),
-            grade,
+            game: get(idx.game).toLowerCase(),
+            productId: isId ? Number(cardRaw) : tcgId,
+            name: isId || (tcgId != null && !cardRaw) ? undefined : (cardRaw || undefined),
+            grade: cond === '' || cond === 'ungraded' ? undefined : cond,   // server validates
             quantity: Number.isInteger(qty) && qty > 0 ? qty : 1,
             purchasePrice: priceRaw !== '' && isFinite(priceNum) && priceNum >= 0 ? priceNum : undefined,
-            acquiredAt: dateRaw || undefined,
+            acquiredAt: get(idx.acquiredDate) || undefined,
         };
     });
 }
@@ -117,13 +167,22 @@ export default function ImportModal({ onClose }: { onClose: () => void }) {
                             <tr><td>quantity</td><td>how many you own at that condition</td></tr>
                             <tr><td>pricePaid</td><td>optional; what you paid per copy. Blank fills in from the market on the acquired date.</td></tr>
                             <tr><td>acquiredDate</td><td>optional; <span className="mono">YYYY-MM-DD</span>. Blank uses today.</td></tr>
+                            <tr><td>tcgplayerId</td><td>optional; the TCGplayer product id, as an alternative to <span className="mono">card</span> (they share the same ids). Needs a header row.</td></tr>
                         </tbody>
                     </table>
-                    <p style={{ marginTop: "10px" }}>Example (a header row is optional):</p>
-                    <pre className="import-example">{`game,card,condition,quantity,pricePaid,acquiredDate
-pokemon,89163,psa10,1,850,2024-03-15
-onepiece,629181,ungraded,3,,
-yugioh,Dark Magician,grade9,2,120.50,2023-11-02`}</pre>
+                    <p className="est-note">
+                        With a header row the columns can come in any order and extra columns
+                        are ignored, so a file exported from here re-imports as-is.
+                    </p>
+                    <p style={{ marginTop: "10px" }}>
+                        Example. The header row is optional for the first six columns in this
+                        order; include one to reorder columns or to use tcgplayerId:
+                    </p>
+                    <pre className="import-example">{`game,card,condition,quantity,pricePaid,acquiredDate,tcgplayerId
+pokemon,89163,psa10,1,850,2024-03-15,
+onepiece,629181,ungraded,3,,,
+yugioh,Dark Magician,grade9,2,120.50,2023-11-02,
+pokemon,,ungraded,1,,,106999`}</pre>
                     <div className="modal__actions">
                         <label className={`btn${busy ? ' btn--disabled' : ''}`}>
                             {busy ? 'Importing…' : 'Choose CSV file'}

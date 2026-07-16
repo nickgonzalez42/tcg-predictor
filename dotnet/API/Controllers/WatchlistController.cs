@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text;
 using API.Data;
 using API.DTOS;
 using API.Entities;
@@ -213,6 +214,55 @@ public class WatchlistController(
         return Ok(result);
     }
 
+    // Download the owned list as a CSV that round-trips through the importer:
+    // the importer's six columns, plus a trailing card-name column for
+    // spreadsheet readability (the importer parses positionally and ignores
+    // extras). Identical copies collapse into one row with a quantity;
+    // auto-priced copies export a blank pricePaid so a re-import keeps them
+    // market-priced instead of freezing today's computed basis. Notes are the
+    // one per-copy field that doesn't survive the trip (no import column).
+    [HttpGet("owned/export")]
+    public async Task<IActionResult> ExportOwned()
+    {
+        var user = User.Identity!.Name!;
+        var copies = await context.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned)
+            .ToListAsync();
+
+        var groups = copies
+            .GroupBy(c => (c.Game, c.ProductId, c.Grade,
+                           Paid: c.AutoPrice ? (double?)null : c.PurchasePrice ?? 0,
+                           Date: (c.AcquiredAt ?? c.AddedAt).ToString("yyyy-MM-dd")))
+            .OrderBy(g => g.Key.Game).ThenBy(g => g.Key.ProductId).ThenBy(g => g.Key.Grade)
+            .ToList();
+
+        // Card names per game, one query each, for the readability column.
+        var nameByKey = new Dictionary<(string, int), string?>();
+        foreach (var game in groups.Select(g => g.Key.Game).Distinct())
+        {
+            var ids = groups.Where(g => g.Key.Game == game)
+                .Select(g => g.Key.ProductId).Distinct().ToList();
+            foreach (var c in await sources.Cards(game)
+                         .Where(c => ids.Contains(c.Id))
+                         .Select(c => new { c.Id, c.Name }).ToListAsync())
+                nameByKey[(game, c.Id)] = c.Name;
+        }
+
+        var sb = new StringBuilder("game,card,condition,quantity,pricePaid,acquiredDate,name\n");
+        foreach (var g in groups)
+        {
+            var name = nameByKey.GetValueOrDefault((g.Key.Game, g.Key.ProductId)) ?? "";
+            sb.Append(g.Key.Game).Append(',')
+              .Append(g.Key.ProductId).Append(',')
+              .Append(g.Key.Grade ?? "ungraded").Append(',')
+              .Append(g.Count()).Append(',')
+              .Append(g.Key.Paid?.ToString("0.##", CultureInfo.InvariantCulture) ?? "").Append(',')
+              .Append(g.Key.Date).Append(',')
+              .Append('"').Append(name.Replace("\"", "\"\"")).Append('"').Append('\n');
+        }
+        return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "cardstock-portfolio.csv");
+    }
+
     // Update one owned copy's optional detail (grade / purchase info). A null or
     // blank field clears that value.
     [HttpPatch("owned/{id:int}")]
@@ -236,6 +286,18 @@ public class WatchlistController(
         await context.SaveChangesAsync();
 
         return Ok();
+    }
+
+    // Wipe the whole portfolio: every owned copy, details and all. The client
+    // double-confirms before calling this; there is no undo server-side.
+    [HttpDelete("owned")]
+    public async Task<ActionResult> ClearOwned()
+    {
+        var user = User.Identity!.Name!;
+        var removed = await context.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned)
+            .ExecuteDeleteAsync();
+        return Ok(new { removed });
     }
 
     // Delete a single owned copy by id (owned removal is per-copy, not per-card).

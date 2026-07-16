@@ -7,6 +7,7 @@ import {
     useFetchPortfolioSummaryQuery,
     useAddToWatchlistMutation,
     useRemoveOwnedCopyMutation,
+    useClearOwnedMutation,
     type PortfolioSummary,
 } from "./watchlistApi";
 import { ownedParamsSlice } from "./trackedParamsSlice";
@@ -479,10 +480,55 @@ function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
     );
 }
 
+// Clear-portfolio flow: a first modal explains what gets deleted; an explicit
+// "are you sure" stage does the irreversible part.
+function ClearPortfolioModal({ copies, onClose }: { copies: number; onClose: () => void }) {
+    const [clearOwned, { isLoading }] = useClearOwnedMutation();
+    const [confirming, setConfirming] = useState(false);
+    const n = `${copies} cop${copies === 1 ? 'y' : 'ies'}`;
+
+    const wipe = async () => {
+        try {
+            await clearOwned().unwrap();
+            onClose();
+        } catch { /* keep the modal open to retry */ }
+    };
+
+    return confirming ? (
+        <Modal title="Are you sure?" onClose={onClose}>
+            <p>
+                This permanently deletes all <strong>{n}</strong> in your portfolio,
+                including per-copy prices, dates, and notes. There is no undo.
+            </p>
+            <div className="modal__actions">
+                <button className="btn btn--outline btn--danger" disabled={isLoading} onClick={wipe}>
+                    {isLoading ? 'Deleting…' : 'Yes, delete everything'}
+                </button>
+                <button className="btn btn--outline" onClick={onClose}>Cancel</button>
+            </div>
+        </Modal>
+    ) : (
+        <Modal title="Clear portfolio" onClose={onClose}>
+            <p>
+                Remove every position from your portfolio ({n} across all games)?
+                Your watchlist and alerts are not affected.
+            </p>
+            <p className="est-note">Tip: Export a CSV first if you might want this collection back.</p>
+            <div className="modal__actions">
+                <button className="btn btn--outline btn--danger" onClick={() => setConfirming(true)}>
+                    Clear portfolio
+                </button>
+                <button className="btn btn--outline" onClick={onClose}>Cancel</button>
+            </div>
+        </Modal>
+    );
+}
+
 export default function Portfolio() {
     usePageMeta("Portfolio");
     const [showPaidHelp, setShowPaidHelp] = useState(false);
     const [showImport, setShowImport] = useState(false);
+    const [showClear, setShowClear] = useState(false);
     const { setPageNumber, setOrderBy } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
@@ -498,6 +544,20 @@ export default function Portfolio() {
     // furniture — chart hero, allocation rail, filters — and shows just the
     // empty state with the Import onramp.
     const empty = summary != null && summary.copies === 0;
+
+    // Download the positions as a CSV that round-trips through Import (cookie
+    // auth rides the fetch; blob keeps it a same-page download).
+    const exportCsv = async () => {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/watchlist/owned/export`,
+            { credentials: 'include' });
+        if (!res.ok) return;
+        const url = URL.createObjectURL(await res.blob());
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cardstock-portfolio.csv';
+        a.click();
+        URL.revokeObjectURL(url);
+    };
 
     return (
         <>
@@ -537,13 +597,28 @@ export default function Portfolio() {
             <div className="pf-positions full-span">
                 <div className="table-head">
                     <h2 className="table-head__title">Positions</h2>
+                    {!empty && (
+                        <button className="btn btn--outline" onClick={exportCsv}>
+                            Export
+                        </button>
+                    )}
                     <button className="btn btn--outline" onClick={() => setShowImport(true)}>
                         Import
                     </button>
                     <button className="btn btn--outline btn--circle" title="How is Paid set?"
                         onClick={() => setShowPaidHelp(true)}>?</button>
+                    {!empty && (
+                        <button className="btn btn--outline btn--danger" title="Delete every position"
+                            onClick={() => setShowClear(true)}>
+                            Clear
+                        </button>
+                    )}
                 </div>
                 {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+                {showClear && (
+                    <ClearPortfolioModal copies={summary?.copies ?? 0}
+                        onClose={() => setShowClear(false)} />
+                )}
                 {showPaidHelp && (
                     <Modal title="How 'Paid' works" onClose={() => setShowPaidHelp(false)}>
                         <p>
