@@ -108,7 +108,7 @@ export default function Portfolio() {
             )}
 
             {/* ----- Positions table ----- */}
-            <div className="pf-positions full-span">
+            <div className={`pf-positions full-span${empty ? ' pf-positions--empty' : ''}`}>
                 <div className="table-head">
                     <h2 className="table-head__title">Positions</h2>
                     {!empty && (
