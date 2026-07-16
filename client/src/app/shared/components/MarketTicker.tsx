@@ -16,7 +16,7 @@ const SPEED = 60;          // px/sec
 const RESUME_DELAY = 3;    // seconds of stillness before auto-scroll resumes
 
 export default function MarketTicker() {
-    const { data: movers } = useFetchMoversQuery(12);
+    const { data: movers } = useFetchMoversQuery({ count: 12 });
     const trackRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {

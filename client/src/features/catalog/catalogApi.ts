@@ -52,9 +52,16 @@ export const catalogApi = createApi({
         >({
             query: ({ game, id }) => `cards/${game}/${id}/reasoning`
         }),
-        // Top movers by 12m forecast change, across both games (ticker + home tiles).
-        fetchMovers: builder.query<Card[], number | void>({
-            query: (count) => `cards/movers${count ? `?count=${count}` : ''}`
+        // Top movers by forecast change across all games (ticker + home tiles).
+        // horizon: 1m | 6m | 12m (default 12m, with the young-game 6m fallback).
+        fetchMovers: builder.query<Card[], { count?: number; horizon?: string } | void>({
+            query: (args) => {
+                const p = new URLSearchParams();
+                if (args?.count) p.set('count', String(args.count));
+                if (args?.horizon) p.set('horizon', args.horizon);
+                const qs = p.toString();
+                return `cards/movers${qs ? `?${qs}` : ''}`;
+            }
         })
     })
 });

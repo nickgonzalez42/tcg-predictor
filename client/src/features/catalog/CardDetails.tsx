@@ -20,13 +20,13 @@ import CardLoader from "../../app/shared/components/CardLoader";
 import Modal from "../../app/shared/components/Modal";
 
 const TARGETS = ['ungraded', 'grade7', 'grade8', 'grade9', 'grade95', 'psa10', 'bgs10', 'cgc10', 'sgc10'];
-const HORIZONS = ['1w', '1m', '6m', '12m'];
+const HORIZONS = ['1m', '6m', '12m'];
 const TARGET_LABEL: Record<string, string> = {
     ungraded: 'Ungraded', grade7: 'Grade 7', grade8: 'Grade 8', grade9: 'Grade 9',
     grade95: 'Grade 9.5', psa10: 'PSA 10', bgs10: 'BGS 10', cgc10: 'CGC 10', sgc10: 'SGC 10',
 };
 const HORIZON_LABEL: Record<string, string> = {
-    '1w': '1 week', '1m': '1 month', '6m': '6 months', '12m': '1 year',
+    '1m': '1 month', '6m': '6 months', '12m': '1 year',
 };
 import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
@@ -175,7 +175,7 @@ function ForecastSection({ forecasts, game, id }: {
                                         <td key={h}>
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             <div className="forecast-chg">
-                                                <ChangePill value={chg} digits={h === '1w' || h === '1m' ? 1 : 0} />
+                                                <ChangePill value={chg} digits={h === '1m' ? 1 : 0} />
                                             </div>
                                         </td>
                                     );
@@ -288,7 +288,8 @@ export default function CardDetails() {
     return (
         <>
             <nav className="breadcrumb mono full-span">
-                <Link to="/catalog">Catalog</Link> / <Link to="/catalog">{GAME_LABEL[gameId] ?? card.game}</Link> / <span>{card.name}</span>
+                {/* Bare /catalog re-picks the user's default game; ?game= pins it. */}
+                <Link to="/catalog">Catalog</Link> / <Link to={`/catalog?game=${gameId}`}>{GAME_LABEL[gameId] ?? card.game}</Link> / <span>{card.name}</span>
             </nav>
 
             {/* Left: card art + order ticket + prices + details */}

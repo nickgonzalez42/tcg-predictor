@@ -24,6 +24,12 @@
   color: var(--text);
   border-radius: var(--radius);
   cursor: pointer;
+  /* Flex-center the ‹ › and page numbers (buttons otherwise sit glyphs on the
+     default line box, which reads slightly high). */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 .page-btn.active {

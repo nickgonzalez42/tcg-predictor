@@ -13,6 +13,7 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     public DbSet<Comment> Comments => Set<Comment>();
     public DbSet<CommentVote> CommentVotes => Set<CommentVote>();
     public DbSet<ProblemReport> ProblemReports => Set<ProblemReport>();
+    public DbSet<CardAlert> CardAlerts => Set<CardAlert>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -42,6 +43,10 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
         // Non-unique index covering the owned list/lookup queries.
         builder.Entity<TrackedCard>()
             .HasIndex(x => new { x.UserName, x.Game, x.Kind, x.ProductId });
+
+        // Alert lookups are per user (list page) and per user+card (modal).
+        builder.Entity<CardAlert>()
+            .HasIndex(x => new { x.UserName, x.Game, x.ProductId });
 
         builder.Entity<IdentityRole>()
             .HasData(

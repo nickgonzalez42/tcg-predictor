@@ -15,10 +15,6 @@ export const forecastSortOptions = [
     { value: 'chgPct1m', label: '1M % growth: asc' },
     { value: 'chgUsd1mDesc', label: '1M $ growth: desc' },
     { value: 'chgUsd1m', label: '1M $ growth: asc' },
-    { value: 'chgPct1wDesc', label: '1W % growth: desc' },
-    { value: 'chgPct1w', label: '1W % growth: asc' },
-    { value: 'chgUsd1wDesc', label: '1W $ growth: desc' },
-    { value: 'chgUsd1w', label: '1W $ growth: asc' },
 ];
 
 // PAST price growth over a trend window, matching the tiles' PAST pill.
@@ -36,10 +32,6 @@ export const historySortOptions = [
     { value: 'histPct1m', label: '1M % growth: asc' },
     { value: 'histUsd1mDesc', label: '1M $ growth: desc' },
     { value: 'histUsd1m', label: '1M $ growth: asc' },
-    { value: 'histPct1wDesc', label: '1W % growth: desc' },
-    { value: 'histPct1w', label: '1W % growth: asc' },
-    { value: 'histUsd1wDesc', label: '1W $ growth: desc' },
-    { value: 'histUsd1w', label: '1W $ growth: asc' },
 ];
 
 // Trend window the chips should snap to when a forecast or history sort is

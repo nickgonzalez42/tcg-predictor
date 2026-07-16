@@ -64,6 +64,12 @@
      corner): the closed logo's left (content-left/2 − logo-w/2) + logo-w.
      Drawer links align to this. */
   --tipped-logo-left: calc(var(--content-left) / 2 + var(--logo-w) / 2);
+  /* Drawer width: the links' left inset (--tipped-logo-left) grows with the
+     viewport, so the drawer must grow with it — a fixed width both cuts the
+     links off on the right AND lets them peek out on the left while closed
+     (translateX(-100%) only moves the panel by its own width). 226px keeps
+     the same link room the 300px drawer has at ~1440px wide. */
+  --nav-w: max(var(--sidebar-w), calc(var(--tipped-logo-left) + 226px));
   --ticker-h: 40px;    /* approx height of the fixed bottom market crawl */
   /* Glass nav: dark neutral tint (not blue) so white nav text stays legible in
      both themes, over a heavy backdrop blur. */

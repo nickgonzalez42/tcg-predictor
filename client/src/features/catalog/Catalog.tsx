@@ -55,8 +55,13 @@ export default function Catalog() {
     if (get('pageSize')) p.pageSize = +get('pageSize')!;
     if (get('trend')) p.trend = get('trend')!;
     if (get('view')) p.view = get('view') === 'rows' ? 'rows' : 'cards';
+    // The URL is the single source of truth on mount: start from defaults,
+    // then overlay whatever it carries. A bare /catalog is a plain reset (the
+    // per-user default game gets re-picked); a partial URL (e.g. the card
+    // page's game crumb, ?game= only) can't inherit stale filters left in
+    // Redux by an earlier visit.
+    dispatch(resetToDefaults());
     if (Object.keys(p).length) dispatch(setParams(p));
-    else dispatch(resetToDefaults());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -113,7 +118,7 @@ export default function Catalog() {
           </span>
           <div className="range-tabs" role="group" aria-label="Trend period"
             title="Window for the trend line and price movement (price data updates monthly)">
-            {(['1w', '1m', '6m', '1y'] as const).map(t => (
+            {(['1m', '6m', '1y'] as const).map(t => (
               <button key={t}
                 className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}
                 onClick={() => dispatch(setTrend(t))}

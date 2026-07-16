@@ -17,13 +17,14 @@ type Props = {
     params: CardParams
     actions: Actions            // the owning tracked slice's action creators
     sortGroups: { label: string; options: { value: string; label: string }[] }[]
+    showGrade?: boolean         // "Price shown" tier picker (portfolio hides it)
 }
 
 // The catalog filter dropdown, ported for the tracked lists (watchlist /
 // portfolio): same toggle + full-screen overlay, wired to a tracked params
 // slice instead of the catalog's. Always in dropdown mode — these pages are
 // full-width tables with no room for a rail.
-export default function TrackedFilters({ params, actions, sortGroups }: Props) {
+export default function TrackedFilters({ params, actions, sortGroups, showGrade = true }: Props) {
     const dispatch = useAppDispatch();
     // Set/rarity vocabularies are game-level metadata, shared with the catalog.
     const { data: filtersData } = useFetchFiltersQuery(params.game);
@@ -68,17 +69,19 @@ export default function TrackedFilters({ params, actions, sortGroups }: Props) {
                                     />
                                 </div>
                             </div>
-                            <div className="panel">
-                                <label htmlFor="tracked-grade" className="field-label">Price shown</label>
-                                <select
-                                    id="tracked-grade"
-                                    className="input"
-                                    value={params.grade ?? ''}
-                                    onChange={e => dispatch(actions.setGrade(e.target.value))}
-                                >
-                                    {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
-                            </div>
+                            {showGrade && (
+                                <div className="panel">
+                                    <label htmlFor="tracked-grade" className="field-label">Price shown</label>
+                                    <select
+                                        id="tracked-grade"
+                                        className="input"
+                                        value={params.grade ?? ''}
+                                        onChange={e => dispatch(actions.setGrade(e.target.value))}
+                                    >
+                                        {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                    </select>
+                                </div>
+                            )}
                             <div className="panel">
                                 <RadioButtonGroup
                                     selectedValue={params.game}

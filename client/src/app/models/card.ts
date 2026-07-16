@@ -16,7 +16,7 @@ export type Card = {
     ownedQuantity?: number      // Owned list: number of copies at that condition
     expectedChange?: number     // set only when sorting by forecast: the sorted metric's value
     expectedUnit?: 'percent' | 'usd'
-    expectedHorizon?: string    // '6m' | '12m'
+    expectedHorizon?: string    //// '1m' | '6m' | '12m' ('1w' legacy)| '12m'
     expectedFrom?: number       // current (forecast base) price
     expectedTo?: number         // forecast price
     // Market context for tiles / screener rows, computed for the shown condition
@@ -30,7 +30,7 @@ export type Card = {
     fcst12Pct?: number          // 12m forecast % change
     fcst12To?: number           // 12m forecast price
     fcstTo?: number             // forecast price matched to the trend window
-    fcstHorizon?: string        // '1w' | '1m' | '6m' | '12m'
+    fcstHorizon?: string        // '1m' | '6m' | '12m' ('1w' legacy)| '1m' | '6m' | '12m'
     fcstConfidence?: string     // model-reported: high | med | low
     // Wishlist rows only.
     watchedAtPrice?: number     // price when the card was wishlisted

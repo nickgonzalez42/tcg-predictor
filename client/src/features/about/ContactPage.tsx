@@ -5,7 +5,7 @@ import { useSubmitReportMutation } from "../report/reportApi";
 // Contact form — posts to the same /api/reports endpoint the "report a problem"
 // tab uses, so messages land in one place (and notify once SNS is configured).
 export default function ContactPage() {
-    usePageMeta("Contact", "Get in touch with cardstock: questions, feedback, corrections, or bugs.");
+    usePageMeta("Contact", "Get in touch with CardStock: questions, feedback, corrections, or bugs.");
     const [message, setMessage] = useState('');
     const [email, setEmail] = useState('');
     const [sent, setSent] = useState(false);

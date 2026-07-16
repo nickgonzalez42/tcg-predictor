@@ -75,6 +75,9 @@
 .screener__actions .btn {
   padding: var(--space-5) var(--space-10);
   font-size: 12.8px;
+  height: 28px;   /* one height for row actions — matches .alert-chip (the
+                     ＋/− circles keep their own 32px via .btn--circle) */
+  vertical-align: middle;   /* center on the cell's line box, not the baseline */
 }
 
 /* Thumb hover "peek": enlarged card image popover. */
@@ -107,6 +110,14 @@
 .table-head__title {
   margin: 0;
   margin-right: auto;
+}
+
+/* Buttons sitting directly in the header row (e.g. Import + the "?" circle)
+   share one height — the circle's fixed 32px. */
+.table-head > .btn {
+  height: 32px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .table-head__search {

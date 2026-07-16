@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-const SITE = "cardstock";
+const SITE = "CardStock";
 const DEFAULT_DESCRIPTION =
     "AI price forecasts, graded price history, and portfolio tracking for " +
     "Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";

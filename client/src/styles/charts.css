@@ -29,12 +29,14 @@
 }
 
 /* Chart header right column: game chips row above the time-range row. */
-.chart-tabs__right {
-  display: flex;
-  width: 100%;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-5);
+/* Game picker on the portfolio value chart: compact select, sized to sit on
+   the same row as (and match the scale of) the timeframe chips. */
+.chart-game {
+  width: auto;
+  padding: var(--space-5) var(--space-10);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
 }
 
 /* Legend under the chart header: collection line vs the S&P 500 benchmark.
@@ -156,4 +158,52 @@
   width: 14px;
   height: 3px;
   border-radius: 2px;
+}
+
+/* Hover / tap tooltip for the past-forecast dots on the price chart. */
+.chart-tip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--space-5) var(--space-10);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.chart-tip strong {
+  font-size: 12.5px;
+}
+
+.chart-tip span {
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+/* Muted row label in the legend ("Past forecasts:"). */
+.chart-legend__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  align-self: center;
+}
+
+/* Past-forecast view picker on its own legend row: latest per timeframe
+   (default) or every matured forecast of one category. */
+.chart-pastview {
+  padding: 2px var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
 }

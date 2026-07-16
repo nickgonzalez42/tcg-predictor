@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { Card } from "../../models/card";
 import { fallbackToCardBack } from "../../../lib/cardImages";
 
@@ -6,9 +7,10 @@ const POP_W = 180;   // keep in sync with .peek__pop width in tables.css
 const GAP = 8;
 
 // Table cell with a card thumbnail that pops a larger "peek" image on hover.
-// The popup is position:fixed and JS-placed (relative to the viewport) so it
-// escapes the table's overflow-x scroll wrapper, which would otherwise clip it
-// (overflow-x:auto forces overflow-y to auto, so an absolute popup gets cut off).
+// The popup is position:fixed, JS-placed from the thumb's viewport rect, and
+// PORTALED to <body>: in-flow it would sit inside the ScrollSmoother transform
+// (which re-anchors fixed positioning, drifting it by the scroll offset) and
+// inside the table's overflow-x wrapper (which would clip it).
 export default function CardThumbCell({ card }: { card: Card }) {
     const thumbRef = useRef<HTMLImageElement>(null);
     const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
@@ -36,10 +38,11 @@ export default function CardThumbCell({ card }: { card: Card }) {
                     onMouseEnter={show}
                     onMouseLeave={() => setPos(null)}
                 />
-                {pos && (
+                {pos && createPortal(
                     <img className="peek__pop" src={card.pictureUrl} alt="" loading="lazy"
                         style={{ top: pos.top, left: pos.left }}
-                        onError={e => fallbackToCardBack(e, card.game, card.cardType)} />
+                        onError={e => fallbackToCardBack(e, card.game, card.cardType)} />,
+                    document.body
                 )}
             </span>
         </td>

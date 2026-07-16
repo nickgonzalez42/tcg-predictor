@@ -30,10 +30,10 @@ function preloadArt(card: Card) {
     });
 }
 
-// '12m' -> '1Y', '6m' -> '6M': the label shown next to a mover's forecast.
-const hzLabel = (h?: string) => (h === '6m' ? '6M' : '1Y');
-// A mover's headline forecast price: the window-mapped fcstTo (12m for mature
-// games, 6m for young ones), with the legacy 12m field as fallback.
+// '1m' -> '1M', '6m' -> '6M', '12m' -> '1Y': label next to a mover's forecast.
+const hzLabel = (h?: string) => (h === '1m' ? '1M' : h === '6m' ? '6M' : '1Y');
+// A mover's headline forecast price: fcstTo at the card's own ranking horizon
+// (the hero mixes categories; tiles rank on 1m), legacy 12m field as fallback.
 const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;
 
 function HeroChart({ movers }: { movers?: Card[] }) {
@@ -293,7 +293,10 @@ const HOW_IT_WORKS = [
 export default function HomePage() {
     usePageMeta(undefined,
         "The stock market for trading cards: AI price forecasts, market movers, and portfolio tracking across six TCGs.");
-    const { data: movers } = useFetchMoversQuery(12);
+    const { data: movers } = useFetchMoversQuery({ count: 12, horizon: '1m' });
+    // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) across
+    // games; the tiles below stay on the 1-month ranking.
+    const { data: heroMovers } = useFetchMoversQuery({ count: 12, horizon: 'mix' });
     const { data: user } = useUserInfoQuery();
     const tiles = movers?.slice(0, 4) ?? [];
 
@@ -314,14 +317,14 @@ export default function HomePage() {
                     </div>
                 </div>
                 <div className="hero__panel">
-                    <HeroChart movers={movers} />
+                    <HeroChart movers={heroMovers} />
                 </div>
             </section>
 
             {tiles.length > 0 && (
                 <section className="full-span subgrid">
                     <h2 className="home__heading full-span">
-                        Top movers <span className="est-note">· 1 year model forecast</span>
+                        Top movers <span className="est-note">· 1 month model forecast</span>
                     </h2>
                     <div className="movers subgrid">
                         {tiles.map(m => <MoverTile mover={m} key={`${m.game}-${m.id}`} />)}

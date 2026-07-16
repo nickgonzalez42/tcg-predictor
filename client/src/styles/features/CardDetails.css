@@ -169,6 +169,12 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Last field closes the list flush: no trailing rule or padding. */
+.detail-table tr:last-child td {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
 .detail-table td:first-child {
   font-weight: 700;
   width: 1%;            /* shrink to content: values sit right beside labels */

@@ -55,12 +55,42 @@ public class CardsController(
 
         var cards = await PageScoped(sources.Cards(game), cardParams, game, trackedIds);
 
-        // Wishlist rows carry their watch-time price and alert target.
+        // Wishlist rows carry their watch-time price and alert target. The
+        // stored snapshot is the NM price at watch time; when a graded tier is
+        // shown, "watched at" instead reads that tier's history at-or-before
+        // the watch date, so the column (and its "since added" %) compares
+        // like with like rather than a graded price against a raw snapshot.
         var byId = tracked.ToDictionary(x => x.ProductId);
+        var tier = GradeTiers.PriceTier(cardParams.Grade);
+        Dictionary<int, List<(string Date, double Price)>>? tierHist = null;
+        if (tier != "ungraded" && cards.Count > 0)
+        {
+            var ids = cards.Select(c => c.Id).ToList();
+            tierHist = (await priceCharting.History
+                .Where(h => h.Game == game && h.Grade == tier && ids.Contains(h.ProductId))
+                .Select(h => new { h.ProductId, h.Date, h.Price })
+                .ToListAsync())
+                .GroupBy(h => h.ProductId)
+                .ToDictionary(g => g.Key,
+                    g => g.OrderBy(r => r.Date).Select(r => (r.Date, r.Price)).ToList());
+        }
         foreach (var card in cards)
             if (byId.TryGetValue(card.Id, out var t))
             {
                 card.WatchedAtPrice = t.WatchedAtPrice;
+                if (tierHist != null)
+                {
+                    // Last tier price at-or-before the watch date; none = no value.
+                    var cutoff = t.AddedAt.ToString("yyyy-MM-dd");
+                    double? at = null;
+                    if (tierHist.TryGetValue(card.Id, out var series))
+                        foreach (var p in series)
+                        {
+                            if (string.CompareOrdinal(p.Date, cutoff) > 0) break;
+                            at = p.Price;
+                        }
+                    card.WatchedAtPrice = at;
+                }
                 card.WatchedSince = t.AddedAt;
                 card.AlertTargetPrice = t.AlertTargetPrice;
             }
@@ -164,8 +194,11 @@ public class CardsController(
     public async Task<IActionResult> GetForecast(string game, int id)
     {
         var key = GameRegistry.KeyOrDefault(game);
+        // The site serves 1m/6m/12m only. 1w rows are still generated and
+        // archived by the pipeline (baseline for the future weekly model) but
+        // never leave the API.
         var rows = await predictions.Forecasts
-            .Where(f => f.Game == key && f.ProductId == id)
+            .Where(f => f.Game == key && f.ProductId == id && f.Horizon != "1w")
             .ToListAsync();
 
         // Months of history per tier — a proxy for how trustworthy the forecast is.
@@ -199,7 +232,8 @@ public class CardsController(
     {
         var key = GameRegistry.KeyOrDefault(game);
         var rows = await predictions.ForecastArchive
-            .Where(f => f.Game == key && f.ProductId == id && f.ForecastPrice != null)
+            .Where(f => f.Game == key && f.ProductId == id && f.ForecastPrice != null
+                        && f.Horizon != "1w")   // site serves 1m/6m/12m only
             .ToListAsync();
 
         var today = DateTime.UtcNow.Date;
@@ -263,18 +297,42 @@ public class CardsController(
     // gundam have <14 months of history). Small floor price so penny cards'
     // huge percentages don't drown out everything.
     [HttpGet("movers")]
-    public async Task<IActionResult> GetMovers([FromQuery] int count = 12)
+    public async Task<IActionResult> GetMovers([FromQuery] int count = 12, [FromQuery] string? horizon = null)
     {
         count = Math.Clamp(count, 1, 24);
 
+        // horizon=mix (the homepage hero): one small slice per forecast
+        // category, deduped — each card carries its own horizon's forecast
+        // fields. The per-game guarantee is skipped; the client round-robins
+        // games and the cross-category spread supplies the variety.
+        if (horizon == "mix")
+        {
+            var mixed = new List<CardDto>();
+            foreach (var h in new[] { "1m", "6m", "12m" })
+                mixed.AddRange(await PickMovers(h, Math.Max(2, count / 3), guaranteeGames: false));
+            return Ok(mixed.DistinctBy(m => (m.Game, m.Id)).ToList());
+        }
+
+        // Single ranking horizon (1m | 6m | 12m). The default 12m keeps the
+        // legacy behavior where games without year-deep data fall back to 6m;
+        // an explicit horizon applies to every game (all games train them).
+        var hz = horizon is "1m" or "6m" ? horizon : "12m";
+        return Ok(await PickMovers(hz, count, guaranteeGames: true));
+    }
+
+    private async Task<List<CardDto>> PickMovers(string hz, int count, bool guaranteeGames)
+    {
         var gamesWith12m = (await predictions.Forecasts
             .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
             .Select(f => f.Game).Distinct().ToListAsync()).ToHashSet();
 
-        var baseQuery = predictions.Forecasts
-            .Where(f => f.Target == "ungraded" && f.BasePrice >= 10
-                        && (f.Horizon == "12m"
-                            || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game))))
+        var moverPool = predictions.Forecasts
+            .Where(f => f.Target == "ungraded" && f.BasePrice >= 10);
+        moverPool = hz == "12m"
+            ? moverPool.Where(f => f.Horizon == "12m"
+                                   || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game)))
+            : moverPool.Where(f => f.Horizon == hz);
+        var baseQuery = moverPool
             .Select(f => new { f.Game, f.ProductId, f.BasePrice, f.ForecastPrice });
         // 2x buffer per side: candidates without local art are filtered below.
         var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
@@ -298,18 +356,18 @@ public class CardsController(
         // remaining slots come from the global ranking. Small buffers per side
         // because art-less candidates are skipped.
         var guaranteed = new List<MoverPick>();
-        foreach (var game in GameRegistry.Keys)
+        foreach (var game in guaranteeGames ? GameRegistry.Keys : Array.Empty<string>())
         {
             // Progressive price floor: prefer $10+ movers, but a game whose whole
             // ungraded market sits below that (e.g. Digimon) still gets its two.
-            var horizon = gamesWith12m.Contains(game) ? "12m" : "6m";
+            var gameHorizon = hz != "12m" ? hz : (gamesWith12m.Contains(game) ? "12m" : "6m");
             foreach (var gainerSide in new[] { true, false })
             {
                 MoverPick? pick = null;
                 foreach (var floor in new[] { 10.0, 1.0 })
                 {
                     var q = predictions.Forecasts
-                        .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == horizon
+                        .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == gameHorizon
                                     && f.BasePrice >= floor)
                         .Where(f => gainerSide ? f.ForecastPrice > f.BasePrice : f.ForecastPrice < f.BasePrice);
                     q = gainerSide
@@ -359,14 +417,15 @@ public class CardsController(
             .OfType<CardDto>()
             .ToList();
 
-        // Fill market/forecast fields at each game's own horizon: the 1y trend
-        // window maps to the 12m forecast; young games use the 6m window so
-        // FcstTo/FcstHorizon carry their real (6m) numbers.
+        // Sparkline/trend always use the year window (6m for young games) so the
+        // tiles have enough monthly points to draw; the headline forecast fields
+        // (FcstTo/FcstHorizon) follow the requested ranking horizon.
         foreach (var game in GameRegistry.Keys)
             await ApplyMarket(movers.Where(m => m.Game == game).ToList(), game,
-                trend: gamesWith12m.Contains(game) ? "1y" : "6m");
+                trend: gamesWith12m.Contains(game) ? "1y" : "6m",
+                fcstOverride: hz == "12m" ? null : hz);
 
-        return Ok(movers);
+        return movers;
     }
 
     private sealed record MoverPick(string Game, int ProductId, double BasePrice, double ForecastPrice);
@@ -999,7 +1058,7 @@ public class CardsController(
     // Everything is computed for the SHOWN condition tier (Near Mint when none is
     // selected; conditions without their own forecast, like LP/MP, fall back to
     // the ungraded forecast). One history + one forecast query per page.
-    private async Task ApplyMarket(List<CardDto> cards, string game, string? grade = null, string? trend = null)
+    private async Task ApplyMarket(List<CardDto> cards, string game, string? grade = null, string? trend = null, string? fcstOverride = null)
     {
         if (cards.Count == 0) return;
         var ids = cards.Select(c => c.Id).Distinct().ToList();
@@ -1022,8 +1081,10 @@ public class CardsController(
             .ToDictionary(g => g.Key, g => g.OrderBy(r => r.Date).Select(r => (r.Date, r.Price)).ToList());
 
         // 6m/12m always load for the screener columns; the tile's headline
-        // forecast follows the window's mapped horizon.
-        var fcstHorizon = window.FcstHorizon;
+        // forecast follows the window's mapped horizon unless overridden
+        // (movers rank on 1m but keep the year-long sparkline window — a 1m
+        // window would leave monthly history with too few points to draw).
+        var fcstHorizon = fcstOverride ?? window.FcstHorizon;
         var horizons = new[] { "6m", "12m", fcstHorizon }.Distinct().ToArray();
         var fc = tierHasForecast
             ? await predictions.Forecasts

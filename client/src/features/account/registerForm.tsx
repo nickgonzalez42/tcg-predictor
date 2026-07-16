@@ -35,7 +35,7 @@ export default function registerForm() {
 
     return (
         <div className="panel auth-card">
-            <h3>🔒 Register</h3>
+            <h3>Register</h3>
             <form onSubmit={handleSubmit(onSubmit)}>
                 <div className="field">
                     <label htmlFor="email">Email</label>

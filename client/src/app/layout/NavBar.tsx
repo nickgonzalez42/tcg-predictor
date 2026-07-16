@@ -68,7 +68,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                 logo lives OUTSIDE the sliding panel so the panel's transform
                 doesn't drag it off-screen — and hovering it reveals the panel. */}
             <div className="navbar__bar">
-                <NavLink to='/' className="navbar__brand" aria-label="cardstock home"
+                <NavLink to='/' className="navbar__brand" aria-label="CardStock home"
                     aria-expanded={navOpen}
                     onClick={(e) => {
                         // Touch: tap toggles the drawer instead of navigating

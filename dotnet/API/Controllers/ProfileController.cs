@@ -62,6 +62,12 @@ public class ProfileController(
             if (!Uri.TryCreate(storefront, UriKind.Absolute, out var uri)
                 || (uri.Scheme != "https" && uri.Scheme != "http"))
                 return BadRequest("Storefront must be a full http(s) link.");
+            // Only the two marketplaces the hobby actually sells on — public
+            // profile links shouldn't be able to point anywhere unvetted.
+            var host = uri.Host.ToLowerInvariant();
+            string[] allowed = ["ebay.com", "tcgplayer.com"];
+            if (!allowed.Any(d => host == d || host.EndsWith("." + d)))
+                return BadRequest("Storefront must be an eBay or TCGplayer link.");
             user.StorefrontUrl = storefront;
         }
         else

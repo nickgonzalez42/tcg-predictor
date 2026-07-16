@@ -4,7 +4,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 // Privacy policy — required for AdSense approval (ads/cookies disclosure)
 // and good practice regardless. Plain content page on the standard grid.
 export default function PrivacyPage() {
-    usePageMeta("Privacy Policy", "How cardstock handles your data, cookies, and advertising.");
+    usePageMeta("Privacy Policy", "How CardStock handles your data, cookies, and advertising.");
 
     return (
         <div className="full-span legal">

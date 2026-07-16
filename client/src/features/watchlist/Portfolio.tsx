@@ -195,25 +195,22 @@ function ValueChart({ summary }: { summary: PortfolioSummary }) {
     return (
         <div className="panel detail-panel">
             <div className="chart-tabs">
-                <div className="chart-tabs__right">
-                    <div className="range-tabs" role="group" aria-label="Game">
-                        {[{ value: 'all', label: 'ALL' }, ...GAMES].map(g => (
-                            <button key={g.value}
-                                className={`btn btn--outline range-tab${g.value === game ? ' btn--active' : ''}`}
-                                onClick={() => setGame(g.value)}>
-                                {g.label.toUpperCase()}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="range-tabs" role="group" aria-label="Time range">
-                        {RANGES.map(r => (
-                            <button key={r.key}
-                                className={`btn btn--outline range-tab${r.key === range ? ' btn--active' : ''}`}
-                                onClick={() => setRange(r.key)}>
-                                {r.label}
-                            </button>
-                        ))}
-                    </div>
+                {/* Game picker (left) and timeframe chips (right) share one row;
+                    .chart-tabs space-between splits them. */}
+                <select className="input chart-game" aria-label="Game" value={game}
+                    onChange={e => setGame(e.target.value)}>
+                    {[{ value: 'all', label: 'All games' }, ...GAMES].map(g => (
+                        <option key={g.value} value={g.value}>{g.label}</option>
+                    ))}
+                </select>
+                <div className="range-tabs" role="group" aria-label="Time range">
+                    {RANGES.map(r => (
+                        <button key={r.key}
+                            className={`btn btn--outline range-tab${r.key === range ? ' btn--active' : ''}`}
+                            onClick={() => setRange(r.key)}>
+                            {r.label}
+                        </button>
+                    ))}
                 </div>
             </div>
             {hasBench && (
@@ -497,9 +494,15 @@ export default function Portfolio() {
     const { data: filtersData } = useFetchFiltersQuery(params.game);
     const hasYear = filtersData?.hasYear ?? true;
 
+    // A truly empty portfolio (no copies at all, filters aside) skips the page
+    // furniture — chart hero, allocation rail, filters — and shows just the
+    // empty state with the Import onramp.
+    const empty = summary != null && summary.copies === 0;
+
     return (
         <>
             {/* ----- Header: total value + change pills + value chart ----- */}
+            {!empty && (
             <div className="pf-hero">
                 <span className="mono">Portfolio value</span>
                 <div className="pf-hero__value">
@@ -519,13 +522,16 @@ export default function Portfolio() {
                 </div>
                 {summary && <ValueChart summary={summary} />}
             </div>
+            )}
 
             {/* ----- Right rail: allocation + best/worst ----- */}
+            {!empty && (
             <div className="pf-side">
                 {summary && <AllocationDonut title="Allocation · games" slices={summary.allocation ?? []} />}
                 {summary && <AllocationDonut title="Allocation · grades" slices={summary.gradeAllocation ?? []} />}
                 {summary && <BestWorst summary={summary} />}
             </div>
+            )}
 
             {/* ----- Positions table ----- */}
             <div className="pf-positions full-span">
@@ -570,8 +576,13 @@ export default function Portfolio() {
                     </Modal>
                 )}
 
-                <TrackedFilters params={params} actions={ownedParamsSlice.actions}
-                    sortGroups={trackedSortGroups} />
+                {/* No "Price shown" tier picker here: positions already price at
+                    each copy's own condition. Hidden entirely while the
+                    portfolio has nothing to filter. */}
+                {!empty && (
+                    <TrackedFilters params={params} actions={ownedParamsSlice.actions}
+                        sortGroups={trackedSortGroups} showGrade={false} />
+                )}
 
                 {isLoading ? (
                     <CardLoader />

@@ -3,10 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import {
     useFetchTrackedCardsQuery,
-    useAddToWatchlistMutation,
     useRemoveFromWatchlistMutation,
-    useSetWishlistAlertMutation,
+    useFetchAlertsQuery,
 } from "./watchlistApi";
+import OwnItModal from "./OwnItModal";
+import AlertModal from "./AlertModal";
 import { wishlistParamsSlice } from "./trackedParamsSlice";
 import { tierLabel } from "./grades";
 import { trackedSortGroups } from "../catalog/sortOptions";
@@ -22,67 +23,35 @@ import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 
 
-// Alert chip: "🔔 ≤ $280" (highlighted when the price is at/near the target),
-// "+ set alert" when unset. Click to edit; Clear removes it.
-function AlertChip({ card }: { card: Card }) {
-    const [setAlert, { isLoading }] = useSetWishlistAlertMutation();
-    const [editing, setEditing] = useState(false);
-    const [value, setValue] = useState('');
+// Alert chip: "🔔 2" (highlighted when any alert has hit) or "+ set alert".
+// Opens the alert manager modal — several alerts per card, on the actual
+// price, forecast prices, or forecast % growth, per condition and timeframe.
+function AlertChip({ card, ownGrade }: { card: Card; ownGrade: string }) {
+    const { data: alerts } = useFetchAlertsQuery();   // one fetch, shared by every row
+    const [open, setOpen] = useState(false);
 
     const game = gameKey(card.game);
-    const target = card.alertTargetPrice;
-    const near = target != null && card.price != null && card.price <= target * 1.05;
-    const hit = target != null && card.price != null && card.price <= target;
+    const mine = (alerts ?? []).filter(a => a.game === game && a.productId === card.id);
+    const anyHit = mine.some(a => a.hit);
 
-    const submit = async () => {
-        const parsed = Number(value);
-        if (!value.trim() || !isFinite(parsed) || parsed <= 0) return;
-        try {
-            await setAlert({ game, productId: card.id, target: parsed }).unwrap();
-            setEditing(false);
-            setValue('');
-        } catch { /* keep the editor open on failure */ }
-    };
-
-    if (editing) {
-        return (
-            <span className="own-qty">
-                <input className="input own-qty__input" type="number" min="0" step="0.01" inputMode="decimal"
-                    placeholder="$" value={value} autoFocus
-                    onChange={e => setValue(e.target.value)}
-                    onKeyDown={e => {
-                        if (e.key === 'Enter') submit();
-                        if (e.key === 'Escape') setEditing(false);
-                    }} />
-                <button className="btn btn--outline" disabled={isLoading} onClick={submit}>Set</button>
-                {target != null && (
-                    <button className="btn btn--outline" disabled={isLoading}
-                        onClick={async () => {
-                            try {
-                                await setAlert({ game, productId: card.id, target: null }).unwrap();
-                                setEditing(false);
-                            } catch { /* leave editor open */ }
-                        }}>
-                        Clear
-                    </button>
-                )}
-                <button className="btn btn--outline" onClick={() => setEditing(false)}>✕</button>
-            </span>
-        );
-    }
-
-    return target != null ? (
-        <button
-            className={`alert-chip${hit ? ' alert-chip--hit' : near ? ' alert-chip--near' : ''}`}
-            onClick={() => { setValue(String(target)); setEditing(true); }}
-            title={hit ? 'Target reached' : near ? 'Close to target' : 'Edit alert'}
-        >
-            🔔 ≤ {currencyFormat(target)}{hit ? ' · hit!' : near ? ' · close!' : ''}
-        </button>
-    ) : (
-        <button className="alert-chip alert-chip--unset" onClick={() => setEditing(true)}>
-            + set alert
-        </button>
+    return (
+        <>
+            {mine.length > 0 ? (
+                <button className={`alert-chip${anyHit ? ' alert-chip--hit' : ''}`}
+                    onClick={() => setOpen(true)}
+                    title={anyHit ? 'An alert has hit — manage alerts' : 'Manage alerts'}>
+                    🔔 {mine.length}{anyHit ? ' · hit!' : ''}
+                </button>
+            ) : (
+                <button className="alert-chip alert-chip--unset" onClick={() => setOpen(true)}>
+                    + set alert
+                </button>
+            )}
+            {open && (
+                <AlertModal card={card} game={game} defaultGrade={ownGrade}
+                    onClose={() => setOpen(false)} />
+            )}
+        </>
     );
 }
 
@@ -91,8 +60,9 @@ function AlertChip({ card }: { card: Card }) {
 function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; fcstLabel: string }) {
     const navigate = useNavigate();
     const [remove, { isLoading: removing }] = useRemoveFromWatchlistMutation();
-    const [addOwned, { isLoading: adding }] = useAddToWatchlistMutation();
-    const [owned, setOwned] = useState(false);
+    // "Own it" opens a modal for the copy's details; on success the modal adds
+    // it to the portfolio and removes this row from the watchlist.
+    const [showOwn, setShowOwn] = useState(false);
 
     const game = gameKey(card.game);
     const detailPath = `/catalog/${game}/${card.id}`;
@@ -102,13 +72,6 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
     // Forecast % over the horizon the trend buttons snapped to (as on catalog).
     const fcstPct = card.fcstTo != null && card.price
         ? (card.fcstTo / card.price - 1) * 100 : undefined;
-
-    const ownIt = async () => {
-        try {
-            await addOwned({ game, productId: card.id, kind: 'owned', grade: ownGrade }).unwrap();
-            setOwned(true);
-        } catch { /* leave the button enabled to retry */ }
-    };
 
     return (
         <tr className="screener__row" onClick={() => navigate(detailPath)}>
@@ -128,16 +91,20 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
             </td>
             <td className="screener__mid"><ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} /></td>
             <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
-            <td className="screener__mid" onClick={e => e.stopPropagation()}><AlertChip card={card} /></td>
+            <td className="screener__mid" onClick={e => e.stopPropagation()}><AlertChip card={card} ownGrade={ownGrade} /></td>
             <td className="screener__actions" onClick={e => e.stopPropagation()}>
-                <button className={`btn btn--outline${owned ? ' btn--active' : ''}`} disabled={adding || owned}
-                    onClick={ownIt} title={`Add a copy to your portfolio (${tierLabel(ownGrade)})`}>
-                    {owned ? '✓ Owned' : '＋ Own it'}
+                <button className="btn btn--outline"
+                    onClick={() => setShowOwn(true)} title="Add to your portfolio">
+                    ＋ Own it
                 </button>
                 <button className="star-btn" disabled={removing} title="Remove from watchlist"
                     onClick={() => remove({ game, productId: card.id, kind: 'wishlist' })}>
                     ★
                 </button>
+                {showOwn && (
+                    <OwnItModal card={card} game={game} defaultGrade={ownGrade}
+                        onClose={() => setShowOwn(false)} />
+                )}
             </td>
         </tr>
     );
@@ -169,7 +136,7 @@ export default function Wishlist() {
                 </h2>
                 <div className="range-tabs" role="group" aria-label="Trend period"
                     title="Window for the trend line and price movement (price data updates monthly)">
-                    {(['1w', '1m', '6m', '1y'] as const).map(t => (
+                    {(['1m', '6m', '1y'] as const).map(t => (
                         <button key={t}
                             className={`btn btn--outline range-tab${period === t ? ' btn--active' : ''}`}
                             onClick={() => dispatch(setTrend(t))}

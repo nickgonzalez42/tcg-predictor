@@ -98,12 +98,14 @@
 
 .navbar__logo-arrow {
   stroke: var(--brand);
-  stroke-width: 4;
+  stroke-width: 4;              /* same weight as the trend line */
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
-  opacity: 0;
-  transition: opacity 0.15s ease;
+  /* Draws like the trend line (dash-offset sweep), wing → tip → wing. */
+  stroke-dasharray: 23;         /* ≥ the arrowhead path's length (~22.4) */
+  stroke-dashoffset: 23;
+  transition: stroke-dashoffset 0.15s ease;
 }
 
 .navbar__links {
@@ -188,7 +190,7 @@ button.navbar__link {
   .navbar {
     right: auto;
     bottom: 0;
-    width: var(--sidebar-w);
+    width: var(--nav-w);   /* scales with the logo gutter on wide screens */
     background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -240,6 +242,19 @@ button.navbar__link {
     z-index: 1;
   }
 
+  /* Solid yellow accent line just left of the nav links, running the full
+     screen height (the panel spans the viewport top to bottom). Rides the
+     panel's transform, so it slides in and out with the drawer. */
+  .navbar__panel::before {
+    content: "";
+    position: absolute;
+    left: calc(var(--tipped-logo-left) - 15px);   /* links start at --tipped-logo-left */
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--brand);
+  }
+
   /* The crawl (home/catalog) is fixed at the viewport bottom, so lift the
      drawer's bottom-pinned profile/logout above it when it's showing
      (.has-ticker is set on the app shell). */
@@ -266,8 +281,8 @@ button.navbar__link {
     transition: stroke-dashoffset 0.6s ease 0.5s;
   }
   .navbar--open .navbar__logo-arrow {
-    opacity: 1;
-    transition: opacity 0.2s ease 1.05s;
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 0.2s ease 1.05s;
   }
   .navbar--open .navbar__word--1 {
     opacity: 1;
@@ -288,8 +303,8 @@ button.navbar__link {
       transition: stroke-dashoffset 0.6s ease 0.5s;
     }
     .navbar:is(:hover, :focus-within) .navbar__logo-arrow {
-      opacity: 1;
-      transition: opacity 0.2s ease 1.05s;
+      stroke-dashoffset: 0;
+      transition: stroke-dashoffset 0.2s ease 1.05s;
     }
     .navbar:is(:hover, :focus-within) .navbar__word--1 {
       opacity: 1;
@@ -328,7 +343,7 @@ button.navbar__link {
     flex-direction: column;
     align-items: stretch;
     padding-top: var(--space-15);
-    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    /* border-top: 1px solid rgba(255, 255, 255, 0.18); */
   }
 
   .navbar__auth {
@@ -365,7 +380,7 @@ button.navbar__link {
   }
 
   .navbar:is(:hover, :focus-within, .navbar--open) .navbar__logo-arrow {
-    opacity: 0;
+    stroke-dashoffset: 23;
     transition: none;
   }
 

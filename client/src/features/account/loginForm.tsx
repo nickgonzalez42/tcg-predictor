@@ -10,7 +10,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 export default function loginForm() {
     usePageMeta("Sign in");
     // Playful teaser under the title, powered by the movers we already cache.
-    const { data: movers } = useFetchMoversQuery(12);
+    const { data: movers } = useFetchMoversQuery({ count: 12 });
     const teaserPct = movers?.length
         ? movers.reduce((s, m) => s + (m.fcst12Pct ?? 0), 0) / movers.length
         : null;
@@ -31,7 +31,7 @@ export default function loginForm() {
 
     return (
         <div className="panel auth-card">
-            <h3>🔒 Sign in</h3>
+            <h3>Sign in</h3>
             {teaserPct != null && (
                 <p className="mono auth-card__teaser">
                     markets don't sleep, top movers point{' '}

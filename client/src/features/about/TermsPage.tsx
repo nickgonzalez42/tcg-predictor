@@ -4,7 +4,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 // Terms of Service. Plain-English; the "not financial advice" section matters
 // most given the site publishes price forecasts.
 export default function TermsPage() {
-    usePageMeta("Terms of Service", "The terms for using cardstock.");
+    usePageMeta("Terms of Service", "The terms for using CardStock.");
 
     return (
         <div className="full-span legal">
@@ -12,20 +12,20 @@ export default function TermsPage() {
             <p className="est-note">Last updated: July 15, 2026</p>
 
             <p>
-                By using cardstock (the "Service," at cardstock.guide) you agree to these
+                By using CardStock (the "Service," at cardstock.guide) you agree to these
                 terms. If you don't agree, please don't use the Service.
             </p>
 
-            <h2>What cardstock is</h2>
+            <h2>What CardStock is</h2>
             <p>
-                cardstock is an informational tool for tracking trading-card prices and
+                CardStock is an informational tool for tracking trading-card prices and
                 viewing machine-generated price forecasts, provided for research and
                 entertainment.
             </p>
 
             <h2>Not financial advice</h2>
             <p>
-                Nothing on cardstock is financial, investment, or trading advice. Price
+                Nothing on CardStock is financial, investment, or trading advice. Price
                 forecasts are model estimates that are frequently wrong, and past
                 performance does not predict future results. Any decision to buy, sell, or
                 hold a card is yours alone. Do your own research.
@@ -59,7 +59,7 @@ export default function TermsPage() {
                 Prices, histories, and forecasts are aggregated from third-party and public
                 sources and are provided "as is." They may be delayed, incomplete, or
                 inaccurate. Card names, images, and trademarks belong to their respective
-                owners; cardstock is not affiliated with or endorsed by any card publisher.
+                owners; CardStock is not affiliated with or endorsed by any card publisher.
             </p>
 
             <h2>Intellectual property</h2>
@@ -77,7 +77,7 @@ export default function TermsPage() {
 
             <h2>Limitation of liability</h2>
             <p>
-                To the maximum extent permitted by law, cardstock and its operators are not
+                To the maximum extent permitted by law, CardStock and its operators are not
                 liable for any indirect, incidental, or consequential damages, or for any
                 losses arising from your use of the Service or reliance on its data or
                 forecasts.

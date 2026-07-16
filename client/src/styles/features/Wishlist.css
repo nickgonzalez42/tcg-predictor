@@ -7,6 +7,7 @@
   font-size: 17.6px;
   color: var(--brand);
   padding: var(--space-5);
+  vertical-align: middle;
 }
 
 .star-btn:hover {
@@ -19,11 +20,17 @@
   letter-spacing: 0.02em;
   border: 1.4px solid var(--border);
   border-radius: 999px;
-  padding: var(--space-5) var(--space-10);
+  padding: 0 var(--space-10);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
   white-space: nowrap;
+  /* Same height as the row's Own it button (.screener__actions .btn). */
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
 }
 
 .alert-chip:hover {
@@ -40,4 +47,64 @@
 
 .alert-chip--unset {
   border-style: dashed;
+}
+
+/* Own-it modal: one consistent 10px gap between the input blocks (each block
+   is a .field; the gap owns the spacing, not per-field margins). */
+.own-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.own-form .field {
+  margin: 0;
+}
+
+.own-form .field-label {
+  margin-bottom: 0;   /* .field's own 5px gap separates label from input */
+}
+
+/* Alert manager modal: one row per alert, hit rows tinted. */
+.alert-list {
+  list-style: none;
+  margin: 0 0 var(--space-15);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.alert-list__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  padding: var(--space-5) var(--space-10);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.alert-list__row--hit {
+  border-color: var(--up);
+  background: var(--up-bg);
+}
+
+.alert-list__desc {
+  flex: 1;
+  min-width: 0;
+}
+
+.alert-list__now {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.alert-list__hit {
+  color: var(--up);
+  font-weight: 700;
+  font-size: 11px;
+}
+
+.alert-form {
+  margin-bottom: var(--space-15);
 }

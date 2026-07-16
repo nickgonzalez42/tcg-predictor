@@ -168,9 +168,10 @@ export default function ProfileSettingsPage() {
                     comments and your public profile. Your email is never shown.</p>
 
                 <label className="field-label" htmlFor="storefront">Storefront link</label>
-                <input id="storefront" className="input" type="url" placeholder="https://…"
+                <input id="storefront" className="input" type="url"
+                    placeholder="https://www.ebay.com/usr/yourstore"
                     value={storefront} onChange={e => setStorefront(e.target.value)} />
-                <p className="est-note">Your eBay / TCGplayer / personal shop, linked from your public profile.</p>
+                <p className="est-note">Your eBay or TCGplayer store, linked from your public profile.</p>
 
                 <div className="profile-settings__toggles">
                     <label>

@@ -3,6 +3,10 @@
 .auth-card {
   grid-column: 4 / -4;
   text-align: center;
+  /* main flexes to fill the viewport (sticky footer) and its extra height goes
+     to this grid row; centering the card instead of the default stretch keeps
+     it content-height and vertically centered on the page. */
+  align-self: center;
 }
 
 .auth-card form {

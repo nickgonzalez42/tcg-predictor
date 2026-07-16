@@ -3,7 +3,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 // means for the collector, with the technical specifics kept alongside as
 // optional depth for anyone who wants to audit the method.
 export default function AboutPage() {
-    usePageMeta("About", "What cardstock is and how the AI price forecasts work.");
+    usePageMeta("About", "What CardStock is and how the AI price forecasts work.");
   return (
     <article className="article full-span">
       <header className="article__head">
@@ -12,8 +12,8 @@ export default function AboutPage() {
           Updated July 2026 · model version forecast-deep-v4.3 · retrained daily
         </div>
         <p className="article__lede">
-          cardstock treats trading cards like a market you can actually study. Every card gets a
-          price forecast for 1 week, 1 month, 6 months, and 1 year ahead, for the raw card and
+          CardStock treats trading cards like a market you can actually study. Every card gets a
+          price forecast for 1 month, 6 months, and 1 year ahead, for the raw card and
           each graded tier, next to real graded price history and a portfolio that tracks your
           gains. This page explains where those forecasts come from, in plain language, with the
           technical details alongside for anyone who wants to look under the hood. None of it is
@@ -96,9 +96,10 @@ export default function AboutPage() {
           Under the hood, the engine is a gradient-boosted decision-tree model (scikit-learn's
           HistGradientBoostingRegressor), which handles cards with missing history gracefully and
           captures the way these signals interact. Higher-priced cards carry more training weight,
-          so accuracy lands where the dollars are. The 1, 6, and 12-month forecasts are trained
-          directly on history; the 1-week figure is the 1-month call pro-rated to 7 days, since
-          the price history is monthly and a true weekly model has no targets yet.
+          so accuracy lands where the dollars are. All three horizons are trained directly on
+          historical outcomes. A 1-week forecast is on the roadmap: daily price collection began
+          in July 2026, and once a few months of weekly history accrues, a true weekly model
+          will start training on real week-over-week outcomes and join the lineup.
         </p>
       </section>
 

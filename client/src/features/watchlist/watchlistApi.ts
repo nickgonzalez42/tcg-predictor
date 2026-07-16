@@ -89,6 +89,36 @@ export type ImportRowResult = {
 
 export type ImportResult = { added: number; rows: ImportRowResult[] };
 
+// --- Card alerts (GET/POST /alerts, DELETE /alerts/{id}) ---
+// Several per card: on the current price, a forecast price, or a forecast %
+// change, scoped to a condition tier (+ horizon for forecast kinds). The
+// server evaluates `current`/`hit` when listing.
+export type AlertKind = 'price' | 'fcst_price' | 'fcst_pct';
+
+export type CardAlert = {
+    id: number;
+    game: string;
+    productId: number;
+    grade?: string | null;      // null = ungraded
+    kind: AlertKind;
+    horizon?: string | null;    // 1w | 1m | 6m | 12m (forecast kinds)
+    direction: 'above' | 'below';
+    target: number;             // $ for price kinds, % for fcst_pct
+    current?: number | null;    // live value the alert is judged against
+    hit: boolean;
+    createdAt: string;
+}
+
+export type NewAlert = {
+    game: string;
+    productId: number;
+    grade?: string;
+    kind: AlertKind;
+    horizon?: string;
+    direction: 'above' | 'below';
+    target: number;
+}
+
 // Editable per-copy fields sent to PATCH /watchlist/owned/{id}.
 export type OwnedCopyEdit = {
     grade?: string | null;
@@ -103,7 +133,7 @@ export const watchlistApi = createApi({
     baseQuery: baseQueryWithErrorHandling,
     // Scoped tags so a mutation only refetches the lists it touched:
     // 'Owned' (portfolio rows), 'Wishlist' (watch rows), 'Summary' (rollup).
-    tagTypes: ['Owned', 'Wishlist', 'Summary'],
+    tagTypes: ['Owned', 'Wishlist', 'Summary', 'Alerts'],
     endpoints: (builder) => ({
         // All tracked refs across both lists (used by TrackButton to know state).
         fetchWatchlist: builder.query<TrackedCard[], void>({
@@ -155,10 +185,18 @@ export const watchlistApi = createApi({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
-        // Set (target) or clear (null) the price alert on a wishlist row.
-        setWishlistAlert: builder.mutation<void, { game: string; productId: number; target: number | null }>({
-            query: (body) => ({ url: 'watchlist/wishlist/alert', method: 'PUT', body }),
-            invalidatesTags: ['Wishlist'],
+        // All of the user's card alerts, evaluated (current value + hit) server-side.
+        fetchAlerts: builder.query<CardAlert[], void>({
+            query: () => 'alerts',
+            providesTags: ['Alerts'],
+        }),
+        addAlert: builder.mutation<{ id: number }, NewAlert>({
+            query: (body) => ({ url: 'alerts', method: 'POST', body }),
+            invalidatesTags: ['Alerts'],
+        }),
+        deleteAlert: builder.mutation<void, { id: number }>({
+            query: ({ id }) => ({ url: `alerts/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['Alerts'],
         }),
         // Portfolio rollup: total value, monthly series, allocation, best/worst.
         fetchPortfolioSummary: builder.query<PortfolioSummary, string | void>({
@@ -178,6 +216,8 @@ export const {
     useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation,
-    useSetWishlistAlertMutation,
+    useFetchAlertsQuery,
+    useAddAlertMutation,
+    useDeleteAlertMutation,
     useFetchPortfolioSummaryQuery,
 } = watchlistApi;
