@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { useFetchTrackedCardsQuery, useFetchPortfolioSummaryQuery } from "./watchlistApi";
+import { useFetchTrackedCardsQuery, useFetchPortfolioSummaryQuery, useFetchWatchlistQuery } from "./watchlistApi";
 import { ownedParamsSlice } from "./trackedParamsSlice";
 import { trackedSortGroups } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
@@ -31,6 +31,18 @@ export default function Portfolio() {
 
     const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', ...params });
     const { data: summary } = useFetchPortfolioSummaryQuery();
+
+    // The game filter defaults to wherever the user most recently added a
+    // card, and keeps following that until they pick a game themselves
+    // (the catalog defaults the same way, by portfolio majority).
+    const { data: tracked } = useFetchWatchlistQuery();
+    useEffect(() => {
+        if (!tracked || params.gameInitialized) return;
+        let latest: { game: string; addedAt: string } | undefined;
+        for (const t of tracked)
+            if (t.kind === 'owned' && (!latest || t.addedAt > latest.addedAt)) latest = t;
+        if (latest) dispatch(ownedParamsSlice.actions.syncDefaultGame(latest.game));
+    }, [tracked, params.gameInitialized, dispatch]);
     // Young games (digimon/gundam) have no 12m horizon yet — the forecast
     // column falls back to their 6m numbers and relabels itself.
     const { data: filtersData } = useFetchFiltersQuery(params.game);

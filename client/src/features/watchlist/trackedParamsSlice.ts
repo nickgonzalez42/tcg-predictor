@@ -14,6 +14,7 @@ const initialState: CardParams = {
     orderBy: '',
     grade: '',
     trend: '1m',
+    gameInitialized: false,   // true once the user picks a game themselves
 };
 
 export function createTrackedParamsSlice(name: string) {
@@ -29,6 +30,17 @@ export function createTrackedParamsSlice(name: string) {
                 state.pageNumber = 1;
             },
             setGame(state, action) {
+                state.game = action.payload;
+                state.gameInitialized = true;   // an explicit choice wins over defaults
+                state.sets = [];
+                state.rarities = [];
+                state.searchTerm = '';
+                state.pageNumber = 1;
+            },
+            // Data-driven default (the game of the user's most recent add).
+            // Keeps following the data until the user picks a game themselves.
+            syncDefaultGame(state, action) {
+                if (state.gameInitialized || state.game === action.payload) return;
                 state.game = action.payload;
                 state.sets = [];
                 state.rarities = [];
@@ -56,7 +68,7 @@ export function createTrackedParamsSlice(name: string) {
             },
             resetParams(state) {
                 // Reset filters only — the game choice stays decided (as on catalog).
-                return { ...initialState, game: state.game };
+                return { ...initialState, game: state.game, gameInitialized: state.gameInitialized };
             },
         },
     });
