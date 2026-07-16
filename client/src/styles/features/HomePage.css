@@ -176,7 +176,10 @@
     row-gap: var(--space-25);
   }
 
-  
+  /* Tile is narrower here — keep price + pills + sparkline on one line. */
+  .mover__row {
+    flex-wrap: nowrap;
+  }
 }
 
 /* --- Mobile (4-col grid): movers 2-up small, steps stacked. */

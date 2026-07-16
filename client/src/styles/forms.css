@@ -72,3 +72,14 @@
   flex-direction: column;
   gap: var(--space-10);
 }
+
+/* iOS Safari auto-zooms any focused field whose font-size is under 16px.
+   On touch devices, force every form control to 16px — !important so the
+   per-component sizes (12.8-15.2px) can't reintroduce the zoom. */
+@media (hover: none) and (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
