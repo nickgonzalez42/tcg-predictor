@@ -57,6 +57,10 @@ builder.Services.AddDbContext<PriceChartingContext>(opt =>
 builder.Services.AddScoped<ReasoningService>();
 builder.Services.AddScoped<API.Services.ModerationService>();
 builder.Services.AddScoped<API.Services.NotificationService>();
+// Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
+builder.Services.AddScoped<API.Services.AlertEvaluator>();
+builder.Services.AddSingleton<API.Services.EmailService>();
+builder.Services.AddHostedService<API.Services.AlertEmailNotifier>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
 builder.Services.AddHttpClient<API.Services.SpxService>();
 builder.Services.AddCors();

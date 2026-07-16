@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import UserMenu from "./UserMenu";
+import NotificationBell from "./NotificationBell";
 import { useUserInfoQuery } from "../../features/account/accountApi";
 import MarketTicker from "../shared/components/MarketTicker";
 
@@ -140,7 +141,7 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
 
                 <div className="navbar__end">
                     {user ? (
-                        <div className="navbar__usermenu"><UserMenu /></div>
+                        <div className="navbar__usermenu"><NotificationBell /><UserMenu /></div>
                     ) : (
                         <ul className="navbar__links navbar__auth">
                             {rightLinks.map(({ title, path }) => (

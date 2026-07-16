@@ -16,6 +16,10 @@ public class CardAlert
     public string Direction { get; set; } = "below";   // above | below (at-or-)
     public double Target { get; set; }             // $ for price kinds, % for fcst_pct
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    // Edge-trigger state for email delivery: stamped when a hit is emailed so
+    // it isn't re-sent daily; cleared when the alert un-hits, re-arming it.
+    public DateTime? NotifiedAt { get; set; }
 }
 
 public static class AlertKind

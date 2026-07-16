@@ -9,6 +9,7 @@
   <ItemGroup>
     <PackageReference Include="Anthropic" Version="12.35.1" />
     <PackageReference Include="AWSSDK.SimpleNotificationService" Version="4.0.100.4" />
+    <PackageReference Include="AWSSDK.SimpleEmailV2" Version="4.0.100.4" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />

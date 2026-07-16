@@ -22,4 +22,7 @@ public class User : IdentityUser
     // Profile image: a card the user picked (its art is the avatar).
     public string? AvatarGame { get; set; }
     public int? AvatarProductId { get; set; }
+
+    // Opt-in: email me when one of my card alerts hits (settings page toggle).
+    public bool AlertEmails { get; set; }
 }

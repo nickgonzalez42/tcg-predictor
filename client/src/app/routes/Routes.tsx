@@ -16,6 +16,7 @@ import RegisterForm from "../../features/account/registerForm";
 import RequireAuth from "./RequireAuth";
 import Portfolio from "../../features/watchlist/Portfolio";
 import Wishlist from "../../features/watchlist/Wishlist";
+import NotificationsPage from "../../features/watchlist/NotificationsPage";
 
 export const router = createBrowserRouter([
     {
@@ -27,6 +28,7 @@ export const router = createBrowserRouter([
                 children: [
                     {path: '/portfolio', element: <Portfolio />},
                     {path: '/watchlist', element: <Wishlist />},
+                    {path: '/notifications', element: <NotificationsPage />},
                     // Old bookmarks from when the page was called "Wishlist".
                     {path: '/wishlist', element: <Navigate replace to='/watchlist' />},
                 ]

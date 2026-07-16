@@ -23,7 +23,8 @@ public class ProfileController(
 
     public record ProfileSettingsDto(
         string? Handle, bool ProfilePublic, bool ShowPortfolio, bool ShowWatchlist,
-        string? StorefrontUrl, string? AvatarGame, int? AvatarProductId);
+        string? StorefrontUrl, string? AvatarGame, int? AvatarProductId,
+        bool AlertEmails = false);
 
     [Authorize]
     [HttpGet("me")]
@@ -96,6 +97,7 @@ public class ProfileController(
         user.ProfilePublic = dto.ProfilePublic;
         user.ShowPortfolio = dto.ProfilePublic && dto.ShowPortfolio;
         user.ShowWatchlist = dto.ProfilePublic && dto.ShowWatchlist;
+        user.AlertEmails = dto.AlertEmails;
 
         await store.SaveChangesAsync();
         return Ok(ToSettings(user));
@@ -265,6 +267,7 @@ public class ProfileController(
         avatarGame = user.AvatarGame,
         avatarProductId = user.AvatarProductId,
         avatarUrl = AvatarUrl(user),
+        alertEmails = user.AlertEmails,
     };
 
     public record PublicCardRow(

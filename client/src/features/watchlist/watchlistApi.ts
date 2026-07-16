@@ -107,6 +107,10 @@ export type CardAlert = {
     current?: number | null;    // live value the alert is judged against
     hit: boolean;
     createdAt: string;
+    // Card context for the notifications page rows.
+    name?: string | null;
+    setName?: string | null;
+    pictureUrl?: string | null;
 }
 
 export type NewAlert = {

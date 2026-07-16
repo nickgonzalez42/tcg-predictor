@@ -402,3 +402,24 @@ button.navbar__link {
     pointer-events: none;
   }
 }
+
+/* Notification bell in the drawer (signed-in): badge counts triggered alerts. */
+.navbar__bell {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.navbar__bell-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--brand);
+  color: var(--on-brand);
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}

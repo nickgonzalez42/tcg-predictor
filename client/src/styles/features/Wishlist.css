@@ -108,3 +108,29 @@
 .alert-form {
   margin-bottom: var(--space-15);
 }
+
+/* Notifications page: alert rows with card context. */
+.notif-page h1 {
+  margin: 0 0 var(--space-15);
+}
+
+.notif-page .alert-list {
+  max-width: 680px;
+}
+
+.notif-page__sub {
+  margin: var(--space-25) 0 var(--space-10);
+  font-size: 16px;
+  color: var(--text-muted);
+}
+
+.notif-row__thumb {
+  width: 34px;
+  height: 47px;
+  object-fit: contain;
+  flex: none;
+}
+
+.notif-row__name {
+  font-weight: 600;
+}

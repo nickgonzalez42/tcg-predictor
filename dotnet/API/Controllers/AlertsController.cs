@@ -10,12 +10,11 @@ namespace API.Controllers;
 
 // Card alerts: several per card, each on the current price, a forecast price,
 // or a forecast % change — scoped to a condition tier (and a horizon for the
-// forecast kinds). The list endpoint evaluates each alert's current value so
-// the client can show live "hit" states without re-deriving pricing rules.
+// forecast kinds). The list endpoint returns each alert with its current value
+// and hit state, evaluated by AlertEvaluator (shared with the email notifier).
 [Authorize]
 public class AlertsController(
-    StoreContext store, CardSources sources,
-    PredictionsContext predictions, PriceChartingContext priceCharting) : BaseApiController
+    StoreContext store, CardSources sources, AlertEvaluator evaluator) : BaseApiController
 {
     public record CreateAlertDto(
         string Game, int ProductId, string? Grade, string Kind,
@@ -37,46 +36,28 @@ public class AlertsController(
             .OrderBy(a => a.CreatedAt)
             .ToListAsync();
 
-        var results = new List<object>();
-        foreach (var group in alerts.GroupBy(a => a.Game))
+        var evaluated = await evaluator.EvaluateAsync(alerts);
+
+        // Card names/art for the notifications page rows (one query per game).
+        var cardByKey = new Dictionary<(string, int), (string? Name, string? SetName)>();
+        foreach (var g in alerts.Select(a => a.Game).Distinct())
         {
-            var game = group.Key;
-            var ids = group.Select(a => a.ProductId).Distinct().ToList();
-            var pricedById = (await priceCharting.GradedPrices
-                    .Where(p => p.Game == game && ids.Contains(p.ProductId)).ToListAsync())
-                .ToDictionary(p => p.ProductId);
-            var fcByKey = (await predictions.Forecasts
-                    .Where(f => f.Game == game && ids.Contains(f.ProductId))
-                    .Select(f => new { f.ProductId, f.Target, f.Horizon, f.BasePrice, f.ForecastPrice })
-                    .ToListAsync())
-                .ToDictionary(f => (f.ProductId, f.Target, f.Horizon));
-
-            foreach (var a in group)
-            {
-                double? current = null;
-                if (a.Kind == AlertKind.Price)
-                {
-                    current = TierPrice(pricedById.GetValueOrDefault(a.ProductId), a.Grade);
-                }
-                else if (fcByKey.TryGetValue(
-                             (a.ProductId, GradeTiers.ForecastTarget(a.Grade), a.Horizon ?? ""), out var f)
-                         && f.ForecastPrice is { } fp)
-                {
-                    current = a.Kind == AlertKind.ForecastPrice
-                        ? fp
-                        : f.BasePrice > 0 ? (fp / f.BasePrice - 1) * 100 : null;
-                }
-
-                var hit = current != null
-                          && (a.Direction == "above" ? current >= a.Target : current <= a.Target);
-                results.Add(new
-                {
-                    a.Id, a.Game, a.ProductId, a.Grade, a.Kind, a.Horizon,
-                    a.Direction, a.Target, Current = current, Hit = hit, a.CreatedAt,
-                });
-            }
+            var ids = alerts.Where(a => a.Game == g).Select(a => a.ProductId).Distinct().ToList();
+            foreach (var c in await sources.Cards(g)
+                         .Where(c => ids.Contains(c.Id))
+                         .Select(c => new { c.Id, c.Name, c.SetName }).ToListAsync())
+                cardByKey[(g, c.Id)] = (c.Name, c.SetName);
         }
-        return Ok(results);
+
+        return Ok(evaluated.Select(e => new
+        {
+            e.Alert.Id, e.Alert.Game, e.Alert.ProductId, e.Alert.Grade, e.Alert.Kind,
+            e.Alert.Horizon, e.Alert.Direction, e.Alert.Target,
+            e.Current, e.Hit, e.Alert.CreatedAt,
+            cardByKey.GetValueOrDefault((e.Alert.Game, e.Alert.ProductId)).Name,
+            cardByKey.GetValueOrDefault((e.Alert.Game, e.Alert.ProductId)).SetName,
+            PictureUrl = CardImageUrl(e.Alert.Game, e.Alert.ProductId),
+        }));
     }
 
     [HttpPost]
@@ -139,19 +120,4 @@ public class AlertsController(
         await store.SaveChangesAsync();
         return Ok();
     }
-
-    // The tier's current price from the snapshot table (null = no data).
-    private static double? TierPrice(GradedPrice? p, string? grade) => p == null ? null : grade switch
-    {
-        null or "" => p.Ungraded,
-        "grade7" => p.Grade7,
-        "grade8" => p.Grade8,
-        "grade9" => p.Grade9,
-        "grade95" => p.Grade95,
-        "psa10" => p.Psa10,
-        "bgs10" => p.Bgs10,
-        "cgc10" => p.Cgc10,
-        "sgc10" => p.Sgc10,
-        _ => p.Ungraded,
-    };
 }

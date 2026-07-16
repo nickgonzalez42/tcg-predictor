@@ -12,6 +12,7 @@ export type ProfileSettings = {
     avatarGame: string | null;
     avatarProductId: number | null;
     avatarUrl: string | null;
+    alertEmails?: boolean;   // opt-in: email when a card alert hits
 };
 
 export type PublicCardRow = {
