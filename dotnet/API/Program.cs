@@ -74,14 +74,23 @@ builder.Services.AddIdentityApiEndpoints<User>(opt =>
 // client secret is never committed. The external identity lands in Identity's
 // external cookie; AccountController's callback turns it into a signed-in
 // application cookie. CallbackPath sits under /api so Caddy proxies it in prod.
-builder.Services.AddAuthentication()
-    .AddGoogle(options =>
-    {
-        options.ClientId = builder.Configuration["Authentication:Google:ClientId"] ?? "";
-        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"] ?? "";
-        options.CallbackPath = "/api/signin-google";
-        options.SignInScheme = IdentityConstants.ExternalScheme;
-    });
+//
+// Registered ONLY when credentials are present: the OAuth handler validates
+// ClientId/ClientSecret every request (it's a request handler that checks its
+// callback path), so registering it without them 500s every API call.
+var googleId = builder.Configuration["Authentication:Google:ClientId"];
+var googleSecret = builder.Configuration["Authentication:Google:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(googleId) && !string.IsNullOrWhiteSpace(googleSecret))
+{
+    builder.Services.AddAuthentication()
+        .AddGoogle(options =>
+        {
+            options.ClientId = googleId;
+            options.ClientSecret = googleSecret;
+            options.CallbackPath = "/api/signin-google";
+            options.SignInScheme = IdentityConstants.ExternalScheme;
+        });
+}
 
 var app = builder.Build();
 

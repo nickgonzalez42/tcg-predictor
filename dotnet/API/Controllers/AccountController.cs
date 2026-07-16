@@ -69,6 +69,11 @@ public class AccountController(SignInManager<User> signInManager, IConfiguration
     [HttpGet("external-login")]
     public IActionResult ExternalLogin(string provider = "Google")
     {
+        // Provider only exists when its credentials are configured (see Program.cs);
+        // degrade to a friendly login error rather than a 500 when it isn't.
+        if (string.IsNullOrWhiteSpace(config["Authentication:Google:ClientId"]))
+            return Redirect($"{config["ClientUrl"] ?? "https://localhost:5173"}/login?error=google-unconfigured");
+
         // Relative redirect back to us — the middleware keeps it on this host, so
         // it works behind the proxy without depending on the forwarded scheme.
         var redirectUrl = Url.Action(nameof(ExternalCallback));
