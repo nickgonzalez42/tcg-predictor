@@ -124,7 +124,9 @@
   display: inline-flex;
   align-items: center;
   gap: var(--space-5);
-  flex-wrap: wrap;
+  /* One line always: input + Add + Cancel stay together instead of wrapping. */
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .own-qty__input {
