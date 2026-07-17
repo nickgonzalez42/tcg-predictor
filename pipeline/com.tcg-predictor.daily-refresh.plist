@@ -12,9 +12,9 @@
     <key>StartCalendarInterval</key>
     <dict>
         <key>Hour</key>
-        <integer>7</integer>
+        <integer>2</integer>
         <key>Minute</key>
-        <integer>45</integer>
+        <integer>0</integer>
     </dict>
     <key>StandardOutPath</key>
     <string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
