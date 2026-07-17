@@ -234,6 +234,10 @@ body.filters-open {
 
 /* --- Mobile (4-col grid): single-column filters inside the dropdown. */
 @media (max-width: 767px) {
+  .filters--dropdown .filters__body--open .filters__panels {
+    row-gap: 24px;
+  }
+
   .filters--dropdown .filters__body--open .filters__panels .panel {
     flex: 0 0 auto;
   }
