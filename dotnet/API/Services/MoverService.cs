@@ -72,11 +72,11 @@ public class MoverService(
             .Select(x => x.f)
             .DistinctBy(f => (f.Game, f.ProductId))
             .ToList();
-        var withArt = new Dictionary<string, HashSet<int>>();
+        var showable = new Dictionary<string, HashSet<int>>();
         foreach (var g in candidates.Select(f => f.Game).Distinct())
-            withArt[g] = await IdsWithArt(g, candidates.Where(f => f.Game == g).Select(f => f.ProductId));
+            showable[g] = await ShowcaseIds(g, candidates.Where(f => f.Game == g).Select(f => f.ProductId));
         var globalPicks = candidates
-            .Where(f => withArt[f.Game].Contains(f.ProductId))
+            .Where(f => showable[f.Game].Contains(f.ProductId))
             .Select(f => new Pick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice))
             .ToList();
 
@@ -124,23 +124,33 @@ public class MoverService(
             q = gainerSide
                 ? q.OrderByDescending(f => f.ForecastPrice / f.BasePrice)
                 : q.OrderBy(f => f.ForecastPrice / f.BasePrice);
-            // Small buffer because art-less candidates are skipped.
-            var top = await q.Take(5).ToListAsync();
-            var art = await IdsWithArt(game, top.Select(f => f.ProductId));
-            var hit = top.FirstOrDefault(f => art.Contains(f.ProductId));
+            // Buffer because art-less and prize-card candidates are skipped.
+            var top = await q.Take(10).ToListAsync();
+            var ok = await ShowcaseIds(game, top.Select(f => f.ProductId));
+            var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
             if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice);
         }
         return null;
     }
 
-    // Of these product ids, the ones whose art has landed (cross-DB, so the
-    // per-game card DB is asked directly).
-    private async Task<HashSet<int>> IdsWithArt(string game, IEnumerable<int> ids)
+    // Of these product ids, the ones fit for the showcase (cross-DB, so the
+    // per-game card DB is asked directly): art has landed, and the name isn't a
+    // tournament prize card — those trade at outlier prices that would
+    // otherwise dominate every movers list. "Place" is matched as the ordinals
+    // prize cards actually use; bare "place" also hits legitimate cards
+    // (Lorcana locations, Displacer Kitten, Trading Places).
+    private async Task<HashSet<int>> ShowcaseIds(string game, IEnumerable<int> ids)
     {
         var list = ids.Distinct().ToList();
         if (list.Count == 0) return [];
         return (await sources.Cards(game).WithArt()
-            .Where(c => list.Contains(c.Id)).Select(c => c.Id).ToListAsync()).ToHashSet();
+            .Where(c => list.Contains(c.Id))
+            .Where(c => !EF.Functions.Like(c.Name!, "%tournament%")
+                        && !EF.Functions.Like(c.Name!, "%winner%")
+                        && !EF.Functions.Like(c.Name!, "%1st place%")
+                        && !EF.Functions.Like(c.Name!, "%2nd place%")
+                        && !EF.Functions.Like(c.Name!, "%3rd place%"))
+            .Select(c => c.Id).ToListAsync()).ToHashSet();
     }
 
     // Join card names/sets from the right game DB, in memory (cross-DB). The
