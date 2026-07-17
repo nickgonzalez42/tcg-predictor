@@ -35,10 +35,12 @@ export default function Catalog() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // On mount, decide from the URL:
-  //  - has params (back button, or a shared/bookmarked link) -> hydrate them,
-  //    so the filters the user left behind are reapplied.
-  //  - bare /catalog (a fresh nav-link click) -> reset to defaults, so stale
-  //    Redux filters don't linger and the portfolio-majority game is re-picked.
+  //  - has params (back button, breadcrumb game crumb, shared/bookmarked
+  //    link) -> the URL is the source of truth: start from defaults and apply
+  //    exactly what it carries, so a partial URL can't inherit stale filters.
+  //  - bare /catalog (a nav-link click) -> keep whatever this session already
+  //    set; filters survive leaving and returning. A first visit has pristine
+  //    defaults and the portfolio-majority effect below picks the game.
   const hydrated = useRef(false);
   useEffect(() => {
     if (hydrated.current) return;
@@ -55,13 +57,10 @@ export default function Catalog() {
     if (get('pageSize')) p.pageSize = +get('pageSize')!;
     if (get('trend')) p.trend = get('trend')!;
     if (get('view')) p.view = get('view') === 'rows' ? 'rows' : 'cards';
-    // The URL is the single source of truth on mount: start from defaults,
-    // then overlay whatever it carries. A bare /catalog is a plain reset (the
-    // per-user default game gets re-picked); a partial URL (e.g. the card
-    // page's game crumb, ?game= only) can't inherit stale filters left in
-    // Redux by an earlier visit.
-    dispatch(resetToDefaults());
-    if (Object.keys(p).length) dispatch(setParams(p));
+    if (Object.keys(p).length) {
+      dispatch(resetToDefaults());
+      dispatch(setParams(p));
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
