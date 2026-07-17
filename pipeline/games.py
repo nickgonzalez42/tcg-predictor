@@ -15,6 +15,11 @@ import os
 
 from _paths import DATA_DIR as BASE   # data lives in the sibling one-piece/ dir
 
+# Card art lives in S3 — the ONLY durable copy. Local image dirs are a staging
+# area for new scrapes (embedded, uploaded by s3_upload_images.py, then pruned
+# after a week); the site serves the bucket through CloudFront.
+IMAGES_BUCKET = "cardstock-card-images"
+
 GAMES = {
     "pokemon": {
         "label": "Pokémon",

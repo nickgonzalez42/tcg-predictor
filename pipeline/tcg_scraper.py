@@ -112,7 +112,7 @@ def _iter_query_pages(session, line, base_delay, singles_only, set_name):
 
 
 def process_sets(session, line, base_delay, conn, img_dir, new_only,
-                 limit=None, no_images=False, singles_only=True):
+                 limit=None, no_images=False, singles_only=True, max_sets=None):
     """Set-partitioned crawl (large lines exceed the ~10k offset cap), with the
     SET as the atomic unit of work: enumerate its pages, upsert its cards,
     download its missing images, and only THEN record its product count.
@@ -132,6 +132,11 @@ def process_sets(session, line, base_delay, conn, img_dir, new_only,
     todo = [(s, c) for s, c in sets if not new_only or known.get(s) != c]
     print(f"Sets to scan: {len(todo)} of {len(sets)} "
           f"({sum(c for _, c in todo)} products).", flush=True)
+    if max_sets and len(todo) > max_sets:
+        # Keeps a scheduled run bounded while a game onboards (a fresh game
+        # has its ENTIRE catalog pending); the rest continue next run.
+        print(f"Capped to {max_sets} sets this run ({len(todo) - max_sets} remain).", flush=True)
+        todo = todo[:max_sets]
 
     processed = 0
     for set_name, count in todo:
@@ -145,9 +150,14 @@ def process_sets(session, line, base_delay, conn, img_dir, new_only,
 
         art = 0
         if not no_images:
+            # Art already recorded in the DB lives in S3 (local dirs only
+            # stage new scrapes), so image_path — not the disk — says
+            # whether a card still needs its download.
+            have_art = {row[0] for row in conn.execute(
+                "SELECT product_id FROM cards WHERE image_path IS NOT NULL AND image_path != ''")}
             for p in cards:
                 pid = p.get("productId")
-                if pid is None:
+                if pid is None or pid in have_art:
                     continue
                 path = os.path.join(img_dir, f"{pid}.jpg")
                 if os.path.exists(path) and os.path.getsize(path) > 0:
@@ -280,6 +290,8 @@ def main():
                     help="accepted for step-list symmetry (this scraper never fetches pricing)")
     ap.add_argument("--new-only", action="store_true",
                     help="scan only sets whose product count changed since the last complete scan")
+    ap.add_argument("--max-sets", type=int, default=None,
+                    help="scan at most N sets this run (bounds scheduled runs during onboarding)")
     args = ap.parse_args()
 
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
@@ -296,7 +308,7 @@ def main():
     print(f"Scanning {mode}, set by set (cards + art per set)...")
     processed = process_sets(session, line, args.delay, conn, img_dir,
                              new_only=args.new_only, limit=args.limit,
-                             no_images=args.no_images)
+                             no_images=args.no_images, max_sets=args.max_sets)
 
     cards = conn.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
     art = conn.execute(

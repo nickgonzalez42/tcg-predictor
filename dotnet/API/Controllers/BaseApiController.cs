@@ -6,8 +6,16 @@ namespace API.Controllers
     [ApiController]
     public class BaseApiController : ControllerBase
     {
-        // Absolute URL of a card's locally-scraped image (served by this API).
-        protected string CardImageUrl(string folder, int id) =>
-            $"{Request.Scheme}://{Request.Host}/card-images/{folder}/{id}.jpg";
+        // Absolute URL of a card's image. Prod serves art from the S3 bucket
+        // behind CloudFront (CardImages:BaseUrl); dev, where the scraped files
+        // are local, falls back to this API's own /card-images route.
+        protected string CardImageUrl(string folder, int id)
+        {
+            var baseUrl = HttpContext.RequestServices
+                .GetRequiredService<IConfiguration>()["CardImages:BaseUrl"];
+            return string.IsNullOrWhiteSpace(baseUrl)
+                ? $"{Request.Scheme}://{Request.Host}/card-images/{folder}/{id}.jpg"
+                : $"{baseUrl.TrimEnd('/')}/{folder}/{id}.jpg";
+        }
     }
 }

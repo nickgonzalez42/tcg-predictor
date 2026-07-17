@@ -8,9 +8,9 @@ namespace API.Services;
 
 // Picks the top movers by ungraded forecast change — the market ticker and the
 // home page tiles. Movers are showcased visually, so a card only qualifies once
-// its scraped art is on disk.
+// its art has landed (ImagePath set = fetchable from the image CDN).
 public class MoverService(
-    CardSources sources, PredictionsContext predictions, CardMarketData market, IConfiguration config)
+    CardSources sources, PredictionsContext predictions, CardMarketData market)
 {
     private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice);
 
@@ -66,12 +66,17 @@ public class MoverService(
         // movers qualify for each side; if one side runs dry the other fills in.
         var ups = gainers.Where(f => f.ForecastPrice > f.BasePrice);
         var downs = losers.Where(f => f.ForecastPrice < f.BasePrice);
-        var globalPicks = ups.Select((f, i) => (f, rank: i * 2))
+        var candidates = ups.Select((f, i) => (f, rank: i * 2))
             .Concat(downs.Select((f, i) => (f, rank: i * 2 + 1)))
             .OrderBy(x => x.rank)
             .Select(x => x.f)
             .DistinctBy(f => (f.Game, f.ProductId))
-            .Where(f => HasLocalImage(f.Game, f.ProductId))
+            .ToList();
+        var withArt = new Dictionary<string, HashSet<int>>();
+        foreach (var g in candidates.Select(f => f.Game).Distinct())
+            withArt[g] = await IdsWithArt(g, candidates.Where(f => f.Game == g).Select(f => f.ProductId));
+        var globalPicks = candidates
+            .Where(f => withArt[f.Game].Contains(f.ProductId))
             .Select(f => new Pick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice))
             .ToList();
 
@@ -105,7 +110,7 @@ public class MoverService(
         return movers;
     }
 
-    // A game's strongest gainer or loser (with art on disk) at one horizon.
+    // A game's strongest gainer or loser (with art) at one horizon.
     // Progressive price floor: prefer $10+ movers, but a game whose whole
     // ungraded market sits below that (e.g. Digimon) still gets its pick.
     private async Task<Pick?> BestMover(string game, string horizon, bool gainerSide)
@@ -120,11 +125,22 @@ public class MoverService(
                 ? q.OrderByDescending(f => f.ForecastPrice / f.BasePrice)
                 : q.OrderBy(f => f.ForecastPrice / f.BasePrice);
             // Small buffer because art-less candidates are skipped.
-            var hit = (await q.Take(5).ToListAsync())
-                .FirstOrDefault(f => HasLocalImage(f.Game, f.ProductId));
+            var top = await q.Take(5).ToListAsync();
+            var art = await IdsWithArt(game, top.Select(f => f.ProductId));
+            var hit = top.FirstOrDefault(f => art.Contains(f.ProductId));
             if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice);
         }
         return null;
+    }
+
+    // Of these product ids, the ones whose art has landed (cross-DB, so the
+    // per-game card DB is asked directly).
+    private async Task<HashSet<int>> IdsWithArt(string game, IEnumerable<int> ids)
+    {
+        var list = ids.Distinct().ToList();
+        if (list.Count == 0) return [];
+        return (await sources.Cards(game).WithArt()
+            .Where(c => list.Contains(c.Id)).Select(c => c.Id).ToListAsync()).ToHashSet();
     }
 
     // Join card names/sets from the right game DB, in memory (cross-DB). The
@@ -153,12 +169,5 @@ public class MoverService(
         var rank = picked.Select((f, i) => (Key: (f.Game, f.ProductId), i))
             .ToDictionary(x => x.Key, x => x.i);
         return movers.OrderBy(m => rank[(m.Game, m.Id)]).ToList();
-    }
-
-    private bool HasLocalImage(string game, int id)
-    {
-        var dir = config[$"CardImages:{game}"];
-        if (string.IsNullOrWhiteSpace(dir)) return true;   // dirs unconfigured — don't blank the page
-        return File.Exists(Path.Combine(dir, $"{id}.jpg"));
     }
 }

@@ -892,12 +892,17 @@ def main():
                 and market_price < args.min_price):
             need_history = False
 
-        # Does this card need its image? Only if it's missing on disk (new cards,
-        # or ones that failed before). Existing images are never re-downloaded.
+        # Does this card need its image? Art recorded in the DB lives in S3
+        # (local dirs only stage new scrapes), so image_path — not the disk —
+        # says whether a download is still needed.
         need_image = False
         if not args.no_images:
             img_file = os.path.join(args.image_dir, f"{pid}.jpg")
-            need_image = not (os.path.exists(img_file) and os.path.getsize(img_file) > 0)
+            on_disk = os.path.exists(img_file) and os.path.getsize(img_file) > 0
+            in_db = conn.execute(
+                "SELECT 1 FROM cards WHERE product_id=? AND image_path IS NOT NULL AND image_path != ''",
+                (pid,)).fetchone() is not None
+            need_image = not on_disk and not in_db
 
         if not need_history and not need_image:
             skipped += 1

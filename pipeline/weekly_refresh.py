@@ -76,14 +76,21 @@ STEPS = [
     # TCGplayer supplies the card catalog, details, and images ONLY — all
     # pricing comes exclusively from PriceCharting (steps below). One scrape
     # step per game in the registry; each is a single request on quiet nights.
-    *[(f"tcg-{g}", [*cfg["scraper"], "--new-only", "--no-history"])
+    # --max-sets keeps the scheduled run bounded while a game onboards (a
+    # fresh game has its whole catalog pending — e.g. Magic's 436 sets);
+    # normal weeks change far fewer sets than the cap. Full backfills run
+    # out-of-band via magic_backfill.sh / backfill_new_games.sh.
+    *[(f"tcg-{g}", [*cfg["scraper"], "--new-only", "--no-history",
+                    *(["--max-sets", "8"] if cfg["scraper"][0] == "tcg_scraper.py" else [])])
       for g, cfg in GAMES.items()],
-    ("art-sync",      ["sync_local_images.py"]),
     ("pc-download",   ["download_pricecharting.py"]),
     ("pc-gundam",     ["scrape_gundam_prices.py"]),
     ("pc-match",      ["build_pricecharting.py"]),
+    # --limit bounds the crawl (~50 min worst case) so a game mid-onboarding
+    # can't turn the daily run into a day-long one; the backfill script does
+    # the bulk crawling out-of-band.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
-                       "--workers", "1", "--delay", "1.0"]),
+                       "--workers", "1", "--delay", "1.0", "--limit", "3000"]),
     ("unify",         ["build_unified_history.py"]),
     ("nm-price",      ["backfill_nm_price.py"]),
     ("ml-export",     ["export_for_ml.py"]),
@@ -91,6 +98,11 @@ STEPS = [
     ("ml-embed",      ["embed_images.py"]),
     ("art-comps",     ["art_comps.py"]),
     ("forecast",      ["forecast_predict.py"]),
+    # Art goes to S3 (the canonical store) only AFTER ml-embed has seen the
+    # new files; art-sync then flags image_path from the bucket listing, so a
+    # card is only site-visible once its art is actually fetchable.
+    ("s3-upload",     ["s3_upload_images.py"]),
+    ("art-sync",      ["sync_local_images.py"]),
 ]
 
 

@@ -1,6 +1,9 @@
 # OS
 .DS_Store
 
+# Personal notes (cost reports etc.) — never committed; repo is public
+/notes/
+
 # Node / frontend
 node_modules/
 dist/

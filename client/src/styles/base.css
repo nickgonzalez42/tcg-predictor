@@ -11,6 +11,10 @@ body {
   /* No rubber-band bounce past the page edges (the overscroll gap at the
      bottom); also stops scroll chaining out of the app. */
   overscroll-behavior-y: none;
+  /* iOS Safari "font boosting" selectively inflates text it deems primary
+     content — random ticker items rendered huge on iPhone without this. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {

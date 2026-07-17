@@ -2,10 +2,11 @@
 # Scheduled refresh (launchd entry point, 1:00 PM daily — see
 # ~/Library/LaunchAgents/com.tcg-predictor.daily-refresh.plist).
 #
-#   Mon–Sat: prices + model  (weekly_refresh from pc-download), pushed to
-#            production WITHOUT images.
+#   Mon–Sat: prices + model (weekly_refresh from pc-download).
 #   Sunday:  full run — TCGplayer catalog scrape for new cards + art first,
-#            then the same chain; the push includes new images.
+#            then the same chain.
+# Card art uploads to S3 inside the refresh itself (s3-upload step); the push
+# only ships databases.
 #
 # store.db (accounts/portfolios) is never pushed — user data lives on the
 # server only. Every step is resumable: on failure the log names the step;
@@ -37,7 +38,7 @@ LOG="$LOG_DIR/refresh-$(date +%Y-%m-%d).log"
     "$PY" weekly_refresh.py && ../deploy/push_data.sh "$SERVER_IP"
   else
     echo "=== daily refresh (prices + model) — $(date '+%F %T') ==="
-    "$PY" weekly_refresh.py --from pc-download && ../deploy/push_data.sh "$SERVER_IP" --skip-images
+    "$PY" weekly_refresh.py --from pc-download && ../deploy/push_data.sh "$SERVER_IP"
   fi
   rc=$?
   if [ $rc -eq 0 ]; then
