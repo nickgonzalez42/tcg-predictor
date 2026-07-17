@@ -64,13 +64,16 @@
   letter-spacing: 0.03em;
 }
 
-/* Add / star buttons nested at the bottom of the rotator overlay, layered on top
-   of the black .rotator (a sibling, so any opacity on .rotator doesn't dim them). */
+/* Add / star buttons pinned to the bottom of the reveal box, over the black
+   .rotator backdrop. Anchored to .card__rotator (the clipped reveal box) rather
+   than the fixed-height .rotator, so they sit exactly at the visible bottom edge
+   and can't be clipped — iOS Safari was cutting them off inside the 3D layer. */
 .rotator__actions {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
+  z-index: 1;
   display: flex;
   justify-content: center;
   padding: var(--space-10);

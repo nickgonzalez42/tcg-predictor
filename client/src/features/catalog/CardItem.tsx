@@ -62,9 +62,12 @@ export default function CardItem({ card, ownGrade }: Props) {
                                 <img className="card3d__face card3d__face--back" src={cardBackSrc(card.game, card.cardType)} alt="" />
                             </div>
                         </div>
-                        <div className="rotator__actions">
-                            <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
-                        </div>
+                    </div>
+                    {/* Anchored to the reveal box (not the fixed-height, 3D-spinning
+                        .rotator): iOS Safari clips the bottom of a preserve-3d layer,
+                        which hid these buttons on iPhone. */}
+                    <div className="rotator__actions">
+                        <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
                     </div>
                 </div>
             </div>
