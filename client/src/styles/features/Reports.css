@@ -47,10 +47,6 @@
 }
 
 /* Article body (pipeline-generated HTML through the report sanitizer). */
-.report__crumb {
-  margin-bottom: var(--space-10);
-}
-
 .report__body h2 {
   margin: var(--space-25) 0 var(--space-10);
   font-size: 18px;

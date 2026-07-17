@@ -129,17 +129,19 @@ def build_report(force=False):
         return
 
     n = len(all_moves)
-    ups = sum(1 for m in all_moves if m[5] > 0.5)
-    downs = sum(1 for m in all_moves if m[5] < -0.5)
-    med = statistics.median(m[5] for m in all_moves)
+    gains = [m[5] for m in all_moves if m[5] > 0.5]
+    losses = [m[5] for m in all_moves if m[5] < -0.5]
+    ups, downs = len(gains), len(losses)
+    avg_gain = statistics.mean(gains) if gains else 0.0
+    avg_loss = statistics.mean(losses) if losses else 0.0
     breadth = "more gainers than losers" if ups > downs else \
               "more losers than gainers" if downs > ups else "an even split"
 
     title = f"Weekly Market Report — {today.strftime('%B %-d, %Y')}"
     slug = f"weekly-market-report-{today.isoformat()}"
     summary = (f"The card market showed {breadth} this week: of {n:,} cards priced "
-               f"at both ends of the window, {ups:,} rose and {downs:,} fell "
-               f"(median move {pct(med)}).")
+               f"at both ends of the window, {ups:,} rose an average of {avg_gain:.1f}% "
+               f"and {downs:,} fell an average of {abs(avg_loss):.1f}%.")
 
     body = [f"<p class='report-lede'>{esc(summary)} Price window: {baseline} to {latest}, "
             f"ungraded market prices.</p>"]
@@ -156,12 +158,15 @@ def build_report(force=False):
         body.append("</tbody></table>")
 
     for game, moves in per_game.items():
-        gups = sum(1 for m in moves if m[4] > 0.5)
-        gdowns = sum(1 for m in moves if m[4] < -0.5)
-        gmed = statistics.median(m[4] for m in moves)
+        ggains = [m[4] for m in moves if m[4] > 0.5]
+        glosses = [m[4] for m in moves if m[4] < -0.5]
+        gups, gdowns = len(ggains), len(glosses)
+        gavg_gain = statistics.mean(ggains) if ggains else 0.0
+        gavg_loss = statistics.mean(glosses) if glosses else 0.0
         body.append(f"<h2>{esc(GAMES[game]['label'])}</h2>"
-                    f"<p>{gups:,} of {len(moves):,} tracked cards rose this week, "
-                    f"{gdowns:,} fell; the median {esc(GAMES[game]['label'])} card moved {pct(gmed)}.</p>")
+                    f"<p>{gups:,} of {len(moves):,} tracked cards rose this week "
+                    f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
+                    f"(down an average of {abs(gavg_loss):.1f}%).</p>")
         gtop = sorted(moves, key=lambda m: -m[4])[:TOP_N]
         gbot = sorted(moves, key=lambda m: m[4])[:TOP_N]
         body.append("<table class='report-table'>"
