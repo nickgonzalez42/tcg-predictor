@@ -234,6 +234,21 @@
   margin-bottom: var(--space-15);
 }
 
+/* Set + rarity link to the catalog pre-filtered; keep the line quiet — a
+   dotted underline marks them, full link color arrives on hover. */
+.detail-center__subline a {
+  color: inherit;
+  text-decoration: underline dotted;
+  text-decoration-color: var(--border);
+  text-underline-offset: 3px;
+}
+
+.detail-center__subline a:hover {
+  color: var(--link);
+  text-decoration-style: solid;
+  text-decoration-color: currentColor;
+}
+
 .detail-center__pricerow {
   display: flex;
   align-items: baseline;

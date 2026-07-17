@@ -1,0 +1,93 @@
+/* Weekly market reports: index list + article body. */
+
+.reports {
+  max-width: 760px;
+}
+
+.reports__title {
+  margin: 0 0 var(--space-5);
+}
+
+.reports__sub {
+  margin: 0 0 var(--space-25);
+}
+
+.reports__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-15);
+}
+
+.reports__item {
+  padding: var(--space-15) var(--space-20);
+}
+
+.reports__item-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.reports__item-title:hover {
+  color: var(--brand);
+}
+
+.reports__date {
+  margin-left: var(--space-10);
+  color: var(--text-muted);
+  font-size: 12.8px;
+}
+
+.reports__summary {
+  margin: var(--space-5) 0 0;
+  color: var(--text-muted);
+}
+
+/* Article body (pipeline-generated HTML through the report sanitizer). */
+.report__crumb {
+  margin-bottom: var(--space-10);
+}
+
+.report__body h2 {
+  margin: var(--space-25) 0 var(--space-10);
+  font-size: 18px;
+}
+
+.report__body .report-lede {
+  color: var(--text-muted);
+  font-size: 17px;
+}
+
+.report__body .report-game {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-left: var(--space-5);
+}
+
+.report__body .report-note {
+  color: var(--text-muted);
+  font-size: 12.8px;
+}
+
+.report__body .report-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.4px;
+}
+
+.report__body .report-table th {
+  text-align: left;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 12.8px;
+  padding: var(--space-5) var(--space-10) var(--space-5) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.report__body .report-table td {
+  padding: var(--space-5) var(--space-10) var(--space-5) 0;
+  border-bottom: 1px solid var(--border);
+}

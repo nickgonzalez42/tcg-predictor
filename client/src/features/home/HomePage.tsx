@@ -285,9 +285,10 @@ function MoverTile({ mover }: { mover: Card }) {
 }
 
 const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across seven TCGs (One Piece, Pokémon, Yu-Gi-Oh!, Magic, Lorcana, Digimon, Gundam), with live ungraded and graded price tiers.' },
-    { n: '2', title: 'Forecast', text: '6 month and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
-    { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L, plus a watchlist with price alerts.' },
+    { n: '1', title: 'Browse', text: 'Every card across six TCGs (One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam), with ungraded and graded price tiers and full price history.' },
+    { n: '2', title: 'Forecast', text: '1 month, 6 month, and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
+    { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L that benchmarks your collection against the S&P 500.' },
+    { n: '4', title: 'Stay ahead', text: 'Price and forecast alerts per card and condition, plus a market report every Friday.' },
 ];
 
 export default function HomePage() {

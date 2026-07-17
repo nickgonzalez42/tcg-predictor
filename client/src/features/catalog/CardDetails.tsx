@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery } from "./catalogApi";
 import {
@@ -254,8 +254,15 @@ export default function CardDetails() {
     const pct12 = fc12 && fc12.basePrice ? (fc12.forecastPrice / fc12.basePrice - 1) * 100 : undefined;
     const historyMonths = forecasts.find(f => f.target === 'ungraded')?.months;
 
-    const subline = [card.setName, card.rarity, card.cardNumber ? `#${card.cardNumber}` : null]
-        .filter(Boolean).join(' · ');
+    // Set and rarity jump to the catalog pre-filtered; the number stays text
+    // (search matches names only, so a number link would land on no results).
+    const catalogFilter = (key: 'sets' | 'rarities', value: string) =>
+        `/catalog?game=${gameId}&${key}=${encodeURIComponent(value)}`;
+    const sublineParts = [
+        card.setName && <Link to={catalogFilter('sets', card.setName)}>{card.setName}</Link>,
+        card.rarity && <Link to={catalogFilter('rarities', card.rarity)}>{card.rarity}</Link>,
+        card.cardNumber && `#${card.cardNumber}`,
+    ].filter(Boolean);
 
     const cardDetails = [
         { label: 'Game', value: GAME_LABEL[gameId] ?? card.game },
@@ -339,7 +346,13 @@ export default function CardDetails() {
             {/* Center: header + chart + forecast */}
             <div className="detail-center">
                 <h1 className="detail-center__name">{card.name}</h1>
-                {subline && <div className="mono detail-center__subline">{subline}</div>}
+                {sublineParts.length > 0 && (
+                    <div className="mono detail-center__subline">
+                        {sublineParts.map((part, i) => (
+                            <Fragment key={i}>{i > 0 && ' · '}{part}</Fragment>
+                        ))}
+                    </div>
+                )}
                 {card.price != null && (
                     <div className="detail-center__pricerow">
                         <span className="detail-center__price">{currencyFormat(card.price)}</span>

@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Supervised Magic onboarding: catalog + art + prices + graded history,
-# COEXISTING with the 3:00 AM daily refresh. Every phase is resumable, and
+# COEXISTING with the 7:45 AM daily refresh. Every phase is resumable, and
 # the whole run is pause-aware: whenever the daily refresh (or a manual
 # weekly_refresh / data push) is active, the current phase is interrupted
 # and restarted once it finishes — the daily pull always wins.
@@ -28,8 +28,10 @@ daily_running() {
 }
 
 # Run a resumable command, yielding to the daily refresh: if one starts, the
-# child gets SIGINT (safe — per-set / per-card commits) and is restarted from
-# where it stopped once the refresh (and its data push) finish.
+# child gets SIGTERM (SIGINT is a no-op here: background children of a
+# non-interactive shell start with INT ignored) and is restarted from where
+# it stopped once the refresh (and its data push) finish. TERM kills the
+# scraper mid-set at worst — per-image commits make that loss-free.
 run_with_pauses() {
   while :; do
     while daily_running; do sleep 120; done
@@ -40,7 +42,7 @@ run_with_pauses() {
       if daily_running; then
         paused=1
         echo "--- daily refresh detected: pausing — $(date '+%F %T') ---"
-        kill -INT $child 2>/dev/null
+        kill -TERM $child 2>/dev/null
         wait $child 2>/dev/null
         break
       fi

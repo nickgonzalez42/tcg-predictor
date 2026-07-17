@@ -132,7 +132,7 @@
 }
 
 .how__step {
-  grid-column: span 4;
+  grid-column: span 3;
   background: var(--surface-tint);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -194,7 +194,7 @@
   }
 
   .how__step {
-    grid-column: 1 / -1;
+    grid-column: span 4;
   }
 
   .movers, .how {

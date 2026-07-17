@@ -51,7 +51,11 @@ def embed_game(game: str, model, preprocess, device: str, limit: int | None):
     csv_path = os.path.join(DATA, f"{game}_cards.csv")
     out_path = os.path.join(DATA, f"{game}_img_emb.npz")
 
-    df = pd.read_csv(csv_path, usecols=["product_id", "image_file", "has_local_image"])
+    # engine="python": the C parser's chunked reader has a usecols bug that
+    # trips on these files' quoted multi-line card text (IndexError, content-
+    # dependent — it surfaced when the 2026-07 image prune shifted row bytes).
+    df = pd.read_csv(csv_path, usecols=["product_id", "image_file", "has_local_image"],
+                     engine="python")
     df = df[df["has_local_image"] == 1].dropna(subset=["image_file"])
     if limit:
         df = df.head(limit)

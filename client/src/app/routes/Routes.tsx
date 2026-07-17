@@ -17,6 +17,8 @@ import RequireAuth from "./RequireAuth";
 import Portfolio from "../../features/watchlist/Portfolio";
 import Wishlist from "../../features/watchlist/Wishlist";
 import NotificationsPage from "../../features/watchlist/NotificationsPage";
+import ReportsPage from "../../features/reports/ReportsPage";
+import ReportPage from "../../features/reports/ReportPage";
 
 export const router = createBrowserRouter([
     {
@@ -36,6 +38,8 @@ export const router = createBrowserRouter([
             {path: '', element: <HomePage />},
             {path: '/catalog', element: <Catalog />},
             {path: '/catalog/:game/:id', element: <CardDetails />},
+            {path: '/reports', element: <ReportsPage />},
+            {path: '/reports/:slug', element: <ReportPage />},
             {path: '/about', element: <AboutPage />},
             {path: '/privacy', element: <PrivacyPage />},
             {path: '/terms', element: <TermsPage />},

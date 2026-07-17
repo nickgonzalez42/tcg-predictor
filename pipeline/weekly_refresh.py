@@ -98,6 +98,9 @@ STEPS = [
     ("ml-embed",      ["embed_images.py"]),
     ("art-comps",     ["art_comps.py"]),
     ("forecast",      ["forecast_predict.py"]),
+    # Fridays only (the script no-ops other days): the weekly market report,
+    # written into predictions.db so it ships with the normal data push.
+    ("report",        ["market_report.py"]),
     # Art goes to S3 (the canonical store) only AFTER ml-embed has seen the
     # new files; art-sync then flags image_path from the bucket listing, so a
     # card is only site-visible once its art is actually fetchable.

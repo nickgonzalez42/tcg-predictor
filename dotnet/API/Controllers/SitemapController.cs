@@ -1,8 +1,10 @@
 using System.Text;
+using API.Data;
 using API.Extensions;
 using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
@@ -13,12 +15,13 @@ namespace API.Controllers;
 // see exactly the set of pages the catalog actually serves — regenerated from
 // the card DBs on every request, nothing to sync.
 [ApiController]
-public class SitemapController(CardSources sources, IConfiguration config) : ControllerBase
+public class SitemapController(
+    CardSources sources, PredictionsContext predictions, IConfiguration config) : ControllerBase
 {
     private const string XmlNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
     private static readonly string[] StaticPaths =
-        ["/", "/catalog", "/about", "/privacy", "/terms", "/contact"];
+        ["/", "/catalog", "/reports", "/about", "/privacy", "/terms", "/contact"];
 
     private string Origin => (config["ClientUrl"] ?? "https://cardstock.guide").TrimEnd('/');
 
@@ -28,6 +31,8 @@ public class SitemapController(CardSources sources, IConfiguration config) : Con
         var sb = new StringBuilder();
         sb.Append($"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<sitemapindex xmlns=\"{XmlNs}\">\n");
         sb.Append($"  <sitemap><loc>{Origin}/sitemap-static.xml</loc></sitemap>\n");
+        if ((await ReportSlugs()).Count > 0)
+            sb.Append($"  <sitemap><loc>{Origin}/sitemap-reports.xml</loc></sitemap>\n");
         foreach (var game in GameRegistry.Keys)
             if (await sources.Cards(game).VisibleInCatalog().AnyAsync())
                 sb.Append($"  <sitemap><loc>{Origin}/sitemap-{game}.xml</loc></sitemap>\n");
@@ -60,6 +65,25 @@ public class SitemapController(CardSources sources, IConfiguration config) : Con
         foreach (var id in ids)
             sb.Append($"  <url><loc>{Origin}/catalog/{key}/{id}</loc></url>\n");
         return Xml(CloseUrlset(sb));
+    }
+
+    [HttpGet("/sitemap-reports.xml")]
+    public async Task<IActionResult> Reports()
+    {
+        var slugs = await ReportSlugs();
+        if (slugs.Count == 0) return NotFound();
+
+        var sb = OpenUrlset();
+        foreach (var slug in slugs)
+            sb.Append($"  <url><loc>{Origin}/reports/{slug}</loc></url>\n");
+        return Xml(CloseUrlset(sb));
+    }
+
+    // Empty until the pipeline's first Friday run creates the reports table.
+    private async Task<List<string>> ReportSlugs()
+    {
+        try { return await predictions.Reports.Select(r => r.Slug).ToListAsync(); }
+        catch (SqliteException) { return []; }
     }
 
     private static StringBuilder OpenUrlset() =>

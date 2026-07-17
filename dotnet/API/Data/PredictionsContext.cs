@@ -8,6 +8,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
 {
     public DbSet<Forecast> Forecasts => Set<Forecast>();
     public DbSet<ArchivedForecast> ForecastArchive => Set<ArchivedForecast>();
+    public DbSet<MarketReport> Reports => Set<MarketReport>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -32,6 +33,17 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.RealizedPrice).HasColumnName("realized_price");
             f.Property(x => x.RealizedRet).HasColumnName("realized_ret");
             f.Property(x => x.RealizedAt).HasColumnName("realized_at");
+        });
+
+        builder.Entity<MarketReport>(r =>
+        {
+            r.ToTable("reports");
+            r.HasKey(x => x.Slug);
+            r.Property(x => x.Slug).HasColumnName("slug");
+            r.Property(x => x.Title).HasColumnName("title");
+            r.Property(x => x.PublishedAt).HasColumnName("published_at");
+            r.Property(x => x.Summary).HasColumnName("summary");
+            r.Property(x => x.BodyHtml).HasColumnName("body_html");
         });
 
         builder.Entity<Forecast>(f =>
