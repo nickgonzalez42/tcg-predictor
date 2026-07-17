@@ -34,6 +34,12 @@
   border-color: var(--primary);
 }
 
+/* Match .btn:disabled so a mid-save row dims as one unit. */
+.input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Number fields (quantities, prices, alerts) keep typing only — no native
    increment/decrement spinners anywhere in the app. */
 .input[type="number"]::-webkit-outer-spin-button,

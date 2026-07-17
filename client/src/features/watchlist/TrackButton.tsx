@@ -18,8 +18,9 @@ type Props = {
 export default function TrackButton({ game, productId, compact, ownGrade }: Props) {
     const { data: user } = useUserInfoQuery();
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
-    const [add] = useAddToWatchlistMutation();
-    const [remove] = useRemoveFromWatchlistMutation();
+    const [add, { isLoading: addPending }] = useAddToWatchlistMutation();
+    const [remove, { isLoading: removePending }] = useRemoveFromWatchlistMutation();
+    const wishlistPending = addPending || removePending;
     // While the "how many to add" input is open, the watchlist button is hidden
     // (it comes back on Cancel), so the quantity row isn't crowded.
     const [adding, setAdding] = useState(false);
@@ -32,6 +33,7 @@ export default function TrackButton({ game, productId, compact, ownGrade }: Prop
     const wishlistButton = (
         <button
             className={`btn btn--outline${wishlisted ? ' btn--active' : ''}`}
+            disabled={wishlistPending}
             onClick={() => wishlisted
                 ? remove({ game, productId, kind: 'wishlist' })
                 : add({ game, productId, kind: 'wishlist' })}
@@ -97,7 +99,7 @@ function AddToCollection({ game, productId, grade, owned, onOpenChange }: {
             <input
                 className="input own-qty__input"
                 type="number" min="1" max="999" step="1" inputMode="numeric"
-                value={value} autoFocus
+                value={value} autoFocus disabled={isLoading}
                 onChange={e => setValue(e.target.value)}
                 onKeyDown={e => {
                     if (e.key === 'Enter') submit();
@@ -106,9 +108,9 @@ function AddToCollection({ game, productId, grade, owned, onOpenChange }: {
             />
             <button className="btn btn--outline" disabled={!valid || isLoading} onClick={submit}
                 title={`Add to portfolio · ${tierLabel(grade)}`}>
-                Add
+                {isLoading ? 'Adding…' : 'Add'}
             </button>
-            <button className="btn btn--outline" onClick={close}>Cancel</button>
+            <button className="btn btn--outline" disabled={isLoading} onClick={close}>Cancel</button>
         </span>
     );
 }

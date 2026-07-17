@@ -42,7 +42,7 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
     const { data: user } = useUserInfoQuery();
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
     const [add, { isLoading: adding }] = useAddToWatchlistMutation();
-    const [remove] = useRemoveFromWatchlistMutation();
+    const [remove, { isLoading: removing }] = useRemoveFromWatchlistMutation();
     const [setQty, { isLoading: settingQty }] = useSetOwnedQuantityMutation();
     const [grade, setGrade] = useState('');   // '' = Ungraded (raw copy)
     const [qty, setQty_] = useState('1');
@@ -80,10 +80,10 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
                         inputMode="numeric" value={qty} onChange={e => setQty_(e.target.value)} />
                     <button className="btn btn--block" style={{ marginTop: 'var(--space-15)' }}
                         disabled={!valid || settingQty} onClick={addToPortfolio}>
-                        ＋ Add to Portfolio{ownedTotal > 0 ? ` (${ownedTotal} owned)` : ''}
+                        {settingQty ? 'Adding…' : `＋ Add to Portfolio${ownedTotal > 0 ? ` (${ownedTotal} owned)` : ''}`}
                     </button>
                     <button className={`btn btn--outline btn--block${wishlisted ? ' btn--active' : ''}`}
-                        style={{ marginTop: 'var(--space-15)' }} disabled={adding}
+                        style={{ marginTop: 'var(--space-15)' }} disabled={adding || removing}
                         onClick={() => wishlisted
                             ? remove({ game, productId, kind: 'wishlist' })
                             : add({ game, productId, kind: 'wishlist' })}>
