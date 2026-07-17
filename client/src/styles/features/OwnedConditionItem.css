@@ -141,6 +141,14 @@
   font-size: 12.48px;
 }
 
+/* Touch devices bump the input to 16px (iOS zoom guard); match the Add/Cancel
+   buttons to it so the quantity row reads as one consistent size. */
+@media (hover: none) and (pointer: coarse) {
+  .own-qty .btn {
+    font-size: 16px;
+  }
+}
+
 /* Read-only values of a detailed owned copy */
 .owned-summary {
   display: flex;

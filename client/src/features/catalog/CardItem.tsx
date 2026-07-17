@@ -8,6 +8,7 @@ import ChangePill from "../../app/shared/components/ChangePill"
 import Sparkline from "../../app/shared/components/Sparkline"
 import PricePair from "../../app/shared/components/PricePair"
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
+import { useUserInfoQuery } from "../account/accountApi";
 
 type Props = {
     card: Card
@@ -15,6 +16,7 @@ type Props = {
 }
 
 export default function CardItem({ card, ownGrade }: Props) {
+    const { data: user } = useUserInfoQuery()
     const [active, setActive] = useState(false)
     const mediaRef = useRef<HTMLDivElement>(null)
     const rotatorRef = useRef<HTMLDivElement>(null)
@@ -24,6 +26,7 @@ export default function CardItem({ card, ownGrade }: Props) {
     // The reveal animates .card__rotator's max-height, so the inner .rotator needs a
     // fixed pixel height equal to the media container (a % would collapse with the
     // parent). A ResizeObserver keeps it in sync on first paint, image load, and resize.
+    // Re-runs when `user` resolves, since the rotator only mounts for signed-in users.
     useEffect(() => {
         const media = mediaRef.current
         const rotator = rotatorRef.current
@@ -33,7 +36,7 @@ export default function CardItem({ card, ownGrade }: Props) {
         const ro = new ResizeObserver(sync)
         ro.observe(media)
         return () => ro.disconnect()
-    }, [])
+    }, [user])
 
     return (
         <div className="card">
@@ -47,29 +50,32 @@ export default function CardItem({ card, ownGrade }: Props) {
                         onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                     />
                 </Link>
-                <div className={`card__rotator${active ? ' active' : ''}`}>
-                    <div className="rotator" ref={rotatorRef}>
-                        <div className="rotator__condition">{tierLabel(ownGrade)}</div>
-                        <div className="card3d">
-                            <div className="card3d__inner">
-                                <img
-                                    className="card3d__face"
-                                    src={card.pictureUrl}
-                                    alt=""
-                                    onError={e => fallbackToCardBack(e, card.game, card.cardType)}
-                                />
-                                <div className="card3d__core"></div>
-                                <img className="card3d__face card3d__face--back" src={cardBackSrc(card.game, card.cardType)} alt="" />
+                {/* The add/watchlist reveal is a signed-in feature — no user, no overlay. */}
+                {user && (
+                    <div className={`card__rotator${active ? ' active' : ''}`}>
+                        <div className="rotator" ref={rotatorRef}>
+                            <div className="rotator__condition">{tierLabel(ownGrade)}</div>
+                            <div className="card3d">
+                                <div className="card3d__inner">
+                                    <img
+                                        className="card3d__face"
+                                        src={card.pictureUrl}
+                                        alt=""
+                                        onError={e => fallbackToCardBack(e, card.game, card.cardType)}
+                                    />
+                                    <div className="card3d__core"></div>
+                                    <img className="card3d__face card3d__face--back" src={cardBackSrc(card.game, card.cardType)} alt="" />
+                                </div>
                             </div>
                         </div>
+                        {/* Anchored to the reveal box (not the fixed-height, 3D-spinning
+                            .rotator): iOS Safari clips the bottom of a preserve-3d layer,
+                            which hid these buttons on iPhone. */}
+                        <div className="rotator__actions">
+                            <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
+                        </div>
                     </div>
-                    {/* Anchored to the reveal box (not the fixed-height, 3D-spinning
-                        .rotator): iOS Safari clips the bottom of a preserve-3d layer,
-                        which hid these buttons on iPhone. */}
-                    <div className="rotator__actions">
-                        <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
-                    </div>
-                </div>
+                )}
             </div>
 
             <div className="card__body">
@@ -91,10 +97,12 @@ export default function CardItem({ card, ownGrade }: Props) {
                             />
                         </div>
                     </div>
-                    <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
-                        aria-pressed={active} title="Show / hide actions">
-                        ＋
-                    </button>
+                    {user && (
+                        <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
+                            aria-pressed={active} title="Show / hide actions">
+                            ＋
+                        </button>
+                    )}
                 </div>
                 {/* Past-movement pill + sparkline share one line. */}
                 <div className="card__footer">
