@@ -4,7 +4,7 @@ const SITE = "CardStock";
 const DEFAULT_TITLE = `${SITE}: Trading Card Price Predictions`;
 const DEFAULT_DESCRIPTION =
     "AI price predictions, graded price history, and portfolio tracking for " +
-    "Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";
+    "Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";
 
 // Per-page <title> + meta description for an SPA: crawlers that execute JS
 // (Google) and the browser tab both see page-specific text; everyone else
