@@ -307,7 +307,7 @@ export default function HomePage() {
                 <div className="hero__copy">
                     <h1 className="hero__title">Know your cards' worth: yesterday, today, tomorrow.</h1>
                     <p className="hero__sub">
-                        CardStock uses AI to predict what any card will be worth a month,
+                        CardStock uses machine learning to predict what any card will be worth a month,
                         six months, or a year from now. Seven TCGs, graded and ungraded
                         values, full price history, and a tracker for your whole collection.
                     </p>
