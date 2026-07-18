@@ -285,7 +285,7 @@ function MoverTile({ mover }: { mover: Card }) {
 }
 
 const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across six TCGs (One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam), with ungraded and graded price tiers and full price history.' },
+    { n: '1', title: 'Browse', text: 'Every card across seven TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam), with ungraded and graded price tiers and full price history.' },
     { n: '2', title: 'Forecast', text: '1 month, 6 month, and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
     { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L that benchmarks your collection against the S&P 500.' },
     { n: '4', title: 'Stay ahead', text: 'Price and forecast alerts per card and condition, plus a market report every Friday.' },
@@ -293,7 +293,7 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
     usePageMeta(undefined,
-        "Trading card price predictions from a machine-learned model: market movers, graded history, and portfolio tracking across six TCGs.");
+        "Trading card price predictions from a machine-learned model: market movers, graded history, and portfolio tracking across seven TCGs.");
     const { data: movers } = useFetchMoversQuery({ count: 12, horizon: '1m' });
     // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) across
     // games; the tiles below stay on the 1-month ranking.
@@ -307,7 +307,7 @@ export default function HomePage() {
                 <div className="hero__copy">
                     <h1 className="hero__title">The stock market for trading cards.</h1>
                     <p className="hero__sub">
-                        Machine-learned price predictions for cards across six TCGs, with
+                        Machine-learned price predictions for cards across seven TCGs, with
                         graded tiers, price history, and a portfolio that tracks your P/L.
                     </p>
                     <div className="btn-group">
