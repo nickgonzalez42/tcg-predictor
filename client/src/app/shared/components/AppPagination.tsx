@@ -8,12 +8,13 @@ type Props = {
     scrollToTop?: boolean
 }
 
-// Truncated page list: 1 2 3 … i-2 i-1 i … last  (with the last page kept so you
-// can still jump to the end; gaps become an ellipsis).
+// Truncated page list: 1 2 3 … i-1 i i+1 … last  (current page centered in its
+// window, last page kept so you can still jump to the end; gaps become an
+// ellipsis).
 function pageList(current: number, total: number): (number | '…')[] {
     const pages = new Set<number>();
     [1, 2, 3].forEach(p => pages.add(p));
-    [current - 2, current - 1, current].forEach(p => pages.add(p));
+    [current - 1, current, current + 1].forEach(p => pages.add(p));
     pages.add(total);
 
     const sorted = [...pages].filter(p => p >= 1 && p <= total).sort((a, b) => a - b);
