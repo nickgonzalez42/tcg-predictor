@@ -293,7 +293,7 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
     usePageMeta(undefined,
-        "Trading card price predictions from a machine-learned model: market movers, graded history, and portfolio tracking across seven TCGs.");
+        "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards will be worth in a month, six months, or a year.");
     const { data: movers } = useFetchMoversQuery({ count: 12, horizon: '1m' });
     // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) across
     // games; the tiles below stay on the 1-month ranking.
@@ -305,16 +305,17 @@ export default function HomePage() {
         <>
             <section className="hero subgrid full-span">
                 <div className="hero__copy">
-                    <h1 className="hero__title">The stock market for trading cards.</h1>
+                    <h1 className="hero__title">Know what your cards will be worth.</h1>
                     <p className="hero__sub">
-                        Machine-learned price predictions for cards across seven TCGs, with
-                        graded tiers, price history, and a portfolio that tracks your P/L.
+                        CardStock uses AI to predict what any card will be worth a month,
+                        six months, or a year from now. Seven TCGs, graded and ungraded
+                        values, full price history, and a tracker for your whole collection.
                     </p>
                     <div className="btn-group">
                         {user
-                            ? <Link className="btn" to="/portfolio">Open your portfolio</Link>
+                            ? <Link className="btn" to="/portfolio">Open your collection</Link>
                             : <Link className="btn" to="/register">Start tracking free</Link>}
-                        <Link className="btn btn--outline" to="/catalog">Browse the market</Link>
+                        <Link className="btn btn--outline" to="/catalog">Look up a card</Link>
                     </div>
                 </div>
                 <div className="hero__panel">
