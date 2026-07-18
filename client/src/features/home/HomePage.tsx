@@ -305,7 +305,7 @@ export default function HomePage() {
         <>
             <section className="hero subgrid full-span">
                 <div className="hero__copy">
-                    <h1 className="hero__title">Know what your cards will be worth.</h1>
+                    <h1 className="hero__title">Know your cards' worth: yesterday, today, tomorrow.</h1>
                     <p className="hero__sub">
                         CardStock uses AI to predict what any card will be worth a month,
                         six months, or a year from now. Seven TCGs, graded and ungraded
