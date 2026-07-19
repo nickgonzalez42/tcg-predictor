@@ -11,7 +11,7 @@ namespace API.Controllers;
 // Card comments: threaded (ParentId), reddit-style one-vote-per-user scoring,
 // automod at creation. Authors are shown by handle only — identity usernames
 // (emails) never leave the server.
-public class CommentsController(StoreContext store, ModerationService mod) : BaseApiController
+public class CommentsController(StoreContext store, ModerationService mod, NotificationService notify) : BaseApiController
 {
     public record CreateDto(string Game, int ProductId, int? ParentId, string Body);
     public record VoteDto(int Value);   // 1, -1, or 0 (retract)
@@ -102,6 +102,7 @@ public class CommentsController(StoreContext store, ModerationService mod) : Bas
         };
         store.Comments.Add(comment);
         await store.SaveChangesAsync();
+        await notify.NotifyComment(comment, profile.Handle!);   // fail-soft inside
         return Ok(new { comment.Id });
     }
 

@@ -149,7 +149,9 @@ public class MoverService(
                         && !EF.Functions.Like(c.Name!, "%winner%")
                         && !EF.Functions.Like(c.Name!, "%1st place%")
                         && !EF.Functions.Like(c.Name!, "%2nd place%")
-                        && !EF.Functions.Like(c.Name!, "%3rd place%"))
+                        && !EF.Functions.Like(c.Name!, "%3rd place%")
+                        && !EF.Functions.Like(c.Name!, "%treasure cup%")
+                        && !EF.Functions.Like(c.Name!, "%regional%"))
             .Select(c => c.Id).ToListAsync()).ToHashSet();
     }
 
