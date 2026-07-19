@@ -151,7 +151,11 @@ public class MoverService(
                         && !EF.Functions.Like(c.Name!, "%2nd place%")
                         && !EF.Functions.Like(c.Name!, "%3rd place%")
                         && !EF.Functions.Like(c.Name!, "%treasure cup%")
-                        && !EF.Functions.Like(c.Name!, "%regional%"))
+                        && !EF.Functions.Like(c.Name!, "%regional%")
+                        // "finalist"/"finals" only: bare "final" would hit real
+                        // cards (Final Destiny, Finally King, Final Fantasy).
+                        && !EF.Functions.Like(c.Name!, "%finalist%")
+                        && !EF.Functions.Like(c.Name!, "%finals%"))
             .Select(c => c.Id).ToListAsync()).ToHashSet();
     }
 
