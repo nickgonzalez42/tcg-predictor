@@ -9,23 +9,16 @@ namespace API.Services;
 // change plus the from (current) and to (forecast) prices.
 public readonly record struct ForecastChange(double Pct, double Usd, double From, double To);
 
-// A card's actual price movement over one trend window. Pct is null when the
-// anchor price sat under the penny floor (see CardMarketData.PennyFloor);
-// RawPct always carries the true percentage, so floor-suppressed cards can
-// still be ordered among themselves (after every ranked card) instead of
-// falling back to id order.
-public readonly record struct HistoryChange(double? Pct, double Usd, double RawPct);
+// A card's actual price movement over one trend window. No value floor: the
+// catalog's default $10 minimum-price filter is what keeps penny-card noise
+// out of the default view, so the ranking itself stays honest.
+public readonly record struct HistoryChange(double Pct, double Usd);
 
 // Market context for card DTOs. Cards live in per-game DBs, price history in
 // pricecharting.db, and model forecasts in predictions.db — this service owns
 // every lookup that joins them and the decoration the tiles/screener rows use.
 public class CardMarketData(PredictionsContext predictions, PriceChartingContext priceCharting)
 {
-    // Penny cards turn rounding noise into "+500% growth" and bury every real
-    // card at the top of % rankings — under this base price a card's % change
-    // can't rank it (it still lists, in the unsorted tail).
-    public const double PennyFloor = 5.0;
-
     // One row per trend window: when the window starts, and which trained
     // forecast horizon a tile's headline forecast should use. History points
     // are monthly, so short windows read as "the last known price N ago".
@@ -102,9 +95,8 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             var anchor = series.LastOrDefault(r => string.CompareOrdinal(r.Date, cutoff) <= 0)
                          ?? series[0];
             if (anchor.Price <= 0) continue;
-            var raw = (latest.Price / anchor.Price - 1) * 100;
-            double? pct = anchor.Price >= PennyFloor ? raw : null;
-            changes[g.Key] = new HistoryChange(pct, latest.Price - anchor.Price, raw);
+            changes[g.Key] = new HistoryChange(
+                (latest.Price / anchor.Price - 1) * 100, latest.Price - anchor.Price);
         }
         return changes;
     }
@@ -116,7 +108,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         if (ids.Count == 0) return [];
         var rows = await predictions.Forecasts
             .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon
-                        && f.BasePrice >= PennyFloor && ids.Contains(f.ProductId))
+                        && f.BasePrice > 0 && ids.Contains(f.ProductId))
             .Select(f => new { f.ProductId, f.BasePrice, f.ForecastPrice })
             .ToListAsync();
         return rows.ToDictionary(r => r.ProductId, r => new ForecastChange(

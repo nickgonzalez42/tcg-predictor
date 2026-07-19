@@ -21,7 +21,10 @@ const initialState: CardParams = {
     searchTerm: '',
     orderBy: DEFAULT_ORDER,
     grade: '',
-    minPrice: '',
+    // $10 floor by default: the growth sorts rank every card honestly (no
+    // hidden server-side noise gate), so the default view filters out the
+    // penny cards whose % moves are rounding noise. Clearing it shows all.
+    minPrice: '10',
     maxPrice: '',
     trend: '1y',   // matches the default 1Y growth sort
     view: getInitialView()
