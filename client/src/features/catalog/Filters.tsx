@@ -84,17 +84,25 @@ export default function Filters({ filtersData: data }: Props) {
                                     {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                 </select>
                                 <div className="price-range">
-                                    <input
-                                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
-                                        placeholder="Min $" aria-label="Minimum shown price"
-                                        value={min.term} onChange={e => min.onChange(e.target.value)}
-                                    />
+                                    {/* A number input can't hold "$10", so the $ is an
+                                        overlay shown only while a value is present. */}
+                                    <span className={`price-range__field${min.term !== '' ? ' price-range__field--filled' : ''}`}>
+                                        {min.term !== '' && <span className="price-range__currency">$</span>}
+                                        <input
+                                            className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
+                                            placeholder="Min $" aria-label="Minimum shown price"
+                                            value={min.term} onChange={e => min.onChange(e.target.value)}
+                                        />
+                                    </span>
                                     <span className="price-range__dash">–</span>
-                                    <input
-                                        className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
-                                        placeholder="Max $" aria-label="Maximum shown price"
-                                        value={max.term} onChange={e => max.onChange(e.target.value)}
-                                    />
+                                    <span className={`price-range__field${max.term !== '' ? ' price-range__field--filled' : ''}`}>
+                                        {max.term !== '' && <span className="price-range__currency">$</span>}
+                                        <input
+                                            className="input" type="number" min="0" max="999999" step="any" inputMode="decimal"
+                                            placeholder="Max $" aria-label="Maximum shown price"
+                                            value={max.term} onChange={e => max.onChange(e.target.value)}
+                                        />
+                                    </span>
                                 </div>
                             </div>
                             <div className="panel">

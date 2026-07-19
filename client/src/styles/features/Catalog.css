@@ -71,6 +71,34 @@
   min-width: 0;
 }
 
+.price-range__field {
+  position: relative;
+  display: inline-flex;
+  flex: 1;
+  min-width: 0;
+}
+
+/* "$" overlay while a value is present; the input pads left to make room. */
+.price-range__currency {
+  position: absolute;
+  left: var(--space-10);
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: var(--text-muted);
+  font-size: 15.2px;   /* matches .input */
+}
+
+.price-range__field--filled .input {
+  padding-left: calc(var(--space-10) + 1.2ch);
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .price-range__currency {
+    font-size: 16px;   /* inputs bump to 16px on touch (iOS zoom guard) */
+  }
+}
+
 .price-range__dash {
   color: var(--text-muted);
 }
