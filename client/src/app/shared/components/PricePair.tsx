@@ -15,10 +15,19 @@ export default function PricePair({ price, forecast, horizon = '12M', asOf }: Pr
     if (price == null) return <>—</>;
     // The 12-month horizon reads as "1Y" in the UI (its own trend window label).
     const label = horizon === '12M' ? '1Y' : horizon;
+    const pct = forecast != null && price > 0 ? Math.round((forecast / price - 1) * 100) : null;
     return (
         <span className="pricepair">
             <span className="pricepair__row">
                 <span className="pricepair__now" title="Current price">{currencyFormat(price)}</span>
+                {pct != null && (
+                    <span
+                        className={`mono pricepair__pct ${forecast! >= price ? 'pricepair__fcst--up' : 'pricepair__fcst--down'}`}
+                        title={`Model's ${label} forecast change`}
+                    >
+                        {pct >= 0 ? '+' : ''}{pct}%
+                    </span>
+                )}
                 {asOf && <span className="mono pricepair__asof">{shortDate(asOf)}</span>}
             </span>
             {forecast != null && (
