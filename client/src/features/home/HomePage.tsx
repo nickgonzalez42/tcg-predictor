@@ -206,6 +206,9 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     }, []);
 
     return (
+        // The whole scene links to the card it's currently drawing.
+        <Link to={`/catalog/${gameKey(card.game)}/${card.id}`} className="hero__chart-link"
+            aria-label={`View ${card.name}`} title={`View ${card.name}`}>
         <svg ref={svgRef} className="hero__chart" viewBox={`0 0 ${HERO_W} ${HERO_H}`}
             preserveAspectRatio="none" aria-hidden="true">
             <defs>
@@ -246,6 +249,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                 </g>
             </g>
         </svg>
+        </Link>
     );
 }
 

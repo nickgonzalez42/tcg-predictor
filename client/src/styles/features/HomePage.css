@@ -54,6 +54,16 @@
   display: block;
 }
 
+/* The scene links to the card it's drawing; the wrapper is invisible chrome. */
+.hero__chart-link {
+  display: block;
+  cursor: pointer;
+}
+
+.hero__chart-link:hover {
+  text-decoration: none;
+}
+
 .hero__history {
   fill: none;
   stroke: var(--chart-history);
