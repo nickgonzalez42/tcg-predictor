@@ -350,17 +350,23 @@ public partial class CardsController(
         var tier = GradeTiers.PriceTier(p.Grade ?? "");
         var changes = await market.HistoryChanges(folder, tier, all.Select(c => c.Id).ToList(), sort.Window);
 
-        // % ranking excludes floor-suppressed penny cards (Pct == null); a $
-        // move can't be faked by rounding, so every card with history ranks.
+        // % ranking floors penny cards (Pct == null): they cluster after every
+        // $5+ card so rounding noise can't top the list, but still order by
+        // their real move (RawPct) so later pages stay sorted. A $ move can't
+        // be faked by rounding, so every card with history ranks normally.
         double? Key(CardBase c) => changes.TryGetValue(c.Id, out var ch)
             ? (sort.Metric == "pct" ? ch.Pct : ch.Usd)
             : null;
         var withChg = all.Where(c => Key(c) != null);
-        var without = all.Where(c => Key(c) == null);   // no history / floored -> end
+        var floored = all.Where(c => Key(c) == null && changes.ContainsKey(c.Id));
+        var noHistory = all.Where(c => !changes.ContainsKey(c.Id));
         var sorted = (sort.Descending
                 ? withChg.OrderByDescending(c => Key(c))
                 : withChg.OrderBy(c => Key(c)))
-            .Concat(without)
+            .Concat(sort.Descending
+                ? floored.OrderByDescending(c => changes[c.Id].RawPct)
+                : floored.OrderBy(c => changes[c.Id].RawPct))
+            .Concat(noHistory)
             .ToList();
 
         var cards = ToDtos(PageSlice(sorted, p), folder);

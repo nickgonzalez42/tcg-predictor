@@ -10,8 +10,11 @@ namespace API.Services;
 public readonly record struct ForecastChange(double Pct, double Usd, double From, double To);
 
 // A card's actual price movement over one trend window. Pct is null when the
-// anchor price sat under the penny floor (see CardMarketData.PennyFloor).
-public readonly record struct HistoryChange(double? Pct, double Usd);
+// anchor price sat under the penny floor (see CardMarketData.PennyFloor);
+// RawPct always carries the true percentage, so floor-suppressed cards can
+// still be ordered among themselves (after every ranked card) instead of
+// falling back to id order.
+public readonly record struct HistoryChange(double? Pct, double Usd, double RawPct);
 
 // Market context for card DTOs. Cards live in per-game DBs, price history in
 // pricecharting.db, and model forecasts in predictions.db — this service owns
@@ -99,10 +102,9 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             var anchor = series.LastOrDefault(r => string.CompareOrdinal(r.Date, cutoff) <= 0)
                          ?? series[0];
             if (anchor.Price <= 0) continue;
-            double? pct = anchor.Price >= PennyFloor
-                ? (latest.Price / anchor.Price - 1) * 100
-                : null;
-            changes[g.Key] = new HistoryChange(pct, latest.Price - anchor.Price);
+            var raw = (latest.Price / anchor.Price - 1) * 100;
+            double? pct = anchor.Price >= PennyFloor ? raw : null;
+            changes[g.Key] = new HistoryChange(pct, latest.Price - anchor.Price, raw);
         }
         return changes;
     }

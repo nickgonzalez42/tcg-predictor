@@ -121,9 +121,15 @@ public partial class CardsController
             double? Key(CardBase c) => histChanges.TryGetValue(c.Id, out var ch)
                 ? (hs.Metric == "pct" ? ch.Pct : ch.Usd) : null;
             var withChg = matched.Where(c => Key(c) != null);
-            var without = matched.Where(c => Key(c) == null);   // no history / floored -> end
+            // Floored penny cards order by their real move after every ranked
+            // card (matching the catalog); cards with no history close the list.
+            var floored = matched.Where(c => Key(c) == null && histChanges.ContainsKey(c.Id));
+            var noHistory = matched.Where(c => !histChanges.ContainsKey(c.Id));
             ordered = (hs.Descending ? withChg.OrderByDescending(Key) : withChg.OrderBy(Key))
-                .Concat(without).ToList();
+                .Concat(hs.Descending
+                    ? floored.OrderByDescending(c => histChanges[c.Id].RawPct)
+                    : floored.OrderBy(c => histChanges[c.Id].RawPct))
+                .Concat(noHistory).ToList();
         }
         else if (forecastSort is { } fs && fcstChanges != null)
         {
@@ -251,9 +257,12 @@ public partial class CardsController
         double HistKey(int pid, string grade, HistorySort h)
         {
             var missing = h.Descending ? double.NegativeInfinity : double.PositiveInfinity;
-            return histByTier.TryGetValue(GradeTiers.PriceTier(grade), out var d) && d.TryGetValue(pid, out var ch)
-                ? (h.Metric == "pct" ? ch.Pct ?? missing : ch.Usd)
-                : missing;
+            if (!histByTier.TryGetValue(GradeTiers.PriceTier(grade), out var d) || !d.TryGetValue(pid, out var ch))
+                return missing;
+            if (h.Metric != "pct") return ch.Usd;
+            // Floored penny cards: past every ranked value (1e9 dwarfs any real
+            // percentage) but ordered by their real move within the cluster.
+            return ch.Pct ?? (h.Descending ? ch.RawPct - 1e9 : ch.RawPct + 1e9);
         }
 
         // Unit-level sort keys for the positions table's clickable headers.
