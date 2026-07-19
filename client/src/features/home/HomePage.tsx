@@ -303,7 +303,23 @@ export default function HomePage() {
     // games; the tiles below stay on the 1-month ranking.
     const { data: heroMovers } = useFetchMoversQuery({ count: 12, horizon: 'mix' });
     const { data: user } = useUserInfoQuery();
-    const tiles = movers?.slice(0, 4) ?? [];
+    // One tile per game: take each game's strongest mover in ranking order,
+    // topping up from the remainder only if fewer than 4 games qualify.
+    const tiles = useMemo(() => {
+        const seen = new Set<string>();
+        const picks: Card[] = [];
+        for (const m of movers ?? []) {
+            if (seen.has(gameKey(m.game))) continue;
+            seen.add(gameKey(m.game));
+            picks.push(m);
+            if (picks.length === 4) break;
+        }
+        for (const m of movers ?? []) {
+            if (picks.length === 4) break;
+            if (!picks.includes(m)) picks.push(m);
+        }
+        return picks;
+    }, [movers]);
 
     return (
         <>
