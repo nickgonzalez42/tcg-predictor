@@ -194,11 +194,26 @@ def _txt(v):
     return s if s and s.lower() != "nan" else None
 
 
-def _pull(subject, pct, pid):
+def _pull(subject, pct, pid, proj=None):
     """'<subject> lifts/drags the forecast' with per-card phrasing variety.
     Extreme percentages are real (a vintage set profile can dwarf a 'typical
-    card') but read as bugs — above 100% switch to qualitative wording."""
+    card') but read as bugs — above 100% switch to qualitative wording.
+    When the pull and the headline forecast point opposite ways, say what the
+    pull actually does (cushions a decline / holds back a gain) so the reason
+    never reads as contradicting the number beside it."""
     up = pct > 0
+    if proj is not None and up and proj < 0:
+        variants = [
+            f"{subject} cushions the decline (without it the projected drop would be steeper)",
+            f"{subject} keeps the projected drop smaller than a typical card's",
+        ]
+        return variants[pid % len(variants)]
+    if proj is not None and not up and proj > 0:
+        variants = [
+            f"{subject} holds the forecast back from a larger gain",
+            f"{subject} trims what would otherwise be a bigger projected gain",
+        ]
+        return variants[pid % len(variants)]
     if abs(pct) >= 100:
         variants = [
             f"{subject} strongly {'lifts' if up else 'drags on'} the forecast",
@@ -293,12 +308,12 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
         if p is None or abs(p) < 8:
             continue
         if bucket == "stats":
-            cand.append((min(abs(p), 90), _pull(_stats_subject(traits), p, pid)))
+            cand.append((min(abs(p), 90), _pull(_stats_subject(traits), p, pid, proj)))
         elif bucket == "identity":
-            cand.append((min(abs(p), 90), _pull(_identity_subject(traits), p, pid)))
+            cand.append((min(abs(p), 90), _pull(_identity_subject(traits), p, pid, proj)))
         elif bucket == "art":
             # prefer the concrete look-alike stat over a generic art clause
-            clause = comp_clause(comp, comp_examples) or _pull("its artwork profile", p, pid)
+            clause = comp_clause(comp, comp_examples) or _pull("its artwork profile", p, pid, proj)
             cand.append((min(abs(p), 90), clause))
     # look-alikes that moved dramatically are worth naming even when the model
     # doesn't credit the art bucket for this card
