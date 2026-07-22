@@ -1,8 +1,8 @@
-# TCG Predictor — IP-only HTTP for now. When a domain lands, replace `:80`
-# with the domain and Caddy handles TLS automatically.
+# TCG Predictor — cardstock.guide. Caddy fetches + renews Let's Encrypt certs
+# automatically (HTTP-01 challenge on :80) and redirects HTTP -> HTTPS.
 # handle blocks are mutually exclusive — the SPA's try_files can't swallow
 # /api/* (try_files is a rewrite and would otherwise run before the proxy).
-:80 {
+cardstock.guide {
 	encode gzip
 
 	handle /api/* {
@@ -13,9 +13,19 @@
 		reverse_proxy 127.0.0.1:5000
 	}
 
+	@sitemaps path /sitemap.xml /sitemap-*.xml
+	handle @sitemaps {
+		reverse_proxy 127.0.0.1:5000
+	}
+
 	handle {
 		root * /srv/tcg/client
 		try_files {path} /index.html
 		file_server
 	}
+}
+
+# Canonical host is the apex; send www there.
+www.cardstock.guide {
+	redir https://cardstock.guide{uri} permanent
 }
