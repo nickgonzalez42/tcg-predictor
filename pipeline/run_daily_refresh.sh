@@ -26,6 +26,19 @@ fi
 
 PY=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece/.venv/bin/python
 SERVER_IP=35.168.177.31
+# Failure alerts go to the existing problem-reports SNS topic (emails the
+# subscribed address). Full path: launchd runs with a minimal PATH.
+AWS=/usr/local/bin/aws
+SNS_TOPIC=arn:aws:sns:us-east-1:522029196375:cardstock-problem-reports
+
+notify_failure() {
+  local rc=$1
+  $AWS sns publish --region us-east-1 --topic-arn "$SNS_TOPIC" \
+    --subject "cardstock daily refresh FAILED ($(date +%F), exit $rc)" \
+    --message "$(printf 'Daily refresh failed (exit %s) at %s.\nResume with: pipeline/weekly_refresh.py --from <step>, then deploy/push_data.sh %s\n\nLast 30 log lines:\n\n%s' \
+        "$rc" "$(date '+%F %T')" "$SERVER_IP" "$(tail -30 "$LOG")")" \
+    >/dev/null 2>&1 || echo "(SNS notify itself failed — check aws cli/creds)"
+}
 
 LOG_DIR="$HOME/Library/Logs/tcg-predictor"
 mkdir -p "$LOG_DIR"
@@ -45,5 +58,6 @@ LOG="$LOG_DIR/refresh-$(date +%Y-%m-%d).log"
     echo "=== refresh + push complete — $(date '+%F %T') ==="
   else
     echo "=== FAILED (exit $rc): fix, resume with weekly_refresh.py --from <step>, then deploy/push_data.sh $SERVER_IP — $(date '+%F %T') ==="
+    notify_failure "$rc"
   fi
 } >> "$LOG" 2>&1

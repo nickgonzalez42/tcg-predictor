@@ -75,10 +75,20 @@ def _fetch_csv(url, tmp, cat):
                     f.write(chunk)
             return
         except urllib.error.HTTPError as e:
-            if e.code != 429:
+            # 429 = rate limit, 5xx = transient upstream trouble (e.g. the
+            # 2026-07-20 refresh died on a brief 503). Both are worth riding
+            # out; anything else (403 bad token, 404) fails fast.
+            if e.code != 429 and e.code < 500:
                 raise
             wait = 60 * attempt
-            print(f"[{cat}] 429 rate-limited — backing off {wait}s", flush=True)
+            retry_after = e.headers.get("Retry-After") if e.headers else None
+            if retry_after:
+                try:
+                    wait = max(wait, float(retry_after))
+                except ValueError:
+                    pass
+            print(f"[{cat}] HTTP {e.code} — backing off {wait:.0f}s "
+                  f"(attempt {attempt}/7)", flush=True)
             time.sleep(wait)
         except Exception as e:
             if not patient:
@@ -86,7 +96,7 @@ def _fetch_csv(url, tmp, cat):
             print(f"[{cat}] network error ({type(e).__name__}) — waiting 5 min", flush=True)
             time.sleep(300)
             attempt = 0
-    raise SystemExit(f"[{cat}] still rate-limited after repeated backoff — giving up")
+    raise SystemExit(f"[{cat}] still failing after repeated backoff — giving up")
 
 
 def main():
