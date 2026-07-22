@@ -296,8 +296,8 @@ export default function HomePage() {
         "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, and Star Wars Unlimited cards will be worth in a month, six months, or a year.");
     // count=24 so the per-game guarantee (gainer+loser per game) fits for all
     // eight games; the dedupe below then keeps one tile per game. Tiles show
-    // the past month (trend) next to the 1-month forecast they rank on.
-    const { data: movers } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '1m' });
+    // the past six months (trend) next to the 1-month forecast they rank on.
+    const { data: movers } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '6m' });
     // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) with four
     // cards per game, shuffled client-side; the tiles below stay on the
     // 1-month ranking.
