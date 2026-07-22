@@ -94,6 +94,22 @@ GAMES = {
         "pc_min_rows": 500,
         "scraper": ["tcg_scraper.py", "--game", "gundam"],
     },
+    "starwars": {
+        "label": "Star Wars Unlimited",
+        "tcg_line": "star-wars-unlimited",
+        "db": "starwars_cards.db",
+        "images": "images_starwars",
+        # No bulk PriceCharting category exists for this game (every
+        # candidate slug silently falls back to their full video-game
+        # database instead of 404ing) — like gundam, PC covers it as per-set
+        # "console" pages (star-wars-unlimited-<set>), which
+        # scrape_starwars_prices.py crawls + matches into this CSV for
+        # build_pricecharting.py to consume like the rest.
+        "pc_category": None,
+        "pc_csv": "pricecharting_starwars.csv",
+        "pc_min_rows": 500,
+        "scraper": ["tcg_scraper.py", "--game", "starwars"],
+    },
 }
 
 ALL_GAMES = list(GAMES)

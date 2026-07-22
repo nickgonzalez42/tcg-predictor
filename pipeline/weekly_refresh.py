@@ -85,6 +85,7 @@ STEPS = [
       for g, cfg in GAMES.items()],
     ("pc-download",   ["download_pricecharting.py"]),
     ("pc-gundam",     ["scrape_gundam_prices.py"]),
+    ("pc-starwars",   ["scrape_starwars_prices.py"]),
     ("pc-match",      ["build_pricecharting.py"]),
     # --limit bounds the crawl (~50 min worst case) so a game mid-onboarding
     # can't turn the daily run into a day-long one; the backfill script does
