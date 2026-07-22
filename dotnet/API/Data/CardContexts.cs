@@ -85,6 +85,7 @@ public class MagicContext(DbContextOptions<MagicContext> options) : GenericCardC
 public class LorcanaContext(DbContextOptions<LorcanaContext> options) : GenericCardContext(options);
 public class DigimonContext(DbContextOptions<DigimonContext> options) : GenericCardContext(options);
 public class GundamContext(DbContextOptions<GundamContext> options) : GenericCardContext(options);
+public class StarwarsContext(DbContextOptions<StarwarsContext> options) : GenericCardContext(options);
 
 internal static class CardMapping
 {

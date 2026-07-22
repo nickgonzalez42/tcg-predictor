@@ -9,6 +9,7 @@ export const GAMES = [
     { value: 'magic', label: 'Magic' },
     { value: 'onepiece', label: 'One Piece' },
     { value: 'pokemon', label: 'Pokémon' },
+    { value: 'starwars', label: 'Star Wars Unlimited' },
     { value: 'yugioh', label: 'Yu-Gi-Oh!' },
 ];
 

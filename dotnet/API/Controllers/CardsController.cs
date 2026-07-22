@@ -251,9 +251,11 @@ public partial class CardsController(
     // Top movers across the games by ungraded forecast change — feeds the
     // market ticker and the home page tiles.
     [HttpGet("movers")]
-    public async Task<IActionResult> GetMovers([FromQuery] int count = 12, [FromQuery] string? horizon = null)
+    public async Task<IActionResult> GetMovers(
+        [FromQuery] int count = 12, [FromQuery] string? horizon = null, [FromQuery] string? trend = null,
+        [FromQuery] int perGame = 0)
     {
-        return Ok(await movers.TopMovers(count, horizon, CardImageUrl));
+        return Ok(await movers.TopMovers(count, horizon, trend, perGame, CardImageUrl));
     }
 
     // ----- Catalog paging -----

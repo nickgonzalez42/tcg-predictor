@@ -11,7 +11,7 @@ namespace API.Services;
 public class CardSources(
     OnePieceContext onePiece, PokemonContext pokemon, YugiohContext yugioh,
     MagicContext magic, LorcanaContext lorcana, DigimonContext digimon,
-    GundamContext gundam)
+    GundamContext gundam, StarwarsContext starwars)
 {
     public IQueryable<CardBase> Cards(string game) => game switch
     {
@@ -21,6 +21,7 @@ public class CardSources(
         "lorcana" => lorcana.Cards,
         "digimon" => digimon.Cards,
         "gundam" => gundam.Cards,
+        "starwars" => starwars.Cards,
         _ => onePiece.Cards,
     };
 

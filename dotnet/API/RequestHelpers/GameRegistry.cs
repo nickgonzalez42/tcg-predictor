@@ -6,7 +6,7 @@ namespace API.RequestHelpers;
 public static class GameRegistry
 {
     public static readonly string[] Keys =
-        ["onepiece", "pokemon", "yugioh", "magic", "lorcana", "digimon", "gundam"];
+        ["onepiece", "pokemon", "yugioh", "magic", "lorcana", "digimon", "gundam", "starwars"];
 
     private static readonly Dictionary<string, string> Labels = new()
     {
@@ -17,6 +17,7 @@ public static class GameRegistry
         ["lorcana"] = "Lorcana",
         ["digimon"] = "Digimon",
         ["gundam"] = "Gundam",
+        ["starwars"] = "Star Wars Unlimited",
     };
 
     public static string Label(string key) => Labels.GetValueOrDefault(key, key);

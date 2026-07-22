@@ -10,25 +10,48 @@ namespace API.Services;
 // home page tiles. Movers are showcased visually, so a card only qualifies once
 // its art has landed (ImagePath set = fetchable from the image CDN).
 public class MoverService(
-    CardSources sources, PredictionsContext predictions, CardMarketData market)
+    CardSources sources, PredictionsContext predictions, CardMarketData market,
+    PriceChartingContext priceCharting)
 {
     private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice);
 
     // imageUrl builds the absolute art URL (host-dependent, so the controller
-    // supplies it).
-    public async Task<List<CardDto>> TopMovers(int count, string? horizon, Func<string, int, string> imageUrl)
+    // supplies it). trend overrides the displayed history window (sparkline +
+    // PAST pill); default stays the year-long view. perGame > 0 (with mix)
+    // guarantees every game that many cards.
+    public async Task<List<CardDto>> TopMovers(
+        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
     {
         count = Math.Clamp(count, 1, 24);
+        perGame = Math.Clamp(perGame, 0, 6);
 
-        // horizon=mix (the homepage hero): one small slice per forecast
-        // category, deduped — each card carries its own horizon's forecast
-        // fields. The per-game guarantee is skipped; the client round-robins
-        // games and the cross-category spread supplies the variety.
+        // horizon=mix (the homepage hero): each card carries its own
+        // horizon's forecast fields.
         if (horizon == "mix")
         {
+            // perGame: every game contributes up to N cards, drawn from its
+            // strongest gainers/losers per category (the per-game guarantee
+            // inside PickMovers). Display order is the client's concern —
+            // the hero shuffles.
+            if (perGame > 0)
+            {
+                var all = new List<CardDto>();
+                foreach (var h in new[] { "1m", "6m", "12m" })
+                    all.AddRange(await PickMovers(
+                        h, GameRegistry.Keys.Length * 2, guaranteeGames: true, trend, imageUrl));
+                return all
+                    .DistinctBy(m => (m.Game, m.Id))
+                    .GroupBy(m => m.Game)
+                    .SelectMany(g => g.Take(perGame))
+                    .ToList();
+            }
+
+            // Legacy mix: one small slice per category, deduped; the per-game
+            // guarantee is skipped and the cross-category spread supplies the
+            // variety.
             var mixed = new List<CardDto>();
             foreach (var h in new[] { "1m", "6m", "12m" })
-                mixed.AddRange(await PickMovers(h, Math.Max(2, count / 3), guaranteeGames: false, imageUrl));
+                mixed.AddRange(await PickMovers(h, Math.Max(2, count / 3), guaranteeGames: false, trend, imageUrl));
             return mixed.DistinctBy(m => (m.Game, m.Id)).ToList();
         }
 
@@ -36,11 +59,11 @@ public class MoverService(
         // legacy behavior where games without year-deep data fall back to 6m;
         // an explicit horizon applies to every game (all games train them).
         var hz = horizon is "1m" or "6m" ? horizon : "12m";
-        return await PickMovers(hz, count, guaranteeGames: true, imageUrl);
+        return await PickMovers(hz, count, guaranteeGames: true, trend, imageUrl);
     }
 
     private async Task<List<CardDto>> PickMovers(
-        string hz, int count, bool guaranteeGames, Func<string, int, string> imageUrl)
+        string hz, int count, bool guaranteeGames, string? trend, Func<string, int, string> imageUrl)
     {
         var gamesWith12m = (await predictions.Forecasts
             .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
@@ -99,12 +122,13 @@ public class MoverService(
 
         var movers = await ToCardDtos(picked, imageUrl);
 
-        // Sparkline/trend always use the year window (6m for young games) so the
-        // tiles have enough monthly points to draw; the headline forecast fields
-        // (FcstTo/FcstHorizon) follow the requested ranking horizon.
+        // Sparkline/trend default to the year window (6m for young games) so
+        // the tiles have enough monthly points to draw; an explicit trend
+        // (e.g. the homepage's PAST 1M tiles) overrides it. The headline
+        // forecast fields (FcstTo/FcstHorizon) follow the ranking horizon.
         foreach (var game in GameRegistry.Keys)
             await market.ApplyMarket(movers.Where(m => m.Game == game).ToList(), game,
-                trend: gamesWith12m.Contains(game) ? "1y" : "6m",
+                trend: trend ?? (gamesWith12m.Contains(game) ? "1y" : "6m"),
                 fcstOverride: hz == "12m" ? null : hz);
 
         return movers;
@@ -134,14 +158,15 @@ public class MoverService(
     }
 
     // Of these product ids, the ones fit for the showcase (cross-DB, so the
-    // per-game card DB is asked directly): art has landed, and the name isn't a
-    // tournament prize card — those trade at outlier prices that would
-    // otherwise dominate every movers list. "Place" is matched as the ordinals
-    // prize cards actually use; bare "place" also hits legitimate cards
-    // (Lorcana locations, Displacer Kitten, Trading Places).
+    // per-game card DB is asked directly): art has landed, the card's price is
+    // current (see FreshPricedIds), and the name isn't a tournament prize
+    // card — those trade at outlier prices that would otherwise dominate every
+    // movers list. "Place" is matched as the ordinals prize cards actually
+    // use; bare "place" also hits legitimate cards (Lorcana locations,
+    // Displacer Kitten, Trading Places).
     private async Task<HashSet<int>> ShowcaseIds(string game, IEnumerable<int> ids)
     {
-        var list = ids.Distinct().ToList();
+        var list = (await FreshPricedIds(game, ids.Distinct().ToList())).ToList();
         if (list.Count == 0) return [];
         return (await sources.Cards(game).WithArt()
             .Where(c => list.Contains(c.Id))
@@ -157,6 +182,25 @@ public class MoverService(
                         && !EF.Functions.Like(c.Name!, "%finalist%")
                         && !EF.Functions.Like(c.Name!, "%finals%"))
             .Select(c => c.Id).ToListAsync()).ToHashSet();
+    }
+
+    // Freshness bar for the showcase: a card qualifies only if its ungraded
+    // series has a price point within the last two weeks — the same series
+    // whose newest date the card page shows as "as of". PriceCharting-matched
+    // cards get a daily snapshot point, so they always pass; cards priced only
+    // by TCGplayer refresh on the weekly sweep; cards that fell out of both
+    // (delisted, no live listings, unmatched) age out and stop headlining the
+    // front page. They keep their forecasts and stay in the catalog — a
+    // "current price" this old just isn't showcase material.
+    private async Task<HashSet<int>> FreshPricedIds(string game, List<int> ids)
+    {
+        if (ids.Count == 0) return [];
+        var cutoff = DateTime.UtcNow.AddDays(-14).ToString("yyyy-MM-dd");
+        return (await priceCharting.History
+            .Where(h => h.Game == game && h.Grade == "ungraded"
+                        && ids.Contains(h.ProductId)
+                        && string.Compare(h.Date, cutoff) >= 0)
+            .Select(h => h.ProductId).Distinct().ToListAsync()).ToHashSet();
     }
 
     // Join card names/sets from the right game DB, in memory (cross-DB). The

@@ -42,18 +42,14 @@ function HeroChart({ movers }: { movers?: Card[] }) {
         // needs enough points to trace a line worth watching.
         const ok = (movers ?? []).filter(m =>
             (m.price ?? 0) >= 10 && (m.sparkline?.length ?? 0) >= 4 && moverFcst(m) != null);
-        // Round-robin across games (each game's pool shuffled) so consecutive
-        // scenes cycle through a variety of games, not one game's whole list.
-        const byGame = new Map<string, Card[]>();
-        for (const m of [...ok].sort(() => Math.random() - 0.5)) {
-            const g = gameKey(m.game);
-            byGame.set(g, [...(byGame.get(g) ?? []), m]);
+        // The feed guarantees each game's share (perGame); the scene order is
+        // a flat Fisher-Yates shuffle — fresh every mount.
+        const shuffled = [...ok];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
         }
-        const pools = [...byGame.values()];
-        const mixed: Card[] = [];
-        for (let i = 0; pools.some(p => i < p.length); i++)
-            for (const p of pools) if (i < p.length) mixed.push(p[i]);
-        return mixed;
+        return shuffled;
     }, [movers]);
     // A scene only mounts once its art is loaded: the first one waits on the
     // placeholder; later ones are gated by canLeave below, so the finished
@@ -289,7 +285,7 @@ function MoverTile({ mover }: { mover: Card }) {
 }
 
 const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across seven TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam), with ungraded and graded price tiers and full price history.' },
+    { n: '1', title: 'Browse', text: 'Every card across eight TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, Star Wars Unlimited), with ungraded and graded price tiers and full price history.' },
     { n: '2', title: 'Forecast', text: '1 month, 6 month, and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
     { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L that benchmarks your collection against the S&P 500.' },
     { n: '4', title: 'Stay ahead', text: 'Price and forecast alerts per card and condition, plus a market report every Friday.' },
@@ -297,14 +293,19 @@ const HOW_IT_WORKS = [
 
 export default function HomePage() {
     usePageMeta(undefined,
-        "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards will be worth in a month, six months, or a year.");
-    const { data: movers } = useFetchMoversQuery({ count: 12, horizon: '1m' });
-    // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) across
-    // games; the tiles below stay on the 1-month ranking.
-    const { data: heroMovers } = useFetchMoversQuery({ count: 12, horizon: 'mix' });
+        "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, and Star Wars Unlimited cards will be worth in a month, six months, or a year.");
+    // count=24 so the per-game guarantee (gainer+loser per game) fits for all
+    // eight games; the dedupe below then keeps one tile per game. Tiles show
+    // the past month (trend) next to the 1-month forecast they rank on.
+    const { data: movers } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '1m' });
+    // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) with four
+    // cards per game, shuffled client-side; the tiles below stay on the
+    // 1-month ranking.
+    const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 4 });
     const { data: user } = useUserInfoQuery();
-    // One tile per game: take each game's strongest mover in ranking order,
-    // topping up from the remainder only if fewer than 4 games qualify.
+    // One tile per game — eight games, eight tiles: each game's strongest
+    // mover in ranking order, topping up from the remainder only if fewer
+    // than 8 games qualify (a game with no showable movers cedes its slot).
     const tiles = useMemo(() => {
         const seen = new Set<string>();
         const picks: Card[] = [];
@@ -312,10 +313,10 @@ export default function HomePage() {
             if (seen.has(gameKey(m.game))) continue;
             seen.add(gameKey(m.game));
             picks.push(m);
-            if (picks.length === 4) break;
+            if (picks.length === 8) break;
         }
         for (const m of movers ?? []) {
-            if (picks.length === 4) break;
+            if (picks.length === 8) break;
             if (!picks.includes(m)) picks.push(m);
         }
         return picks;
@@ -328,7 +329,7 @@ export default function HomePage() {
                     <h1 className="hero__title">Know your cards' worth: yesterday, today, tomorrow.</h1>
                     <p className="hero__sub">
                         CardStock uses machine learning to predict what any card will be worth a month,
-                        six months, or a year from now. Seven TCGs, graded and ungraded
+                        six months, or a year from now. Eight TCGs, graded and ungraded
                         values, full price history, and a tracker for your whole collection.
                     </p>
                     <div className="btn-group">

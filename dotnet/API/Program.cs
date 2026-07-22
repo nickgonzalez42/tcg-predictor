@@ -44,6 +44,10 @@ builder.Services.AddDbContext<GundamContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("GundamConnection"));
 });
+builder.Services.AddDbContext<StarwarsContext>(opt =>
+{
+    opt.UseSqlite(builder.Configuration.GetConnectionString("StarwarsConnection"));
+});
 builder.Services.AddScoped<CardSources>();
 // Cross-database market context + the movers ranking built on it.
 builder.Services.AddScoped<CardMarketData>();

@@ -84,6 +84,9 @@
 .movers {
   grid-column: 1 / -1;
   margin-bottom: var(--space-50);
+  /* Two rows of four tiles on desktop — give the rows air. (The tablet/
+     mobile blocks below override with their tighter gap.) */
+  row-gap: var(--space-40);
 }
 
 .mover {
