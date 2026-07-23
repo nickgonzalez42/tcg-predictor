@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Scheduled refresh (launchd entry point, 2:00 AM daily — see
+# Scheduled refresh (launchd entry point, 1:00 AM daily — see
 # ~/Library/LaunchAgents/com.tcg-predictor.daily-refresh.plist).
 #
 #   Mon–Sat: prices + model (weekly_refresh from pc-download).

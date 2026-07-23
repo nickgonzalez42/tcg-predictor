@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Supervised Magic onboarding: catalog + art + prices + graded history,
-# COEXISTING with the 2:00 AM daily refresh. Every phase is resumable, and
+# COEXISTING with the 1:00 AM daily refresh. Every phase is resumable, and
 # the whole run is pause-aware: whenever the daily refresh (or a manual
 # weekly_refresh / data push) is active, the current phase is interrupted
 # and restarted once it finishes — the daily pull always wins.

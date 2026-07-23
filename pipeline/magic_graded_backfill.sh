@@ -6,7 +6,7 @@
 #
 # Behavior:
 #   - Crawls graded history for every Magic product matched so far; new
-#     matches land with each 2:00 AM refresh, so when caught up it naps and
+#     matches land with each 1:00 AM refresh, so when caught up it naps and
 #     re-checks every 30 minutes.
 #   - Pauses (SIGTERM, resumable) whenever the daily refresh, a data push, or
 #     the main backfill's PriceCharting phases are running — one polite
