@@ -10,6 +10,11 @@ TCGplayer market price: a >=25x disagreement on a valuable card quarantines the
 match entirely (better unpriced than wrongly priced). Anything >=10x is written
 to ml_data/pc_match_review.csv for manual review.
 
+Human-verified corrections live in ml_data/pc_match_overrides.csv
+(game, product_id, pc_id, note): the product is force-matched to the CSV row
+with that PC id, its own tcg-id row is ignored, and no other product may claim
+the target row (PC once crossed the tcg-ids of two Jinbe P-030 printings).
+
 CSV prices are dollar strings ("$373.53"); we store them as REAL USD to match
 our existing market_price. Output: a `pricecharting` table keyed (game, product_id)
 in predictions.db-adjacent `pricecharting.db`, read-only app data separate from
@@ -67,6 +72,18 @@ REVIEW_RATIO = 10       # log for human review
 QUARANTINE_RATIO = 25   # drop the match
 MIN_REFERENCE = 50      # only gate cards whose reference price is meaningful
 
+OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_match_overrides.csv")
+
+
+def load_overrides(game):
+    """product_id -> pc_id force-matches for this game (human-verified, so they
+    win over PC's tcg-id and skip the sanity gate)."""
+    if not os.path.exists(OVERRIDES_CSV):
+        return {}
+    with open(OVERRIDES_CSV, newline="", encoding="utf-8") as f:
+        return {int(r["product_id"]): int(r["pc_id"])
+                for r in csv.DictReader(f) if r["game"] == game}
+
 
 def import_game(game, card_db, csv_name, now):
     con = sqlite3.connect(os.path.join(BASE, card_db))
@@ -85,15 +102,25 @@ def import_game(game, card_db, csv_name, now):
         reference = {}
     con.close()
 
+    overrides = load_overrides(game)           # product_id -> forced pc_id
+    wanted_pc = set(overrides.values())
+    override_rows = {}                         # pc_id -> its CSV row
+
     rows, seen, suspects, review = [], set(), [], []
     total_pc = matched = 0
     with open(os.path.join(BASE, csv_name), encoding="utf-8", errors="ignore") as f:
         for r in csv.DictReader(f):
+            pc_id = to_int(r.get("id", ""))
+            if pc_id in wanted_pc:
+                # An override's target row is exclusively the override's — even
+                # if its tcg-id points at some (other) product of ours.
+                override_rows[pc_id] = r
+                continue
             tid = to_int(r.get("tcg-id", ""))
             if tid is None:
                 continue
             total_pc += 1
-            if tid not in ours or tid in seen:
+            if tid not in ours or tid in seen or tid in overrides:
                 continue
             seen.add(tid)
             rec = {our: money(r.get(col)) for col, our in PRICE_COLS.items()}
@@ -115,6 +142,26 @@ def import_game(game, card_db, csv_name, now):
                 to_int(r.get("sales-volume", "")),
                 r.get("console-name"), r.get("product-name"), now,
             ))
+
+    # Hand-pinned matches, added last from the rows collected above. No sanity
+    # gate: a human already compared the listings.
+    for tid, pc_id in sorted(overrides.items()):
+        r = override_rows.get(pc_id)
+        if r is None or tid not in ours:
+            print(f"[{game}] OVERRIDE UNRESOLVED: {tid} -> pc {pc_id} "
+                  f"({'pc row missing from CSV' if r is None else 'not one of our cards'})")
+            continue
+        rec = {our: money(r.get(col)) for col, our in PRICE_COLS.items()}
+        matched += 1
+        rows.append((
+            game, tid, pc_id,
+            rec["ungraded"], rec["grade7"], rec["grade8"], rec["grade9"], rec["grade95"],
+            rec["psa10"], rec["bgs10"], rec["cgc10"], rec["sgc10"],
+            to_int(r.get("sales-volume", "")),
+            r.get("console-name"), r.get("product-name"), now,
+        ))
+        print(f"[{game}] override: {tid} -> pc {pc_id} ({r.get('product-name')})")
+
     print(f"[{game}] our cards: {len(ours)} | PC rows w/ tcg-id: {total_pc} | matched: {matched} "
           f"({matched/len(ours)*100:.1f}%) | quarantined: {len(suspects)} | flagged for review: {len(review)}")
     return rows, suspects, review
