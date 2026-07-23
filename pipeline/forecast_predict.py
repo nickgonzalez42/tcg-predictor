@@ -396,8 +396,18 @@ def anchor_dates(game, grade):
     return {pid: d[:10] for pid, d in rows if d}
 
 
-def forecast_game_target(game, target, now):
+def forecast_game_target(game, target, now, as_of=None, horizons=None):
+    horizons = horizons or HORIZONS
+    # Backtest rows carry a "__" version so the scorecard's accuracy table and
+    # feedback signals never count them (its existing test-row convention).
+    version = f"__bt-{as_of}" if as_of else MODEL_VERSION
     pids, dates, P = load_matrix(game, target)
+    if as_of:
+        # Pretend the run happened at the end of `as_of` month: drop every
+        # later price column BEFORE anything trains or anchors, so neither
+        # the model nor the trajectory features can see past the cutoff.
+        n = sum(1 for d in dates if d <= as_of)
+        dates, P = dates[:n], P[:, :n]
     # Young games (PriceCharting only started tracking digimon/gundam in
     # 2025-09) have short matrices: train whatever horizons the depth allows —
     # the per-horizon MIN_SAMPLES gate below drops the ones that can't form
@@ -423,14 +433,14 @@ def forecast_game_target(game, target, now):
     # Rolling out-of-sample window per horizon: the last few base months whose
     # outcome has matured (a fixed calendar cutoff ages into training the gate
     # model on a shrinking minority of the data).
-    cutoffs = {h: rolling_cutoff(dates, k) for h, k in HORIZONS.items()}
+    cutoffs = {h: rolling_cutoff(dates, k) for h, k in horizons.items()}
 
     # The trajectory block at month t is horizon-independent, so build it once
     # per t and slice it for every horizon (was: rebuilt 3x per pipeline run).
-    samples = {h: ([], [], [], []) for h in HORIZONS}   # h -> (Xr, y, is_test, w)
-    for t in range(1, len(dates) - min(HORIZONS.values())):
+    samples = {h: ([], [], [], []) for h in horizons}   # h -> (Xr, y, is_test, w)
+    for t in range(1, len(dates) - min(horizons.values())):
         tb_full = None
-        for hname, k in HORIZONS.items():
+        for hname, k in horizons.items():
             if t >= len(dates) - k:
                 continue
             v = np.isfinite(P[:, t]) & np.isfinite(P[:, t + k]) & (P[:, t] > 0) & (P[:, t + k] > 0)
@@ -456,7 +466,7 @@ def forecast_game_target(game, target, now):
         traj_now.loc[sel] = blk.loc[sel].to_numpy()
 
     rows = []
-    for hname, k in HORIZONS.items():
+    for hname, k in horizons.items():
         Xr, ys, tests, ws = samples[hname]
         if not Xr:
             continue
@@ -595,13 +605,15 @@ def forecast_game_target(game, target, now):
                            " in — such calls have historically been unreliable.")
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
-                         str(conf[i]), MODEL_VERSION, now, real_dates.get(int(pid), a)))
+                         str(conf[i]), version, now, real_dates.get(int(pid), a)))
 
             # 1w: the 1-month forecast pro-rated to 7 days (monthly data has no
             # weekly targets to train on) — same drivers, disclosed in the text.
             # Composed through make_reason (not sliced out of the 1m text), so
             # phrasing changes there can't garble this row.
-            if hname == "1m":
+            # Skipped in backtests: 1w rows grade against scored_at + 7 days,
+            # and a backtest's scored_at is today, not the pretend issue date.
+            if hname == "1m" and not as_of:
                 rw = float(r) * WEEK_FRACTION
                 # point scales with t; the band scales with sqrt(t) (vol compounds
                 # like a random walk — linear scaling under-covered badly at 1w)
@@ -622,7 +634,7 @@ def forecast_game_target(game, target, now):
                              round(float(b) * float(np.exp(rw)), 2),
                              round(float(b) * float(np.exp(lw)), 2),
                              round(float(b) * float(np.exp(hw)), 2),
-                             round(rw, 4), wreason, str(conf[i]), MODEL_VERSION, now,
+                             round(rw, 4), wreason, str(conf[i]), version, now,
                              real_dates.get(int(pid), a)))
     print(f"[{game}/{target}] {len(rows)} rows", flush=True)
     return rows
@@ -668,8 +680,18 @@ def main():
     ap.add_argument("--game", action="append",
                     help="retrain only this game (repeatable); merges into the "
                          "existing forecasts table instead of rebuilding it")
+    ap.add_argument("--as-of", metavar="YYYY-MM",
+                    help="backtest: truncate all price history after this month "
+                         "and archive theoretical 1m forecasts tagged __bt-<month>; "
+                         "the live forecasts table is left untouched")
+    ap.add_argument("--db", metavar="PATH",
+                    help="write to this predictions.db instead of the live one")
     args = ap.parse_args()
+    if args.as_of and not (len(args.as_of) == 7 and args.as_of[4] == "-"
+                           and args.as_of.replace("-", "").isdigit()):
+        ap.error("--as-of must look like YYYY-MM")
     games = args.game if args.game else priced_games()
+    horizons = {"1m": 1} if args.as_of else None
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_seg = len(games) * len(TARGETS)
@@ -680,14 +702,24 @@ def main():
         for target in TARGETS:
             done_seg += 1
             try:
-                all_rows += forecast_game_target(game, target, now)
+                all_rows += forecast_game_target(game, target, now, args.as_of, horizons)
             except Exception as e:
                 print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}", flush=True)
             # Parseable progress for the dashboard (counts every segment, so it
             # reaches N/N even when a young-game tier is skipped without rows).
             print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)
 
-    conn = sqlite3.connect(OUT_DB, timeout=60)
+    out_db = args.db or OUT_DB
+    conn = sqlite3.connect(out_db, timeout=60)
+    if args.as_of:
+        # Backtest: archive-only. The live forecasts table keeps serving the
+        # real current forecasts; only the append-only history gains rows.
+        archive(conn, all_rows)
+        conn.commit()
+        conn.close()
+        print(f"\nbacktest {args.as_of}: {len(all_rows)} theoretical forecast(s) "
+              f"archived -> {os.path.normpath(out_db)}")
+        return
     schema = """
         CREATE TABLE IF NOT EXISTS forecasts (
             game TEXT NOT NULL, product_id INTEGER NOT NULL,
@@ -710,7 +742,7 @@ def main():
     archive(conn, all_rows)
     conn.commit()
     conn.close()
-    print(f"\nwrote {len(all_rows)} rows -> {os.path.normpath(OUT_DB)} (forecasts)")
+    print(f"\nwrote {len(all_rows)} rows -> {os.path.normpath(out_db)} (forecasts)")
 
 
 if __name__ == "__main__":
