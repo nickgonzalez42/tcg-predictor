@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { usePageMeta } from "../../lib/usePageMeta";
 // Customer-facing explainer of the forecasts: every idea leads with what it
 // means for the collector, with the technical specifics kept alongside as
@@ -15,7 +16,9 @@ export default function AboutPage() {
           CardStock treats trading cards like a market you can actually study. Every card gets a
           price forecast for 1 month, 6 months, and 1 year ahead, for the raw card and
           each graded tier, next to real graded price history and a portfolio that tracks your
-          gains. This page explains where those forecasts come from, in plain language, with the
+          gains. Every Friday, a <Link to="/reports">market report</Link> rounds up the week's
+          biggest movers, how each game is trending, and a public scorecard of how the model's own
+          predictions have performed. This page explains where those forecasts come from, in plain language, with the
           technical details alongside for anyone who wants to look under the hood. None of it is
           financial advice.
         </p>
@@ -126,6 +129,14 @@ export default function AboutPage() {
           forgotten. Behind the scenes, the model is never allowed to peek at the answer while it
           learns: it trains on the past and is tested on the most recent stretch of history it has
           not seen, and every graded outcome feeds back into the next day's retrain.
+        </p>
+        <p>
+          The weekly <Link to="/reports">market report</Link> takes that accountability further
+          with the model's report card: how far off a typical call was, whether it has been
+          leaning optimistic or pessimistic, how often prices actually landed inside its
+          low-to-high ranges, and how often it called the direction of a move correctly — overall
+          and game by game. Those numbers are published every Friday whether they are flattering
+          or not.
         </p>
       </section>
 
