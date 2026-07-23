@@ -8,11 +8,21 @@
 const ALLOWED = new Set(
     ['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'SUB', 'SUP']);
 // Market-report bodies (our own pipeline's HTML) additionally carry headings,
-// tables, and internal card links.
+// tables, internal card links, and inline SVG bar/line charts.
+const REPORT_SVG = new Set(['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE']);
 const REPORT_ALLOWED = new Set(
-    [...ALLOWED, 'A', 'H2', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD']);
+    [...ALLOWED, 'A', 'H2', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', ...REPORT_SVG]);
 const VOID = new Set(['BR']);
 const DROP_CONTENT = new Set(['SCRIPT', 'STYLE']);
+
+// Geometry/paint attributes the report charts use. Values are pattern-checked
+// (colors, numbers, point lists, var() references — never url()/scripts).
+const SVG_ATTRS = new Set([
+    'viewbox', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx',
+    'width', 'height', 'points', 'fill', 'stroke', 'stroke-width',
+    'text-anchor', 'font-size', 'role', 'xmlns',
+]);
+const SVG_VALUE = /^[\w\s.,#()%:/+-]*$/;
 
 const escapeHtml = (s: string) =>
     s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
@@ -22,10 +32,19 @@ const escapeHtml = (s: string) =>
 function keptAttrs(el: Element, report: boolean): string {
     if (!report) return '';
     let out = '';
+    const tag = el.tagName.toUpperCase();
     const href = el.getAttribute('href');
-    if (el.tagName === 'A' && href && /^\/[^/\\]/.test(href)) out += ` href="${escapeHtml(href)}"`;
+    if (tag === 'A' && href && /^\/[^/\\]/.test(href)) out += ` href="${escapeHtml(href)}"`;
     const cls = el.getAttribute('class');
     if (cls && /^[a-z-]+$/.test(cls) && cls.startsWith('report-')) out += ` class="${cls}"`;
+    if (REPORT_SVG.has(tag)) {
+        for (const name of el.getAttributeNames()) {
+            const value = el.getAttribute(name) ?? '';
+            if (SVG_ATTRS.has(name.toLowerCase()) && SVG_VALUE.test(value)
+                && !/url/i.test(value))
+                out += ` ${name}="${escapeHtml(value)}"`;   // original name: viewBox is case-sensitive
+        }
+    }
     return out;
 }
 
@@ -34,7 +53,7 @@ function cleanNode(node: Node, report = false): string {
     if (node.nodeType !== Node.ELEMENT_NODE) return '';
 
     const el = node as Element;
-    const tag = el.tagName;
+    const tag = el.tagName.toUpperCase();   // SVG elements report lowercase tag names
     if (DROP_CONTENT.has(tag)) return '';
 
     const inner = Array.from(el.childNodes).map(n => cleanNode(n, report)).join('');

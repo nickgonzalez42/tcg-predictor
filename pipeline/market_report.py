@@ -39,23 +39,25 @@ def card_link(game, pid, name):
 
 
 def week_window(pc):
-    """Latest snapshot date, and the closest snapshot ~7 days before it."""
+    """(baseline, latest, every snapshot date between them) for the ~7-day window."""
     dates = [r[0] for r in pc.execute(
         "SELECT DISTINCT date FROM graded_price_history WHERE grade='ungraded' ORDER BY date")]
     if len(dates) < 2:
-        return None, None
+        return None, None, []
     latest = dates[-1]
     target = (datetime.strptime(latest, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
     baseline = max((d for d in dates if d <= target), default=dates[0])
-    return baseline, latest
+    return baseline, latest, [d for d in dates if baseline <= d <= latest]
 
 
 def visible_cards(game):
-    """id -> name for cards the site actually shows (art + real price)."""
+    """id -> name for priced, named cards. Art is deliberately NOT required —
+    it once was, and that silently dropped whole games (Magic's art backfill
+    is still running) from the report's market stats."""
     con = sqlite3.connect(os.path.join(BASE, GAMES[game]["db"]))
     rows = con.execute(
-        "SELECT product_id, name FROM cards WHERE image_path IS NOT NULL AND image_path != '' "
-        "AND near_mint_price IS NOT NULL AND name IS NOT NULL").fetchall()
+        "SELECT product_id, name FROM cards "
+        "WHERE near_mint_price IS NOT NULL AND name IS NOT NULL").fetchall()
     con.close()
     return dict(rows)
 
@@ -110,6 +112,122 @@ def accuracy_by(pred, key):
     return rows
 
 
+# ---- inline SVG bar charts -------------------------------------------------
+# Self-contained horizontal bars embedded in the stored report HTML. Colors
+# ride the site's CSS variables (with hard fallbacks), so they follow the
+# theme without any client-side chart code.
+CHART_W, ROW_H, LABEL_W, CHART_PAD = 640, 26, 150, 8
+
+
+def bar_chart(rows, unit="%", signed=True, color=None):
+    """[(label, value, annotation)] -> horizontal bar SVG string.
+
+    signed=True draws a diverging chart around a zero line (positive green,
+    negative red); color forces one fill for all bars (unsigned metrics like
+    error size, where green/red would editorialize).
+    """
+    if not rows:
+        return ""
+    h = ROW_H * len(rows) + CHART_PAD * 2
+    span = max(abs(v) for _, v, _ in rows) or 1.0
+    has_neg = signed and any(v < 0 for _, v, _ in rows)
+    plot_w = CHART_W - LABEL_W - 110
+    zero_x = LABEL_W + (plot_w / 2 if has_neg else 0)
+    scale = (plot_w / 2 if has_neg else plot_w) / span
+    parts = [f"<svg class='report-chart' viewBox='0 0 {CHART_W} {h}' "
+             f"role='img' xmlns='http://www.w3.org/2000/svg'>"]
+    if has_neg:
+        parts.append(f"<line x1='{zero_x}' y1='{CHART_PAD}' x2='{zero_x}' y2='{h - CHART_PAD}' "
+                     "stroke='var(--border, #2e3a52)'/>")
+    y = CHART_PAD
+    for label, v, note in rows:
+        bw = max(abs(v) * scale, 1.0)
+        x = zero_x - bw if v < 0 else zero_x
+        fill = color or ("var(--down, #ff7a7a)" if v < 0 else "var(--up, #3fd98a)")
+        cy = y + ROW_H / 2 + 4
+        parts.append(f"<text x='{LABEL_W - 8}' y='{cy}' text-anchor='end' font-size='12' "
+                     f"fill='var(--text, #e8ecf4)'>{esc(label)}</text>")
+        parts.append(f"<rect x='{x:.1f}' y='{y + 5}' width='{bw:.1f}' height='{ROW_H - 10}' "
+                     f"rx='2' fill='{fill}'/>")
+        tx, anchor = (zero_x - bw - 6, "end") if v < 0 else (zero_x + bw + 6, "start")
+        text = (f"{v:+.1f}{unit}" if signed else f"{v:.1f}{unit}") + (f"  {note}" if note else "")
+        parts.append(f"<text x='{tx:.1f}' y='{cy}' text-anchor='{anchor}' font-size='11' "
+                     f"fill='var(--text-muted, #8b96ad)'>{esc(text)}</text>")
+        y += ROW_H
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+# Distinct per-game line colors (the site ships a single dark theme).
+GAME_COLORS = ["#3d7dca", "#ffcb05", "#3fd98a", "#ff7a7a",
+               "#c678dd", "#ff9e64", "#4dd0e1", "#f06292"]
+
+
+def game_week_series(pc, game, names, dates):
+    """% change vs the window's first snapshot, per snapshot day — the MEAN
+    across this game's cards priced both days (None where too few). Mean, not
+    median: most cards don't reprice on any given day, so the median is
+    pinned to exactly 0 and hides the market's drift."""
+    per_card = {}
+    for pid, d, price in pc.execute(
+            "SELECT product_id, date, price FROM graded_price_history "
+            "WHERE game=? AND grade='ungraded' AND date>=? AND date<=? AND price>0",
+            (game, dates[0], dates[-1])):
+        if pid in names:
+            per_card.setdefault(pid, {})[d] = price
+    base = {pid: s[dates[0]] for pid, s in per_card.items()
+            if s.get(dates[0], 0) >= MIN_BASE}
+    out = []
+    for d in dates:
+        ratios = [per_card[pid][d] / b for pid, b in base.items() if d in per_card[pid]]
+        out.append((statistics.mean(ratios) - 1) * 100 if len(ratios) >= 50 else None)
+    return out
+
+
+def line_chart(dates, series):
+    """Multi-line SVG: series = [(label, [pct-or-None per date], color)], each
+    line tagged at its right edge with the label and closing value."""
+    W, H, PADT, PADB, LX, RGUT = 640, 250, 12, 22, 46, 168
+    plot_w = W - LX - RGUT
+    vals = [v for _, ys, _ in series for v in ys if v is not None]
+    if not vals:
+        return ""
+    lo, hi = min(vals + [0.0]), max(vals + [0.0])
+    if hi - lo < 0.5:
+        hi, lo = hi + 0.25, lo - 0.25
+    ys_scale = (H - PADT - PADB) / (hi - lo)
+    Y = lambda v: H - PADB - (v - lo) * ys_scale
+    X = lambda i: LX + plot_w * i / max(len(dates) - 1, 1)
+    parts = [f"<svg class='report-chart' viewBox='0 0 {W} {H}' role='img' "
+             "xmlns='http://www.w3.org/2000/svg'>"]
+    # zero line + y extremes + first/last date labels
+    parts.append(f"<line x1='{LX}' y1='{Y(0):.1f}' x2='{LX + plot_w}' y2='{Y(0):.1f}' "
+                 "stroke='var(--border, #2e3a52)'/>")
+    for v in (lo, hi):
+        parts.append(f"<text x='{LX - 6}' y='{Y(v) + 4:.1f}' text-anchor='end' font-size='10' "
+                     f"fill='var(--text-muted, #8b96ad)'>{v:+.1f}%</text>")
+    for i, anchor in ((0, "start"), (len(dates) - 1, "end")):
+        parts.append(f"<text x='{X(i):.1f}' y='{H - 6}' text-anchor='{anchor}' font-size='10' "
+                     f"fill='var(--text-muted, #8b96ad)'>{dates[i][5:]}</text>")
+    # lines, then right-edge labels nudged apart so converging lines stay legible
+    labels = []
+    for label, ys, color in series:
+        pts = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in enumerate(ys) if v is not None)
+        if not pts:
+            continue
+        parts.append(f"<polyline points='{pts}' fill='none' stroke='{color}' stroke-width='2'/>")
+        last = next(v for v in reversed(ys) if v is not None)
+        labels.append([Y(last), f"{label} {last:+.1f}%", color])
+    labels.sort()
+    for i in range(1, len(labels)):
+        labels[i][0] = max(labels[i][0], labels[i - 1][0] + 13)
+    for y, text, color in labels:
+        parts.append(f"<text x='{LX + plot_w + 8}' y='{y + 4:.1f}' font-size='11' "
+                     f"fill='{color}'>{esc(text)}</text>")
+    parts.append("</svg>")
+    return "".join(parts)
+
+
 def money(v):
     return f"${v:,.2f}"
 
@@ -126,7 +244,7 @@ def build_report(force=False):
 
     pc = sqlite3.connect(PC_DB)
     pred = sqlite3.connect(PRED_DB)
-    baseline, latest = week_window(pc)
+    baseline, latest, window_dates = week_window(pc)
     if not baseline or baseline == latest:
         print("Not enough snapshot history for a weekly window — skipping.")
         return
@@ -177,6 +295,20 @@ def build_report(force=False):
                         f"<span class='report-game'>{esc(GAMES[game]['label'])}</span></td>"
                         f"<td>{money(old)}</td><td>{money(new)}</td><td>{pct(p)}</td></tr>")
         body.append("</tbody></table>")
+
+    # Overall game movement: each game's median price index across the week's
+    # daily snapshots, drawn as one line per game.
+    series = []
+    for i, (game, _moves) in enumerate(sorted(per_game.items())):
+        ys = game_week_series(pc, game, games_live[game], window_dates)
+        if any(v is not None for v in ys):
+            series.append((GAMES[game]["label"], ys, GAME_COLORS[i % len(GAME_COLORS)]))
+    if series:
+        # steepest weekly move first, so the legend order carries information
+        series.sort(key=lambda s: -abs(next(v for v in reversed(s[1]) if v is not None)))
+        body.append("<h2>This week by game</h2>"
+                    "<p>Median price change across each game's tracked cards, day by "
+                    "day through the week.</p>" + line_chart(window_dates, series))
 
     for game, moves in per_game.items():
         ggains = [m[4] for m in moves if m[4] > 0.5]
@@ -245,6 +377,11 @@ def build_report(force=False):
                             f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                             f"<td>{hit * 100:.0f}%</td></tr>")
             body.append("</tbody></table>")
+            # Same record as a chart: smaller bar = tighter forecasts.
+            acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
+                        for g, _n, mae, _bias, hit in sorted(by_game, key=lambda r: r[2])]
+            body.append("<p>Typical miss by game — shorter is better:</p>"
+                        + bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)"))
         body.append("<p class='report-note'>Grades cover every prediction the model has "
                     "ever published whose target date has passed — misses included.</p>")
 
