@@ -18,10 +18,9 @@ export default function ReportPage() {
     const bodyRef = useRef<HTMLDivElement>(null);
 
     // Scroll-triggered chart draw-in: when a report chart enters the viewport,
-    // its bars grow out of the zero line and its lines trace left-to-right,
-    // strictly one mark at a time; labels fade in behind them. Marks are
-    // hidden up front via gsap.set (a timeline of .from()s would leave later
-    // bars visible until their turn, then blink them out to re-grow).
+    // all its bars grow out of the zero line together and all its lines trace
+    // left-to-right together; labels fade in behind them. Marks are hidden up
+    // front via gsap.set so nothing flashes before the trigger fires.
     useEffect(() => {
         const root = bodyRef.current;
         if (!root || !report) return;
@@ -41,17 +40,17 @@ export default function ReportPage() {
                     const x = parseFloat(bar.getAttribute("x") ?? "0");
                     const width = parseFloat(bar.getAttribute("width") ?? "0");
                     gsap.set(bar, { attr: { x: zeroX ?? x, width: 0 } });
-                    tl.to(bar, { attr: { x, width }, duration: 0.3 });
+                    tl.to(bar, { attr: { x, width }, duration: 0.6 }, 0);
                 }
                 for (const line of svg.querySelectorAll<SVGPolylineElement>("polyline")) {
                     const len = line.getTotalLength();
                     gsap.set(line, { strokeDasharray: len, strokeDashoffset: len });
-                    tl.to(line, { strokeDashoffset: 0, duration: 0.6, ease: "none" });
+                    tl.to(line, { strokeDashoffset: 0, duration: 0.9, ease: "none" }, 0);
                 }
                 const texts = svg.querySelectorAll("text");
                 if (texts.length) {
                     gsap.set(texts, { opacity: 0 });
-                    tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.2");
+                    tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.25");
                 }
             }
         }, root);
