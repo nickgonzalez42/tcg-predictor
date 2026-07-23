@@ -104,9 +104,16 @@ def forecast_corner(pred, games_live):
 REPORT_HORIZONS = (("1m", "1 month", 28), ("6m", "6 months", 182), ("12m", "12 months", 364))
 MIN_GRADED = 30   # a horizon/game needs this many graded calls to be worth reporting
 
+# Direction is only graded when both the call and the outcome moved >= ~1%
+# (log-return 0.01): an "up" call against a flat month is neither right nor
+# wrong, and unchanged monthly buckets are common.
+DECISIVE = "ABS(ret) >= 0.01 AND ABS(realized_ret) >= 0.01"
 ACCURACY_SELECT = (
     "SELECT {cols} COUNT(*), AVG(ABS(ret - realized_ret)), AVG(ret - realized_ret), "
-    "AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END) "
+    "AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END), "
+    f"SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
+    f"AVG(CASE WHEN {DECISIVE} THEN "
+    "(CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END) "
     "FROM forecast_archive WHERE realized_ret IS NOT NULL AND ")
 
 
@@ -393,7 +400,7 @@ def build_report(force=False):
     body.append("<h2>Model report card</h2>"
                 "<p>Every forecast the model publishes is archived, and once its "
                 "target date passes it is graded against what the price actually "
-                "did — misses included. Three numbers summarize the record:</p><ul>"
+                "did — misses included. Four numbers summarize the record:</p><ul>"
                 "<li><strong>Typical miss</strong> — the average gap between the "
                 "predicted and realized price. A 5% typical miss on a $100 card "
                 "means the model's calls landed about $5 from reality.</li>"
@@ -404,19 +411,27 @@ def build_report(force=False):
                 "low&ndash;high range the model expects to contain the real price 80% "
                 "of the time. This column is how often it actually did: 80% is "
                 "perfect calibration, higher means the bands are cautious, lower "
-                "means overconfident.</li></ul>")
+                "means overconfident.</li>"
+                "<li><strong>Direction</strong> — when the model called a move of at "
+                "least 1% and the price also moved at least 1%, how often it picked "
+                "the right side, up or down. 50% would be a coin flip; a call "
+                "against a flat month is neither right nor wrong and isn't "
+                "counted.</li></ul>")
 
     live = [(label, *row) for h, label, days in REPORT_HORIZONS
             for row in [live_accuracy(pred, h, days)] if row]
+    def dir_cell(dir_acc):
+        return f"{dir_acc * 100:.0f}%" if dir_acc is not None else "—"
+
     if live:
         body.append("<table class='report-table'>"
                     "<thead><tr><th>Horizon</th><th>Graded</th><th>Typical miss</th>"
-                    "<th>Bias</th><th>80% band</th></tr></thead><tbody>")
-        for label, n_graded, mae, bias, hit in live:
+                    "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
+        for label, n_graded, mae, bias, hit, dir_n, dir_acc in live:
             body.append(f"<tr><td>{label}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
-                        f"<td>{hit * 100:.0f}%</td></tr>")
+                        f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("</tbody></table>")
         by_game = [r for r in live_accuracy(pred, "1m", 28, by_game=True) if r[0] in GAMES]
     else:
@@ -432,24 +447,35 @@ def build_report(force=False):
                         f"{bt[0]:,} one-month calls graded against what then happened: "
                         f"typical miss {(exp(bt[1]) - 1) * 100:.1f}%, "
                         f"bias {pct((exp(bt[2]) - 1) * 100)}, "
-                        f"80% band hit {bt[3] * 100:.0f}%.</p>")
+                        f"80% band hit {bt[3] * 100:.0f}%. On the {bt[4]:,} calls where "
+                        "both the model and the market moved at least 1%, it picked "
+                        f"the right direction {bt[5] * 100:.0f}% of the time.</p>")
 
     if by_game:
         by_game.sort(key=lambda r: -r[1])
         tag = "" if live else " (backtest)"
         body.append("<table class='report-table'>"
                     f"<thead><tr><th>Game</th><th>Graded{tag}</th><th>Typical miss</th>"
-                    "<th>Bias</th><th>80% band</th></tr></thead><tbody>")
-        for g, n_graded, mae, bias, hit in by_game:
+                    "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
+        for g, n_graded, mae, bias, hit, dir_n, dir_acc in by_game:
             body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
-                        f"<td>{hit * 100:.0f}%</td></tr>")
+                        f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("</tbody></table>")
         acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
-                    for g, _n, mae, _bias, hit in sorted(by_game, key=lambda r: r[2])]
+                    for g, _n, mae, _bias, hit, _dn, _da in sorted(by_game, key=lambda r: r[2])]
         body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
                               title=f"Typical 1-month forecast miss by game{tag} — shorter is better"))
+        # Direction as its own chart, diverging around the coin-flip line:
+        # bars right of zero beat chance, bars left of it did worse.
+        dir_rows = [(GAMES[g]["label"], dir_acc * 100 - 50, f"{dir_acc * 100:.0f}% right of {dir_n:,}")
+                    for g, _n, _mae, _bias, _hit, dir_n, dir_acc in by_game
+                    if dir_acc is not None and dir_n >= MIN_GRADED]
+        dir_rows.sort(key=lambda r: -r[1])
+        if dir_rows:
+            body.append(bar_chart(dir_rows, unit=" pts",
+                                  title=f"Direction calls vs a coin flip, by game{tag}"))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
