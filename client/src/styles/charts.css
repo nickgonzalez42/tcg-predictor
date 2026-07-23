@@ -4,7 +4,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--space-5);
-  margin-bottom: var(--space-10);
 }
 
 .grade-tabs .btn {
@@ -17,8 +16,9 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-10);
+  gap: var(--space-20);
   flex-wrap: wrap;
+  margin-bottom: var(--space-20);
 }
 
 .range-tabs {
@@ -201,7 +201,7 @@
 /* Past-forecast view picker on its own legend row: latest per timeframe
    (default) or every matured forecast of one category. */
 .chart-pastview {
-  padding: 2px var(--space-5);
+  padding: var(--space-5) var(--space-10);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);

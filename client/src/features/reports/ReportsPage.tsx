@@ -27,7 +27,6 @@ export default function ReportsPage() {
                             <Link to={`/reports/${r.slug}`} className="reports__item-title">
                                 {r.title}
                             </Link>
-                            <span className="mono reports__date">{shortDate(r.publishedAt)}</span>
                             <p className="reports__summary">{r.summary}</p>
                         </li>
                     ))}

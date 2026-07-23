@@ -13,7 +13,7 @@
 
 .detail-panel__title {
   display: block;
-  margin-bottom: var(--space-10);
+  margin-bottom: var(--space-20);
   font-size: 11px;
 }
 
