@@ -48,10 +48,12 @@ export default function ReportPage() {
                     tl.to(line, { strokeDashoffset: 0, duration: 0.9, ease: "none" }, 0);
                 }
                 // text-anchor="end" marks the static labels (row names, axis
-                // values) — visible from the start; the rest (value/series
-                // labels) fade in with the marks.
+                // values) and report-chart-title the chart's caption — both
+                // visible from the start; the rest (value/series labels) fade
+                // in with the marks.
                 const texts = Array.from(svg.querySelectorAll("text"))
-                    .filter(t => t.getAttribute("text-anchor") !== "end");
+                    .filter(t => t.getAttribute("text-anchor") !== "end"
+                        && !t.classList.contains("report-chart-title"));
                 if (texts.length) {
                     gsap.set(texts, { opacity: 0 });
                     tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.25");

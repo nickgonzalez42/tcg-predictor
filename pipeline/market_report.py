@@ -98,24 +98,44 @@ def forecast_corner(pred, games_live):
     return picks
 
 
-HORIZON_ORDER = ["1w", "1m", "6m", "12m"]
-HORIZON_NAME = {"1w": "1 week", "1m": "1 month", "6m": "6 months", "12m": "12 months"}
+# Site-served horizons and their fixed display lengths (the pipeline also
+# grades 1w internally as a feedback signal, but 1-week forecasts are not a
+# product the site shows, so they stay out of the public report card).
+REPORT_HORIZONS = (("1m", "1 month", 28), ("6m", "6 months", 182), ("12m", "12 months", 364))
 MIN_GRADED = 30   # a horizon/game needs this many graded calls to be worth reporting
 
+ACCURACY_SELECT = (
+    "SELECT {cols} COUNT(*), AVG(ABS(ret - realized_ret)), AVG(ret - realized_ret), "
+    "AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END) "
+    "FROM forecast_archive WHERE realized_ret IS NOT NULL AND ")
 
-def accuracy_by(pred, key):
-    """Accuracy pooled (n-weighted) by `key` (horizon or game) from the
-    scorecard's forecast_accuracy table: [(key, n, mae, bias, band_hit)].
-    Backtest/test rows never reach that table, so this is the live record."""
-    try:
-        rows = pred.execute(
-            f"SELECT {key}, SUM(n), SUM(ret_mae*n)/SUM(n), SUM(ret_bias*n)/SUM(n), "
-            f"SUM(band_hit_rate*n)/SUM(n) FROM forecast_accuracy "
-            f"WHERE ret_mae IS NOT NULL GROUP BY {key} HAVING SUM(n) >= ?",
-            (MIN_GRADED,)).fetchall()
-    except sqlite3.OperationalError:   # scorecard hasn't produced the table yet
-        return []
-    return rows
+
+def live_accuracy(pred, horizon, days, by_game=False):
+    """Graded LIVE forecasts of a horizon whose window has genuinely elapsed
+    since issue (scored_at + horizon <= today). Stale-anchored archive rows
+    grade instantly against old history — real cohorts take wall-clock time,
+    so without this gate the report would claim matured 6-month calls months
+    before the first one could exist."""
+    where = ("substr(model_version,1,2) != '__' AND horizon = ? "
+             "AND date(substr(scored_at,1,10)) <= date('now', ?)")
+    args = (horizon, f"-{days} days")
+    if by_game:
+        return pred.execute(ACCURACY_SELECT.format(cols="game,") + where +
+                            " GROUP BY game HAVING COUNT(*) >= " + str(MIN_GRADED),
+                            args).fetchall()
+    r = pred.execute(ACCURACY_SELECT.format(cols="") + where, args).fetchone()
+    return r if r[0] and r[0] >= MIN_GRADED else None
+
+
+def backtest_accuracy(pred, by_game=False):
+    """Graded 1-month calls from the base backtest vintages (model retrained
+    as of a past month, later data hidden). length()=12 keeps only the
+    '__bt-YYYY-MM' bases — the day-stamped display clones would triple-count."""
+    where = "model_version LIKE '__bt-%' AND length(model_version) = 12 AND horizon = '1m'"
+    if by_game:
+        return pred.execute(ACCURACY_SELECT.format(cols="game,") + where +
+                            " GROUP BY game HAVING COUNT(*) >= " + str(MIN_GRADED)).fetchall()
+    return pred.execute(ACCURACY_SELECT.format(cols="") + where).fetchone()
 
 
 # ---- inline SVG bar charts -------------------------------------------------
@@ -125,7 +145,14 @@ def accuracy_by(pred, key):
 CHART_W, ROW_H, LABEL_W, CHART_PAD = 640, 26, 150, 8
 
 
-def bar_chart(rows, unit="%", signed=True, color=None):
+def chart_title(title, w=CHART_W):
+    """Small caps title inside the SVG so each chart names itself; the class
+    keeps it static under the client's draw-in animation."""
+    return (f"<text x='0' y='12' font-size='10' class='report-chart-title' "
+            f"fill='var(--text-muted, #8b96ad)'>{esc(title.upper())}</text>")
+
+
+def bar_chart(rows, unit="%", signed=True, color=None, title=None):
     """[(label, value, annotation)] -> horizontal bar SVG string.
 
     signed=True draws a diverging chart around a zero line (positive green,
@@ -134,7 +161,8 @@ def bar_chart(rows, unit="%", signed=True, color=None):
     """
     if not rows:
         return ""
-    h = ROW_H * len(rows) + CHART_PAD * 2
+    top = 20 if title else 0
+    h = ROW_H * len(rows) + CHART_PAD * 2 + top
     span = max(abs(v) for _, v, _ in rows) or 1.0
     has_neg = signed and any(v < 0 for _, v, _ in rows)
     plot_w = CHART_W - LABEL_W - 110
@@ -142,10 +170,12 @@ def bar_chart(rows, unit="%", signed=True, color=None):
     scale = (plot_w / 2 if has_neg else plot_w) / span
     parts = [f"<svg class='report-chart' viewBox='0 0 {CHART_W} {h}' "
              f"role='img' xmlns='http://www.w3.org/2000/svg'>"]
+    if title:
+        parts.append(chart_title(title))
     if has_neg:
-        parts.append(f"<line x1='{zero_x}' y1='{CHART_PAD}' x2='{zero_x}' y2='{h - CHART_PAD}' "
+        parts.append(f"<line x1='{zero_x}' y1='{CHART_PAD + top}' x2='{zero_x}' y2='{h - CHART_PAD}' "
                      "stroke='var(--border, #2e3a52)'/>")
-    y = CHART_PAD
+    y = CHART_PAD + top
     for label, v, note in rows:
         bw = max(abs(v) * scale, 1.0)
         x = zero_x - bw if v < 0 else zero_x
@@ -191,10 +221,13 @@ def game_week_series(pc, game, names, dates):
     return out
 
 
-def line_chart(dates, series):
+def line_chart(dates, series, title=None):
     """Multi-line SVG: series = [(label, [pct-or-None per date], color)], each
     line tagged at its right edge with the label and closing value."""
     W, H, PADT, PADB, LX, RGUT = 640, 250, 12, 22, 46, 168
+    if title:
+        PADT += 20
+        H += 20
     plot_w = W - LX - RGUT
     vals = [v for _, ys, _ in series for v in ys if v is not None]
     if not vals:
@@ -207,6 +240,8 @@ def line_chart(dates, series):
     X = lambda i: LX + plot_w * i / max(len(dates) - 1, 1)
     parts = [f"<svg class='report-chart' viewBox='0 0 {W} {H}' role='img' "
              "xmlns='http://www.w3.org/2000/svg'>"]
+    if title:
+        parts.append(chart_title(title, W))
     # zero line + y extremes + first/last date labels
     parts.append(f"<line x1='{LX}' y1='{Y(0):.1f}' x2='{LX + plot_w}' y2='{Y(0):.1f}' "
                  "stroke='var(--border, #2e3a52)'/>")
@@ -314,8 +349,9 @@ def build_report(force=False):
         # steepest weekly move first, so the legend order carries information
         series.sort(key=lambda s: -abs(next(v for v in reversed(s[1]) if v is not None)))
         body.append("<h2>This week by game</h2>"
-                    "<p>Median price change across each game's tracked cards, day by "
-                    "day through the week.</p>" + line_chart(window_dates, series))
+                    "<p>Average price change across each game's tracked cards, day by "
+                    "day through the week.</p>"
+                    + line_chart(window_dates, series, title="Price drift this week by game"))
 
     for game, moves in per_game.items():
         ggains = [m[4] for m in moves if m[4] > 0.5]
@@ -351,46 +387,69 @@ def build_report(force=False):
                     "<p class='report-note'>Forecasts are model estimates, not financial advice; "
                     "see the About page for how they work and how they're graded.</p>")
 
-    # Model report card: every prediction whose horizon has elapsed is graded
-    # against what the price actually did; this is that running record.
-    by_horizon = accuracy_by(pred, "horizon")
-    if by_horizon:
-        order = {h: i for i, h in enumerate(HORIZON_ORDER)}
-        by_horizon.sort(key=lambda r: order.get(r[0], len(order)))
-        total = sum(r[1] for r in by_horizon)
-        body.append("<h2>Model report card</h2>"
-                    f"<p>{total:,} forecasts have matured and been graded against real "
-                    "prices so far. Typical miss is the average gap between the predicted "
-                    "and realized price; bias above zero means the model ran hot; the last "
-                    "column is how often reality landed inside the model's 80% confidence "
-                    "band (80% is perfect calibration).</p>"
-                    "<table class='report-table'>"
+    # Model report card. Live horizons appear once their first cohort has had
+    # wall-clock time to mature; until then the backtest vintages (retrained
+    # in the past with later data hidden, then graded) carry the record.
+    body.append("<h2>Model report card</h2>"
+                "<p>Every forecast the model publishes is archived, and once its "
+                "target date passes it is graded against what the price actually "
+                "did — misses included. Three numbers summarize the record:</p><ul>"
+                "<li><strong>Typical miss</strong> — the average gap between the "
+                "predicted and realized price. A 5% typical miss on a $100 card "
+                "means the model's calls landed about $5 from reality.</li>"
+                "<li><strong>Bias</strong> — the direction of the average error. "
+                "Above zero, forecasts ran high (the model was optimistic); below "
+                "zero it undershot. Near zero is best.</li>"
+                "<li><strong>80% band</strong> — every forecast ships with a "
+                "low&ndash;high range the model expects to contain the real price 80% "
+                "of the time. This column is how often it actually did: 80% is "
+                "perfect calibration, higher means the bands are cautious, lower "
+                "means overconfident.</li></ul>")
+
+    live = [(label, *row) for h, label, days in REPORT_HORIZONS
+            for row in [live_accuracy(pred, h, days)] if row]
+    if live:
+        body.append("<table class='report-table'>"
                     "<thead><tr><th>Horizon</th><th>Graded</th><th>Typical miss</th>"
                     "<th>Bias</th><th>80% band</th></tr></thead><tbody>")
-        for h, n_graded, mae, bias, hit in by_horizon:
-            body.append(f"<tr><td>{HORIZON_NAME.get(h, h)}</td><td>{n_graded:,}</td>"
+        for label, n_graded, mae, bias, hit in live:
+            body.append(f"<tr><td>{label}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td></tr>")
         body.append("</tbody></table>")
+        by_game = [r for r in live_accuracy(pred, "1m", 28, by_game=True) if r[0] in GAMES]
+    else:
+        bt = backtest_accuracy(pred)
+        by_game = [r for r in backtest_accuracy(pred, by_game=True) if r[0] in GAMES]
+        if bt and bt[0]:
+            body.append(f"<p>No live forecast has been out long enough to grade yet — "
+                        "the first 1-month cohort matures in August 2026, 6-month in "
+                        "January 2027, 12-month in July 2027; live grades take over "
+                        "here as they land. Until then, the record below comes from "
+                        f"backtests: the model was retrained as of May and June 2026 "
+                        "with everything after hidden, and its "
+                        f"{bt[0]:,} one-month calls graded against what then happened: "
+                        f"typical miss {(exp(bt[1]) - 1) * 100:.1f}%, "
+                        f"bias {pct((exp(bt[2]) - 1) * 100)}, "
+                        f"80% band hit {bt[3] * 100:.0f}%.</p>")
 
-        by_game = [r for r in accuracy_by(pred, "game") if r[0] in GAMES]
-        if by_game:
-            body.append("<table class='report-table'>"
-                        "<thead><tr><th>Game</th><th>Graded</th><th>Typical miss</th>"
-                        "<th>80% band</th></tr></thead><tbody>")
-            for g, n_graded, mae, _bias, hit in sorted(by_game, key=lambda r: -r[1]):
-                body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
-                            f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
-                            f"<td>{hit * 100:.0f}%</td></tr>")
-            body.append("</tbody></table>")
-            # Same record as a chart: smaller bar = tighter forecasts.
-            acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
-                        for g, _n, mae, _bias, hit in sorted(by_game, key=lambda r: r[2])]
-            body.append("<p>Typical miss by game — shorter is better:</p>"
-                        + bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)"))
-        body.append("<p class='report-note'>Grades cover every prediction the model has "
-                    "ever published whose target date has passed — misses included.</p>")
+    if by_game:
+        by_game.sort(key=lambda r: -r[1])
+        tag = "" if live else " (backtest)"
+        body.append("<table class='report-table'>"
+                    f"<thead><tr><th>Game</th><th>Graded{tag}</th><th>Typical miss</th>"
+                    "<th>Bias</th><th>80% band</th></tr></thead><tbody>")
+        for g, n_graded, mae, bias, hit in by_game:
+            body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
+                        f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                        f"<td>{pct((exp(bias) - 1) * 100)}</td>"
+                        f"<td>{hit * 100:.0f}%</td></tr>")
+        body.append("</tbody></table>")
+        acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
+                    for g, _n, mae, _bias, hit in sorted(by_game, key=lambda r: r[2])]
+        body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
+                              title=f"Typical 1-month forecast miss by game{tag} — shorter is better"))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
