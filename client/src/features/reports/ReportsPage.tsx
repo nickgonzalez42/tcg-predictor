@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
-import { shortDate } from "../../lib/util";
 
 // Index of the weekly market reports (newest first).
 export default function ReportsPage() {
