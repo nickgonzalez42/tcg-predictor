@@ -16,6 +16,7 @@ import os
 import sqlite3
 import statistics
 from datetime import date, datetime, timedelta
+from math import exp
 
 from _paths import DATA_DIR as BASE
 from games import GAMES
@@ -87,6 +88,26 @@ def forecast_corner(pred, games_live):
         if len(picks) == OVERALL_N:
             break
     return picks
+
+
+HORIZON_ORDER = ["1w", "1m", "6m", "12m"]
+HORIZON_NAME = {"1w": "1 week", "1m": "1 month", "6m": "6 months", "12m": "12 months"}
+MIN_GRADED = 30   # a horizon/game needs this many graded calls to be worth reporting
+
+
+def accuracy_by(pred, key):
+    """Accuracy pooled (n-weighted) by `key` (horizon or game) from the
+    scorecard's forecast_accuracy table: [(key, n, mae, bias, band_hit)].
+    Backtest/test rows never reach that table, so this is the live record."""
+    try:
+        rows = pred.execute(
+            f"SELECT {key}, SUM(n), SUM(ret_mae*n)/SUM(n), SUM(ret_bias*n)/SUM(n), "
+            f"SUM(band_hit_rate*n)/SUM(n) FROM forecast_accuracy "
+            f"WHERE ret_mae IS NOT NULL GROUP BY {key} HAVING SUM(n) >= ?",
+            (MIN_GRADED,)).fetchall()
+    except sqlite3.OperationalError:   # scorecard hasn't produced the table yet
+        return []
+    return rows
 
 
 def money(v):
@@ -190,6 +211,42 @@ def build_report(force=False):
         body.append("</tbody></table>"
                     "<p class='report-note'>Forecasts are model estimates, not financial advice; "
                     "see the About page for how they work and how they're graded.</p>")
+
+    # Model report card: every prediction whose horizon has elapsed is graded
+    # against what the price actually did; this is that running record.
+    by_horizon = accuracy_by(pred, "horizon")
+    if by_horizon:
+        order = {h: i for i, h in enumerate(HORIZON_ORDER)}
+        by_horizon.sort(key=lambda r: order.get(r[0], len(order)))
+        total = sum(r[1] for r in by_horizon)
+        body.append("<h2>Model report card</h2>"
+                    f"<p>{total:,} forecasts have matured and been graded against real "
+                    "prices so far. Typical miss is the average gap between the predicted "
+                    "and realized price; bias above zero means the model ran hot; the last "
+                    "column is how often reality landed inside the model's 80% confidence "
+                    "band (80% is perfect calibration).</p>"
+                    "<table class='report-table'>"
+                    "<thead><tr><th>Horizon</th><th>Graded</th><th>Typical miss</th>"
+                    "<th>Bias</th><th>80% band</th></tr></thead><tbody>")
+        for h, n_graded, mae, bias, hit in by_horizon:
+            body.append(f"<tr><td>{HORIZON_NAME.get(h, h)}</td><td>{n_graded:,}</td>"
+                        f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                        f"<td>{pct((exp(bias) - 1) * 100)}</td>"
+                        f"<td>{hit * 100:.0f}%</td></tr>")
+        body.append("</tbody></table>")
+
+        by_game = [r for r in accuracy_by(pred, "game") if r[0] in GAMES]
+        if by_game:
+            body.append("<table class='report-table'>"
+                        "<thead><tr><th>Game</th><th>Graded</th><th>Typical miss</th>"
+                        "<th>80% band</th></tr></thead><tbody>")
+            for g, n_graded, mae, _bias, hit in sorted(by_game, key=lambda r: -r[1]):
+                body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
+                            f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                            f"<td>{hit * 100:.0f}%</td></tr>")
+            body.append("</tbody></table>")
+        body.append("<p class='report-note'>Grades cover every prediction the model has "
+                    "ever published whose target date has passed — misses included.</p>")
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
