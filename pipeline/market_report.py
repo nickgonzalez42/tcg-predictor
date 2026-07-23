@@ -172,7 +172,12 @@ def bar_chart(rows, unit="%", signed=True, color=None, title=None):
     h = ROW_H * len(rows) + CHART_PAD * 2 + top
     span = max(abs(v) for _, v, _ in rows) or 1.0
     has_neg = signed and any(v < 0 for _, v, _ in rows)
-    plot_w = CHART_W - LABEL_W - 110
+    labels = [(f"{v:+.1f}{unit}" if signed else f"{v:.1f}{unit}")
+              + (f"  {note}" if note else "") for _, v, note in rows]
+    # Right gutter sized to the longest annotation (mono-typeset, ~6.6px/char
+    # at 11px) so a full-width bar's label never runs past the viewBox.
+    gutter = max(110, int(max(map(len, labels)) * 6.6) + 14)
+    plot_w = CHART_W - LABEL_W - gutter
     zero_x = LABEL_W + (plot_w / 2 if has_neg else 0)
     scale = (plot_w / 2 if has_neg else plot_w) / span
     parts = [f"<svg class='report-chart' viewBox='0 0 {CHART_W} {h}' "
@@ -183,7 +188,7 @@ def bar_chart(rows, unit="%", signed=True, color=None, title=None):
         parts.append(f"<line x1='{zero_x}' y1='{CHART_PAD + top}' x2='{zero_x}' y2='{h - CHART_PAD}' "
                      "stroke='var(--border, #2e3a52)'/>")
     y = CHART_PAD + top
-    for label, v, note in rows:
+    for (label, v, _note), text in zip(rows, labels):
         bw = max(abs(v) * scale, 1.0)
         x = zero_x - bw if v < 0 else zero_x
         fill = color or ("var(--down, #ff7a7a)" if v < 0 else "var(--up, #3fd98a)")
@@ -193,7 +198,6 @@ def bar_chart(rows, unit="%", signed=True, color=None, title=None):
         parts.append(f"<rect x='{x:.1f}' y='{y + 5}' width='{bw:.1f}' height='{ROW_H - 10}' "
                      f"rx='2' fill='{fill}'/>")
         tx, anchor = (zero_x - bw - 6, "end") if v < 0 else (zero_x + bw + 6, "start")
-        text = (f"{v:+.1f}{unit}" if signed else f"{v:.1f}{unit}") + (f"  {note}" if note else "")
         parts.append(f"<text x='{tx:.1f}' y='{cy}' text-anchor='{anchor}' font-size='11' "
                      f"fill='var(--text-muted, #8b96ad)'>{esc(text)}</text>")
         y += ROW_H
@@ -231,10 +235,13 @@ def game_week_series(pc, game, names, dates):
 def line_chart(dates, series, title=None):
     """Multi-line SVG: series = [(label, [pct-or-None per date], color)], each
     line tagged at its right edge with the label and closing value."""
-    W, H, PADT, PADB, LX, RGUT = 640, 250, 12, 22, 46, 168
+    W, H, PADT, PADB, LX = 640, 250, 12, 22, 46
     if title:
         PADT += 20
         H += 20
+    # Right gutter sized to the longest end label (mono, ~6.6px/char at 11px);
+    # "Star Wars Unlimited -10.0%" must not run past the viewBox.
+    RGUT = max(120, int(max((len(s[0]) for s in series), default=0) * 6.6) + 60)
     plot_w = W - LX - RGUT
     vals = [v for _, ys, _ in series for v in ys if v is not None]
     if not vals:
