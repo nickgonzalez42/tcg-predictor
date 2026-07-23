@@ -61,12 +61,15 @@
   color: var(--text);
 }
 
-.chart-legend__swatch {
+/* Scoped to the value chart's legend (__item): the price chart's legend keys
+   (__key) color their swatches inline, and an unscoped border here used to
+   paint a green stripe over every one of them. */
+.chart-legend__item .chart-legend__swatch {
   width: 18px;
   border-top: 2px solid var(--up, #3fd98a);
 }
 
-.chart-legend__swatch--dashed {
+.chart-legend__item .chart-legend__swatch--dashed {
   border-top: 2px dashed var(--link, #7fb0ea);
 }
 

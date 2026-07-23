@@ -150,10 +150,11 @@ public partial class CardsController(
     }
 
     // Past forecasts whose horizon has elapsed, for drawing "what the model
-    // said back then" on the chart. Target dates mirror the pipeline's
-    // scorecard: 1w counts from issue time, month horizons from the anchoring
-    // price month. The archive starts 2026-07-09, so points accumulate from
-    // one horizon-length after that.
+    // said back then" on the chart. Display target dates use fixed week-based
+    // lengths (1w=7d from issue time; 1m/6m/12m = 28/182/364d from the
+    // anchoring price date) — the scorecard still grades on month buckets.
+    // The archive starts 2026-07-09, so points accumulate from one
+    // horizon-length after that.
     [HttpGet("{game}/{id:int}/forecast-history")]
     public async Task<IActionResult> GetForecastHistory(string game, int id)
     {
@@ -186,16 +187,18 @@ public partial class CardsController(
         return Ok(new { game = key, productId = id, forecasts = past });
     }
 
-    private static readonly Dictionary<string, int> HorizonMonths =
-        new() { ["1m"] = 1, ["6m"] = 6, ["12m"] = 12 };
+    // Fixed week-based horizon lengths (4/26/52 weeks). Calendar-month math
+    // has no answer for "Aug 31 + 1 month"; days always do.
+    private static readonly Dictionary<string, int> HorizonDays =
+        new() { ["1m"] = 28, ["6m"] = 182, ["12m"] = 364 };
 
     private static DateTime? ForecastTargetDate(ArchivedForecast f)
     {
         if (f.Horizon == "1w")
             return DateTime.TryParse(f.ScoredAt, out var issued) ? issued.Date.AddDays(7) : null;
-        if (HorizonMonths.TryGetValue(f.Horizon, out var months)
+        if (HorizonDays.TryGetValue(f.Horizon, out var days)
             && DateTime.TryParse(f.AsOf, out var asOf))
-            return asOf.Date.AddMonths(months);
+            return asOf.Date.AddDays(days);
         return null;
     }
 

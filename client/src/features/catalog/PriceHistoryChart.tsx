@@ -24,28 +24,66 @@ function addMonths(date: string, months: number) {
     return d.toISOString().slice(0, 10);
 }
 
+function addDays(date: string, days: number) {
+    const d = new Date(date + 'T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() + days);
+    return d.toISOString().slice(0, 10);
+}
 
 // Where each forecast horizon lands on the time axis, from the last real point.
-// The site serves 1m/6m/12m only (1w stays pipeline-internal until the true
-// weekly model ships).
+// Fixed week-based lengths (4/26/52 weeks): month arithmetic has no answer for
+// "Aug 31 + 1 month" (setUTCMonth would roll it into October). The site serves
+// 1m/6m/12m only (1w stays pipeline-internal until the true weekly model ships).
 const HORIZON_OFFSET: Record<string, (date: string) => string> = {
-    '1m': d => addMonths(d, 1),
-    '6m': d => addMonths(d, 6),
-    '12m': d => addMonths(d, 12),
+    '1m': d => addDays(d, 28),
+    '6m': d => addDays(d, 182),
+    '12m': d => addDays(d, 364),
 };
 
-// Past forecasts for the shown tier, as dots placed at the month each was
-// generated from. The API only returns matured ones (target date already
-// passed, so a 1Y only appears once it is over a year old). The view picker
+// Past forecasts for the shown tier, as dots placed at the date each forecast
+// was aiming at (a 1M generated June 20 plots 28 days later on July 18, right
+// against what the price actually did). The API only returns matured ones
+// (target date already passed, so a 1Y only appears once it is over a year
+// old). The view picker
 // chooses what to plot: "latest" = the most recently matured one per horizon
 // (e.g. the 1M issued a month ago); a horizon key = every matured forecast of
 // that one category.
 const PAST_HORIZONS = ['1m', '6m', '12m'];
 const HORIZON_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y' };
 
+// At most one dot per 28-day slot, slots anchored at today (today−28d,
+// today−56d, …; "a month" is always exactly 28 days — calendar months vary and
+// can name impossible dates). Each slot takes the not-yet-used forecast whose
+// issue date is closest to it (within 14 days, so the slots tile the timeline
+// with no gaps); when two forecasts were issued days apart, the one nearest a
+// whole 28-day step from today wins and the rest stay hidden.
+function monthlyIncrements(candidates: PastForecast[]): PastForecast[] {
+    const dated = candidates.filter(f => f.asOf);
+    if (dated.length <= 1) return dated;
+    const STEP = 28 * 86400e3;
+    const HALF_STEP = 14 * 86400e3;
+    const oldest = Math.min(...dated.map(f => Date.parse(f.asOf!)));
+    const today = Date.now();
+    const used = new Set<PastForecast>();
+    const picks: PastForecast[] = [];
+    for (let k = 1; ; k++) {
+        const slot = today - k * STEP;
+        if (slot < oldest - HALF_STEP) break;
+        let best: PastForecast | undefined;
+        let bestDist = HALF_STEP;
+        for (const f of dated) {
+            if (used.has(f)) continue;
+            const dist = Math.abs(Date.parse(f.asOf!) - slot);
+            if (dist <= bestDist) { best = f; bestDist = dist; }
+        }
+        if (best) { used.add(best); picks.push(best); }
+    }
+    return picks.sort((a, b) => (a.asOf! < b.asOf! ? -1 : 1));
+}
+
 function pickPastForecasts(past: PastForecast[], grade: string, view: string): PastForecast[] {
     if (view !== 'latest')
-        return past.filter(f => f.target === grade && f.horizon === view);
+        return monthlyIncrements(past.filter(f => f.target === grade && f.horizon === view));
     return PAST_HORIZONS.flatMap(horizon => {
         const candidates = past.filter(f => f.target === grade && f.horizon === horizon);
         return candidates.length
@@ -73,10 +111,6 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
     // Live handles to the drawn series, so hovering a legend key can thicken
     // its line in place (applyOptions) without rebuilding the chart.
     const seriesByKey = useRef<Record<string, ISeriesApi<SeriesType>[]>>({});
-
-    // Set inside the chart effect: shows the past-dot tooltip for a hovered
-    // legend key (same info as hovering the dot itself); null hides it.
-    const legendTip = useRef<((horizon: string | null) => void) | null>(null);
 
     const highlightKey = (key: string | null) => {
         for (const [k, list] of Object.entries(seriesByKey.current)) {
@@ -174,21 +208,41 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         }
 
         // Past-forecast review: each matured prediction is a single dot placed
-        // at (when it was generated, the price it predicted), coloured by
-        // horizon. Line hidden — the point is the whole mark. Its details
-        // (horizon, generation date, price) show on hover / tap via the tooltip.
+        // at (the date it predicted FOR, the price it predicted) — the vertical
+        // gap to the history line at that date IS the miss. Coloured by horizon,
+        // line hidden — the point is the whole mark. Its details (horizon,
+        // generation date, price) show on hover / tap via the tooltip.
         const pastColors: Record<string, string> = {
             '1m': v('--chart-past-1m', '#c678dd'),
             '6m': v('--chart-past-6m', '#ff9e64'),
             '12m': v('--chart-past-12m', '#f06292'),
         };
-        type PointMeta = { series: ISeriesApi<SeriesType>; horizon: string; asOf: string; price: number };
+        type PointMeta = {
+            series: ISeriesApi<SeriesType>; horizon: string; asOf: string;
+            targetDate: string; price: number; base?: number;
+        };
         const pastPointMeta: PointMeta[] = [];
         const pastPicks = pickPastForecasts(pastData?.forecasts ?? [], grade, pastView)
             .filter(p => !hidden.has(p.horizon))
             // Keep the dot inside the visible window so old ones don't stretch the axis.
-            .filter(p => p.asOf && (!cutoff || p.asOf >= cutoff));
+            .filter(p => p.asOf && (!cutoff || p.targetDate >= cutoff));
         for (const p of pastPicks) {
+            // Permanently inkless anchor holding this forecast's generation
+            // date (and base price) on the time axis. The hover trajectory is
+            // drawn by ONE shared overlay series below — but if these times
+            // only appeared when hovered, the index-based axis would re-space
+            // mid-hover and slide the dots out from under the cursor.
+            if (p.basePrice != null) {
+                const anchor = chart.addSeries(LineSeries, {
+                    lineVisible: false,
+                    pointMarkersVisible: false,
+                    priceLineVisible: false,
+                    lastValueVisible: false,
+                    crosshairMarkerVisible: false,
+                });
+                anchor.setData([{ time: p.asOf!, value: p.basePrice },
+                                { time: p.targetDate, value: p.forecastPrice }]);
+            }
             const dot = chart.addSeries(LineSeries, {
                 color: pastColors[p.horizon] ?? '#c678dd',
                 lineVisible: false,          // markers only — no connecting line
@@ -198,10 +252,35 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
                 lastValueVisible: false,
                 crosshairMarkerVisible: false,
             });
-            dot.setData([{ time: p.asOf!, value: p.forecastPrice }]);
+            dot.setData([{ time: p.targetDate, value: p.forecastPrice }]);
             track(p.horizon, dot);
-            pastPointMeta.push({ series: dot, horizon: p.horizon, asOf: p.asOf!, price: p.forecastPrice });
+            pastPointMeta.push({ series: dot, horizon: p.horizon, asOf: p.asOf!,
+                                 targetDate: p.targetDate, price: p.forecastPrice,
+                                 base: p.basePrice });
         }
+
+        // One shared overlay draws the hovered dot's trajectory (generation
+        // point -> predicted point) by swapping its data; empty data = hidden.
+        // Its times always exist via the anchors, so the axis never moves.
+        const traj = chart.addSeries(LineSeries, {
+            color: '#c678dd',
+            lineWidth: 1,
+            lineStyle: LineStyle.Dotted,
+            pointMarkersVisible: true,
+            pointMarkersRadius: 2,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+        });
+        let shownTraj: PointMeta | null = null;
+        const showLink = (m: PointMeta | null) => {
+            if (m === shownTraj) return;
+            shownTraj = m;
+            if (!m || m.base == null) { traj.setData([]); return; }
+            traj.applyOptions({ color: pastColors[m.horizon] ?? '#c678dd' });
+            traj.setData([{ time: m.asOf, value: m.base },
+                          { time: m.targetDate, value: m.price }]);
+        };
 
         // Hover (desktop) / tap (touch) tooltip for the past-forecast dots.
         // lightweight-charts fires crosshair moves for taps too, so one handler
@@ -211,53 +290,45 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
         tip.className = 'chart-tip';
         tip.style.display = 'none';
         el.appendChild(tip);
-        const fmtMonth = (d: string) =>
-            new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+        const fmtDate = (d: string) =>
+            new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 
         const renderTip = (m: PointMeta, x: number, y: number) => {
             tip.innerHTML =
                 `<strong>${HORIZON_LABEL[m.horizon] ?? m.horizon} forecast</strong>` +
-                `<span>generated ${fmtMonth(m.asOf)}</span>` +
+                `<span>generated ${fmtDate(m.asOf)}</span>` +
                 `<span>$${m.price.toFixed(2)}</span>`;
-            tip.style.display = 'block';
+            tip.style.display = 'flex';   // matches .chart-tip's column layout — 'block' would collapse the lines
             const left = Math.min(Math.max(x + 12, 4), el.clientWidth - tip.offsetWidth - 4);
             tip.style.left = `${left}px`;
             tip.style.top = `${Math.max(y - tip.offsetHeight - 10, 4)}px`;
         };
 
         chart.subscribeCrosshairMove(param => {
-            if (!param.point || param.time == null || !pastPointMeta.length) { tip.style.display = 'none'; return; }
-            // Among dots present at the hovered time, take the one nearest the cursor.
+            if (!param.point || !pastPointMeta.length) { tip.style.display = 'none'; showLink(null); return; }
+            // Pixel hit-test against every dot's own screen position — the
+            // crosshair's seriesData only reports series with data at the
+            // hovered slot, which silently skipped dots on axis slots no other
+            // series shares. Coordinates treat all dots alike.
             let best: PointMeta | null = null;
-            let bestDy = Infinity;
+            let bestD = Infinity;
             for (const m of pastPointMeta) {
-                if (!param.seriesData.has(m.series)) continue;
+                const x = chart.timeScale().timeToCoordinate(m.targetDate as Time);
                 const y = m.series.priceToCoordinate(m.price);
-                if (y == null) continue;
-                const dy = Math.abs(y - param.point.y);
-                if (dy < bestDy) { bestDy = dy; best = m; }
+                if (x == null || y == null) continue;
+                const d = Math.hypot(x - param.point.x, y - param.point.y);
+                if (d < bestD) { bestD = d; best = m; }
             }
-            if (!best || bestDy > 28) { tip.style.display = 'none'; return; }
+            if (!best || bestD > 20) { tip.style.display = 'none'; showLink(null); return; }
             const y = best.series.priceToCoordinate(best.price) ?? param.point.y;
             renderTip(best, param.point.x, y);
+            showLink(best);
         });
-
-        // Legend hover: anchor the same tooltip to the horizon's most recent
-        // dot (highlightKey enlarges all of that horizon's dots alongside it).
-        legendTip.current = (horizon) => {
-            const dots = horizon ? pastPointMeta.filter(pm => pm.horizon === horizon) : [];
-            const m = dots.length ? dots.reduce((a, b) => (a.asOf > b.asOf ? a : b)) : undefined;
-            const x = m ? chart.timeScale().timeToCoordinate(m.asOf as Time) : null;
-            const y = m ? m.series.priceToCoordinate(m.price) : null;
-            if (!m || x == null || y == null) { tip.style.display = 'none'; return; }
-            renderTip(m, x, y);
-        };
 
         chart.timeScale().fitContent();
 
         return () => {
             seriesByKey.current = {};
-            legendTip.current = null;
             tip.remove();
             chart.remove();
         };
@@ -288,8 +359,8 @@ export default function PriceHistoryChart({ game, id, forecasts }: Props) {
             key={k.id}
             className={`chart-legend__key${hidden.has(k.id) ? ' chart-legend__key--off' : ''}`}
             onClick={() => toggleKey(k.id)}
-            onMouseEnter={() => { highlightKey(k.id); legendTip.current?.(k.id); }}
-            onMouseLeave={() => { highlightKey(null); legendTip.current?.(null); }}
+            onMouseEnter={() => highlightKey(k.id)}
+            onMouseLeave={() => highlightKey(null)}
             title={hidden.has(k.id) ? 'Show this line' : 'Hide this line'}
         >
             <span className="chart-legend__swatch" style={{ background: k.color }} />
