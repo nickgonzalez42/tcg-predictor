@@ -47,7 +47,11 @@ export default function ReportPage() {
                     gsap.set(line, { strokeDasharray: len, strokeDashoffset: len });
                     tl.to(line, { strokeDashoffset: 0, duration: 0.9, ease: "none" }, 0);
                 }
-                const texts = svg.querySelectorAll("text");
+                // text-anchor="end" marks the static labels (row names, axis
+                // values) — visible from the start; the rest (value/series
+                // labels) fade in with the marks.
+                const texts = Array.from(svg.querySelectorAll("text"))
+                    .filter(t => t.getAttribute("text-anchor") !== "end");
                 if (texts.length) {
                     gsap.set(texts, { opacity: 0 });
                     tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.25");
