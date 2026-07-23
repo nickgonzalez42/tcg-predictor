@@ -70,13 +70,22 @@ def load_matrix(game, grade):
     return np.array(pids), dates, P
 
 
-def static_features(game, pids, include_img=True):
-    """Tabular card features, optionally + PCA-compressed CLIP art embedding.
+def art_pids(game):
+    """Product ids that have a CLIP art embedding on file. Production only
+    forecasts these (v4.4): a card with no artwork is skipped entirely rather
+    than forecast with a hole where the art features go."""
+    z = np.load(os.path.join(DATA, f"{game}_img_emb.npz"))
+    return set(z["product_id"].tolist())
 
-    Production (forecast_predict) passes include_img=False: a 2026-07 ablation
-    (full vs no-img vs shuffled-img on 3 segments) showed the art PCA block is
-    accuracy-neutral at best and slightly harmful on small segments. Embeddings
-    still power art_comps.py (reasoning text) — just not the forecast model.
+
+def static_features(game, pids, include_img=True):
+    """Tabular card features + PCA-compressed CLIP art embedding.
+
+    A 2026-07 ablation (full vs no-img vs shuffled-img on 3 segments) showed
+    the art PCA block roughly accuracy-neutral, and v4.3 shipped without it.
+    v4.4 put it back in as a product decision — art is part of what a card is —
+    with callers pre-filtering to art_pids() so the block is never all-NaN.
+    The weekly report card tracks whether it earns its keep.
     """
     df = pd.read_csv(os.path.join(DATA, f"{game}_cards.csv"))
     if "release_date" in df.columns:

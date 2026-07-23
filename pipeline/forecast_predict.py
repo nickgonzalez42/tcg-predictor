@@ -25,12 +25,15 @@ from sklearn.metrics import mean_absolute_error
 
 from forecast_deep import (load_matrix, static_features, traj_block,
                            set_matrix, extra_signal_matrices, market_features,
-                           cum_stats, model_new, model_quantile, rolling_cutoff)
+                           cum_stats, model_new, model_quantile, rolling_cutoff,
+                           art_pids)
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
 
-MODEL_VERSION = "forecast-deep-v4.3"  # v4.3: rolling OOS cutoff, log-price sample
+MODEL_VERSION = "forecast-deep-v4.4"  # v4.4: art embedding PCA back in; cards
+                                      # with no artwork on file are not forecast
+                                      # v4.3: rolling OOS cutoff, log-price sample
                                       # weights, graded/raw premium features, split-
                                       # conformal bands, sqrt-t 1w bands, no img PCA
                                       # v4.2: cross-game market features
@@ -402,6 +405,11 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
     # feedback signals never count them (its existing test-row convention).
     version = f"__bt-{as_of}" if as_of else MODEL_VERSION
     pids, dates, P = load_matrix(game, target)
+    # v4.4: artwork is a model input, and a card with no artwork on file is
+    # not forecast at all (~0-2% of priced cards per game).
+    arts = art_pids(game)
+    have = np.fromiter((p in arts for p in pids), dtype=bool, count=len(pids))
+    pids, P = pids[have], P[have]
     if as_of:
         # Pretend the run happened at the end of `as_of` month: drop every
         # later price column BEFORE anything trains or anchors, so neither
@@ -423,7 +431,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
     EXTRA = extra_signal_matrices(game, pids, dates)
     EXTRA.update(premium_matrices(game, pids, dates))   # graded/raw premium context
     MKT = market_features(game, dates)   # cross-game market context (level-1 blend)
-    static = static_features(game, pids, include_img=False)   # img PCA: ablated out (v4.3)
+    static = static_features(game, pids)   # v4.4: art PCA in (artless cards dropped above)
     last_idx = np.array([np.where(np.isfinite(P[i]))[0][-1] if np.isfinite(P[i]).any() else -1
                          for i in range(len(pids))])
     keep = last_idx >= 0

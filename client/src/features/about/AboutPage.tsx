@@ -10,7 +10,7 @@ export default function AboutPage() {
       <header className="article__head">
         <h1 className="article__title">How the forecasts work</h1>
         <div className="mono article__meta">
-          Updated July 2026 · model version forecast-deep-v4.3 · retrained daily
+          Updated July 2026 · model version forecast-deep-v4.4 · retrained daily
         </div>
         <p className="article__lede">
           CardStock treats trading cards like a market you can actually study. Every card gets a
@@ -79,8 +79,9 @@ export default function AboutPage() {
             card's own game momentum and the gap between them.)
           </li>
           <li>
-            <strong>The card itself</strong>: its rarity, its age, and its printed stats (HP and
-            attacks, cost and power, ink and lore, and so on), encoded for the model.
+            <strong>The card itself</strong>: its rarity, its age, its printed stats (HP and
+            attacks, cost and power, ink and lore, and so on), and its artwork, encoded for
+            the model.
           </li>
           <li>
             <strong>Its own report card</strong>: if the model has been running too optimistic on
@@ -90,10 +91,14 @@ export default function AboutPage() {
         </ul>
         <p>
           Artwork is a special case worth calling out. Every card image is embedded with a CLIP
-          vision model, and those embeddings still power the "visually similar cards" comparisons
-          in a forecast's reasoning. We also tried feeding the artwork straight into the price
-          model. A July 2026 test showed it did not improve accuracy, so the live model leaves it
-          out and predicts from price behavior and card traits alone.
+          vision model. Those embeddings power the "visually similar cards" comparisons in a
+          forecast's reasoning, and as of v4.4 a compressed form of the same embedding is one of
+          the model's inputs, so it can pick up on the kind of art-driven appeal — alt-art
+          styles, fan-favorite characters — that never shows up in a stat line. In our own July
+          2026 test the art signal moved accuracy only a little on its own; it stays in because
+          art is a real part of what a card is worth, and the weekly report card will show
+          whether it earns its keep. One consequence: a card with no artwork on file is not
+          forecast at all.
         </p>
         <p>
           Under the hood, the engine is a gradient-boosted decision-tree model (scikit-learn's
