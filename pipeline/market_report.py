@@ -28,6 +28,12 @@ PRED_DB = os.path.join(API_DATA, "predictions.db")
 MIN_BASE = 5.0        # penny floor: % moves under this base price are noise
 TOP_N = 3             # per-game gainers/losers
 OVERALL_N = 5         # cross-game movers table
+# Listing-repair guard: PriceCharting occasionally re-bases a listing (flat at
+# one value, an overnight 5-10x step, flat at the new value — e.g. a promo
+# whose cheap-variant pollution got corrected). That is a data regime change,
+# not a market move, so week-over-week ratios beyond this bound (either
+# direction) stay out of the report's stats, tables, and graphs entirely.
+MAX_WEEK_RATIO = 5.0
 
 
 def esc(s):
@@ -72,7 +78,7 @@ def game_moves(pc, game, baseline, latest, names):
         (latest, game, baseline, MIN_BASE)).fetchall()
     moves = []
     for pid, old, new in rows:
-        if pid in names and old > 0:
+        if pid in names and old > 0 and 1 / MAX_WEEK_RATIO <= new / old <= MAX_WEEK_RATIO:
             moves.append((pid, names[pid], old, new, (new / old - 1) * 100))
     return moves
 
@@ -180,6 +186,7 @@ def game_week_series(pc, game, names, dates):
     out = []
     for d in dates:
         ratios = [per_card[pid][d] / b for pid, b in base.items() if d in per_card[pid]]
+        ratios = [r for r in ratios if 1 / MAX_WEEK_RATIO <= r <= MAX_WEEK_RATIO]
         out.append((statistics.mean(ratios) - 1) * 100 if len(ratios) >= 50 else None)
     return out
 
