@@ -1,3 +1,4 @@
+using System.Threading.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using API.Data;
 using API.Entities;
@@ -6,6 +7,7 @@ using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.FileProviders;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +51,30 @@ builder.Services.AddHostedService<AlertEmailNotifier>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
 builder.Services.AddHttpClient<SpxService>();
 builder.Services.AddCors();
+// Response caches for the identical-for-everyone endpoints (movers, sitemaps).
+builder.Services.AddMemoryCache();
+// Per-IP fixed-window limits on the abuse-prone endpoints: LLM-backed
+// reasoning, account creation, bulk CSV import, and multi-MB sitemap builds.
+// RemoteIpAddress is the real client address here because UseForwardedHeaders
+// rewrites it from Caddy's X-Forwarded-For before the limiter runs.
+builder.Services.AddRateLimiter(opt =>
+{
+    opt.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    void PerIpPerMinute(string policy, int permits) => opt.AddPolicy(policy, ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = permits,
+                Window = TimeSpan.FromMinutes(1),
+            }));
+
+    PerIpPerMinute("reasoning", 10);   // CardsController.GetReasoning (paid Anthropic calls)
+    PerIpPerMinute("auth", 5);         // AccountController.RegisterUser
+    PerIpPerMinute("import", 4);       // WatchlistController.ImportOwned (up to 1000 rows each)
+    PerIpPerMinute("sitemap", 10);     // SitemapController (multi-MB XML on a cache miss)
+});
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();
 builder.Services.AddIdentityApiEndpoints<User>(opt =>
@@ -98,6 +124,11 @@ app.UseCors(opt =>
    opt.AllowAnyHeader().AllowAnyMethod().AllowCredentials().WithOrigins("https://localhost:5173") ;
 });
 
+// After UseForwardedHeaders (so the partition key is the real client IP) and
+// before auth — a rejected request shouldn't cost a cookie lookup. Only
+// endpoints tagged [EnableRateLimiting] are limited; there is no global policy.
+app.UseRateLimiter();
+
 // Serve card images straight from the scraper's image folders (no copy).
 foreach (var game in GameRegistry.Keys)
     ServeCardImages(app, $"CardImages:{game}", $"/card-images/{game}");
@@ -106,7 +137,18 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
-app.MapGroup("api").MapIdentityApi<User>();
+// MapIdentityApi exposes the whole Identity surface (/register, /refresh,
+// /forgotPassword, ...) but the SPA uses exactly one of its endpoints:
+// POST /api/login?useCookies=true (the query string doesn't affect Path, so
+// the filter passes it through). The rest are dead surface — and Identity's
+// /api/register is worse than dead: it creates users WITHOUT the Member role,
+// bypassing AccountController's /api/account/register. Everything but login
+// answers 404, as if it were never mapped.
+app.MapGroup("api").MapIdentityApi<User>()
+    .AddEndpointFilter(async (ctx, next) =>
+        ctx.HttpContext.Request.Path.Equals("/api/login", StringComparison.OrdinalIgnoreCase)
+            ? await next(ctx)
+            : Results.NotFound());
 
 await DbInitializer.InitDb(app);   // finish migrating/seeding before serving requests
 

@@ -30,7 +30,9 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         ["1y"] = (() => DateTime.UtcNow.AddYears(-1), "12m"),
     };
 
-    private static string NormalizeTrend(string? trend) =>
+    // Public: the movers cache keys on the same normalization, so unknown
+    // trend values collapse onto their effective entry.
+    public static string NormalizeTrend(string? trend) =>
         trend != null && TrendWindows.ContainsKey(trend.ToLowerInvariant()) ? trend.ToLowerInvariant() : "1m";
 
     private static string WindowStart(string window) =>

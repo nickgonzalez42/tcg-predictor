@@ -3,12 +3,16 @@ using API.DTOS;
 using API.Entities;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace API.Controllers;
 
 public class AccountController(SignInManager<User> signInManager, IConfiguration config) : BaseApiController
 {
+    // Rate-limited: account creation is the classic bot target, and each
+    // attempt costs a password hash.
     [HttpPost("register")]
+    [EnableRateLimiting("auth")]
     public async Task<ActionResult> RegisterUser(RegisterDto registerDto)
     {
         var user = new User{UserName = registerDto.Email, Email = registerDto.Email};

@@ -55,16 +55,33 @@ public class ReasoningService(
         if (string.IsNullOrWhiteSpace(prose)) return cached?.Prose;
 
         if (cached == null)
-            store.ReasonProses.Add(new ReasonProse
+        {
+            var row = new ReasonProse
             {
                 Game = game, ProductId = productId, ScoredAt = scoredAt, Prose = prose,
-            });
-        else
-        {
-            cached.Prose = prose;
-            cached.ScoredAt = scoredAt;
-            cached.GeneratedAt = DateTime.UtcNow;
+            };
+            store.ReasonProses.Add(row);
+            try
+            {
+                await store.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                // Two concurrent cache misses both generated prose; the unique
+                // (Game, ProductId) index let only one insert land. Losing that
+                // race isn't an error — drop our row and serve whatever won
+                // (fall back to our own prose if the winner vanished meanwhile).
+                store.Entry(row).State = EntityState.Detached;
+                var winner = await store.ReasonProses.AsNoTracking()
+                    .FirstOrDefaultAsync(x => x.Game == game && x.ProductId == productId);
+                return winner?.Prose ?? prose;
+            }
+            return prose;
         }
+
+        cached.Prose = prose;
+        cached.ScoredAt = scoredAt;
+        cached.GeneratedAt = DateTime.UtcNow;
         await store.SaveChangesAsync();
         return prose;
     }

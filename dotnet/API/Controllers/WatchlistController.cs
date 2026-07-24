@@ -7,6 +7,7 @@ using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
@@ -38,6 +39,11 @@ public class WatchlistController(
         if (game == null) return BadRequest(UnknownGame(dto.Game));
         dto.Game = game;
 
+        // Same vocabulary check the CSV import applies — a free-text grade would
+        // create a condition bucket nothing can price or filter.
+        if (!TryNormalizeGrade(dto.Grade, out var grade))
+            return BadRequest(UnknownGrade(dto.Grade));
+
         // Wishlist is one-per-card, so skip if it's already there. Owned is
         // one-per-copy: every add creates a new copy at the given condition
         // (further purchase detail is filled in later from the Owned page).
@@ -49,7 +55,7 @@ public class WatchlistController(
         }
 
         var now = DateTime.UtcNow;
-        var ownedGrade = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Grade) ? dto.Grade.Trim() : null;
+        var ownedGrade = kind == TrackKind.Owned ? grade : null;
         context.TrackedCards.Add(new TrackedCard
         {
             UserName = user,
@@ -89,7 +95,7 @@ public class WatchlistController(
         if (game == null) return BadRequest(UnknownGame(dto.Game));
 
         var user = User.Identity!.Name!;
-        var grade = Blank(dto.Grade) ? null : dto.Grade!.Trim();
+        if (!TryNormalizeGrade(dto.Grade, out var grade)) return BadRequest(UnknownGrade(dto.Grade));
         var target = Math.Clamp(dto.Quantity, 0, MaxCopiesPerCondition);
 
         var copies = await context.TrackedCards
@@ -132,8 +138,10 @@ public class WatchlistController(
     // Bulk import owned copies from a CSV (client parses the file). Each row
     // names a card by product id or by name; a name that matches several cards
     // comes back as "ambiguous" with candidates so the user can pick, then
-    // resubmit that row with a concrete product id.
+    // resubmit that row with a concrete product id. Rate-limited: each request
+    // is up to 1000 rows of name lookups and inserts.
     [HttpPost("owned/import")]
+    [EnableRateLimiting("import")]
     public async Task<ActionResult<OwnedImportResult>> ImportOwned(OwnedImportDto dto)
     {
         if (dto.Rows.Count > MaxImportRows)
@@ -151,9 +159,7 @@ public class WatchlistController(
             var game = NormalizeGame(row.Game ?? "");
             if (game == null) { rr.Message = $"Unknown game '{row.Game}'."; continue; }
 
-            var g = row.Grade?.Trim().ToLower();
-            var grade = Blank(g) || g == "ungraded" ? null : g;
-            if (grade != null && !GradeTiers.Graded.Contains(grade))
+            if (!TryNormalizeGrade(row.Grade, out var grade))
             { rr.Message = $"Unknown condition '{row.Grade}'."; continue; }
             var quantity = Math.Clamp(row.Quantity < 1 ? 1 : row.Quantity, 1, MaxCopiesPerCondition);
 
@@ -231,11 +237,11 @@ public class WatchlistController(
             var name = nameByKey.GetValueOrDefault((g.Key.Game, g.Key.ProductId)) ?? "";
             sb.Append(g.Key.Game).Append(',')
               .Append(g.Key.ProductId).Append(',')
-              .Append(g.Key.Grade ?? "ungraded").Append(',')
+              .Append(CsvField(g.Key.Grade ?? "ungraded")).Append(',')
               .Append(g.Count()).Append(',')
               .Append(g.Key.Paid?.ToString("0.##", CultureInfo.InvariantCulture) ?? "").Append(',')
               .Append(g.Key.Date).Append(',')
-              .Append('"').Append(name.Replace("\"", "\"\"")).Append('"').Append('\n');
+              .Append(CsvField(name)).Append('\n');
         }
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "cardstock-portfolio.csv");
     }
@@ -245,10 +251,12 @@ public class WatchlistController(
     [HttpPatch("owned/{id:int}")]
     public async Task<ActionResult> UpdateCopy(int id, UpdateOwnedCopyDto dto)
     {
+        if (!TryNormalizeGrade(dto.Grade, out var grade)) return BadRequest(UnknownGrade(dto.Grade));
+
         var copy = await FindOwnedCopy(id);
         if (copy == null) return NotFound();
 
-        copy.Grade = Blank(dto.Grade) ? null : dto.Grade!.Trim();
+        copy.Grade = grade;
         // Acquired is never null (a cleared field resets to the added date) and
         // can't be in the future (client enforces max=today too).
         var acquired = dto.AcquiredAt ?? copy.AddedAt;
@@ -412,4 +420,29 @@ public class WatchlistController(
 
     private static string UnknownGame(string? game) =>
         $"Unknown game '{game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.";
+
+    // Copy-grade vocabulary, shared by every path that stores a grade (add,
+    // quantity, per-copy edit, CSV import): blank or "ungraded" is a raw copy
+    // (stored as null); anything else must be a known graded tier.
+    private static bool TryNormalizeGrade(string? raw, out string? grade)
+    {
+        var g = raw?.Trim().ToLower();
+        grade = Blank(g) || g == "ungraded" ? null : g;
+        return grade == null || GradeTiers.Graded.Contains(grade);
+    }
+
+    private static string UnknownGrade(string? grade) =>
+        $"Unknown condition '{grade}' — expected ungraded (or blank) or one of: {string.Join(", ", GradeTiers.Graded)}.";
+
+    // One CSV field: always quoted with inner quotes doubled, plus a leading
+    // apostrophe when the value starts with = + - or @ — Excel and Sheets
+    // evaluate such cells as formulas even inside quotes (CSV injection), and
+    // the apostrophe forces them back to text. Used for every user-influenced
+    // column; the client's importer parses quoted fields fine.
+    private static string CsvField(string? value)
+    {
+        var s = value ?? "";
+        if (s.Length > 0 && s[0] is '=' or '+' or '-' or '@') s = "'" + s;
+        return $"\"{s.Replace("\"", "\"\"")}\"";
+    }
 }

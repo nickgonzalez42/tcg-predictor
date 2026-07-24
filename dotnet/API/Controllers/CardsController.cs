@@ -5,7 +5,9 @@ using API.Extensions;
 using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace API.Controllers;
 
@@ -16,7 +18,7 @@ public partial class CardsController(
     CardSources sources,
     PredictionsContext predictions, PriceChartingContext priceCharting,
     StoreContext store, ReasoningService reasoning,
-    CardMarketData market, MoverService movers) : BaseApiController
+    CardMarketData market, MoverService movers, IMemoryCache cache) : BaseApiController
 {
     [HttpGet]
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
@@ -106,8 +108,10 @@ public partial class CardsController(
     }
 
     // LLM-written plain-English "take" summarizing the forecast (cached; null when
-    // no Anthropic key is configured or the card has no forecast).
+    // no Anthropic key is configured or the card has no forecast). Rate-limited:
+    // each cache miss is a paid Anthropic call.
     [HttpGet("{game}/{id:int}/reasoning")]
+    [EnableRateLimiting("reasoning")]
     public async Task<IActionResult> GetReasoning(string game, int id)
     {
         var key = GameRegistry.KeyOrDefault(game);
@@ -203,13 +207,29 @@ public partial class CardsController(
     }
 
     // Top movers across the games by ungraded forecast change — feeds the
-    // market ticker and the home page tiles.
+    // market ticker and the home page tiles. The ranking is identical for every
+    // visitor and the homepage alone requests it three times (hero, ticker,
+    // tiles), so responses are cached for a few minutes per parameter set
+    // instead of re-running the cross-database ranking each time.
     [HttpGet("movers")]
     public async Task<IActionResult> GetMovers(
         [FromQuery] int count = 12, [FromQuery] string? horizon = null, [FromQuery] string? trend = null,
         [FromQuery] int perGame = 0)
     {
-        return Ok(await movers.TopMovers(count, horizon, trend, perGame, CardImageUrl));
+        // Key on the NORMALIZED parameters (the same clamps/fallbacks the
+        // ranking itself applies), so unrecognized values collapse onto the
+        // entry they'd produce anyway instead of minting unbounded cache keys.
+        count = Math.Clamp(count, 1, 24);
+        perGame = Math.Clamp(perGame, 0, 6);
+        horizon = horizon is "mix" or "1m" or "6m" ? horizon : "12m";
+        trend = trend == null ? null : CardMarketData.NormalizeTrend(trend);   // null = per-game default
+
+        var result = await cache.GetOrCreateAsync($"movers:{count}:{horizon}:{trend}:{perGame}", entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl);
+        });
+        return Ok(result);
     }
 
     // ----- Catalog paging -----
