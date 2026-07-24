@@ -10,7 +10,7 @@ import OwnItModal from "./OwnItModal";
 import AlertModal from "./AlertModal";
 import { wishlistParamsSlice } from "./trackedParamsSlice";
 import { tierLabel } from "./grades";
-import { trackedSortGroups } from "../catalog/sortOptions";
+import { trackedSortGroups, TREND_FCST } from "../catalog/sortOptions";
 import AppPagination from "../../app/shared/components/AppPagination";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 import TrackedFilters from "./TrackedFilters";
@@ -18,7 +18,6 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { TREND_FCST } from "../catalog/CardTable";
 import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 
@@ -76,7 +75,14 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
     return (
         <tr className="screener__row" onClick={() => navigate(detailPath)}>
             <CardThumbCell card={card} />
-            <td className="screener__name">{card.name}</td>
+            <td>
+                {/* Real link so the card is reachable by keyboard; row onClick
+                    stays as a mouse convenience. */}
+                <Link className="screener__name" to={detailPath}
+                    onClick={e => e.stopPropagation()}>
+                    {card.name}
+                </Link>
+            </td>
             <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
             <td className="screener__mid">
                 <span className="mono">{card.watchedSince ? shortDate(card.watchedSince) : '—'}</span>

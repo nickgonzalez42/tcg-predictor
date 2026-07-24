@@ -9,11 +9,16 @@ export const catalogApi = createApi({
     reducerPath: 'catalogApi',
     baseQuery: baseQueryWithErrorHandling,
     endpoints: (builder) => ({
-        fetchCards: builder.query<{ items: Card[], pagination: Pagination }, CardParams>({
+        fetchCards: builder.query<{ items: Card[], pagination: Pagination | null }, CardParams>({
             query: (cardParams) => ({
                 url: 'cards',
                 params: toApiParams(cardParams)
             }),
+            // Key the cache on what actually reaches the API: client-only
+            // presentation state (view, gameInitialized) must not refetch an
+            // identical list when it changes.
+            serializeQueryArgs: ({ queryArgs, endpointName }) =>
+                `${endpointName}(${JSON.stringify(toApiParams(queryArgs))})`,
             transformResponse: (items: Card[], meta) => {
                 const paginationHeader = meta?.response?.headers.get('Pagination');
                 const pagination = paginationHeader ? JSON.parse(paginationHeader) : null;

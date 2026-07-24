@@ -1,5 +1,4 @@
 import { fetchBaseQuery, type BaseQueryApi, type FetchArgs } from "@reduxjs/toolkit/query";
-import { startLoading, stopLoading } from "../layout/uiSlice";
 import { toast } from "react-toastify";
 import { router } from "../routes/Routes";
 
@@ -10,16 +9,11 @@ const customBaseQuery = fetchBaseQuery({
 
 type ErrorResponse = | string | {title: string} | {errors: string[]};
 
-const sleep = () => new Promise(resolve => setTimeout(resolve, 1000));
-
 export const baseQueryWithErrorHandling = async (
     args: string | FetchArgs,
     api: BaseQueryApi,
     extraOptions: object) => {
-        api.dispatch(startLoading());
-        await sleep();
         const result = await customBaseQuery(args, api, extraOptions);
-        api.dispatch(stopLoading());
         if (result.error) {
             const originalStatus = result.error.status === 'PARSING_ERROR' && result.error.originalStatus
                 ? result.error.originalStatus

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAddToWatchlistMutation, useRemoveOwnedCopyMutation } from "./watchlistApi";
-import { OwnedCopyRow } from "./OwnedConditionItem";
+import { OwnedCopyRow } from "./OwnedCopyRow";
 import { tierLabel } from "./grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 import ChangePill from "../../app/shared/components/ChangePill";

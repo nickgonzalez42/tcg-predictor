@@ -88,3 +88,7 @@ export function withoutYearSorts(groups: SortGroup[]): SortGroup[] {
 export function yearSortTo6m(v: string): string {
     return v.replace(/^(chg(?:Pct|Usd))12/, '$16').replace(/^(hist(?:Pct|Usd))1y/, '$16m');
 }
+
+// The forecast horizon each trend window maps to (mirrors the API's
+// TrendWindows: the model has no 1y horizon, so 1Y shows the 12m forecast).
+export const TREND_FCST: Record<string, string> = { '1m': '1M', '6m': '6M', '1y': '1Y' };

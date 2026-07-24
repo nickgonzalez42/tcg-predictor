@@ -1,24 +1,12 @@
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import { setSearchTerm } from "./catalogSlice";
-import { useEffect, useRef, useState } from "react";
+import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 
 export default function Search() {
     const { searchTerm } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
-    const [term, setTerm] = useState(searchTerm);
-    const timeout = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-    useEffect(() => {
-        setTerm(searchTerm)
-    }, [searchTerm]);
-
-    const handleChange = (value: string) => {
-        setTerm(value);
-        if (timeout.current) clearTimeout(timeout.current);
-        timeout.current = setTimeout(() => {
-            dispatch(setSearchTerm(value));
-        }, 500);
-    };
+    const { term, onChange } = useDebouncedSearch(searchTerm ?? '',
+        v => dispatch(setSearchTerm(v)));
 
     return (
         <div className="field" style={{ margin: 0 }}>
@@ -28,7 +16,7 @@ export default function Search() {
                 className="input"
                 type="search"
                 value={term}
-                onChange={e => handleChange(e.target.value)}
+                onChange={e => onChange(e.target.value)}
             />
         </div>
     )

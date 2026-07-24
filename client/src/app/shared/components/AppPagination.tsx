@@ -1,7 +1,7 @@
 import type { Pagination as PaginationType } from "../../models/pagination";
 
 type Props = {
-    metadata: PaginationType
+    metadata: PaginationType | null
     onPageChange: (page: number) => void
     // Pages with several paginated tables pass false so flipping one table's
     // page doesn't jump away from it.
@@ -35,6 +35,8 @@ export default function AppPagination({ metadata, onPageChange, scrollToTop = tr
         if (scrollToTop) window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
+    // The Pagination response header is absent on empty result sets.
+    if (!metadata) return null;
     const { currentPage, totalPages, pageSize, totalCount } = metadata;
     const startItem = (currentPage - 1) * pageSize + 1;
     const endItem = Math.min(currentPage * pageSize, totalCount);
@@ -47,6 +49,7 @@ export default function AppPagination({ metadata, onPageChange, scrollToTop = tr
             <div className="pagination__pages">
                 <button
                     className="page-btn"
+                    aria-label="Previous page"
                     disabled={currentPage <= 1}
                     onClick={() => changePage(currentPage - 1)}
                 >
@@ -67,6 +70,7 @@ export default function AppPagination({ metadata, onPageChange, scrollToTop = tr
                 )}
                 <button
                     className="page-btn"
+                    aria-label="Next page"
                     disabled={currentPage >= totalPages}
                     onClick={() => changePage(currentPage + 1)}
                 >

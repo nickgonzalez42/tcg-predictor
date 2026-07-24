@@ -1,6 +1,7 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Card } from "../../app/models/card";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
+import { TREND_FCST } from "./sortOptions";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import TrackButton from "../watchlist/TrackButton";
@@ -12,10 +13,6 @@ type Props = {
     ownGrade?: string   // selected price tier ('' = ungraded); quick "Own" adds at this tier
     trend?: string      // selected 1w|1m|6m|1y window (drives both change columns)
 }
-
-// The forecast horizon each trend window maps to (mirrors the API's
-// TrendWindows: the model has no 1y horizon, so 1Y shows the 12m forecast).
-export const TREND_FCST: Record<string, string> = { '1m': '1M', '6m': '6M', '1y': '1Y' };
 
 // Screener-style rows view of the catalog. Row click opens the card; the
 // action buttons live in their own cell and don't bubble.
@@ -55,7 +52,14 @@ export default function CardTable({ cards, ownGrade, trend }: Props) {
                         return (
                             <tr key={card.id} className="screener__row" onClick={() => navigate(detailPath)}>
                                 <CardThumbCell card={card} />
-                                <td className="screener__name">{card.name}</td>
+                                <td>
+                                    {/* Real link so the card is reachable by keyboard;
+                                        row onClick stays as a mouse convenience. */}
+                                    <Link className="screener__name" to={detailPath}
+                                        onClick={e => e.stopPropagation()}>
+                                        {card.name}
+                                    </Link>
+                                </td>
                                 <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
                                 <td className="screener__num screener__price">
                                     {card.price != null ? currencyFormat(card.price) : '—'}

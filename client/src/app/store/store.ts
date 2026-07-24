@@ -1,7 +1,6 @@
 import { configureStore } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
 import { catalogApi } from "../../features/catalog/catalogApi";
-import { uiSlice } from "../layout/uiSlice";
 import { catalogSlice } from "../../features/catalog/catalogSlice";
 import { accountApi } from "../../features/account/accountApi";
 import { watchlistApi } from "../../features/watchlist/watchlistApi";
@@ -18,7 +17,6 @@ export const store = configureStore({
         [socialApi.reducerPath]: socialApi.reducer,
         [reportApi.reducerPath]: reportApi.reducer,
         [reportsApi.reducerPath]: reportsApi.reducer,
-        ui: uiSlice.reducer,
         catalog: catalogSlice.reducer,
         ownedParams: ownedParamsSlice.reducer,
         wishlistParams: wishlistParamsSlice.reducer

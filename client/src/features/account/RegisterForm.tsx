@@ -1,20 +1,20 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { registerSchema } from "../../lib/schemas/registerSchema";
+import { registerSchema, type RegisterSchema } from "../../lib/schemas/registerSchema";
 import GoogleSignInButton from "./GoogleSignInButton";
 import { useRegisterMutation } from "./accountApi"
 import { useForm } from "react-hook-form";
 import { Link } from "react-router-dom";
 import { usePageMeta } from "../../lib/usePageMeta";
 
-export default function registerForm() {
+export default function RegisterForm() {
     usePageMeta("Create account");
     const [registerUser] = useRegisterMutation();
-    const { register, handleSubmit, setError, formState: { errors, isValid, isLoading } } = useForm<registerSchema>({
+    const { register, handleSubmit, setError, formState: { errors, isValid, isSubmitting } } = useForm<RegisterSchema>({
         mode: 'onTouched',
         resolver: zodResolver(registerSchema)
     })
 
-    const onSubmit = async (data: registerSchema) => {
+    const onSubmit = async (data: RegisterSchema) => {
         try {
             await registerUser(data).unwrap();
         } catch (error) {
@@ -47,7 +47,7 @@ export default function registerForm() {
                     <input id="password" className="input" type="password" {...register('password')} />
                     {errors.password && <span className="field__error">{errors.password.message}</span>}
                 </div>
-                <button className="btn btn--block" disabled={isLoading || !isValid} type="submit">
+                <button className="btn btn--block" disabled={isSubmitting || !isValid} type="submit">
                     Register
                 </button>
                 <div className="auth-divider"><span>or</span></div>

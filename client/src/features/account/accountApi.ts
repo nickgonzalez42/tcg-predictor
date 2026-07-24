@@ -2,8 +2,11 @@ import { createApi } from "@reduxjs/toolkit/query/react";
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 import type { User } from "../../app/models/user";
 import type { LoginSchema } from "../../lib/schemas/loginSchema";
+import type { RegisterSchema } from "../../lib/schemas/registerSchema";
 import { router } from "../../app/routes/Routes";
 import { toast } from "react-toastify";
+import { watchlistApi } from "../watchlist/watchlistApi";
+import { socialApi } from "../social/socialApi";
 
 export const accountApi = createApi({
     reducerPath: 'accountApi',
@@ -27,7 +30,7 @@ export const accountApi = createApi({
                 }
             }
         }),
-        register: builder.mutation<void, LoginSchema>({
+        register: builder.mutation<void, RegisterSchema>({
             query: (creds) => {
                 return {
                     url: 'account/register',
@@ -56,9 +59,17 @@ export const accountApi = createApi({
                 method: 'POST'
             }),
             async onQueryStarted(_, {dispatch, queryFulfilled}) {
-                await queryFulfilled;
-                dispatch(accountApi.util.invalidateTags(['UserInfo']));
-                router.navigate('/');
+                // Even if the server call fails (e.g. session already gone),
+                // clear the local session: user-scoped caches must not survive
+                // into the next login.
+                try {
+                    await queryFulfilled;
+                } finally {
+                    dispatch(accountApi.util.invalidateTags(['UserInfo']));
+                    dispatch(watchlistApi.util.resetApiState());
+                    dispatch(socialApi.util.resetApiState());
+                    router.navigate('/');
+                }
             }
 
         })

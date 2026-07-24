@@ -7,7 +7,7 @@ import { useLazyUserInfoQuery, useLoginMutation } from "./accountApi";
 import { useFetchMoversQuery } from "../catalog/catalogApi";
 import { usePageMeta } from "../../lib/usePageMeta";
 
-export default function loginForm() {
+export default function LoginForm() {
     usePageMeta("Sign in");
     // Playful teaser under the title, powered by the movers we already cache.
     const { data: movers } = useFetchMoversQuery({ count: 12 });
@@ -24,7 +24,13 @@ export default function loginForm() {
     const navigate = useNavigate();
 
     const onSubmit = async (data: LoginSchema) => {
-        await login(data);
+        // unwrap so a failed login stays on this page (the 401 toast comes
+        // from baseApi's error handler) instead of bouncing to /portfolio.
+        try {
+            await login(data).unwrap();
+        } catch {
+            return;
+        }
         await fetchUserInfo();
         navigate(location.state?.from || '/portfolio');
     }
