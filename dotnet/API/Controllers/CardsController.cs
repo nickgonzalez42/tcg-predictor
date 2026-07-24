@@ -202,55 +202,6 @@ public partial class CardsController(
         return null;
     }
 
-    // Summary stats per tier (current, all-time high/low, % change windows).
-    [HttpGet("{game}/{id:int}/stats")]
-    public async Task<IActionResult> GetStats(string game, int id)
-    {
-        var key = GameRegistry.KeyOrDefault(game);
-        var points = await priceCharting.History
-            .Where(h => h.Game == key && h.ProductId == id)
-            .OrderBy(h => h.Date).ToListAsync();
-
-        var grades = points
-            .GroupBy(p => p.Grade)
-            .ToDictionary(g => g.Key, g => StatsFor(g.ToList()));
-
-        var current = await priceCharting.GradedPrices
-            .FirstOrDefaultAsync(x => x.Game == key && x.ProductId == id);
-
-        return Ok(new { game = key, productId = id, salesVolume = current?.SalesVolume, grades });
-    }
-
-    private static object StatsFor(List<PriceHistoryPoint> series)
-    {
-        var latest = series[^1];
-        var latestDate = DateTime.Parse(latest.Date);
-
-        double? changeOver(int months)
-        {
-            // dates are yyyy-MM-dd, so ordinal string comparison avoids
-            // re-parsing every point for every window
-            var target = latestDate.AddMonths(-months).ToString("yyyy-MM-dd");
-            var past = series.LastOrDefault(p => string.CompareOrdinal(p.Date, target) <= 0);
-            return past == null || past.Price == 0
-                ? null
-                : Math.Round((latest.Price / past.Price - 1) * 100, 1);
-        }
-
-        return new
-        {
-            current = latest.Price,
-            asOf = latest.Date,
-            ath = series.Max(p => p.Price),
-            atl = series.Min(p => p.Price),
-            change1m = changeOver(1),
-            change6m = changeOver(6),
-            change1y = changeOver(12),
-            change5y = changeOver(60),
-            points = series.Count,
-        };
-    }
-
     // Top movers across the games by ungraded forecast change — feeds the
     // market ticker and the home page tiles.
     [HttpGet("movers")]

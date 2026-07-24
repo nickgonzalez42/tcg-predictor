@@ -300,8 +300,11 @@ public class WatchlistController(
         if (normalized == TrackKind.Owned)
             return BadRequest("Owned copies are removed per copy (DELETE watchlist/owned/{id}) or via the quantity endpoint.");
 
+        // Normalize like every other path, so "One Piece" and "onepiece"
+        // remove the same row instead of silently no-opping.
+        var gameKey = NormalizeGame(game);
         var item = await context.TrackedCards.FirstOrDefaultAsync(
-            x => x.UserName == User.Identity!.Name && x.Game == game
+            x => x.UserName == User.Identity!.Name && x.Game == gameKey
                  && x.ProductId == productId && x.Kind == normalized);
 
         if (item != null)

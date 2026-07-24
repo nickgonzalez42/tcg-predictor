@@ -51,11 +51,11 @@ public class ReportsController(StoreContext store, NotificationService notifier)
         return Ok(new { ok = true });
     }
 
-    // Behind Caddy, so prefer the forwarded client IP.
+    // UseForwardedHeaders has already resolved the Caddy-forwarded client IP
+    // into RemoteIpAddress; reading X-Forwarded-For here would trust the
+    // client-supplied (spoofable) end of the header and defeat the flood cap.
     private string ClientIp() =>
-        Request.Headers.TryGetValue("X-Forwarded-For", out var f) && f.Count > 0
-            ? f[0]!.Split(',')[0].Trim()
-            : HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
 
     private static bool TooMany(string ip)
     {

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using API.Data;
+using API.Entities;
 using API.Middleware;
 using API.RequestHelpers;
 using API.Services;
@@ -15,53 +16,29 @@ builder.Services.AddDbContext<StoreContext>(opt =>
 {
     opt.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
 });
-// Read-only card databases (kept separate per game).
-builder.Services.AddDbContext<OnePieceContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("OnePieceConnection"));
-});
-builder.Services.AddDbContext<PokemonContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("PokemonConnection"));
-});
-builder.Services.AddDbContext<YugiohContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("YugiohConnection"));
-});
-builder.Services.AddDbContext<MagicContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("MagicConnection"));
-});
-builder.Services.AddDbContext<LorcanaContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("LorcanaConnection"));
-});
-builder.Services.AddDbContext<DigimonContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("DigimonConnection"));
-});
-builder.Services.AddDbContext<GundamContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("GundamConnection"));
-});
-builder.Services.AddDbContext<StarwarsContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("StarwarsConnection"));
-});
+// Read-only card databases (kept separate per game). NoTracking: nothing is
+// ever written back, so skip the change tracker on every query.
+void AddReadOnlySqlite<T>(string connectionName) where T : DbContext =>
+    builder.Services.AddDbContext<T>(opt => opt
+        .UseSqlite(builder.Configuration.GetConnectionString(connectionName))
+        .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
+
+AddReadOnlySqlite<OnePieceContext>("OnePieceConnection");
+AddReadOnlySqlite<PokemonContext>("PokemonConnection");
+AddReadOnlySqlite<YugiohContext>("YugiohConnection");
+AddReadOnlySqlite<MagicContext>("MagicConnection");
+AddReadOnlySqlite<LorcanaContext>("LorcanaConnection");
+AddReadOnlySqlite<DigimonContext>("DigimonConnection");
+AddReadOnlySqlite<GundamContext>("GundamConnection");
+AddReadOnlySqlite<StarwarsContext>("StarwarsConnection");
 builder.Services.AddScoped<CardSources>();
 // Cross-database market context + the movers ranking built on it.
 builder.Services.AddScoped<CardMarketData>();
 builder.Services.AddScoped<MoverService>();
 // Read-only model predictions (produced offline by the ML pipeline).
-builder.Services.AddDbContext<PredictionsContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("PredictionsConnection"));
-});
+AddReadOnlySqlite<PredictionsContext>("PredictionsConnection");
 // Read-only PriceCharting graded prices.
-builder.Services.AddDbContext<PriceChartingContext>(opt =>
-{
-    opt.UseSqlite(builder.Configuration.GetConnectionString("PriceChartingConnection"));
-});
+AddReadOnlySqlite<PriceChartingContext>("PriceChartingConnection");
 builder.Services.AddScoped<ReasoningService>();
 builder.Services.AddScoped<ModerationService>();
 builder.Services.AddScoped<NotificationService>();

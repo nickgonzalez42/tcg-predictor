@@ -24,11 +24,14 @@ public class ExceptionMiddleware(IHostEnvironment env, ILogger<ExceptionMiddlewa
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
 
+        // Exception messages can name file paths and table/constraint names, so
+        // outside Development the client gets a generic title (full details are
+        // in the server log above).
         var response = new ProblemDetails
         {
             Status = 500,
             Detail = env.IsDevelopment() ? ex.StackTrace : null,
-            Title = ex.Message
+            Title = env.IsDevelopment() ? ex.Message : "An unexpected error occurred."
         };
 
         var options = new JsonSerializerOptions
