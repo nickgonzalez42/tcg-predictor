@@ -145,6 +145,34 @@ def backtest_accuracy(pred, by_game=False):
     return pred.execute(ACCURACY_SELECT.format(cols="") + where).fetchone()
 
 
+# Overall direction accuracy split by the sign of the call — how often the
+# "up" calls actually rose, the "down" calls actually fell, and the combined
+# rate — over the same decisive moves the headline direction stat uses.
+DIRECTION_SPLIT_SELECT = (
+    "SELECT "
+    f"SUM(CASE WHEN {DECISIVE} AND ret > 0 THEN 1 ELSE 0 END), "
+    f"AVG(CASE WHEN {DECISIVE} AND ret > 0 THEN (CASE WHEN realized_ret > 0 THEN 1.0 ELSE 0.0 END) END), "
+    f"SUM(CASE WHEN {DECISIVE} AND ret < 0 THEN 1 ELSE 0 END), "
+    f"AVG(CASE WHEN {DECISIVE} AND ret < 0 THEN (CASE WHEN realized_ret < 0 THEN 1.0 ELSE 0.0 END) END), "
+    f"SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
+    f"AVG(CASE WHEN {DECISIVE} THEN (CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END) "
+    "FROM forecast_archive WHERE realized_ret IS NOT NULL AND ")
+
+
+def direction_split(pred, live):
+    """(up_n, up_acc, down_n, down_acc, all_n, all_acc): direction accuracy on
+    the calls that predicted a rise, on those that predicted a fall, and the
+    two combined — aggregated across every game. Live uses the matured
+    1-month cohort; otherwise the backtest vintages, matching the rest of the
+    report card's population."""
+    if live:
+        where = ("substr(model_version,1,2) != '__' AND horizon = '1m' "
+                 "AND date(substr(scored_at,1,10)) <= date('now', '-28 days')")
+    else:
+        where = "model_version LIKE '__bt-%' AND length(model_version) = 12 AND horizon = '1m'"
+    return pred.execute(DIRECTION_SPLIT_SELECT + where).fetchone()
+
+
 # ---- inline SVG bar charts -------------------------------------------------
 # Self-contained horizontal bars embedded in the stored report HTML. Colors
 # ride the site's CSS variables (with hard fallbacks), so they follow the
@@ -483,6 +511,22 @@ def build_report(force=False):
         if dir_rows:
             body.append(bar_chart(dir_rows, unit=" pts",
                                   title=f"Direction calls vs a coin flip, by game{tag}"))
+
+    # Overall up/down accuracy as its own chart at the very bottom: is the
+    # model better at calling gains than drops? Aggregated across all games,
+    # so it stands independent of the per-game breakdown above. 50% = coin flip.
+    split = direction_split(pred, bool(live))
+    if split and split[4]:   # at least some decisive calls overall
+        up_n, up_acc, down_n, down_acc, all_n, all_acc = split
+        split_tag = "" if live else " (backtest)"
+        split_rows = []
+        if up_acc is not None:
+            split_rows.append(("Predicted rise", up_acc * 100, f"of {up_n:,} up-calls"))
+        if down_acc is not None:
+            split_rows.append(("Predicted fall", down_acc * 100, f"of {down_n:,} down-calls"))
+        split_rows.append(("Overall", all_acc * 100, f"of {all_n:,} calls"))
+        body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
+                              title=f"Direction accuracy: up vs down calls{split_tag} — 50% is a coin flip"))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
