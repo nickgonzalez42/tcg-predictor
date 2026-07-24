@@ -15,11 +15,14 @@ SSH_CMD="ssh -i $KEY"
 DATA=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece
 API_DATA=/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/dotnet/API/Data/cards
 
-# A -wal sidecar means a writer is mid-flight on that DB — push would ship a
-# torn database. Finish or pause the pipeline step first. The (N) null-glob
-# qualifier makes a no-match (the healthy case) expand to nothing instead of
-# erroring out under `set -e`.
-for f in $DATA/*_cards.db-wal(N) $API_DATA/*.db-wal(N); do
+# A -wal or -journal sidecar means a writer is mid-flight on that DB — push
+# would ship a torn database. Finish or pause the pipeline step first. (The
+# pipeline's sqlite connections use the default rollback journal, so -journal
+# is the sidecar that actually appears; -wal is kept in case a step ever opts
+# into WAL.) The (N) null-glob qualifier makes a no-match (the healthy case)
+# expand to nothing instead of erroring out under `set -e`.
+for f in $DATA/*_cards.db-wal(N) $DATA/*_cards.db-journal(N) \
+         $API_DATA/*.db-wal(N) $API_DATA/*.db-journal(N); do
   [ -e "$f" ] && { echo "ABORT: $f exists (active writer)"; exit 1; }
 done
 

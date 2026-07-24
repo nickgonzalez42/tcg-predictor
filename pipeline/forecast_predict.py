@@ -728,6 +728,32 @@ def main():
         print(f"\nbacktest {args.as_of}: {len(all_rows)} theoretical forecast(s) "
               f"archived -> {os.path.normpath(out_db)}")
         return
+    # Publish gate: segment failures are swallowed above (SKIPPED) so one bad
+    # game can't kill the whole run — but a systemic failure (missing cards
+    # CSV, corrupt embedding file) would surface as most segments skipping,
+    # and rebuilding from the survivors would silently wipe games off the
+    # site with exit 0. Refuse to publish if a game that had forecasts now
+    # has none, or the total collapsed; the old table keeps serving.
+    try:
+        prev = dict(conn.execute(
+            "SELECT game, COUNT(*) FROM forecasts GROUP BY game").fetchall())
+    except sqlite3.OperationalError:
+        prev = {}   # first run against this DB: nothing to protect
+    checked = {g: n for g, n in prev.items() if g in games} if args.game else prev
+    if checked:
+        new_counts = {}
+        for r in all_rows:
+            new_counts[r[0]] = new_counts.get(r[0], 0) + 1
+        gone = [g for g, n in checked.items() if n >= 1000 and not new_counts.get(g)]
+        total_prev = sum(checked.values())
+        total_new = sum(new_counts.get(g, 0) for g in checked)
+        if gone or total_new < total_prev * 0.5:
+            print(f"[forecast] PUBLISH GATE: refusing to rebuild — games with no "
+                  f"rows: {gone or 'none'}; rows {total_new} vs {total_prev} "
+                  f"previous. Existing forecasts left untouched.", flush=True)
+            conn.close()
+            raise SystemExit(1)
+
     schema = """
         CREATE TABLE IF NOT EXISTS forecasts (
             game TEXT NOT NULL, product_id INTEGER NOT NULL,

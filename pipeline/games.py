@@ -116,10 +116,11 @@ ALL_GAMES = list(GAMES)
 
 
 def priced_games():
-    """Games PriceCharting covers — the only ones with prices, and therefore
-    the only ones the unify/nm-price/ML steps can do anything with.
-    (Keyed on pc_csv: gundam has no bulk category, its CSV comes from the
-    console-page scraper instead.)"""
+    """Games with a PriceCharting price source — the only ones the
+    unify/nm-price/ML steps can do anything with. Today that's all of them
+    (every entry has a pc_csv path; gundam/starwars fill theirs from the
+    console-page scraper rather than a bulk category), so the filter only
+    bites if a future game is added with pc_csv=None to mark it unpriced."""
     return [g for g, cfg in GAMES.items() if cfg["pc_csv"]]
 
 
