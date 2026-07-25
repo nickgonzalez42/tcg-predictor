@@ -110,6 +110,27 @@ def pending(game, reviewed):
     return total, todo
 
 
+def orphans(game, limit=50):
+    """Cards with price history but NO current row in the match table — the
+    forecast review gate holds these out of the model, and they never appear
+    in the normal queue (which walks the match table). Surfaced so they're
+    visible rather than silently forecast-less; they re-enter the queue on
+    their own if a match reappears."""
+    conn = sqlite3.connect(PC_DB, timeout=30)
+    pids = [r[0] for r in conn.execute(
+        "SELECT DISTINCT h.product_id FROM price_history_unified h "
+        "LEFT JOIN pricecharting p ON p.game = h.game AND p.product_id = h.product_id "
+        "WHERE h.game=? AND p.product_id IS NULL ORDER BY h.product_id DESC LIMIT ?",
+        (game, limit + 1))]
+    conn.close()
+    more = len(pids) > limit
+    pids = pids[:limit]
+    info = catalog_info(game, pids)
+    return more, [{"product_id": p,
+                   "name": (info.get(p) or (None,))[0],
+                   "set": (info.get(p) or (None, None))[1]} for p in pids]
+
+
 def purge_bad_history(game, product_id):
     """A wrong match means the crawled graded history belongs to some other
     card. Delete it and the crawled marker so the nightly re-fetches the
@@ -170,6 +191,7 @@ PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
   <span id="status"></span>
 </div>
 <div id="list"></div>
+<div id="orphans"></div>
 <script>
 let game = null, data = null;
 async function load(g) {
@@ -181,6 +203,13 @@ async function load(g) {
     `<span class="tab ${k===data.game?'active':''}" onclick="load('${k}')">${k} (${n})</span>`).join(' ');
   document.getElementById('status').textContent =
     data.total > data.rows.length ? `showing ${data.rows.length} of ${data.total}` : `${data.total} pending`;
+  const orph = !data.orphans?.length ? '' :
+    `<h3 style="color:#8b96ad;font-size:13px;margin-top:24px">Orphaned history — ${data.orphans.length}${data.orphans_more ? '+' : ''} card(s) with price history but no current PriceCharting match (held out of the model; they re-queue if a match reappears)</h3>` +
+    data.orphans.map(o => `<div class="card" style="opacity:.65"><div class="half">
+      <div class="nm">${esc(o.name || '(id ' + o.product_id + ')')}</div>
+      <div class="sub">${esc(o.set || '')} &middot; pid ${o.product_id}</div>
+    </div></div>`).join('');
+  document.getElementById('orphans').innerHTML = orph;
   document.getElementById('list').innerHTML = data.rows.map(row => `
     <div class="card" id="c${row.product_id}">
       <img src="${row.image || ''}" loading="lazy" onerror="this.style.visibility='hidden'">
@@ -272,12 +301,24 @@ class Handler(BaseHTTPRequestHandler):
             if want not in GAMES:
                 # default to the game with the most pending work
                 want = max(counts, key=counts.get)
+            more, orph = orphans(want)
             self._json({"game": want, "counts": counts,
-                        "total": counts[want], "rows": per_game[want]})
+                        "total": counts[want], "rows": per_game[want],
+                        "orphans": orph, "orphans_more": more})
             return
         self.send_error(404)
 
     def do_POST(self):
+        # CSRF insurance: a malicious webpage could try cross-origin POSTs at
+        # localhost:8766 (browser private-network blocking isn't universal).
+        # Browsers always send Origin on cross-origin fetch — reject any value
+        # that isn't this server. curl/scripts send none and pass.
+        origin = self.headers.get("Origin")
+        allowed = {f"http://localhost:{PORT}", f"http://127.0.0.1:{PORT}"}
+        if (origin and origin not in allowed) or \
+                self.headers.get("Host", "").split(":")[0] not in ("localhost", "127.0.0.1"):
+            self.send_error(403, "cross-origin request rejected")
+            return
         n = int(self.headers.get("Content-Length", 0))
         try:
             body = json.loads(self.rfile.read(n) or b"{}")

@@ -73,7 +73,11 @@ builder.Services.AddRateLimiter(opt =>
     PerIpPerMinute("reasoning", 10);   // CardsController.GetReasoning (paid Anthropic calls)
     PerIpPerMinute("auth", 5);         // AccountController.RegisterUser
     PerIpPerMinute("import", 4);       // WatchlistController.ImportOwned (up to 1000 rows each)
-    PerIpPerMinute("sitemap", 10);     // SitemapController (multi-MB XML on a cache miss)
+    // 30, not 10: there are 11 sitemap routes (index + static + reports + 8
+    // games) and a crawler fetches the index then every child in one burst —
+    // a lower cap 429s the tail of exactly the visitor sitemaps exist for.
+    // Cached hits are near-free; only cache-miss rebuilds cost anything.
+    PerIpPerMinute("sitemap", 30);     // SitemapController (multi-MB XML on a cache miss)
 });
 // builder.Services.AddOpenApi();
 builder.Services.AddTransient<ExceptionMiddleware>();
