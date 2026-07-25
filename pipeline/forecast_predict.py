@@ -15,6 +15,7 @@ which forecast_scorecard.py later grades against realized prices.
 Run:  .venv/bin/python forecast_predict.py
 """
 
+import csv
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -399,6 +400,31 @@ def anchor_dates(game, grade):
     return {pid: d[:10] for pid, d in rows if d}
 
 
+REVIEWED_CSV = os.path.join(BASE, "ml_data", "pc_match_reviewed.csv")
+
+
+def reviewed_pids(game):
+    """Match-review gate: product_ids whose PriceCharting match the user has
+    confirmed (match_review.py -> pc_match_reviewed.csv) at the pc_id the
+    match table currently carries. A new or drifted match waits OUT of the
+    model until confirmed — an unreviewed wrong match would train and forecast
+    on some other card's prices. Returns None (gate off) until the review
+    file exists, so a lost/renamed file can't silently zero the forecasts."""
+    if not os.path.exists(REVIEWED_CSV):
+        return None
+    ok = {}
+    with open(REVIEWED_CSV, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):   # later rows win: confirm -> override
+            if r["game"] == game:
+                ok[int(r["product_id"])] = int(r["pc_id"])
+    from forecast_deep import PC_DB
+    conn = sqlite3.connect(PC_DB, timeout=180)
+    cur = conn.execute("SELECT product_id, pc_id FROM pricecharting "
+                       "WHERE game=? AND pc_id IS NOT NULL", (game,)).fetchall()
+    conn.close()
+    return {pid for pid, pc in cur if ok.get(pid) == pc}
+
+
 def forecast_game_target(game, target, now, as_of=None, horizons=None):
     horizons = horizons or HORIZONS
     # Backtest rows carry a "__" version so the scorecard's accuracy table and
@@ -409,6 +435,16 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
     # not forecast at all (~0-2% of priced cards per game).
     arts = art_pids(game)
     have = np.fromiter((p in arts for p in pids), dtype=bool, count=len(pids))
+    # Match-review gate: unconfirmed PriceCharting matches sit out until the
+    # user reviews them in the GUI (typically Sunday's new cards, picked up
+    # by Monday's run once confirmed).
+    ok = reviewed_pids(game)
+    if ok is not None:
+        before = int(have.sum())
+        have &= np.fromiter((p in ok for p in pids), dtype=bool, count=len(pids))
+        held = before - int(have.sum())
+        if held:
+            print(f"[{game}/{target}] {held} card(s) held out pending match review", flush=True)
     pids, P = pids[have], P[have]
     if as_of:
         # Pretend the run happened at the end of `as_of` month: drop every

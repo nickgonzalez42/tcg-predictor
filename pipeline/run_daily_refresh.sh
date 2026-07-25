@@ -56,6 +56,11 @@ LOG="$LOG_DIR/refresh-$(date +%Y-%m-%d).log"
   rc=$?
   if [ $rc -eq 0 ]; then
     echo "=== refresh + push complete — $(date '+%F %T') ==="
+    # New/changed PriceCharting matches sit OUT of the model until confirmed
+    # (forecast_predict's review gate); pop the review GUI whenever any are
+    # queued — in practice Sunday mornings, after new-card discovery. Needs
+    # AbandonProcessGroup in the plist so the server outlives this script.
+    "$PY" match_review.py --if-pending >> "$LOG_DIR/match_review.log" 2>&1 &
   else
     echo "=== FAILED (exit $rc): fix, resume with weekly_refresh.py --from <step>, then deploy/push_data.sh $SERVER_IP — $(date '+%F %T') ==="
     notify_failure "$rc"

@@ -22,5 +22,9 @@
     <string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
     <key>RunAtLoad</key>
     <false/>
+    <!-- Let the match-review GUI the script backgrounds outlive the job;
+         without this launchd reaps the whole process group on exit. -->
+    <key>AbandonProcessGroup</key>
+    <true/>
 </dict>
 </plist>

@@ -316,9 +316,26 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
+def any_pending():
+    reviewed = load_reviewed()
+    return any(pending(g, reviewed)[0] for g in GAMES)
+
+
 def main():
-    srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://localhost:{PORT}"
+    # --if-pending: the nightly's hook. Exit quietly when the queue is empty
+    # so a browser tab only ever appears when there is real work to review.
+    if "--if-pending" in sys.argv and not any_pending():
+        print("match review: queue empty — not opening")
+        return
+    try:
+        srv = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
+    except OSError:
+        # already serving (user left it running) — just surface the tab
+        print(f"match review already running -> {url}")
+        if "--no-open" not in sys.argv:
+            webbrowser.open(url)
+        return
     print(f"match review -> {url}  (Ctrl-C to stop)")
     if "--no-open" not in sys.argv:
         threading.Timer(0.4, lambda: webbrowser.open(url)).start()
