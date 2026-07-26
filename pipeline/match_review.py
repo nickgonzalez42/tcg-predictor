@@ -81,6 +81,15 @@ def catalog_info(game, pids):
     return {r[0]: r[1:] for r in rows}
 
 
+import re
+# Event-style qualifiers in OUR card names that should normally correspond to
+# a [bracketed] PriceCharting variant page rather than the plain base card.
+EVENT_QUALIFIER = re.compile(
+    r"\((Treasure Cup|Online Regional|Championship|Release Event|Winner|Finalist|Participa|Judge"
+    r"|Event|Store|Tournament|Serial|Pre-?Release|Anniversary|Illustration|Staff|League|Prize"
+    r"|Play Promo|Premier|Regional|National|Worlds|D23|Gen Con|Comic Con|Convention)", re.I)
+
+
 def pending(game, reviewed):
     """Unreviewed (or drifted) matches for one game, newest product_id first.
     Returns (total_pending, capped list of row dicts)."""
@@ -106,7 +115,12 @@ def pending(game, reviewed):
         name, set_name, number, rarity, img, nm = info.get(
             t["product_id"], (None,) * 6)
         t.update({"name": name, "set": set_name, "number": number,
-                  "rarity": rarity, "image": img, "nm_price": nm})
+                  "rarity": rarity, "image": img, "nm_price": nm,
+                  # The Koby class: OUR name carries an event qualifier but the
+                  # PC page has no [bracket] variant — often PC hung the promo's
+                  # tcg-id on the plain base-card page.
+                  "event_mismatch": bool(name and EVENT_QUALIFIER.search(name)
+                                         and "[" not in (t["pc_name"] or ""))})
     return total, todo
 
 
@@ -215,7 +229,8 @@ async function load(g) {
       <img src="${row.image || ''}" loading="lazy" onerror="this.style.visibility='hidden'">
       <div class="half">
         <div class="nm">${esc(row.name || '(id ' + row.product_id + ')')}
-          ${row.drifted ? '<span class="badge">MATCH CHANGED</span>' : ''}</div>
+          ${row.drifted ? '<span class="badge">MATCH CHANGED</span>' : ''}
+          ${row.event_mismatch ? '<span class="badge" style="background:#a80">EVENT CARD → PLAIN PAGE?</span>' : ''}</div>
         <div class="sub">${esc(row.set || '')} &middot; ${esc(row.number || '')} &middot; ${esc(row.rarity || '')}</div>
         <div class="price">our NM: ${money(row.nm_price)}</div>
       </div>
@@ -231,6 +246,8 @@ async function load(g) {
           <input name="pc_id" placeholder="correct pc_id">
           <input name="note" placeholder="note (what/why)">
           <button class="warn" onclick="override(${row.product_id})">Save fix</button>
+          <button class="warn" title="PriceCharting has no correct page for this card — unmatch it and purge its absorbed history; it stays unpriced rather than mispriced"
+            onclick="exclude(${row.product_id})">No PC page — exclude</button>
         </div>
       </div>
     </div>`).join('') || '<p>Queue empty — every match is reviewed. 🎉</p>';
@@ -258,6 +275,14 @@ async function override(pid) {
   if (!/^\\d+$/.test(pcId)) { alert('pc_id must be the number from the PriceCharting page URL'); return; }
   const res = await post('/override', {game, product_id: pid, pc_id: +pcId, note});
   alert(`Override saved. Purged ${res.purged_history} old history rows; the nightly will recrawl.`);
+  document.getElementById('c' + pid).remove();
+}
+async function exclude(pid) {
+  if (!confirm('Unmatch this card? Its absorbed price history is purged and it stays UNPRICED until PriceCharting grows a correct page (re-pin it here then).')) return;
+  const note = document.getElementById('f' + pid).querySelector('[name=note]').value.trim();
+  const res = await post('/override', {game, product_id: pid, pc_id: 0,
+                                       note: note || 'excluded — no correct PC page'});
+  alert(`Excluded. Purged ${res.purged_history} wrong history rows.`);
   document.getElementById('c' + pid).remove();
 }
 async function baseline() {

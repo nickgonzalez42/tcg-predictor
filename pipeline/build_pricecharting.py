@@ -146,6 +146,12 @@ def import_game(game, card_db, csv_name, now):
     # Hand-pinned matches, added last from the rows collected above. No sanity
     # gate: a human already compared the listings.
     for tid, pc_id in sorted(overrides.items()):
+        # pc_id 0 = human-verified EXCLUSION (PriceCharting has no correct
+        # page): the stream loop above already skipped this product, so it
+        # simply ends the run unmatched — unpriced rather than mispriced.
+        if pc_id == 0:
+            print(f"[{game}] override: {tid} excluded (no correct PC page)")
+            continue
         r = override_rows.get(pc_id)
         if r is None or tid not in ours:
             print(f"[{game}] OVERRIDE UNRESOLVED: {tid} -> pc {pc_id} "
