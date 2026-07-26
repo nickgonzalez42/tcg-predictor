@@ -302,6 +302,10 @@ body.filters-open {
     grid-column: 1 / -1;
   }
 
+  .filters--dropdown .filters__search {
+    grid-column: 1 / -1;
+  }
+
   .filters--dropdown .filters__body--open .filters__footer {
   padding-top: 16px;
 }
