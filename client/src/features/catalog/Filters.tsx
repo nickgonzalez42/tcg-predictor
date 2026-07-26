@@ -59,6 +59,14 @@ export default function Filters({ filtersData: data }: Props) {
             >
                 Filters {open ? '▴' : '▾'}
             </button>
+            {/* Dropdown mode: search lives in the toolbar, sized like the
+                toggle above it — finding a card shouldn't take a trip into
+                the overlay. (Desktop keeps it inside the panels.) */}
+            {dropdown && (
+                <div className="filters__search">
+                    <Search />
+                </div>
+            )}
             {(() => {
                 const body = (
                     <div className={`filters__body grid-box${open ? ' filters__body--open' : ''}`}>
@@ -70,9 +78,11 @@ export default function Filters({ filtersData: data }: Props) {
                     </div>
                     <div className="filters__panels">
                         <div className="panels__column">
-                            <div className="panel">
-                                <Search />
-                            </div>
+                            {!dropdown && (
+                                <div className="panel">
+                                    <Search />
+                                </div>
+                            )}
                             <div className="panel">
                                 <label htmlFor="grade-select" className="field-label">Price shown</label>
                                 <select

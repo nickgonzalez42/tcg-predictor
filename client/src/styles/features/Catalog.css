@@ -28,6 +28,31 @@
   margin-bottom: var(--space-15);
 }
 
+/* Dropdown-mode search bar: sits below the Filters toggle, sized to match it. */
+.filters__search {
+  display: none;
+}
+
+.filters--dropdown .filters__search {
+  display: block;
+  margin-bottom: var(--space-15);
+}
+
+.filters--dropdown .filters__search .input {
+  height: var(--logo-h);
+  padding: 0 var(--space-15);
+}
+
+/* Keep the input's accessible name without showing the label text. */
+.filters--dropdown .filters__search label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .filters__body {
   display: flex;
   flex-direction: column;
@@ -256,6 +281,9 @@ body.filters-open {
     grid-column: 1 / -1;
   }
   .btn.btn--outline.filters__toggle {
+    grid-column: 2 / -2;
+  }
+  .filters--dropdown .filters__search {
     grid-column: 2 / -2;
   }
 }
