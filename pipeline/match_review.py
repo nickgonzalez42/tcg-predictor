@@ -220,7 +220,7 @@ async function load(g) {
   const orph = !data.orphans?.length ? '' :
     `<h3 style="color:#8b96ad;font-size:13px;margin-top:24px">Orphaned history — ${data.orphans.length}${data.orphans_more ? '+' : ''} card(s) with price history but no current PriceCharting match (held out of the model; they re-queue if a match reappears)</h3>` +
     data.orphans.map(o => `<div class="card" style="opacity:.65"><div class="half">
-      <div class="nm">${esc(o.name || '(id ' + o.product_id + ')')}</div>
+      <div class="nm"><a target="_blank" href="https://www.tcgplayer.com/product/${o.product_id}">${esc(o.name || '(id ' + o.product_id + ')')}</a></div>
       <div class="sub">${esc(o.set || '')} &middot; pid ${o.product_id}</div>
     </div></div>`).join('');
   document.getElementById('orphans').innerHTML = orph;
@@ -228,7 +228,8 @@ async function load(g) {
     <div class="card" id="c${row.product_id}">
       <img src="${row.image || ''}" loading="lazy" onerror="this.style.visibility='hidden'">
       <div class="half">
-        <div class="nm">${esc(row.name || '(id ' + row.product_id + ')')}
+        <div class="nm"><a target="_blank" title="Open on TCGplayer (the listing this card came from)"
+            href="https://www.tcgplayer.com/product/${row.product_id}">${esc(row.name || '(id ' + row.product_id + ')')}</a>
           ${row.drifted ? '<span class="badge">MATCH CHANGED</span>' : ''}
           ${row.event_mismatch ? '<span class="badge" style="background:#a80">EVENT CARD → PLAIN PAGE?</span>' : ''}</div>
         <div class="sub">${esc(row.set || '')} &middot; ${esc(row.number || '')} &middot; ${esc(row.rarity || '')}</div>
