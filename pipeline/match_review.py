@@ -209,9 +209,11 @@ PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <script>
 let game = null, data = null;
 async function load(g) {
-  game = g;
   const r = await fetch('/pending' + (g ? '?game=' + g : ''));
   data = await r.json();
+  game = data.game;   // ALWAYS the server's answer: on the no-arg initial load
+                      // g is undefined, and reviews posted with an undefined
+                      // game are silently unusable (2026-07-26 bug).
   const tabs = document.getElementById('tabs');
   tabs.innerHTML = Object.entries(data.counts).map(([k, n]) =>
     `<span class="tab ${k===data.game?'active':''}" onclick="load('${k}')">${k} (${n})</span>`).join(' ');
@@ -350,6 +352,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(n) or b"{}")
         except json.JSONDecodeError:
             self.send_error(400, "bad json")
+            return
+        # A review row with a bad game key is silently unusable — refuse it
+        # loudly instead (the client alerts on non-200).
+        if self.path in ("/confirm", "/override") and body.get("game") not in GAMES:
+            self.send_error(400, f"missing/unknown game: {body.get('game')!r}")
             return
         with _lock:
             if self.path == "/confirm":
