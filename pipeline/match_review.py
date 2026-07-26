@@ -288,7 +288,7 @@ function renderHeader() {
     data.total > shown ? `showing ${shown} of ${data.total}` : `${data.total} pending`;
 }
 function resolved(pid) {
-  resolved(pid);
+  document.getElementById('c' + pid)?.remove();
   data.counts[game] = Math.max(0, data.counts[game] - 1);
   data.total = Math.max(0, data.total - 1);
   renderHeader();
