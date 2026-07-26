@@ -15,6 +15,7 @@ export default function Search() {
                 id="search"
                 className="input"
                 type="search"
+                placeholder="Search"
                 value={term}
                 onChange={e => onChange(e.target.value)}
             />
