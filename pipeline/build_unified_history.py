@@ -27,12 +27,16 @@ from games import priced_games
 
 
 def load_corrections(game):
-    """(product_id, grade) -> [(from_date, to_date, price)] human corrections.
+    """(product_id, grade) -> [(from_date, to_date, price|None)] corrections.
 
     Applied at build time so the raw crawl stays as-scraped (auditable) while
     the serving/model layer gets the fix — and a recrawl can't resurrect the
-    bad points. For source-side damage PC never repairs: e.g. a ~$1000 card
-    whose raw listing recorded $2.50 for months (Maleficent D23)."""
+    bad points. Two forms of source-side damage PC never repairs:
+      price set   -> REPLACE the range (a real card mispriced for months,
+                     e.g. Maleficent D23 raw at $2.50 while graded held $1k+)
+      price empty -> DROP the range (history from before the card existed —
+                     there is no true value to substitute)
+    grade '*' applies to every tier."""
     if not os.path.exists(CORRECTIONS_CSV):
         return {}
     out = collections.defaultdict(list)
@@ -40,7 +44,8 @@ def load_corrections(game):
         for r in csv.DictReader(f):
             if r["game"] == game:
                 out[(int(r["product_id"]), r["grade"])].append(
-                    (r["from_date"], r["to_date"], float(r["price"])))
+                    (r["from_date"], r["to_date"],
+                     float(r["price"]) if r["price"].strip() else None))
     return out
 GAMES = priced_games()
 
@@ -81,13 +86,19 @@ def build_game(game):
         for pid, months in by_pid.items():
             if pid in skip:
                 continue
-            fixes = corrections.get((pid, grade), ())
+            fixes = corrections.get((pid, grade), []) + corrections.get((pid, "*"), [])
             for (d, p) in months.values():
+                dropped = False
                 for lo, hi, price in fixes:
                     if lo <= d <= hi:
-                        p = price
+                        if price is None:
+                            dropped = True
+                        else:
+                            p = price
                         n_corrected += 1
                         break
+                if dropped:
+                    continue
                 rows.append((game, pid, grade, d, p, "pricecharting"))
                 counts[grade] += 1
     if n_corrected:
