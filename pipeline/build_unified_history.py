@@ -15,13 +15,33 @@ Run after the graded-history crawl completes:  .venv/bin/python build_unified_hi
 """
 
 import collections
+import csv
 import os
 import sqlite3
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+CORRECTIONS_CSV = os.path.join(BASE, "ml_data", "price_corrections.csv")
 
 from games import priced_games
+
+
+def load_corrections(game):
+    """(product_id, grade) -> [(from_date, to_date, price)] human corrections.
+
+    Applied at build time so the raw crawl stays as-scraped (auditable) while
+    the serving/model layer gets the fix — and a recrawl can't resurrect the
+    bad points. For source-side damage PC never repairs: e.g. a ~$1000 card
+    whose raw listing recorded $2.50 for months (Maleficent D23)."""
+    if not os.path.exists(CORRECTIONS_CSV):
+        return {}
+    out = collections.defaultdict(list)
+    with open(CORRECTIONS_CSV, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if r["game"] == game:
+                out[(int(r["product_id"]), r["grade"])].append(
+                    (r["from_date"], r["to_date"], float(r["price"])))
+    return out
 GAMES = priced_games()
 
 
@@ -55,13 +75,23 @@ def build_game(game):
     rows = []
     counts = collections.Counter()
     skip = suspects(game)
+    corrections = load_corrections(game)
+    n_corrected = 0
     for grade, by_pid in pc_history(game).items():
         for pid, months in by_pid.items():
             if pid in skip:
                 continue
+            fixes = corrections.get((pid, grade), ())
             for (d, p) in months.values():
+                for lo, hi, price in fixes:
+                    if lo <= d <= hi:
+                        p = price
+                        n_corrected += 1
+                        break
                 rows.append((game, pid, grade, d, p, "pricecharting"))
                 counts[grade] += 1
+    if n_corrected:
+        print(f"[{game}] {n_corrected} point(s) replaced by price_corrections.csv")
     print(f"[{game}] rows per tier: " +
           ", ".join(f"{g}={n}" for g, n in sorted(counts.items())))
     return rows
