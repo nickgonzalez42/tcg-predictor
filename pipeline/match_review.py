@@ -40,6 +40,7 @@ PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "card
 ML_DATA = os.environ.get("MATCH_REVIEW_STATE", os.path.join(BASE, "ml_data"))
 REVIEWED_CSV = os.path.join(ML_DATA, "pc_match_reviewed.csv")
 OVERRIDES_CSV = os.path.join(ML_DATA, "pc_match_overrides.csv")
+BLOCKLIST_CSV = os.path.join(ML_DATA, "card_blocklist.csv")
 PAGE_CAP = 200   # rows served per request; the header shows the true totals
 
 _lock = threading.Lock()   # serialize CSV appends + purge writes
@@ -162,6 +163,29 @@ def purge_bad_history(game, product_id):
     return h, c
 
 
+def delete_card(game, product_id, note):
+    """Remove a card from the site and keep it out: append to the blocklist
+    (pc-match re-deletes it every night if a Sunday rescan re-inserts it),
+    drop its catalog row, its match row, and its absorbed history."""
+    new = not os.path.exists(BLOCKLIST_CSV)
+    with open(BLOCKLIST_CSV, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["game", "product_id", "note", "added"])
+        w.writerow([game, product_id, note, now_utc()])
+
+    cards = sqlite3.connect(db_path(game), timeout=30)
+    n_cards = cards.execute("DELETE FROM cards WHERE product_id=?", (product_id,)).rowcount
+    cards.commit(); cards.close()
+
+    conn = sqlite3.connect(PC_DB, timeout=30)
+    conn.execute("DELETE FROM pricecharting WHERE game=? AND product_id=?", (game, product_id))
+    conn.commit(); conn.close()
+
+    hist, crawled = purge_bad_history(game, product_id)
+    return n_cards, hist, crawled
+
+
 def append_override(game, product_id, pc_id, note):
     new = not os.path.exists(OVERRIDES_CSV)
     with open(OVERRIDES_CSV, "a", newline="", encoding="utf-8") as f:
@@ -214,11 +238,7 @@ async function load(g) {
   game = data.game;   // ALWAYS the server's answer: on the no-arg initial load
                       // g is undefined, and reviews posted with an undefined
                       // game are silently unusable (2026-07-26 bug).
-  const tabs = document.getElementById('tabs');
-  tabs.innerHTML = Object.entries(data.counts).map(([k, n]) =>
-    `<span class="tab ${k===data.game?'active':''}" onclick="load('${k}')">${k} (${n})</span>`).join(' ');
-  document.getElementById('status').textContent =
-    data.total > data.rows.length ? `showing ${data.rows.length} of ${data.total}` : `${data.total} pending`;
+  renderHeader();
   const orph = !data.orphans?.length ? '' :
     `<h3 style="color:#8b96ad;font-size:13px;margin-top:24px">Orphaned history — ${data.orphans.length}${data.orphans_more ? '+' : ''} card(s) with price history but no current PriceCharting match (held out of the model; they re-queue if a match reappears)</h3>` +
     data.orphans.map(o => `<div class="card" style="opacity:.65"><div class="half">
@@ -251,9 +271,27 @@ async function load(g) {
           <button class="warn" onclick="override(${row.product_id})">Save fix</button>
           <button class="warn" title="PriceCharting has no correct page for this card — unmatch it and purge its absorbed history; it stays unpriced rather than mispriced"
             onclick="exclude(${row.product_id})">No PC page — exclude</button>
+          <button class="warn" style="background:#611"
+            title="This card shouldn't exist on the site at all (junk/duplicate listing) — remove it from the catalog and blocklist it so future crawls can't re-add it"
+            onclick="deleteCard(${row.product_id})">Delete card</button>
         </div>
       </div>
     </div>`).join('') || '<p>Queue empty — every match is reviewed. 🎉</p>';
+}
+// Tabs + status re-render from data.counts, so per-action decrements show
+// immediately without refetching.
+function renderHeader() {
+  document.getElementById('tabs').innerHTML = Object.entries(data.counts).map(([k, n]) =>
+    `<span class="tab ${k===data.game?'active':''}" onclick="load('${k}')">${k} (${n})</span>`).join(' ');
+  const shown = document.querySelectorAll('#list .card').length;
+  document.getElementById('status').textContent =
+    data.total > shown ? `showing ${shown} of ${data.total}` : `${data.total} pending`;
+}
+function resolved(pid) {
+  resolved(pid);
+  data.counts[game] = Math.max(0, data.counts[game] - 1);
+  data.total = Math.max(0, data.total - 1);
+  renderHeader();
 }
 const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = v => v == null ? '—' : '$' + Number(v).toFixed(2);
@@ -265,7 +303,7 @@ async function post(url, body) {
 }
 async function confirmOk(pid, pcId) {
   await post('/confirm', {game, product_id: pid, pc_id: pcId});
-  document.getElementById('c' + pid).remove();
+  resolved(pid);
 }
 function toggleFix(pid) {
   const f = document.getElementById('f' + pid);
@@ -278,7 +316,14 @@ async function override(pid) {
   if (!/^\\d+$/.test(pcId)) { alert('pc_id must be the number from the PriceCharting page URL'); return; }
   const res = await post('/override', {game, product_id: pid, pc_id: +pcId, note});
   alert(`Override saved. Purged ${res.purged_history} old history rows; the nightly will recrawl.`);
-  document.getElementById('c' + pid).remove();
+  resolved(pid);
+}
+async function deleteCard(pid) {
+  if (!confirm('Delete this card from the site entirely? It is removed from the catalog, its history is purged, and the blocklist keeps future crawls from re-adding it. (Users tracking it will see it vanish.)')) return;
+  const note = document.getElementById('f' + pid).querySelector('[name=note]').value.trim();
+  const res = await post('/delete', {game, product_id: pid, note});
+  alert(`Deleted. Removed ${res.removed_card} catalog row, purged ${res.purged_history} history rows.`);
+  resolved(pid);
 }
 async function exclude(pid) {
   if (!confirm('Unmatch this card? Its absorbed price history is purged and it stays UNPRICED until PriceCharting grows a correct page (re-pin it here then).')) return;
@@ -286,7 +331,7 @@ async function exclude(pid) {
   const res = await post('/override', {game, product_id: pid, pc_id: 0,
                                        note: note || 'excluded — no correct PC page'});
   alert(`Excluded. Purged ${res.purged_history} wrong history rows.`);
-  document.getElementById('c' + pid).remove();
+  resolved(pid);
 }
 async function baseline() {
   if (!confirm('Grandfather ALL currently-matched cards as reviewed? Only cards matched after today will queue.')) return;
@@ -355,7 +400,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         # A review row with a bad game key is silently unusable — refuse it
         # loudly instead (the client alerts on non-200).
-        if self.path in ("/confirm", "/override") and body.get("game") not in GAMES:
+        if self.path in ("/confirm", "/override", "/delete") and body.get("game") not in GAMES:
             self.send_error(400, f"missing/unknown game: {body.get('game')!r}")
             return
         with _lock:
@@ -369,6 +414,11 @@ class Handler(BaseHTTPRequestHandler):
                 h, c = purge_bad_history(game, pid)
                 append_reviewed([[game, pid, pc_id, "override", now_utc()]])
                 self._json({"ok": True, "purged_history": h, "cleared_crawled": c})
+            elif self.path == "/delete":
+                n, hist, crawled = delete_card(
+                    body["game"], body["product_id"], body.get("note", ""))
+                self._json({"ok": True, "removed_card": n,
+                            "purged_history": hist, "cleared_crawled": crawled})
             elif self.path == "/baseline":
                 reviewed = load_reviewed()
                 conn = sqlite3.connect(PC_DB, timeout=30)

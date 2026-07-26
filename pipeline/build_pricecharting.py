@@ -73,6 +73,28 @@ QUARANTINE_RATIO = 25   # drop the match
 MIN_REFERENCE = 50      # only gate cards whose reference price is meaningful
 
 OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_match_overrides.csv")
+BLOCKLIST_CSV = os.path.join(BASE, "ml_data", "card_blocklist.csv")
+
+
+def apply_blocklist(game, card_db):
+    """Delete blocklisted cards from the catalog (match_review's 'Delete
+    card'). Runs every night here — the first step after the scrapers — so a
+    Sunday set-rescan that re-inserts a deleted card loses it again before
+    anything downstream (matching, export, embedding, the site) can see it."""
+    if not os.path.exists(BLOCKLIST_CSV):
+        return
+    with open(BLOCKLIST_CSV, newline="", encoding="utf-8") as f:
+        pids = [int(r["product_id"]) for r in csv.DictReader(f) if r["game"] == game]
+    if not pids:
+        return
+    con = sqlite3.connect(os.path.join(BASE, card_db), timeout=60)
+    n = con.execute(
+        f"DELETE FROM cards WHERE product_id IN ({','.join('?' * len(pids))})",
+        pids).rowcount
+    con.commit()
+    con.close()
+    if n:
+        print(f"[{game}] blocklist: removed {n} re-scraped card(s)")
 
 
 def load_overrides(game):
@@ -86,6 +108,7 @@ def load_overrides(game):
 
 
 def import_game(game, card_db, csv_name, now):
+    apply_blocklist(game, card_db)
     con = sqlite3.connect(os.path.join(BASE, card_db))
     ours = set(r[0] for r in con.execute("SELECT product_id FROM cards"))
     if not ours:
