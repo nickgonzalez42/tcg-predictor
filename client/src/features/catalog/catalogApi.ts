@@ -1,5 +1,10 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
 import type { Card, Forecast, PastForecast } from "../../app/models/card";
+
+export type ImageSearchHit = {
+    game: string; productId: number; name: string; set: string;
+    image: string; score: number;
+};
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 import type { CardParams } from "../../app/models/cardParams";
 import { toApiParams } from "../../lib/util";
@@ -27,6 +32,15 @@ export const catalogApi = createApi({
         }),
         fetchCardDetails: builder.query<Card, { game: string, id: number }>({
             query: ({ game, id }) => `cards/${game}/${id}`
+        }),
+        // Search-by-photo: the file goes up as multipart, is embedded server-
+        // side, and only the matches come back — the image itself isn't stored.
+        imageSearch: builder.mutation<ImageSearchHit[], File>({
+            query: (file) => {
+                const body = new FormData();
+                body.append('image', file);
+                return { url: 'cards/image-search', method: 'POST', body };
+            }
         }),
         fetchFilters: builder.query<{ sets: string[], rarities: string[], hasYear?: boolean }, string>({
             query: (game) => `cards/filters?game=${game}`
@@ -78,5 +92,5 @@ export const catalogApi = createApi({
 export const {
     useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery,
     useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardForecastHistoryQuery,
-    useFetchCardReasoningQuery, useFetchMoversQuery,
+    useFetchCardReasoningQuery, useFetchMoversQuery, useImageSearchMutation,
 } = catalogApi;

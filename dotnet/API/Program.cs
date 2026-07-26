@@ -42,6 +42,14 @@ AddReadOnlySqlite<PredictionsContext>("PredictionsConnection");
 // Read-only PriceCharting graded prices.
 AddReadOnlySqlite<PriceChartingContext>("PriceChartingConnection");
 builder.Services.AddScoped<ReasoningService>();
+// Search-by-photo: CLIP encoder + card embedding index, loaded once (~450MB)
+// when the exported artifacts exist (pipeline/export_clip_onnx.py). Absent
+// artifacts -> Service stays null and the endpoint answers 503.
+var clipDir = Path.Combine(builder.Environment.ContentRootPath, "Data", "clip");
+builder.Services.AddSingleton(new ImageSearchHolder
+{
+    Service = ImageSearchService.ArtifactsExist(clipDir) ? new ImageSearchService(clipDir) : null
+});
 builder.Services.AddScoped<ModerationService>();
 builder.Services.AddScoped<NotificationService>();
 // Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
@@ -71,6 +79,7 @@ builder.Services.AddRateLimiter(opt =>
             }));
 
     PerIpPerMinute("reasoning", 10);   // CardsController.GetReasoning (paid Anthropic calls)
+    PerIpPerMinute("imagesearch", 12); // CardsController.ImageSearch (CPU inference per hit)
     PerIpPerMinute("auth", 5);         // AccountController.RegisterUser
     PerIpPerMinute("import", 4);       // WatchlistController.ImportOwned (up to 1000 rows each)
     // 30, not 10: there are 11 sitemap routes (index + static + reports + 8

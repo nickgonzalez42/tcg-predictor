@@ -485,3 +485,4 @@ $RECYCLE.BIN/
 appsettings.Development.json
 store.db.bak.*
 *.db.bak.*
+API/Data/clip/

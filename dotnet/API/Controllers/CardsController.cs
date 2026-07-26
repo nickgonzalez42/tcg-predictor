@@ -206,6 +206,44 @@ public partial class CardsController(
         return null;
     }
 
+    // Search-by-photo: embed the uploaded image and return the closest cards
+    // across every game. The image is processed entirely in memory and never
+    // stored — it exists only for this request. 503 until the model artifacts
+    // are shipped to this box.
+    [HttpPost("image-search")]
+    [EnableRateLimiting("imagesearch")]
+    [RequestSizeLimit(10_000_000)]
+    public async Task<IActionResult> ImageSearch(IFormFile image, [FromServices] ImageSearchHolder holder)
+    {
+        if (holder.Service == null)
+            return StatusCode(503, "Image search isn't available on this server yet.");
+        if (image == null || image.Length == 0) return BadRequest("No image uploaded.");
+
+        List<ImageSearchService.Hit>? hits;
+        await using (var stream = image.OpenReadStream())
+        {
+            hits = holder.Service.Search(stream);
+        }
+        if (hits == null) return BadRequest("That file doesn't look like an image.");
+
+        var results = new List<object>();
+        foreach (var h in hits)
+        {
+            var card = await sources.Find(h.Game, h.ProductId);
+            if (card == null || string.IsNullOrEmpty(card.ImagePath)) continue;   // art-pending: not served
+            results.Add(new
+            {
+                game = h.Game,
+                productId = h.ProductId,
+                name = card.Name,
+                set = card.SetName,
+                image = CardImageUrl(h.Game, h.ProductId),
+                score = Math.Round(h.Score, 3),
+            });
+        }
+        return Ok(results);
+    }
+
     // Top movers across the games by ungraded forecast change — feeds the
     // market ticker and the home page tiles. The ranking is identical for every
     // visitor and the homepage alone requests it three times (hero, ticker,

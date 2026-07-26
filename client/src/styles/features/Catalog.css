@@ -53,6 +53,84 @@
   white-space: nowrap;
 }
 
+/* Search input + photo-search button share a row everywhere the search
+   renders (desktop panel and the mobile bar). */
+.search-row {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.search-row .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.search-row__photo {
+  flex: 0 0 auto;
+  padding: 0 var(--space-10);
+}
+
+.filters--dropdown .filters__search .search-row__photo {
+  height: var(--logo-h);
+}
+
+/* Search-by-photo modal */
+.imgsearch__preview {
+  display: block;
+  max-width: 160px;
+  max-height: 160px;
+  margin: var(--space-10) auto;
+  border-radius: var(--radius);
+}
+
+.imgsearch__results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--space-10);
+  margin-top: var(--space-10);
+}
+
+.imgsearch__hit {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-10);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.imgsearch__hit:hover {
+  border-color: var(--primary);
+}
+
+.imgsearch__hit img {
+  width: 100%;
+  border-radius: 4px;
+}
+
+.imgsearch__hit-name {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.imgsearch__hit-sub {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.imgsearch__hit-score {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.imgsearch__privacy {
+  margin-top: var(--space-10);
+}
+
 .filters__body {
   display: flex;
   flex-direction: column;
