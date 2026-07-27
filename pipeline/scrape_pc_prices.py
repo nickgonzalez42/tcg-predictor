@@ -54,13 +54,15 @@ def load_slug_overrides(game):
         return {r["console"]: r["slug"] for r in csv.DictReader(f) if r["game"] == game}
 
 
-def apostrophe_slug(console):
-    """slugify() strips apostrophes, but PC keeps them in the slug URL-encoded
-    as %27 (e.g. Starter Deck 03: Heaven's Yellow ->
-    digimon-starter-deck-03-heaven%27s-yellow). Fallback for the 'X's Y' class."""
+def pc_punct_slug(console):
+    """slugify() strips punctuation, but PC KEEPS it in the slug URL-encoded:
+    apostrophe -> %27, ampersand -> %26, comma -> %2C. One fallback for the
+    whole class ("Heaven's Yellow", "Jiang Yanggu & Mu Yanling", "Warhammer
+    40,000") — retried when the stripped form 404s."""
     import re
-    s = re.sub(r"[^a-z0-9']+", "-", console.lower()).strip("-")
-    return re.sub(r"-+", "-", s).replace("'", "%27")
+    s = re.sub(r"[^a-z0-9'&,]+", "-", console.lower()).strip("-")
+    s = re.sub(r"-+", "-", s)
+    return s.replace("'", "%27").replace("&", "%26").replace(",", "%2C")
 
 
 def scrape_game(conn, game, suffix, limit_sets):
@@ -83,10 +85,10 @@ def scrape_game(conn, game, suffix, limit_sets):
     for console in names:
         slug = overrides.get(console) or slugify(console)
         products = crawl_console(slug)
-        # PC keeps apostrophes as %27 where slugify strips them — retry that
-        # form before giving up (handles the whole "X's Y" set class).
-        if products is None and "'" in console and console not in overrides:
-            alt = apostrophe_slug(console)
+        # PC keeps punctuation (apostrophe/ampersand/comma) URL-encoded where
+        # slugify strips it — retry the preserving form before giving up.
+        if products is None and console not in overrides:
+            alt = pc_punct_slug(console)
             if alt != slug:
                 products = crawl_console(alt)
                 if products is not None:
