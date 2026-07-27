@@ -54,6 +54,15 @@ def load_slug_overrides(game):
         return {r["console"]: r["slug"] for r in csv.DictReader(f) if r["game"] == game}
 
 
+def apostrophe_slug(console):
+    """slugify() strips apostrophes, but PC keeps them in the slug URL-encoded
+    as %27 (e.g. Starter Deck 03: Heaven's Yellow ->
+    digimon-starter-deck-03-heaven%27s-yellow). Fallback for the 'X's Y' class."""
+    import re
+    s = re.sub(r"[^a-z0-9']+", "-", console.lower()).strip("-")
+    return re.sub(r"-+", "-", s).replace("'", "%27")
+
+
 def scrape_game(conn, game, suffix, limit_sets):
     # Known matches: pc_id -> our product_id, grouped by console.
     consoles = {}          # console display name -> {pc_id: product_id}
@@ -74,6 +83,14 @@ def scrape_game(conn, game, suffix, limit_sets):
     for console in names:
         slug = overrides.get(console) or slugify(console)
         products = crawl_console(slug)
+        # PC keeps apostrophes as %27 where slugify strips them — retry that
+        # form before giving up (handles the whole "X's Y" set class).
+        if products is None and "'" in console and console not in overrides:
+            alt = apostrophe_slug(console)
+            if alt != slug:
+                products = crawl_console(alt)
+                if products is not None:
+                    slug = alt
         if products is None:
             missing.append((console, slug))
             continue
