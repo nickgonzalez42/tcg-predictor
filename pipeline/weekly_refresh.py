@@ -19,6 +19,10 @@ Steps (in order):
                  for an occasional full detail sweep.
   tcg-pokemon    Same for Pokémon.
   pc-download    Fresh PriceCharting CSVs for both games (2 requests).
+  pc-shadow      Pre-cutover only: scrape every bulk game's console prices and
+                 diff vs tonight's paid CSV into ~/Library/Logs/tcg-predictor/
+                 pc_shadow.log. Non-fatal (never blocks the model); drop at
+                 cutover once the scrape replaces the paid download.
   pc-match       Rebuild the current graded-price snapshot (matches new cards by
                  tcg-id) and APPEND today's snapshot into graded_price_history.
   pc-graded-new  Chart-page crawl for cards with no graded history yet (i.e. new
@@ -84,6 +88,11 @@ STEPS = [
                     *(["--max-sets", "8"] if cfg["scraper"][0] == "tcg_scraper.py" else [])])
       for g, cfg in GAMES.items()],
     ("pc-download",   ["download_pricecharting.py"]),
+    # Pre-cutover shadow: self-scrape every bulk game and diff vs the paid CSV
+    # so day-over-day agreement accrues in pc_shadow.log. shadow_pc_sweep.py
+    # always exits 0 — an observability step must never fail the nightly.
+    # Remove this line at cutover (scrape_pc_prices takes over pc-download).
+    ("pc-shadow",     ["shadow_pc_sweep.py"]),
     ("pc-gundam",     ["scrape_gundam_prices.py"]),
     ("pc-starwars",   ["scrape_starwars_prices.py"]),
     ("pc-match",      ["build_pricecharting.py"]),
