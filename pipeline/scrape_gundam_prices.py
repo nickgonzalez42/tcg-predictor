@@ -84,14 +84,24 @@ CANDIDATES["gundam-starter-deck-03-zeon-s-rush"] = ["Starter Deck 03: Zeon's Rus
 CANDIDATES["gundam-zeon-s-rush"] = ["Starter Deck 03: Zeon's Rush"]
 
 
-def fetch(url):
-    time.sleep(DELAY)
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    try:
-        with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as r:
-            return r.status, r.read().decode("utf-8", errors="ignore")
-    except urllib.error.HTTPError as e:
-        return e.code, ""
+def fetch(url, tries=4):
+    """GET with a polite delay. Retry transient failures (429, 5xx, connection
+    resets, timeouts) with backoff so a blip isn't mistaken for the end of a
+    console's pages. 404 returns immediately (genuinely no such page)."""
+    for attempt in range(tries):
+        time.sleep(DELAY * (attempt + 1))          # 1s, then back off: 2s, 3s, 4s
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        try:
+            with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as r:
+                return r.status, r.read().decode("utf-8", errors="ignore")
+        except urllib.error.HTTPError as e:
+            if e.code == 404 or attempt == tries - 1:
+                return e.code, ""
+            # 429 / 5xx: transient — fall through and retry
+        except (urllib.error.URLError, TimeoutError, OSError):
+            if attempt == tries - 1:
+                return 0, ""                        # network error: signal non-200
+    return 0, ""
 
 
 ROW_RE = re.compile(r'<tr id="product-(\d+)"(.*?)</tr>', re.S)
@@ -107,7 +117,11 @@ CELL_TIER = {"used_price": "ungraded", "cib_price": "grade9", "new_price": "psa1
 
 
 def crawl_console(slug):
-    """All products on one console page (cursor pagination, 150/page)."""
+    """All products on one console page (cursor pagination, 150/page). Returns
+    None if the console doesn't exist (404 on the first page) or a page keeps
+    erroring after retries — never a silently-truncated partial list. A 404
+    PAST the first page is the normal end-of-pages signal (PC 404s the cursor
+    beyond the last product), so that returns what we have."""
     products, cursor = [], 0
     while True:
         url = f"https://www.pricecharting.com/console/{slug}" + (
@@ -115,6 +129,10 @@ def crawl_console(slug):
         status, html = fetch(url)
         if status == 404:
             return None if cursor == 0 else products
+        if status != 200:
+            # transient error survived every retry — fail loud rather than
+            # report a half-scraped console as complete.
+            return None
         rows = ROW_RE.findall(html)
         for pc_id, body in rows:
             t = TITLE_RE.search(body)

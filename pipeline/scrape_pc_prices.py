@@ -55,12 +55,15 @@ def load_slug_overrides(game):
 
 
 def pc_punct_slug(console):
-    """slugify() strips punctuation, but PC KEEPS it in the slug URL-encoded:
-    apostrophe -> %27, ampersand -> %26, comma -> %2C. One fallback for the
-    whole class ("Heaven's Yellow", "Jiang Yanggu & Mu Yanling", "Warhammer
-    40,000") — retried when the stripped form 404s."""
+    """slugify() strips punctuation, but PC treats it two ways in the slug:
+    KEEPS some URL-encoded (apostrophe -> %27, ampersand -> %26, comma -> %2C)
+    and DROPS periods entirely with no separator (Monkey.D.Luffy -> monkeydluffy,
+    Special Booster 2.5 -> 25). One fallback for the whole class ("Heaven's
+    Yellow", "Jiang Yanggu & Mu Yanling", "Warhammer 40,000", "Monkey.D.Luffy")
+    — retried when slugify's stripped form 404s."""
     import re
-    s = re.sub(r"[^a-z0-9'&,]+", "-", console.lower()).strip("-")
+    s = console.lower().replace(".", "")
+    s = re.sub(r"[^a-z0-9'&,]+", "-", s).strip("-")
     s = re.sub(r"-+", "-", s)
     return s.replace("'", "%27").replace("&", "%26").replace(",", "%2C")
 
