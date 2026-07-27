@@ -287,6 +287,12 @@ export default function CardDetails() {
         { label: 'SGC 10', value: g.sgc10 },
     ].filter(r => r.value != null) : [];
 
+    // No PriceCharting sales at all (unpriced + no graded snapshot). Such cards
+    // are filtered out of the catalog but reachable by direct link, image
+    // search, or a watchlist — so the detail page says so plainly instead of
+    // rendering a blank price area over an empty chart.
+    const noSales = card.price == null && gradeRows.length === 0;
+
     return (
         <>
             <nav className="breadcrumb mono full-span">
@@ -353,21 +359,34 @@ export default function CardDetails() {
                         ))}
                     </div>
                 )}
-                {card.price != null && (
-                    <div className="detail-center__pricerow">
-                        <span className="detail-center__price">{currencyFormat(card.price)}</span>
-                        {pct12 != null && <ChangePill value={pct12} title="1 year model forecast" />}
-                        {pct12 != null && <span className="mono">1Y</span>}
-                        <span className="price-caption">
-                            latest PriceCharting ungraded{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
-                        </span>
-                    </div>
+                {noSales ? (
+                    <section className="panel detail-panel detail-nosales">
+                        <h4 className="mono detail-panel__title">No sales info</h4>
+                        <p className="est-note detail-nosales__body">
+                            PriceCharting has no recorded sales for this card yet, so there's no
+                            market price, price history, or forecast to show. This is common for
+                            brand-new promos and event cards — check back once it starts trading.
+                        </p>
+                    </section>
+                ) : (
+                    <>
+                        {card.price != null && (
+                            <div className="detail-center__pricerow">
+                                <span className="detail-center__price">{currencyFormat(card.price)}</span>
+                                {pct12 != null && <ChangePill value={pct12} title="1 year model forecast" />}
+                                {pct12 != null && <span className="mono">1Y</span>}
+                                <span className="price-caption">
+                                    latest PriceCharting ungraded{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
+                                </span>
+                            </div>
+                        )}
+                        <section className="panel detail-panel">
+                            <h4 className="mono detail-panel__title">Price history + forecast</h4>
+                            <PriceHistoryChart game={gameId} id={cardId} forecasts={forecasts} />
+                        </section>
+                        <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
+                    </>
                 )}
-                <section className="panel detail-panel">
-                    <h4 className="mono detail-panel__title">Price history + forecast</h4>
-                    <PriceHistoryChart game={gameId} id={cardId} forecasts={forecasts} />
-                </section>
-                <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
                 <CommentSection game={gameId} productId={cardId} />
                 <AdSlot slot="" />
             </div>

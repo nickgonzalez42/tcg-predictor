@@ -215,7 +215,7 @@
 
 .detail-left__img {
   width: 100%;
-  border-radius: 20px;
+  border-radius: 15px;
   display: block;
   margin-bottom: var(--space-15);
 }
@@ -331,4 +331,15 @@
   .detail-panel {
     overflow-x: auto;
   }
+}
+
+/* No-sales state: shown in place of the price row + chart + forecast for a
+   card PriceCharting has no sales data for (reachable by direct link only). */
+.detail-nosales {
+  text-align: center;
+}
+.detail-nosales__body {
+  max-width: 46ch;
+  margin: var(--space-10) auto 0;
+  line-height: 1.5;
 }
