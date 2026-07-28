@@ -35,6 +35,8 @@ Steps (in order):
                  that feed the next retrain.
   ml-embed       CLIP-embed images (resumable; only new images are processed).
   forecast       Retrain + regenerate all forecasts into predictions.db.
+  pc-link-suggest Best-guess PC links for NEW cards (via each PC page's embedded
+                 tcg-id) -> match_review.py queue. Non-fatal; forward-only.
 
 Every data source is append-only (INSERT OR REPLACE on date-keyed tables), so
 old price history is never deleted; derived tables (unified, forecasts) are
@@ -116,6 +118,12 @@ STEPS = [
     # card is only site-visible once its art is actually fetchable.
     ("s3-upload",     ["s3_upload_images.py"]),
     ("art-sync",      ["sync_local_images.py"]),
+    # Last + non-fatal: for any NEW card the paid API would have matched, read
+    # each candidate PC page's embedded tcg-id and queue an exact link into
+    # match_review.py. Runs after pc-match so it only suggests cards STILL
+    # unlinked; reads the sweep's _scraped review CSVs (flip to '' at cutover).
+    # pc_link_suggest.py always exits 0 — a link hiccup must not fail the night.
+    ("pc-link-suggest", ["pc_link_suggest.py"]),
 ]
 
 

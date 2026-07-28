@@ -41,6 +41,7 @@ ML_DATA = os.environ.get("MATCH_REVIEW_STATE", os.path.join(BASE, "ml_data"))
 REVIEWED_CSV = os.path.join(ML_DATA, "pc_match_reviewed.csv")
 OVERRIDES_CSV = os.path.join(ML_DATA, "pc_match_overrides.csv")
 BLOCKLIST_CSV = os.path.join(ML_DATA, "card_blocklist.csv")
+SUGGEST_CSV = os.path.join(ML_DATA, "pc_link_suggestions.csv")   # pc_link_suggest.py output
 PAGE_CAP = 200   # rows served per request; the header shows the true totals
 
 _lock = threading.Lock()   # serialize CSV appends + purge writes
@@ -195,6 +196,56 @@ def append_override(game, product_id, pc_id, note):
         w.writerow([game, product_id, pc_id, note])
 
 
+SUGGEST_FIELDS = ["game", "product_id", "pc_id", "pc_name", "source", "created"]
+
+
+def load_suggestions(game):
+    """Best-guess new-card links from pc_link_suggest.py, enriched with our
+    catalog identity so the card shows next to the PriceCharting listing its
+    page pointed back at. Newest first."""
+    if not os.path.exists(SUGGEST_CSV):
+        return []
+    rows = []
+    with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
+        for r in csv.DictReader(f):
+            if r["game"] == game:
+                rows.append({"product_id": int(r["product_id"]), "pc_id": int(r["pc_id"]),
+                             "pc_name": r.get("pc_name", ""), "source": r.get("source", ""),
+                             "created": r.get("created", "")})
+    rows.sort(key=lambda s: s["created"], reverse=True)
+    info = catalog_info(game, [s["product_id"] for s in rows])
+    for s in rows:
+        name, set_name, number, rarity, img, nm = info.get(s["product_id"], (None,) * 6)
+        s.update({"name": name, "set": set_name, "number": number,
+                  "rarity": rarity, "image": img, "nm_price": nm})
+    return rows
+
+
+def suggestion_counts():
+    counts = {g: 0 for g in GAMES}
+    if os.path.exists(SUGGEST_CSV):
+        with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                if r["game"] in counts:
+                    counts[r["game"]] += 1
+    return counts
+
+
+def drop_suggestions(keep):
+    """Rewrite the suggestions CSV keeping only rows for which keep(row) is
+    True. Returns how many were removed."""
+    if not os.path.exists(SUGGEST_CSV):
+        return 0
+    with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    kept = [r for r in rows if keep(r)]
+    with open(SUGGEST_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=SUGGEST_FIELDS)
+        w.writeheader()
+        w.writerows(kept)
+    return len(rows) - len(kept)
+
+
 PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
 <title>PC match review</title><style>
   body { font: 14px -apple-system, sans-serif; background: #10141d; color: #e8ecf4;
@@ -215,7 +266,10 @@ PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
   button { background: #2c5c9c; color: #fff; border: 0; border-radius: 6px;
            padding: 8px 14px; cursor: pointer; font-size: 13px; }
   button.warn { background: #7c3a3a; }
+  button.ok { background: #2e7d46; }
   button.ghost { background: #1b2231; border: 1px solid #2e3a52; }
+  .shead { color: #8fd6a6; font-size: 13px; margin: 22px 0 8px; }
+  .card.sug { border-color: #2e7d46; }
   .fix { display: none; gap: 6px; margin-top: 8px; }
   .fix input { background: #0c0f16; color: #e8ecf4; border: 1px solid #2e3a52;
                border-radius: 6px; padding: 7px; }
@@ -228,6 +282,7 @@ PAGE = """<!DOCTYPE html><html><head><meta charset="utf-8">
   <button class="ghost" onclick="baseline()" title="Mark every currently-matched card as reviewed; only cards matched after today will queue up.">Baseline all existing</button>
   <span id="status"></span>
 </div>
+<div id="suggestions"></div>
 <div id="list"></div>
 <div id="orphans"></div>
 <script>
@@ -239,6 +294,7 @@ async function load(g) {
                       // g is undefined, and reviews posted with an undefined
                       // game are silently unusable (2026-07-26 bug).
   renderHeader();
+  renderSuggestions();
   const orph = !data.orphans?.length ? '' :
     `<h3 style="color:#8b96ad;font-size:13px;margin-top:24px">Orphaned history — ${data.orphans.length}${data.orphans_more ? '+' : ''} card(s) with price history but no current PriceCharting match (held out of the model; they re-queue if a match reappears)</h3>` +
     data.orphans.map(o => `<div class="card" style="opacity:.65"><div class="half">
@@ -292,6 +348,45 @@ function resolved(pid) {
   data.counts[game] = Math.max(0, data.counts[game] - 1);
   data.total = Math.max(0, data.total - 1);
   renderHeader();
+}
+// Best-guess links for new cards (pc_link_suggest.py): our card beside the
+// PriceCharting listing its page pointed back at. Link = pin the match; Dismiss
+// = reject (the pc_id stays 'seen' so it won't come back).
+function renderSuggestions() {
+  const el = document.getElementById('suggestions');
+  if (!data.suggestions?.length) { el.innerHTML = ''; return; }
+  el.innerHTML =
+    `<h3 class="shead">Suggested links — ${data.suggestions.length} new card(s) with a best-guess PriceCharting match (confirm to link)</h3>` +
+    data.suggestions.map(s => `
+    <div class="card sug" id="s${s.product_id}_${s.pc_id}">
+      <img src="${s.image || ''}" loading="lazy" onerror="this.style.visibility='hidden'">
+      <div class="half">
+        <div class="nm"><a target="_blank" href="https://www.tcgplayer.com/product/${s.product_id}">${esc(s.name || '(id ' + s.product_id + ')')}</a></div>
+        <div class="sub">${esc(s.set || '')} &middot; ${esc(s.number || '')} &middot; ${esc(s.rarity || '')}</div>
+        <div class="price">our NM: ${money(s.nm_price)}</div>
+      </div>
+      <div class="half">
+        <div class="nm"><a target="_blank" href="https://www.pricecharting.com/game/${s.pc_id}">${esc(s.pc_name || 'pc ' + s.pc_id)}</a></div>
+        <div class="sub">pc_id ${s.pc_id} &middot; ${esc(s.source || '')}</div>
+      </div>
+      <div>
+        <button class="ok" onclick="linkSug(${s.product_id}, ${s.pc_id})">Link</button>
+        <button class="ghost" onclick="dismissSug(${s.product_id}, ${s.pc_id})">Dismiss</button>
+      </div>
+    </div>`).join('');
+}
+function dropSug(pid, pcId) {
+  data.suggestions = data.suggestions.filter(s => !(s.product_id === pid && s.pc_id === pcId));
+  if (data.suggestion_counts) data.suggestion_counts[game] = data.suggestions.length;
+  renderSuggestions();
+}
+async function linkSug(pid, pcId) {
+  await post('/link', {game, product_id: pid, pc_id: pcId});
+  dropSug(pid, pcId);
+}
+async function dismissSug(pid, pcId) {
+  await post('/dismiss', {game, product_id: pid, pc_id: pcId});
+  dropSug(pid, pcId);
 }
 const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const money = v => v == null ? '—' : '$' + Number(v).toFixed(2);
@@ -377,7 +472,9 @@ class Handler(BaseHTTPRequestHandler):
             more, orph = orphans(want)
             self._json({"game": want, "counts": counts,
                         "total": counts[want], "rows": per_game[want],
-                        "orphans": orph, "orphans_more": more})
+                        "orphans": orph, "orphans_more": more,
+                        "suggestions": load_suggestions(want),
+                        "suggestion_counts": suggestion_counts()})
             return
         self.send_error(404)
 
@@ -400,7 +497,8 @@ class Handler(BaseHTTPRequestHandler):
             return
         # A review row with a bad game key is silently unusable — refuse it
         # loudly instead (the client alerts on non-200).
-        if self.path in ("/confirm", "/override", "/delete") and body.get("game") not in GAMES:
+        if self.path in ("/confirm", "/override", "/delete", "/link", "/dismiss") \
+                and body.get("game") not in GAMES:
             self.send_error(400, f"missing/unknown game: {body.get('game')!r}")
             return
         with _lock:
@@ -419,6 +517,23 @@ class Handler(BaseHTTPRequestHandler):
                     body["game"], body["product_id"], body.get("note", ""))
                 self._json({"ok": True, "removed_card": n,
                             "purged_history": hist, "cleared_crawled": crawled})
+            elif self.path == "/link":
+                # Confirm a best-guess link: pin the override (pc-match links it
+                # next build), pre-mark it reviewed so it won't also queue in the
+                # normal list, and clear every suggestion for this card.
+                game, pid, pc_id = body["game"], body["product_id"], body["pc_id"]
+                append_override(game, pid, pc_id,
+                                body.get("note") or "linked via suggestion (page-embedded tcg-id)")
+                append_reviewed([[game, pid, pc_id, "linked", now_utc()]])
+                drop_suggestions(lambda r: not (r["game"] == game and int(r["product_id"]) == pid))
+                self._json({"ok": True})
+            elif self.path == "/dismiss":
+                # Reject one suggestion; the pc_id stays 'seen' in the generator
+                # so it won't resurface.
+                game, pid, pc_id = body["game"], body["product_id"], body["pc_id"]
+                drop_suggestions(lambda r: not (r["game"] == game
+                                 and int(r["product_id"]) == pid and int(r["pc_id"]) == pc_id))
+                self._json({"ok": True})
             elif self.path == "/baseline":
                 reviewed = load_reviewed()
                 conn = sqlite3.connect(PC_DB, timeout=30)
