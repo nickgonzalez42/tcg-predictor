@@ -27,25 +27,31 @@ from games import priced_games
 
 
 def load_corrections(game):
-    """(product_id, grade) -> [(from_date, to_date, price|None)] corrections.
+    """(product_id, grade) -> [(from_date, to_date, price|None, floor|None)] corrections.
 
     Applied at build time so the raw crawl stays as-scraped (auditable) while
     the serving/model layer gets the fix — and a recrawl can't resurrect the
-    bad points. Two forms of source-side damage PC never repairs:
-      price set   -> REPLACE the range (a real card mispriced for months,
-                     e.g. Maleficent D23 raw at $2.50 while graded held $1k+)
-      price empty -> DROP the range (history from before the card existed —
-                     there is no true value to substitute)
-    grade '*' applies to every tier."""
+    bad points. Three forms of source-side damage PC never repairs:
+      price set     -> REPLACE the range (a real card mispriced for months,
+                       e.g. Maleficent D23 raw at $2.50 while graded held $1k+)
+      price empty   -> DROP the range (history from before the card existed —
+                       there is no true value to substitute)
+      min_price set -> DROP only points BELOW that floor in the range (sub-
+                       threshold source errors, e.g. serialized cards PC listed
+                       at a few dollars while their true floor is $40+); points
+                       at or above the floor pass through untouched.
+    grade '*' applies to every tier; an omitted date range spans all dates."""
     if not os.path.exists(CORRECTIONS_CSV):
         return {}
     out = collections.defaultdict(list)
     with open(CORRECTIONS_CSV, newline="", encoding="utf-8") as f:
         for r in csv.DictReader(f):
             if r["game"] == game:
+                floor = (r.get("min_price") or "").strip()
                 out[(int(r["product_id"]), r["grade"])].append(
-                    (r["from_date"], r["to_date"],
-                     float(r["price"]) if r["price"].strip() else None))
+                    (r["from_date"] or "0000", r["to_date"] or "9999",
+                     float(r["price"]) if r["price"].strip() else None,
+                     float(floor) if floor else None))
     return out
 GAMES = priced_games()
 
@@ -89,14 +95,21 @@ def build_game(game):
             fixes = corrections.get((pid, grade), []) + corrections.get((pid, "*"), [])
             for (d, p) in months.values():
                 dropped = False
-                for lo, hi, price in fixes:
-                    if lo <= d <= hi:
-                        if price is None:
+                for lo, hi, price, floor in fixes:
+                    if not (lo <= d <= hi):
+                        continue
+                    if floor is not None:
+                        if p is not None and p < floor:
                             dropped = True
-                        else:
-                            p = price
-                        n_corrected += 1
-                        break
+                            n_corrected += 1
+                            break
+                        continue          # at/above floor: leave for other fixes
+                    if price is None:
+                        dropped = True
+                    else:
+                        p = price
+                    n_corrected += 1
+                    break
                 if dropped:
                     continue
                 rows.append((game, pid, grade, d, p, "pricecharting"))
