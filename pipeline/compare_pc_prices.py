@@ -18,6 +18,18 @@ from _paths import DATA_DIR as BASE
 from games import GAMES
 from scrape_pc_prices import bulk_games, PC_DB
 
+# Specific cards to report every night regardless of ranking — for chasing down
+# a suspected transient/parse discrepancy (game,pc_id,note).
+WATCH_CSV = os.path.join(BASE, "ml_data", "pc_watch.csv")
+
+
+def load_watch(game):
+    if not os.path.exists(WATCH_CSV):
+        return []
+    with open(WATCH_CSV, newline="", encoding="utf-8") as f:
+        return [(int(r["pc_id"]), r.get("note", "")) for r in csv.DictReader(f)
+                if r["game"] == game and r.get("pc_id")]
+
 
 def matched_pcids(game):
     """pc_ids we actually track (matched to our catalog) — the denominator that
@@ -88,6 +100,18 @@ def compare_game(game):
         print("  largest disagreements (pid, paid, scraped, delta):")
         for w in sorted(worst, key=lambda x: -(x[1] or 0))[:6]:
             print(f"    {w}")
+    watch = load_watch(game)
+    if watch:
+        print("  WATCHED cards (pc_id: paid -> scraped):")
+        for pc_id, note in watch:
+            pv, sv = paid.get(pc_id), scraped.get(pc_id)
+            if pv is None or sv is None:
+                status = "one-side-missing"
+            elif pv == sv:
+                status = "agree"
+            else:
+                status = f"DISAGREE ({abs(pv - sv) / max(pv, 0.01) * 100:.0f}%)"
+            print(f"    {pc_id}: {pv} -> {sv}  [{status}]  {note}")
 
 
 def main():
