@@ -171,8 +171,24 @@ public static class CardExtensions
             CardType = card.CardType,
             Description = card.Description,
             Price = card.NearMintPrice,   // PriceCharting-backed; no stale TCGplayer fallback
+            Printings = ParsePrintings(card.Printings),
+            BasePrinting = card.BasePrinting,
             PictureUrl = pictureUrl
         };
+    }
+
+    private static List<string>? ParsePrintings(string? json)
+    {
+        if (string.IsNullOrEmpty(json)) return null;
+        try
+        {
+            var list = JsonSerializer.Deserialize<List<string>>(json);
+            return list is { Count: > 1 } ? list : null;   // single printing = nothing to pick
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static void AddAttr(this CardDto dto, string label, string? value)

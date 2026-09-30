@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery } from "./catalogApi";
 import {
     useFetchWatchlistQuery,
@@ -38,7 +38,7 @@ function reasonBody(reason: string): string {
 
 // "Order ticket": condition + quantity + add-to-portfolio / wishlist, in a
 // highlighted panel. Wraps the same watchlist mutations as TrackButton.
-function OrderTicket({ game, productId }: { game: string; productId: number; psa10?: number }) {
+function OrderTicket({ game, productId, printing = '' }: { game: string; productId: number; printing?: string; psa10?: number }) {
     const { data: user } = useUserInfoQuery();
     const { data: watchlist } = useFetchWatchlistQuery(undefined, { skip: !user });
     const [add, { isLoading: adding }] = useAddToWatchlistMutation();
@@ -50,8 +50,10 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
     const parsed = Number(qty);
     const valid = qty.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999;
 
+    // Printing-aware: watching the 1st Edition is a separate watch.
     const wishlisted = !!watchlist?.some(
-        w => w.game === game && w.productId === productId && w.kind === 'wishlist');
+        w => w.game === game && w.productId === productId && w.kind === 'wishlist'
+             && (w.printing ?? '') === printing);
     const ownedAtGrade = watchlist?.filter(
         w => w.game === game && w.productId === productId && w.kind === 'owned' && (w.grade ?? '') === grade).length ?? 0;
     const ownedTotal = watchlist?.filter(
@@ -86,7 +88,7 @@ function OrderTicket({ game, productId }: { game: string; productId: number; psa
                         style={{ marginTop: 'var(--space-15)' }} disabled={adding || removing}
                         onClick={() => wishlisted
                             ? remove({ game, productId, kind: 'wishlist' })
-                            : add({ game, productId, kind: 'wishlist' })}>
+                            : add({ game, productId, kind: 'wishlist', printing })}>
                         {wishlisted ? '★ Watching' : '☆ Add to Watchlist'}
                     </button>
                 </>
@@ -233,10 +235,16 @@ function ForecastSection({ forecasts, game, id }: {
 
 export default function CardDetails() {
     const { game, id } = useParams();
+    // Selected printing rides the URL (?printing=) so a specific printing is
+    // shareable; empty = the card's base printing.
+    const [searchParams, setSearchParams] = useSearchParams();
+    const printing = searchParams.get('printing') ?? '';
     const gameId = game ?? 'onepiece';
     const cardId = id ? +id : 0;
-    const { data: card, isLoading } = useFetchCardDetailsQuery({ game: gameId, id: cardId });
-    const { data: forecastData } = useFetchCardForecastQuery({ game: gameId, id: cardId });
+    const { data: card, isLoading } = useFetchCardDetailsQuery(
+        { game: gameId, id: cardId, printing: printing || undefined });
+    const { data: forecastData } = useFetchCardForecastQuery(
+        { game: gameId, id: cardId, printing: printing || undefined });
 
     usePageMeta(card ? `${card.name} Price Prediction · ${card.setName ?? card.game}` : undefined,
         card ? `AI price prediction, market price, and graded history for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).` : undefined);
@@ -276,18 +284,19 @@ export default function CardDetails() {
 
     const g = card.gradedPrices;
     const gradeRows = g ? [
-        { label: 'Ungraded', value: g.ungraded },
+        // Ungraded = the live Near Mint market (same number as the headline);
+        // the graded snapshot's own ungraded column is the retired source and
+        // only backstops cards without an NM price. BGS/CGC/SGC 10 were dropped
+        // with that source (2026-08-01) — the API now always sends them null.
+        { label: 'Ungraded', value: card.price ?? g.ungraded },
         { label: 'Grade 7', value: g.grade7 },
         { label: 'Grade 8', value: g.grade8 },
         { label: 'Grade 9', value: g.grade9 },
         { label: 'Grade 9.5', value: g.grade95 },
         { label: 'PSA 10', value: g.psa10 },
-        { label: 'BGS 10', value: g.bgs10 },
-        { label: 'CGC 10', value: g.cgc10 },
-        { label: 'SGC 10', value: g.sgc10 },
     ].filter(r => r.value != null) : [];
 
-    // No PriceCharting sales at all (unpriced + no graded snapshot). Such cards
+    // No sales data at all (unpriced + no graded snapshot). Such cards
     // are filtered out of the catalog but reachable by direct link, image
     // search, or a watchlist — so the detail page says so plainly instead of
     // rendering a blank price area over an empty chart.
@@ -308,13 +317,15 @@ export default function CardDetails() {
                     alt={card.name}
                     onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                 />
-                <OrderTicket game={gameId} productId={cardId} psa10={g?.psa10} />
+                <OrderTicket game={gameId} productId={cardId} printing={printing} psa10={g?.psa10} />
                 {gradeRows.length > 0 && (
                     <div className="panel detail-panel">
                         <h4 className="mono detail-panel__title">All prices</h4>
-                        <div className="mono detail-panel__sub">
-                            PriceCharting{g?.updatedAt ? ` · ${shortDate(g.updatedAt)}` : ''}
-                        </div>
+                        {g?.updatedAt && (
+                            <div className="mono detail-panel__sub">
+                                as of {shortDate(g.updatedAt)}
+                            </div>
+                        )}
                         <table className="detail-table">
                             <tbody>
                                 {gradeRows.map((r, i) => (
@@ -363,28 +374,67 @@ export default function CardDetails() {
                     <section className="panel detail-panel detail-nosales">
                         <h4 className="mono detail-panel__title">No sales info</h4>
                         <p className="est-note detail-nosales__body">
-                            PriceCharting has no recorded sales for this card yet, so there's no
+                            There are no recorded sales for this card yet, so there's no
                             market price, price history, or forecast to show. This is common for
                             brand-new promos and event cards — check back once it starts trading.
                         </p>
                     </section>
                 ) : (
                     <>
+                        {card.printings && card.printings.length > 1 && (
+                            <div className="printing-pills" role="group" aria-label="Printing">
+                                {card.printings.map(p => (
+                                    <button key={p} type="button"
+                                        className={'printing-pill' + ((printing || card.basePrinting) === p ? ' printing-pill--active' : '')}
+                                        onClick={() => {
+                                            const sp = new URLSearchParams(searchParams);
+                                            if (p === card.basePrinting) sp.delete('printing');
+                                            else sp.set('printing', p);
+                                            setSearchParams(sp, { replace: true });
+                                        }}>
+                                        {p}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                         {card.price != null && (
                             <div className="detail-center__pricerow">
                                 <span className="detail-center__price">{currencyFormat(card.price)}</span>
                                 {pct12 != null && <ChangePill value={pct12} title="1 year model forecast" />}
                                 {pct12 != null && <span className="mono">1Y</span>}
                                 <span className="price-caption">
-                                    latest PriceCharting ungraded{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
+                                    {printing ? `${printing} · latest market` : 'latest Near Mint market'}{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
                                 </span>
                             </div>
                         )}
+                        {/* Liquidity honesty (2026-09-13): a long-frozen price is
+                            usually a listing, not sales — say so up front. */}
+                        {!printing && card.priceMovedAt && (() => {
+                            const days = Math.floor((Date.now() - Date.parse(card.priceMovedAt!)) / 86400e3);
+                            if (days <= 13) return null;   // recently moved: sales-backed, no caveat needed
+                            return (
+                                <p className="est-note price-liquidity">
+                                    {days > 45
+                                        ? `This price hasn't moved in ${days} days — it may reflect asking prices rather than recent sales.`
+                                        : `Price last moved ${days} days ago.`}
+                                </p>
+                            );
+                        })()}
                         <section className="panel detail-panel">
                             <h4 className="mono detail-panel__title">Price history + forecast</h4>
-                            <PriceHistoryChart game={gameId} id={cardId} forecasts={forecasts} />
+                            <PriceHistoryChart game={gameId} id={cardId} printing={printing || undefined} forecasts={forecasts} />
                         </section>
-                        <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
+                        {printing && forecasts.length === 0 ? (
+                            <section className="panel detail-panel">
+                                <h4 className="mono detail-panel__title">Forecast</h4>
+                                <p className="price-caption">
+                                    No forecast for the {printing} printing yet — forecasts
+                                    currently cover the {card.basePrinting ?? 'base'} printing.
+                                </p>
+                            </section>
+                        ) : (
+                            <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
+                        )}
                     </>
                 )}
                 <CommentSection game={gameId} productId={cardId} />

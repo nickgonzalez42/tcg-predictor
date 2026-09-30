@@ -13,7 +13,7 @@ public class MoverService(
     CardSources sources, PredictionsContext predictions, CardMarketData market,
     PriceChartingContext priceCharting)
 {
-    private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice);
+    private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice, string Printing = "");
 
     // imageUrl builds the absolute art URL (host-dependent, so the controller
     // supplies it). trend overrides the displayed history window (sparkline +
@@ -72,14 +72,14 @@ public class MoverService(
         // Small floor price so penny cards' huge percentages don't drown out
         // everything. The default 12m falls back to a game's longest horizon
         // (6m for young games — digimon/gundam have <14 months of history).
-        var moverPool = predictions.Forecasts
+        var moverPool = predictions.Forecasts.IgnoreQueryFilters()
             .Where(f => f.Target == "ungraded" && f.BasePrice >= 10);
         moverPool = hz == "12m"
             ? moverPool.Where(f => f.Horizon == "12m"
                                    || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game)))
             : moverPool.Where(f => f.Horizon == hz);
         var baseQuery = moverPool
-            .Select(f => new { f.Game, f.ProductId, f.BasePrice, f.ForecastPrice });
+            .Select(f => new { f.Game, f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice });
         // 2x buffer per side: candidates without local art are filtered below.
         var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
         var losers = await baseQuery.OrderBy(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
@@ -93,14 +93,14 @@ public class MoverService(
             .Concat(downs.Select((f, i) => (f, rank: i * 2 + 1)))
             .OrderBy(x => x.rank)
             .Select(x => x.f)
-            .DistinctBy(f => (f.Game, f.ProductId))
+            .DistinctBy(f => (f.Game, f.ProductId, f.Printing))
             .ToList();
         var showable = new Dictionary<string, HashSet<int>>();
         foreach (var g in candidates.Select(f => f.Game).Distinct())
             showable[g] = await ShowcaseIds(g, candidates.Where(f => f.Game == g).Select(f => f.ProductId));
         var globalPicks = candidates
             .Where(f => showable[f.Game].Contains(f.ProductId))
-            .Select(f => new Pick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice))
+            .Select(f => new Pick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice, f.Printing))
             .ToList();
 
         // Every game with forecasts is GUARANTEED two movers (its strongest
@@ -116,7 +116,7 @@ public class MoverService(
 
         var picked = guaranteed
             .Concat(globalPicks)
-            .DistinctBy(f => (f.Game, f.ProductId))
+            .DistinctBy(f => (f.Game, f.ProductId, f.Printing))
             .Take(Math.Max(count, guaranteed.Count))
             .ToList();
 
@@ -141,7 +141,7 @@ public class MoverService(
     {
         foreach (var floor in new[] { 10.0, 1.0 })
         {
-            var q = predictions.Forecasts
+            var q = predictions.Forecasts.IgnoreQueryFilters()
                 .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == horizon
                             && f.BasePrice >= floor)
                 .Where(f => gainerSide ? f.ForecastPrice > f.BasePrice : f.ForecastPrice < f.BasePrice);
@@ -152,7 +152,7 @@ public class MoverService(
             var top = await q.Take(10).ToListAsync();
             var ok = await ShowcaseIds(game, top.Select(f => f.ProductId));
             var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
-            if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice);
+            if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice, hit.Printing);
         }
         return null;
     }
@@ -221,13 +221,23 @@ public class MoverService(
                 if (!cardById.TryGetValue(pick.ProductId, out var card)) continue;
                 var dto = card.ToDto(game, imageUrl(game, card.Id));
                 dto.Game = game;
-                dto.Price ??= pick.BasePrice;
+                // A labeled-printing mover shows ITS price and carries its
+                // printing so the tile can badge it + link with ?printing=.
+                if (pick.Printing != "")
+                {
+                    dto.SelectedPrinting = pick.Printing;
+                    dto.Price = pick.BasePrice;
+                }
+                else
+                {
+                    dto.Price ??= pick.BasePrice;
+                }
                 movers.Add(dto);
             }
         }
         // Preserve the ranked order (the per-game join above regrouped them).
-        var rank = picked.Select((f, i) => (Key: (f.Game, f.ProductId), i))
+        var rank = picked.Select((f, i) => (Key: (f.Game, f.ProductId, f.Printing ?? ""), i))
             .ToDictionary(x => x.Key, x => x.i);
-        return movers.OrderBy(m => rank[(m.Game, m.Id)]).ToList();
+        return movers.OrderBy(m => rank[(m.Game, m.Id, m.SelectedPrinting ?? "")]).ToList();
     }
 }

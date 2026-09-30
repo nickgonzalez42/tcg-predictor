@@ -28,7 +28,9 @@ public class SitemapController(
     private const string XmlNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
     private static readonly string[] StaticPaths =
-        ["/", "/catalog", "/reports", "/about", "/privacy", "/terms", "/contact"];
+        ["/", "/catalog", "/reports", "/about", "/privacy", "/terms", "/contact",
+         "/guides/how-to-read-price-charts", "/guides/how-grading-affects-value",
+         "/guides/where-card-prices-come-from", "/guides/tcg-glossary"];
 
     private string Origin => (config["ClientUrl"] ?? "https://cardstock.guide").TrimEnd('/');
 

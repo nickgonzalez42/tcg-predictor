@@ -11,6 +11,9 @@ public class CardDto
     public string? CardType { get; set; }
     public string? Description { get; set; }
     public double? Price { get; set; }            // actual market price in USD
+    public List<string>? Printings { get; set; }  // variant names, base first (null/1 = single printing)
+    public string? BasePrinting { get; set; }
+    public string? SelectedPrinting { get; set; } // set on movers rows for a non-base printing
     public string? PictureUrl { get; set; }       // local image served by the API
     // Game-specific fields (One Piece color/power/…, Pokémon hp/attacks/…), null/empty omitted.
     public Dictionary<string, string> Attributes { get; set; } = [];
@@ -32,6 +35,7 @@ public class CardDto
     // Lightweight market context for tiles / screener rows, computed for the shown
     // condition tier over the requested trend window (1w|1m|6m|1y).
     public string? PriceAsOf { get; set; }        // date of the shown price's latest history point
+    public string? PriceMovedAt { get; set; }     // date the base NM price last CHANGED (liquidity honesty, 2026-09-13)
     public List<double>? Sparkline { get; set; }  // prices inside the trend window, oldest first
     public int? HistoryMonths { get; set; }        // months of history, full series (confidence proxy)
     public double? TrendPct { get; set; }          // % change across the window

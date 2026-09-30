@@ -215,7 +215,7 @@
 
 .detail-left__img {
   width: 100%;
-  border-radius: 15px;
+  border-radius: 17px;
   display: block;
   margin-bottom: var(--space-15);
 }
@@ -342,4 +342,34 @@
   max-width: 46ch;
   margin: var(--space-10) auto 0;
   line-height: 1.5;
+}
+
+/* Printing selector (multi-printing support, Phase 3) */
+.printing-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  margin-bottom: var(--space-10);
+}
+
+.printing-pill {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: var(--space-5) var(--space-10);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.printing-pill:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.printing-pill--active {
+  color: var(--text);
+  border-color: var(--primary, #3d7dca);
+  background: color-mix(in srgb, var(--primary, #3d7dca) 14%, transparent);
 }

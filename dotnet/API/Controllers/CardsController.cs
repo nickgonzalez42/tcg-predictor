@@ -28,7 +28,8 @@ public partial class CardsController(
     }
 
     [HttpGet("{game}/{id:int}")]
-    public async Task<ActionResult<CardDto>> GetCard(string game, int id)
+    public async Task<ActionResult<CardDto>> GetCard(string game, int id,
+        [FromQuery] string? printing = null)
     {
         var folder = GameRegistry.KeyOrDefault(game);
 
@@ -40,10 +41,70 @@ public partial class CardsController(
 
         if (dto == null) return NotFound();
 
-        dto.GradedPrices = await GetGradedPrices(folder, id);
+        var nonBasePrinting = false;
+        // A selected non-base printing swaps the headline price and the graded
+        // ladder onto that printing's own (labeled) series; the base printing
+        // keeps the regular columns/snapshot path.
+        if (!string.IsNullOrEmpty(printing) && printing != dto.BasePrinting
+            && dto.Printings?.Contains(printing) == true)
+        {
+            dto.GradedPrices = await PrintingLadder(folder, id, printing);
+            dto.Price = dto.GradedPrices?.Ungraded ?? dto.Price;
+            nonBasePrinting = true;
+        }
+        else
+        {
+            dto.GradedPrices = await GetGradedPrices(folder, id);
+        }
 
         await market.ApplyMarket([dto], folder);   // PriceAsOf + market context for the header
+        if (nonBasePrinting)
+        {
+            // Market decorations above are BASE-series-derived; scrub the
+            // forecast-flavored ones so no base forecast leaks onto another
+            // printing's page. (Sparkline/trend visuals come from the chart's
+            // own printing-aware query.)
+            dto.FcstTo = null;
+            dto.Fcst12To = null;
+            dto.ExpectedChange = null;
+            dto.ExpectedFrom = null;
+            dto.ExpectedTo = null;
+        }
         return dto;   // headline price is the near_mint_price column, set in ToDto
+    }
+
+    // True when a selected printing is NOT the card's base printing — the
+    // series forecasts/decorations are trained on base only.
+    private async Task<bool> IsNonBasePrinting(string game, int id, string? printing)
+    {
+        if (string.IsNullOrEmpty(printing)) return false;
+        var card = await sources.Find(game, id);
+        return card?.BasePrinting != null && printing != card.BasePrinting;
+    }
+
+    // Graded ladder for a NON-BASE printing: latest labeled unified point per
+    // tier (there is no snapshot table for printings — the series ARE the data).
+    private async Task<GradedPriceDto?> PrintingLadder(string game, int id, string printing)
+    {
+        var points = await priceCharting.History.IgnoreQueryFilters()
+            .Where(h => h.Game == game && h.ProductId == id && h.Printing == printing)
+            .ToListAsync();
+        if (points.Count == 0) return null;
+        var latest = points
+            .GroupBy(p => p.Grade)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(p => p.Date).First());
+        double? Tier(string grade) =>
+            latest.TryGetValue(grade, out var p) ? p.Price : null;
+        return new GradedPriceDto
+        {
+            Ungraded = Tier("ungraded"),
+            Grade7 = Tier("grade7"),
+            Grade8 = Tier("grade8"),
+            Grade9 = Tier("grade9"),
+            Grade95 = Tier("grade95"),
+            Psa10 = Tier("psa10"),
+            UpdatedAt = latest.Values.Max(p => p.Date),
+        };
     }
 
     // Current PriceCharting graded/ungraded prices for a single card (detail view).
@@ -88,21 +149,95 @@ public partial class CardsController(
                 .AnyAsync(h => h.Game == key && string.Compare(h.Date, yearAgo) <= 0);
         }
 
-        return Ok(new { sets, rarities, hasYear });
+        // The game's actual printing vocabulary (2026-08-28): the client only
+        // shows the Printing filter when a game genuinely has variants, and
+        // with the game's own names instead of a global hardcoded list. The
+        // distinct JSON combos are few, so parse+union is cheap.
+        var printingCombos = await sources.Cards(key).VisibleInCatalog()
+            .Select(c => c.Printings)
+            .Where(p => p != null && p != "")
+            .Distinct()
+            .ToListAsync();
+        var printings = printingCombos
+            .SelectMany(p =>
+            {
+                try { return System.Text.Json.JsonSerializer.Deserialize<string[]>(p!) ?? []; }
+                catch (System.Text.Json.JsonException) { return []; }
+            })
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+
+        return Ok(new { sets, rarities, hasYear, printings });
     }
 
     // Monthly price history per condition tier, for charting (TradingView-style).
     [HttpGet("{game}/{id:int}/history")]
-    public async Task<IActionResult> GetHistory(string game, int id, [FromQuery] string? grade)
+    public async Task<IActionResult> GetHistory(string game, int id, [FromQuery] string? grade,
+        [FromQuery] string? printing = null)
     {
         var key = GameRegistry.KeyOrDefault(game);
         var query = priceCharting.History.Where(h => h.Game == key && h.ProductId == id);
+        if (!string.IsNullOrEmpty(printing))
+            query = priceCharting.History.IgnoreQueryFilters()
+                .Where(h => h.Game == key && h.ProductId == id && h.Printing == printing);
         if (!string.IsNullOrEmpty(grade)) query = query.Where(h => h.Grade == grade);
 
         var points = await query.OrderBy(h => h.Date).ToListAsync();
         var series = points
             .GroupBy(p => p.Grade)
             .ToDictionary(g => g.Key, g => g.Select(p => new { p.Date, p.Price, p.Source }).ToList());
+
+        // Detail merge (2026-08-15): the unified table compresses ungraded to
+        // month buckets, but the nightly crawl stores dated NM prices (daily
+        // fleet-wide since 2026-07-28; weekly further back for backfilled
+        // cards). Serve them between the unified points — unified wins date
+        // collisions, so price_corrections stay authoritative.
+        if (string.IsNullOrEmpty(grade) || grade == "ungraded")
+        {
+            var nmQuery = string.IsNullOrEmpty(printing)
+                ? priceCharting.NmDaily.Where(p => p.Game == key && p.ProductId == id)
+                : priceCharting.NmDaily.IgnoreQueryFilters()
+                    .Where(p => p.Game == key && p.ProductId == id && p.Printing == printing);
+            var nm = await nmQuery.Where(p => p.Price > 0).ToListAsync();
+            if (nm.Count > 0)
+            {
+                var ug = series.TryGetValue("ungraded", out var existing)
+                    ? existing
+                    : [];
+                var have = ug.Select(p => p.Date).ToHashSet();
+
+                // Cutover bridge (2026-08-15): unify drops PC ungraded from
+                // July 2026 in favor of TCGplayer, but a card whose NM crawl
+                // started late in the cutover has a hole PC actually priced
+                // (often daily, from the subscription's final weeks) — e.g.
+                // an 8-week straight-line gap ending at the first NM point.
+                // Fill [switch, first NM date) from the raw PC rows; unified
+                // and NM points win any date collision.
+                var firstNm = nm.Min(p => p.Date);
+                var bridge = new List<PcRawPoint>();
+                if (string.Compare(firstNm, "2026-07-01") > 0)
+                {
+                    var brQuery = string.IsNullOrEmpty(printing)
+                        ? priceCharting.PcRaw.Where(p => p.Game == key && p.ProductId == id)
+                        : priceCharting.PcRaw.IgnoreQueryFilters()
+                            .Where(p => p.Game == key && p.ProductId == id && p.Printing == printing);
+                    bridge = await brQuery
+                        .Where(p => p.Grade == "ungraded" && p.Price > 0
+                                    && string.Compare(p.Date, "2026-07-01") >= 0
+                                    && string.Compare(p.Date, firstNm) < 0)
+                        .ToListAsync();
+                }
+
+                series["ungraded"] = ug
+                    .Concat(nm.Where(p => !have.Contains(p.Date))
+                              .Select(p => new { p.Date, p.Price, Source = (string?)"tcgplayer" }))
+                    .Concat(bridge.Where(p => !have.Contains(p.Date))
+                              .Select(p => new { p.Date, p.Price, Source = (string?)"pricecharting" }))
+                    .OrderBy(p => p.Date)
+                    .ToList();
+            }
+        }
 
         return Ok(new { game = key, productId = id, series });
     }
@@ -122,10 +257,34 @@ public partial class CardsController(
 
     // Model price forecasts (1m/6m/12m per condition tier) with confidence bands.
     [HttpGet("{game}/{id:int}/forecast")]
-    public async Task<IActionResult> GetForecast(string game, int id)
+    public async Task<IActionResult> GetForecast(string game, int id,
+        [FromQuery] string? printing = null)
     {
         var key = GameRegistry.KeyOrDefault(game);
-        // The site serves 1m/6m/12m only. 1w rows are still generated and
+        // Per-printing forecasts (2026-08-10): a selected non-base printing
+        // serves its OWN trained rows; none yet -> covered:false (the UI shows
+        // its honest note until that printing's first nightly train).
+        if (await IsNonBasePrinting(key, id, printing))
+        {
+            var prRows = await predictions.Forecasts.IgnoreQueryFilters()
+                .Where(f => f.Game == key && f.ProductId == id && f.Printing == printing
+                            && f.Horizon != "1w")
+                .ToListAsync();
+            if (prRows.Count == 0)
+                return Ok(new { game = key, productId = id,
+                                forecasts = Array.Empty<object>(), printingCovered = false });
+            var prForecasts = prRows.Select(f => new
+            {
+                f.Target, f.Horizon,
+                AsOf = f.AnchorDate ?? f.AsOf,
+                f.BasePrice, f.ForecastPrice, f.Low, f.High, f.Ret, f.Reason, f.Confidence,
+                Months = 0,
+            });
+            return Ok(new { game = key, productId = id, forecasts = prForecasts,
+                            printingCovered = true });
+        }
+        // The site serves 1m/6m/12m only. 1w rows retired 2026-08-14; the
+        // filters below remain as guards against strays. Historically: 1w was
         // archived by the pipeline (baseline for the future weekly model) but
         // never leave the API.
         var rows = await predictions.Forecasts
@@ -160,9 +319,32 @@ public partial class CardsController(
     // The archive starts 2026-07-09, so points accumulate from one
     // horizon-length after that.
     [HttpGet("{game}/{id:int}/forecast-history")]
-    public async Task<IActionResult> GetForecastHistory(string game, int id)
+    public async Task<IActionResult> GetForecastHistory(string game, int id,
+        [FromQuery] string? printing = null)
     {
         var key = GameRegistry.KeyOrDefault(game);
+        if (await IsNonBasePrinting(key, id, printing))
+        {
+            // Serve the selected printing's own archived cohorts (empty until
+            // they mature — the chart just draws no overlays).
+            var prPast = await predictions.ForecastArchive.IgnoreQueryFilters()
+                .Where(f => f.Game == key && f.ProductId == id && f.Printing == printing
+                            && f.ForecastPrice != null && f.Horizon != "1w")
+                .ToListAsync();
+            var prToday = DateTime.UtcNow.Date;
+            var prRows = prPast
+                .Select(f => new { f, TargetDate = ForecastTargetDate(f) })
+                .Where(x => x.TargetDate != null && x.TargetDate <= prToday)
+                .Select(x => new
+                {
+                    x.f.Target, x.f.Horizon,
+                    TargetDate = x.TargetDate!.Value.ToString("yyyy-MM-dd"),
+                    x.f.ForecastPrice, x.f.Low, x.f.High, x.f.BasePrice, x.f.AsOf,
+                    IssuedAt = x.f.ScoredAt == null ? null : x.f.ScoredAt[..10],
+                    x.f.RealizedPrice,
+                });
+            return Ok(new { game = key, productId = id, forecasts = prRows });
+        }
         var rows = await predictions.ForecastArchive
             .Where(f => f.Game == key && f.ProductId == id && f.ForecastPrice != null
                         && f.Horizon != "1w")   // site serves 1m/6m/12m only
@@ -182,6 +364,9 @@ public partial class CardsController(
                 x.f.High,
                 x.f.BasePrice,
                 x.f.AsOf,
+                // TRUE generation date (scored_at) — AsOf is the anchor MONTH
+                // BUCKET (always the 1st) and reads as a lie in "generated" UI.
+                IssuedAt = x.f.ScoredAt == null ? null : x.f.ScoredAt[..10],
                 x.f.ScoredAt,
                 x.f.RealizedPrice,
             })
@@ -198,11 +383,23 @@ public partial class CardsController(
 
     private static DateTime? ForecastTargetDate(ArchivedForecast f)
     {
-        if (f.Horizon == "1w")
-            return DateTime.TryParse(f.ScoredAt, out var issued) ? issued.Date.AddDays(7) : null;
-        if (HorizonDays.TryGetValue(f.Horizon, out var days)
-            && DateTime.TryParse(f.AsOf, out var asOf))
-            return asOf.Date.AddDays(days);
+        // Graded rows pin the dot to the date the outcome was MEASURED
+        // (realized_at): the computed due date can differ by a few days
+        // (e.g. as_of+28d = Jul 29 vs the Aug 1 bucket that graded it), and
+        // the vertical gap to the price line only reads as "the miss" when
+        // both sit on the same date.
+        if (f.RealizedAt != null && DateTime.TryParse(f.RealizedAt, out var realized))
+            return realized.Date;
+        // Pending rows: due = ISSUE date + horizon (a Jul 10 1m forecast is
+        // due Aug 7). AsOf is the anchor month/cohort key, which for legacy
+        // rows is the month's 1st — a fallback only.
+        if (HorizonDays.TryGetValue(f.Horizon, out var days))
+        {
+            if (DateTime.TryParse(f.ScoredAt, out var issued))
+                return issued.Date.AddDays(days);
+            if (DateTime.TryParse(f.AsOf, out var asOf))
+                return asOf.Date.AddDays(days);
+        }
         return null;
     }
 
@@ -264,7 +461,12 @@ public partial class CardsController(
 
         var result = await cache.GetOrCreateAsync($"movers:{count}:{horizon}:{trend}:{perGame}", entry =>
         {
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+            // The ranking's inputs change once per day, at the nightly data
+            // push — which restarts this process and empties the cache. A day
+            // is therefore "until the data actually changes"; the old 5-minute
+            // TTL made every quiet stretch of the day re-pay the ~25s cold
+            // recompute (cold-homepage report 2026-08-27).
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
             return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl);
         });
         return Ok(result);
@@ -282,27 +484,59 @@ public partial class CardsController(
             .Search(cardParams.SearchTerm)
             .Filter(cardParams.Sets, cardParams.Rarities);
 
-        // A selected tier REFILTERS the catalog: only cards actually priced at
-        // that tier are listed (no '—' rows). Tier prices live in another
-        // DbContext, so this is an id-set filter.
-        var tier = GradeTiers.PriceTier(cardParams.Grade ?? "");
-        if (tier != "ungraded")
-        {
-            var priced = await market.TierPricedIds(folder, tier);
-            filtered = filtered.Where(c => priced.Contains(c.Id));
-        }
-
         // Min/max on the SHOWN price. With no tier selected that's the Near Mint
         // column (filterable in SQL); a selected tier's price lives in another
         // DbContext, so those paths filter in memory below.
         if (string.IsNullOrEmpty(cardParams.Grade))
             filtered = filtered.PriceRange(cardParams.MinPrice, cardParams.MaxPrice);
 
+        // Cross-DB id filters. Two filters key on data in other DbContexts:
+        //   tier      — a selected tier lists only cards actually priced at it
+        //               (no '—' rows);
+        //   confidence — keep only cards whose SHOWN forecast (the priced
+        //               tier's target at the trend window's horizon — the badge
+        //               on the tile) carries a selected level; selecting every
+        //               level still (deliberately) drops forecast-less cards.
+        // Their id-sets reach tens of thousands on the big games, so they are
+        // NEVER composed into SQL (an IN-list that size is SQLite's 'too many
+        // SQL variables') — every paging path intersects in memory instead.
+        HashSet<int>? idFilter = null;
+        var tier = GradeTiers.PriceTier(cardParams.Grade ?? "");
+        if (tier != "ungraded")
+            idFilter = await market.TierPricedIds(folder, tier);
+        var levels = (cardParams.Confidence ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(l => l.ToLowerInvariant())
+            .Where(l => l is "high" or "med" or "low").Distinct().ToArray();
+        if (levels.Length > 0)
+        {
+            var confIds = await market.ConfidenceIds(
+                folder, GradeTiers.ForecastTarget(cardParams.Grade),
+                CardMarketData.ForecastHorizon(cardParams.Trend), levels);
+            idFilter = idFilter == null ? confIds : idFilter.Intersect(confIds).ToHashSet();
+        }
+
+        // Printing filter: cards CARRYING one of the selected printings (the
+        // printings column is a small JSON array — slim-scan + hash intersect,
+        // same pattern as the other cross-DB id filters).
+        var wantPrintings = (cardParams.Printings ?? "")
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToArray();
+        if (wantPrintings.Length > 0)
+        {
+            var slimPr = await filtered.Select(c => new { c.Id, c.Printings }).ToListAsync();
+            var prIds = slimPr
+                .Where(r => r.Printings != null
+                            && wantPrintings.Any(p => r.Printings.Contains($"\"{p}\"")))
+                .Select(r => r.Id).ToHashSet();
+            idFilter = idFilter == null ? prIds : idFilter.Intersect(prIds).ToHashSet();
+        }
+
         if (CardSorts.History(cardParams.OrderBy) is { } historySort)
-            return await PageByHistory(filtered, cardParams, folder, historySort);
+            return await PageByHistory(filtered, cardParams, folder, historySort, idFilter);
 
         if (CardSorts.Forecast(cardParams.OrderBy) is { } forecastSort)
-            return await PageByForecast(filtered, cardParams, folder, forecastSort);
+            return await PageByForecast(filtered, cardParams, folder, forecastSort, idFilter);
 
         // When a specific grade tier is shown AND the sort or range filter keys on
         // its price — which lives in a different DbContext (priceCharting) — it
@@ -310,7 +544,31 @@ public partial class CardsController(
         // in memory instead, so the displayed price and the rows agree.
         if (!string.IsNullOrEmpty(cardParams.Grade)
             && (CardSorts.IsPriceSort(cardParams.OrderBy) || HasPriceRange(cardParams)))
-            return await PageByGradePrice(filtered, cardParams, folder);
+            return await PageByGradePrice(filtered, cardParams, folder, idFilter);
+
+        // An active id filter forces in-memory paging here too (same SQLite
+        // variable-limit reason) — but on a slim {id, sort keys} projection, not
+        // full entities: magic is 100k+ rows and materializing them times out
+        // the t3.small. Sort only ever keys on name or the NM price, so rank
+        // ids from the projection, then fetch just the page's entities.
+        if (idFilter != null)
+        {
+            var slim = (await filtered
+                    .Select(c => new { c.Id, c.Name, c.NearMintPrice })
+                    .ToListAsync())
+                .Where(r => idFilter.Contains(r.Id)).ToList();
+            var ranked = (cardParams.OrderBy switch
+            {
+                "price" => slim.OrderBy(r => r.NearMintPrice),
+                "priceDesc" => slim.OrderByDescending(r => r.NearMintPrice),
+                _ => slim.OrderBy(r => r.Name),
+            }).ToList();
+            var pageIds = PageSlice(ranked, cardParams).Select(r => r.Id).ToList();
+            var page = await PageEntities(filtered, pageIds, folder);
+            await market.ApplyGradePrice(page, folder, cardParams.Grade);
+            await market.ApplyMarket(page, folder, cardParams.Grade, cardParams.Trend);
+            return page;
+        }
 
         var query = filtered.Sort(cardParams.OrderBy);
         var paged = await PagedList<CardBase>.ToPagedList(query, cardParams.PageNumber, cardParams.PageSize);
@@ -323,27 +581,52 @@ public partial class CardsController(
         return cards;
     }
 
+    // Id set for the in-memory ranking paths: the filtered query's ids,
+    // intersected with the cross-DB id filter and (when a tier's price range
+    // is active) the shown-price range. Ids only — materializing a big game's
+    // full entities is a 30s+ query on the t3.small; the ranked page fetches
+    // its own entities afterwards (PageEntities).
+    private async Task<List<int>> RankIds(
+        IQueryable<CardBase> filtered, CardParams p, string folder, HashSet<int>? idFilter)
+    {
+        var ids = await filtered.Select(c => c.Id).ToListAsync();
+        if (idFilter != null) ids = ids.Where(idFilter.Contains).ToList();
+        if (!string.IsNullOrEmpty(p.Grade) && HasPriceRange(p))
+        {
+            var shown = await market.LatestTierPrices(folder, p.Grade, ids);
+            ids = ids.Where(id => shown.TryGetValue(id, out var v) && InPriceRange(v, p)).ToList();
+        }
+        return ids;
+    }
+
+    // Fetch one ranked page's entities and emit DTOs in the ranked order.
+    private async Task<List<CardDto>> PageEntities(
+        IQueryable<CardBase> filtered, List<int> pageIds, string folder)
+    {
+        var entities = await filtered.Where(c => pageIds.Contains(c.Id)).ToListAsync();
+        return ToDtos(pageIds.Select(id => entities.First(c => c.Id == id)), folder);
+    }
+
     // Sort + paginate the filtered set by an expected forecast change (cross-DB, so
     // in memory). Cards without a forecast sort to the end and keep showing their price.
     private async Task<List<CardDto>> PageByForecast(
-        IQueryable<CardBase> filtered, CardParams p, string folder, ForecastSort sort)
+        IQueryable<CardBase> filtered, CardParams p, string folder, ForecastSort sort,
+        HashSet<int>? idFilter = null)
     {
-        var all = await filtered.ToListAsync();
-        all = await FilterByShownPrice(all, p, folder);
-
+        var ids = await RankIds(filtered, p, folder, idFilter);
         var changes = await market.ForecastChanges(
-            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, all.Select(c => c.Id).ToList());
-        double Key(ForecastChange ch) => sort.Metric == "pct" ? ch.Pct : ch.Usd;
+            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, ids);
+        double Key(int id) => sort.Metric == "pct" ? changes[id].Pct : changes[id].Usd;
 
-        var withFc = all.Where(c => changes.ContainsKey(c.Id));
-        var without = all.Where(c => !changes.ContainsKey(c.Id));
+        var withFc = ids.Where(changes.ContainsKey);
+        var without = ids.Where(id => !changes.ContainsKey(id));
         var sorted = (sort.Descending
-                ? withFc.OrderByDescending(c => Key(changes[c.Id]))
-                : withFc.OrderBy(c => Key(changes[c.Id])))
+                ? withFc.OrderByDescending(Key)
+                : withFc.OrderBy(Key))
             .Concat(without)
             .ToList();
 
-        var cards = ToDtos(PageSlice(sorted, p), folder);
+        var cards = await PageEntities(filtered, PageSlice(sorted, p), folder);
 
         await market.ApplyGradePrice(cards, folder, p.Grade);
         foreach (var card in cards)
@@ -356,29 +639,25 @@ public partial class CardsController(
     // the shown tier's history — the same anchor rule the tiles' PAST pill uses,
     // so the row order always agrees with the displayed movement.
     private async Task<List<CardDto>> PageByHistory(
-        IQueryable<CardBase> filtered, CardParams p, string folder, HistorySort sort)
+        IQueryable<CardBase> filtered, CardParams p, string folder, HistorySort sort,
+        HashSet<int>? idFilter = null)
     {
-        var all = await filtered.ToListAsync();
-        all = await FilterByShownPrice(all, p, folder);
-
+        var ids = await RankIds(filtered, p, folder, idFilter);
         var tier = GradeTiers.PriceTier(p.Grade ?? "");
-        var changes = await market.HistoryChanges(folder, tier, all.Select(c => c.Id).ToList(), sort.Window);
+        var changes = await market.HistoryChanges(folder, tier, ids, sort.Window);
 
-        // Every card with history ranks by its true move (the default $10
-        // min-price filter keeps penny noise out of the default view); cards
-        // with no history close the list.
-        double? Key(CardBase c) => changes.TryGetValue(c.Id, out var ch)
-            ? (sort.Metric == "pct" ? ch.Pct : ch.Usd)
-            : null;
-        var withChg = all.Where(c => Key(c) != null);
-        var noHistory = all.Where(c => Key(c) == null);
+        // Every card with history ranks by its true move; cards with no
+        // history close the list.
+        double Key(int id) => sort.Metric == "pct" ? changes[id].Pct : changes[id].Usd;
+        var withChg = ids.Where(changes.ContainsKey);
+        var noHistory = ids.Where(id => !changes.ContainsKey(id));
         var sorted = (sort.Descending
-                ? withChg.OrderByDescending(c => Key(c))
-                : withChg.OrderBy(c => Key(c)))
+                ? withChg.OrderByDescending(Key)
+                : withChg.OrderBy(Key))
             .Concat(noHistory)
             .ToList();
 
-        var cards = ToDtos(PageSlice(sorted, p), folder);
+        var cards = await PageEntities(filtered, PageSlice(sorted, p), folder);
 
         await market.ApplyGradePrice(cards, folder, p.Grade);
         await market.ApplyMarket(cards, folder, p.Grade, sort.Window);   // tiles trend over the sorted window
@@ -389,9 +668,11 @@ public partial class CardsController(
     // so in memory). Cards with no price for the tier sort to the end (in both
     // directions), matching their '—' display.
     private async Task<List<CardDto>> PageByGradePrice(
-        IQueryable<CardBase> filtered, CardParams p, string folder)
+        IQueryable<CardBase> filtered, CardParams p, string folder,
+        HashSet<int>? idFilter = null)
     {
         var all = await filtered.ToListAsync();
+        if (idFilter != null) all = all.Where(c => idFilter.Contains(c.Id)).ToList();
         var prices = await market.LatestTierPrices(folder, p.Grade, all.Select(c => c.Id).ToList());
 
         var priced = all.Where(c => prices.ContainsKey(c.Id) && InPriceRange(prices[c.Id], p));
@@ -416,15 +697,6 @@ public partial class CardsController(
             card.Price = prices.TryGetValue(card.Id, out var v) ? v : null;
         await market.ApplyMarket(cards, folder, p.Grade, p.Trend);
         return cards;
-    }
-
-    // Min/max on a selected tier's shown price. The ungraded case was already
-    // range-filtered in SQL before the in-memory paths run.
-    private async Task<List<CardBase>> FilterByShownPrice(List<CardBase> all, CardParams p, string folder)
-    {
-        if (string.IsNullOrEmpty(p.Grade) || !HasPriceRange(p)) return all;
-        var shown = await market.LatestTierPrices(folder, p.Grade, all.Select(c => c.Id).ToList());
-        return all.Where(c => shown.TryGetValue(c.Id, out var v) && InPriceRange(v, p)).ToList();
     }
 
     private static bool HasPriceRange(CardParams p) => p.MinPrice != null || p.MaxPrice != null;

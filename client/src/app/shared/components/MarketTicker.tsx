@@ -116,12 +116,13 @@ export default function MarketTicker() {
         const up = pct >= 0;
         return (
             <Link
-                key={`${m.game}-${m.id}`}
+                key={`${m.game}-${m.id}-${m.selectedPrinting ?? ''}`}
                 className={`tkc ${up ? 'tkc--up' : 'tkc--down'}`}
-                to={`/catalog/${gameKey(m.game)}/${m.id}`}
+                to={`/catalog/${gameKey(m.game)}/${m.id}` +
+                    (m.selectedPrinting ? `?printing=${encodeURIComponent(m.selectedPrinting)}` : '')}
                 draggable={false}
             >
-                {m.name} {up ? '▲' : '▼'} {up ? '+' : '−'}{Math.abs(pct).toFixed(1)}%
+                {m.name}{m.selectedPrinting ? ` · ${m.selectedPrinting}` : ''} {up ? '▲' : '▼'} {up ? '+' : '−'}{Math.abs(pct).toFixed(1)}%
             </Link>
         );
     });

@@ -56,6 +56,7 @@ builder.Services.AddScoped<NotificationService>();
 builder.Services.AddScoped<AlertEvaluator>();
 builder.Services.AddSingleton<EmailService>();
 builder.Services.AddHostedService<AlertEmailNotifier>();
+builder.Services.AddHostedService<StartupWarmup>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
 builder.Services.AddHttpClient<SpxService>();
 builder.Services.AddCors();
