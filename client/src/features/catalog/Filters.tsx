@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
+
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setRarities, setSets } from "./catalogSlice";
+import { resetParams, setConfidence, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setRarities, setPrintings, setSets } from "./catalogSlice";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
@@ -14,13 +15,24 @@ import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
 import { GAMES as gameOptions } from "../../lib/games";
 
+// Forecast-confidence filter (API values are high|med|low — the same levels the
+// tiles' confidence badge shows, at the shown tier + trend horizon). Radio,
+// defaulting to High: the catalog leads with the model's strongest calls, and
+// 'Any' turns the filter off entirely.
+const CONFIDENCE_OPTIONS = [
+    { value: 'high', label: 'High' },
+    { value: 'med', label: 'Medium' },
+    { value: 'low', label: 'Low' },
+    { value: '', label: 'Any' },
+];
+
 
 type Props = {
-    filtersData: { sets: string[], rarities: string[], hasYear?: boolean }
+    filtersData: { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[] }
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, grade, minPrice, maxPrice, view } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view } = useAppSelector(state => state.catalog);
     const dispatch = useAppDispatch();
 
     // Dropdown mode: the panels collapse behind a full-width toggle — on
@@ -141,6 +153,15 @@ export default function Filters({ filtersData: data }: Props) {
                                     ))}
                                 </select>
                             </div>
+                            <div className="panel">
+                                <span className="field-label">Forecast confidence</span>
+                                <RadioButtonGroup
+                                    selectedValue={confidence[0] ?? ''}
+                                    options={CONFIDENCE_OPTIONS}
+                                    onChange={e => dispatch(setConfidence(
+                                        e.target.value ? [e.target.value] : []))}
+                                />
+                            </div>
                         </div>
                         <div className="panels__column">
                             <div className="panel">
@@ -150,6 +171,19 @@ export default function Filters({ filtersData: data }: Props) {
                                     onChange={(items: string[]) => dispatch(setRarities(items))}
                                 />
                             </div>
+                            {/* Only games that genuinely have printing variants get the
+                                filter (2026-08-28); vocabulary is the game's own, served
+                                by the filters endpoint. */}
+                            {(data.printings?.length ?? 0) > 1 && (
+                                <div className="panel">
+                                    <h4 className="mono panel__title">Printing</h4>
+                                    <CheckBoxButtons
+                                        items={data.printings!}
+                                        checked={printings}
+                                        onChange={(items: string[]) => dispatch(setPrintings(items))}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </div>
                     {/* Footer: Reset + (dropdown-only) Apply, pinned to the bottom of

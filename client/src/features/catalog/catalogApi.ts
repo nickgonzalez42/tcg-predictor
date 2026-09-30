@@ -30,8 +30,9 @@ export const catalogApi = createApi({
                 return { items, pagination };
             }
         }),
-        fetchCardDetails: builder.query<Card, { game: string, id: number }>({
-            query: ({ game, id }) => `cards/${game}/${id}`
+        fetchCardDetails: builder.query<Card, { game: string, id: number, printing?: string }>({
+            query: ({ game, id, printing }) =>
+                `cards/${game}/${id}${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
         }),
         // Search-by-photo: the file goes up as multipart, is embedded server-
         // side, and only the matches come back — the image itself isn't stored.
@@ -42,28 +43,31 @@ export const catalogApi = createApi({
                 return { url: 'cards/image-search', method: 'POST', body };
             }
         }),
-        fetchFilters: builder.query<{ sets: string[], rarities: string[], hasYear?: boolean }, string>({
+        fetchFilters: builder.query<{ sets: string[], rarities: string[], hasYear?: boolean, printings?: string[] }, string>({
             query: (game) => `cards/filters?game=${game}`
         }),
         fetchCardHistory: builder.query<
             { game: string, productId: number, series: Record<string, { date: string, price: number, source?: string }[]> },
-            { game: string, id: number }
+            { game: string, id: number, printing?: string }
         >({
-            query: ({ game, id }) => `cards/${game}/${id}/history`
+            query: ({ game, id, printing }) =>
+                `cards/${game}/${id}/history${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
         }),
         fetchCardForecast: builder.query<
-            { game: string, productId: number, forecasts: Forecast[] },
-            { game: string, id: number }
+            { game: string, productId: number, forecasts: Forecast[], printingCovered?: boolean },
+            { game: string, id: number, printing?: string }
         >({
-            query: ({ game, id }) => `cards/${game}/${id}/forecast`
+            query: ({ game, id, printing }) =>
+                `cards/${game}/${id}/forecast${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
         }),
         // Archived forecasts whose horizon has elapsed — "what the model said
         // back then", drawn on the chart for accuracy review.
         fetchCardForecastHistory: builder.query<
             { game: string, productId: number, forecasts: PastForecast[] },
-            { game: string, id: number }
+            { game: string, id: number, printing?: string }
         >({
-            query: ({ game, id }) => `cards/${game}/${id}/forecast-history`
+            query: ({ game, id, printing }: { game: string, id: number, printing?: string }) =>
+                `cards/${game}/${id}/forecast-history${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
         }),
         fetchCardReasoning: builder.query<
             { game: string, productId: number, prose: string | null },

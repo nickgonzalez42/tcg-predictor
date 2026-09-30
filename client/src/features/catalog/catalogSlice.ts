@@ -2,8 +2,7 @@ import { createSlice } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { trendForSort } from "./sortOptions";
 
-// Catalog opens on the strongest signal: projected % growth over a year.
-export const DEFAULT_ORDER = 'chgPct12Desc';
+export const DEFAULT_ORDER = 'chgUsd1mDesc';   // 1M $ growth: desc (2026-08-16)
 export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
@@ -18,15 +17,21 @@ const initialState: CardParams = {
     pageSize: DEFAULT_PAGE_SIZE,
     sets: [],
     rarities: [],
+    // No confidence filter by default (2026-08-02): the catalog opens on the
+    // whole priced set; the radio narrows to High/Medium/Low on demand.
+    confidence: [],
+    printings: [],
     searchTerm: '',
     orderBy: DEFAULT_ORDER,
     grade: '',
-    // $10 floor by default: the growth sorts rank every card honestly (no
-    // hidden server-side noise gate), so the default view filters out the
-    // penny cards whose % moves are rounding noise. Clearing it shows all.
-    minPrice: '10',
+    // No price floor by default (2026-08-02): every priced card lists. The
+    // growth sorts still rank penny cards honestly — set a Min $ to hide them.
+    minPrice: '',
     maxPrice: '',
-    trend: '1y',   // matches the default 1Y growth sort
+    // Derived from the default sort so the tiles' window always matches the
+    // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
+    // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
+    trend: trendForSort(DEFAULT_ORDER) ?? '1y',
     view: getInitialView()
 }
 
@@ -49,10 +54,11 @@ export const catalogSlice = createSlice({
             if (trend) state.trend = trend;
         },
         setGame(state, action) {
-            // Switching games invalidates the previous game's set/rarity filters.
+            // Switching games invalidates the previous game's set/rarity/printing filters.
             state.game = action.payload;
             state.sets = [];
             state.rarities = [];
+            state.printings = [];   // 2026-08-28: was silently filtering across game switches
             state.searchTerm = '';
             state.pageNumber = 1;
             state.gameInitialized = true;   // an explicit choice wins over defaults
@@ -75,6 +81,16 @@ export const catalogSlice = createSlice({
         },
         setRarities(state, action) {
             state.rarities = action.payload;
+            state.pageNumber = 1;
+        },
+        // Game-agnostic vocabulary (like confidence), so setGame leaves it alone.
+        setPrintings(state, action) {
+            state.printings = action.payload;
+            state.pageNumber = 1;
+        },
+        // Game-agnostic (unlike sets/rarities), so setGame leaves it in place.
+        setConfidence(state, action) {
+            state.confidence = action.payload;
             state.pageNumber = 1;
         },
         setSearchTerm(state, action) {
@@ -119,4 +135,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

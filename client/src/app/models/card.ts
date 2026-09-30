@@ -11,6 +11,9 @@ export type Card = {
     pictureUrl?: string
     attributes: Record<string, string>
     gradedPrices?: GradedPrices
+    printings?: string[]        // variant names, base first (absent = single printing)
+    basePrinting?: string
+    selectedPrinting?: string   // movers rows: this row IS that printing
     ownedCopies?: OwnedCopy[]   // present only in the Owned list; the copies at ownedGrade
     ownedGrade?: string         // Owned list: the condition this tile represents ('' -> undefined)
     ownedQuantity?: number      // Owned list: number of copies at that condition
@@ -22,6 +25,7 @@ export type Card = {
     // Market context for tiles / screener rows, computed for the shown condition
     // tier over the requested trend window (1w|1m|6m|1y).
     priceAsOf?: string          // date of the shown price's latest history point
+    priceMovedAt?: string       // date the base NM price last CHANGED (liquidity caveat)
     sparkline?: number[]        // prices inside the trend window, oldest first
     historyMonths?: number      // months of history, full series (confidence proxy)
     trendPct?: number           // % change across the window
@@ -73,6 +77,7 @@ export type PastForecast = {
     high?: number
     basePrice?: number
     asOf?: string
+    issuedAt?: string     // yyyy-MM-dd the model actually generated it (scored_at)
     scoredAt?: string     // when it was issued
     realizedPrice?: number
 }

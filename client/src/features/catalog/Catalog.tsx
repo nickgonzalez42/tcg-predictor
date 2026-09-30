@@ -52,8 +52,13 @@ export default function Catalog() {
     if (get('searchTerm')) p.searchTerm = get('searchTerm')!;
     if (get('sets')) p.sets = get('sets')!.split(',');
     if (get('rarities')) p.rarities = get('rarities')!.split(',');
+    // 'any' was the filter-cleared sentinel while High was the default; it now
+    // equals the default but old shared links still carry it.
+    if (get('confidence')) p.confidence = get('confidence') === 'any' ? [] : get('confidence')!.split(',');
+    if (get('printings')) p.printings = get('printings')!.split(',');
     if (get('grade')) p.grade = get('grade')!;
-    // minPrice=0 means "floor cleared" — distinct from absent (default $10).
+    // minPrice=0 was the floor-cleared sentinel while $10 was the default; it
+    // now equals the default but old shared links still carry it.
     if (get('minPrice')) p.minPrice = get('minPrice') === '0' ? '' : get('minPrice')!;
     if (get('maxPrice')) p.maxPrice = get('maxPrice')!;
     if (get('pageNumber')) p.pageNumber = +get('pageNumber')!;
@@ -92,8 +97,10 @@ export default function Catalog() {
     if (cardParams.searchTerm) sp.searchTerm = cardParams.searchTerm;
     if (cardParams.sets.length) sp.sets = cardParams.sets.join(',');
     if (cardParams.rarities.length) sp.rarities = cardParams.rarities.join(',');
+    if (cardParams.confidence.length) sp.confidence = cardParams.confidence.join(',');
+    if (cardParams.printings.length) sp.printings = cardParams.printings.join(',');
     if (cardParams.grade) sp.grade = cardParams.grade;
-    if (cardParams.minPrice !== '10') sp.minPrice = cardParams.minPrice || '0';
+    if (cardParams.minPrice) sp.minPrice = cardParams.minPrice;
     if (cardParams.maxPrice) sp.maxPrice = cardParams.maxPrice;
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);

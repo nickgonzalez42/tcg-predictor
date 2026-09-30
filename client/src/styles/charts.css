@@ -210,3 +210,47 @@
   font-size: 11px;
   cursor: pointer;
 }
+
+/* Mobile chart pass (2026-09-13) ------------------------------------------ */
+
+/* Tab rows: single scrollable lines instead of a three-row wrap at 375px. */
+@media (max-width: 767px) {
+  .grade-tabs,
+  .range-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    max-width: 100%;
+  }
+  .grade-tabs::-webkit-scrollbar,
+  .range-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .chart-tabs {
+    gap: var(--space-10);
+  }
+}
+
+/* Fingers need bigger targets than cursors. */
+@media (pointer: coarse) {
+  .chart-legend__key {
+    padding: var(--space-10);
+  }
+  .chart-pastview {
+    min-height: 40px;
+  }
+}
+
+/* Docked tooltip: on narrow screens the tip pins to the bottom of the plot
+   as a single wrapping strip instead of floating over (and hiding) the line. */
+.chart-tip--docked {
+  left: 8px !important;
+  right: 8px;
+  top: auto !important;
+  bottom: 8px;
+  flex-direction: row !important;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+}
