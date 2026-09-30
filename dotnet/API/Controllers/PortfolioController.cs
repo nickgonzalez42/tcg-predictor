@@ -85,27 +85,30 @@ public class PortfolioController(
         var gradeAllocation = Breakdown(c => TierLabel(GradeTiers.PriceTier(c.Grade)));
 
         // ----- Value over time (ownership-gated, prices carried forward) -----
-        // The chart spans from account creation: each copy contributes nothing
-        // before its AddedAt, then its carried-forward market price. The date
-        // axis is the monthly price dates plus the exact add dates (each add is
-        // a visible step up) plus account creation (zero) and today.
+        // Each copy contributes nothing before it was OWNED — AcquiredAt (the
+        // purchase date the user set, defaulting to AddedAt) — then its
+        // carried-forward market price. Cards bought before the account
+        // existed pull the chart's start back to the earliest acquisition, so
+        // the ownership step and the S&P benchmark both begin the day the
+        // dollars were actually spent, not the day the copy was typed in.
         var acctCreated = await store.Users.Where(u => u.UserName == user)
             .Select(u => u.CreatedAt).FirstAsync();
         var acctDate = acctCreated.ToString("yyyy-MM-dd");
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        string AddedDate(TrackedCard c) => c.AddedAt.ToString("yyyy-MM-dd");
+        string OwnedDate(TrackedCard c) => (c.AcquiredAt ?? c.AddedAt).ToString("yyyy-MM-dd");
+        var start = copies.Select(OwnedDate).Append(acctDate).Min(StringComparer.Ordinal)!;
 
         var dates = seriesByKey.Values.SelectMany(s => s.Select(p => p.Date))
-            .Concat(copies.Select(AddedDate))
-            .Append(acctDate).Append(today)
-            .Where(d => string.CompareOrdinal(d, acctDate) >= 0
+            .Concat(copies.Select(OwnedDate))
+            .Append(start).Append(acctDate).Append(today)
+            .Where(d => string.CompareOrdinal(d, start) >= 0
                      && string.CompareOrdinal(d, today) <= 0)
             .Distinct().OrderBy(d => d).ToList();
 
         // One forward pass: dates are ascending, so each copy just advances a
         // cursor through its own date-sorted series (prices carry forward).
         var cursors = copies
-            .Select(c => (Series: SeriesOf(c), Added: AddedDate(c), Idx: -1))
+            .Select(c => (Series: SeriesOf(c), Added: OwnedDate(c), Idx: -1))
             .ToArray();
         var series = new List<(string Date, double Value)>(dates.Count);
         foreach (var date in dates)
@@ -137,20 +140,21 @@ public class PortfolioController(
         }
 
         // ----- Benchmark: the same dollars put into the S&P 500 instead -----
-        // Each copy "buys" SPX on its add date with its cost basis: purchase
-        // price when known, else the card's market price at its grade on the
-        // day it was added (carried forward; the client shows this disclaimer).
-        var spxCloses = await spx.GetCloses(acctDate);
+        // Each copy "buys" SPX on its ACQUIRED date with its cost basis:
+        // purchase price when known, else the card's market price at its grade
+        // on the day it was bought (carried forward; the client shows this
+        // disclaimer). Same day as the copy enters the value series above.
+        var spxCloses = await spx.GetCloses(start);
         double Basis(TrackedCard c)
         {
             if (c.PurchasePrice is > 0) return c.PurchasePrice.Value;
             if (SeriesOf(c) is not { Count: > 0 } s) return 0;
-            var added = AddedDate(c);
-            var at = s.LastOrDefault(p => string.CompareOrdinal(p.Date, added) <= 0);
+            var owned = OwnedDate(c);
+            var at = s.LastOrDefault(p => string.CompareOrdinal(p.Date, owned) <= 0);
             return at.Price > 0 ? at.Price : s[0].Price;  // brand-new card: first known price
         }
         var contribs = copies
-            .Select(c => (Added: AddedDate(c), Basis: Basis(c)))
+            .Select(c => (Added: OwnedDate(c), Basis: Basis(c)))
             .Where(l => l.Basis > 0)
             .ToList();
 
