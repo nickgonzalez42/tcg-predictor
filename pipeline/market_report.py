@@ -11,12 +11,16 @@ Run:  .venv/bin/python market_report.py            # no-op unless Friday
 """
 
 import argparse
+import collections
 import html
 import os
+import re
 import sqlite3
 import statistics
-from datetime import date, datetime, timedelta
-from math import exp
+import sys
+from datetime import date, datetime, timedelta, timezone
+from math import exp, log2
+from urllib.parse import quote
 
 from _paths import DATA_DIR as BASE
 from games import GAMES
@@ -40,14 +44,90 @@ def esc(s):
     return html.escape(str(s), quote=True)
 
 
-def card_link(game, pid, name):
-    return f'<a href="/catalog/{game}/{pid}">{esc(name)}</a>'
+def card_link(game, pid, name, printing=""):
+    href = f"/catalog/{game}/{pid}"
+    if printing:
+        href += f"?printing={quote(printing, safe='')}"
+    return f'<a href="{href}">{esc(name)}</a>'
+
+
+# TCGplayer Near Mint became the ungraded source at the switch; before it had
+# broad daily coverage there is only PriceCharting. The weekly window therefore
+# runs over TCGplayer's broad-crawl days ONLY, so every week-over-week move is
+# TCGplayer-vs-TCGplayer and none straddles the switch seam (a source change that
+# would otherwise read as a market move). Until a full 7 days of NM history exist
+# the window is simply shorter — 2 days on the first post-switch report.
+MIN_TCG_DAILY = 10_000    # a date with >= this many NM points is a real crawl day,
+                          # not the ~350-card weekly backfill series
+
+
+def tcg_broad_dates(pc):
+    """TCGplayer NM crawl days with broad coverage, oldest first."""
+    try:
+        return [r[0] for r in pc.execute(
+            "SELECT date FROM tcg_nm_history WHERE printing='' "
+            "GROUP BY date HAVING COUNT(*) >= ? "
+            "ORDER BY date", (MIN_TCG_DAILY,))]
+    except sqlite3.OperationalError:
+        return []   # table appears after the first NM crawl
+
+
+def synth_series(pc, dates):
+    """(game, pid) -> {date: (price, source)} over `dates`: the synthesized daily
+    ungraded price — TCGplayer Near Mint overriding PriceCharting loose for any
+    day TCGplayer priced (mirrors build_unified_history's splice), PriceCharting
+    filling only days TCGplayer never covered. The report reads its ungraded
+    prices from here, so they match the site's ungraded tier."""
+    if not dates:
+        return {}
+    q = ",".join("?" * len(dates))
+    args = tuple(dates)
+    out = collections.defaultdict(dict)
+    for game, pid, d, p in pc.execute(
+            f"SELECT game, product_id, date, price FROM graded_price_history "
+            f"WHERE printing='' AND grade='ungraded' AND date IN ({q}) AND price > 0", args):
+        out[(game, pid)][d] = (p, "pc")
+    try:
+        for game, pid, d, p in pc.execute(
+                f"SELECT game, product_id, date, price FROM tcg_nm_history "
+                f"WHERE printing='' AND date IN ({q}) AND price > 0", args):
+            out[(game, pid)][d] = (p, "tcg")   # TCGplayer wins the day
+    except sqlite3.OperationalError:
+        pass
+    # LABELED printings move too (2026-08-10): their series are weekly buckets,
+    # so forward-fill the newest point at-or-before each window day (<=10d old)
+    # onto that day. Entity key = (game, pid, printing).
+    try:
+        rows = pc.execute(
+            "SELECT game, product_id, printing, date, price FROM tcg_nm_history "
+            "WHERE printing != '' AND price > 0 AND date <= ? ORDER BY date",
+            (dates[-1],)).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    series = collections.defaultdict(list)
+    for game, pid, pr, d, p in rows:
+        series[(game, pid, pr)].append((d, p))
+    for key, pts in series.items():
+        for day in dates:
+            best = None
+            for d, p in pts:
+                if d <= day:
+                    best = (d, p)
+                else:
+                    break
+            if best and (datetime.strptime(day, "%Y-%m-%d")
+                         - datetime.strptime(best[0], "%Y-%m-%d")).days <= 10:
+                out[key] = out.get(key, {})
+                out[key][day] = (best[1], "tcg")
+    return out
 
 
 def week_window(pc):
-    """(baseline, latest, every snapshot date between them) for the ~7-day window."""
-    dates = [r[0] for r in pc.execute(
-        "SELECT DISTINCT date FROM graded_price_history WHERE grade='ungraded' ORDER BY date")]
+    """(baseline, latest, days) over TCGplayer's broad daily-coverage dates — the
+    last such day and the one nearest 7 days before it, plus every broad day
+    between. TCGplayer-only, so the report's moves match the site and never cross
+    the PriceCharting->TCGplayer seam."""
+    dates = tcg_broad_dates(pc)
     if len(dates) < 2:
         return None, None, []
     latest = dates[-1]
@@ -68,31 +148,211 @@ def visible_cards(game):
     return dict(rows)
 
 
-def game_moves(pc, game, baseline, latest, names):
-    """[(pid, name, old, new, pct)] for visible cards priced on both dates."""
-    rows = pc.execute(
-        "SELECT a.product_id, a.price, b.price FROM graded_price_history a "
-        "JOIN graded_price_history b ON b.game=a.game AND b.product_id=a.product_id "
-        "AND b.grade=a.grade AND b.date=? "
-        "WHERE a.game=? AND a.grade='ungraded' AND a.date=? AND a.price>=?",
-        (latest, game, baseline, MIN_BASE)).fetchall()
+def young_series(pc):
+    """(game, pid) whose base NM series spans < 2 calendar months — brand-new
+    or freshly-repaired cards. Their first weeks are listing prices settling,
+    not market movement (2026-08-22: a prerelease set led the report), so the
+    movers/trends machinery must not rank them."""
+    return {(g, pid) for g, pid, n in pc.execute(
+        "SELECT game, product_id, COUNT(DISTINCT substr(date,1,7)) "
+        "FROM tcg_nm_history WHERE printing='' GROUP BY game, product_id") if n < 2}
+
+
+def game_moves(synth, game, baseline, latest, names, young=frozenset()):
+    """[(pid, name, old, new, pct)] for visible cards with a TCGplayer NM price on
+    BOTH window ends. Same-source only (both 'tcg'): a PriceCharting->TCGplayer
+    pair straddles the switch and would read as a market move, so it's dropped.
+    Young series (< 2 months of data) are excluded — see young_series()."""
     moves = []
-    for pid, old, new in rows:
-        if pid in names and old > 0 and 1 / MAX_WEEK_RATIO <= new / old <= MAX_WEEK_RATIO:
-            moves.append((pid, names[pid], old, new, (new / old - 1) * 100))
+    for key, series in synth.items():
+        g, pid = key[0], key[1]
+        printing = key[2] if len(key) == 3 else ""
+        if g != game or pid not in names or (g, pid) in young:
+            continue
+        b, l = series.get(baseline), series.get(latest)
+        if not b or not l or b[1] != "tcg" or l[1] != "tcg":
+            continue
+        old, new = b[0], l[0]
+        if old >= MIN_BASE and old > 0 and 1 / MAX_WEEK_RATIO <= new / old <= MAX_WEEK_RATIO:
+            name = names[pid] + (f" — {printing}" if printing else "")
+            moves.append((pid, name, old, new, (new / old - 1) * 100, printing))
     return moves
+
+
+# --- trend detection ---------------------------------------------------------
+# The report leads with the GROUPS moving cards — a set, a rarity or art
+# treatment, a character, a stat line — instead of a flat list of individual
+# movers. Individual cards appear as examples inside their trend.
+MIN_TREND_N = 6           # a trend needs at least this many week-priced cards
+TREND_MIN_MEDIAN = 2.0    # ...with at least this median % move
+TREND_MIN_BREADTH = 0.65  # ...and this share moving the same direction
+TREND_EXAMPLES = 2        # linked example cards woven into each trend sentence
+GAME_TRENDS = 4           # groups discussed + charted per game
+
+DIM_LABELS = {"set": "Set", "rarity": "Rarity", "type": "Card type",
+              "color": "Color", "cost": "Cost", "character": "Card family",
+              "art": "Art treatment", "printing": "Printing"}
+
+# Art/finish treatments recognizable from rarity/subtype/name text. (True
+# art-similarity clustering over the CLIP embeddings is a possible upgrade;
+# these labels cover the treatments collectors actually chase.)
+ART_KEYWORDS = [
+    ("manga", "Manga art"), ("special illustration", "Special illustration"),
+    ("illustration rare", "Illustration rare"), ("alternate art", "Alternate art"),
+    ("alt art", "Alternate art"), ("full art", "Full art"),
+    ("textured", "Textured foil"), ("parallel", "Parallel foil"),
+    ("secret", "Secret rare"), ("promo", "Promo"),
+]
+
+
+def art_treatment(rarity, subtypes, name):
+    hay = f"{rarity or ''} {subtypes or ''} {name or ''}".lower()
+    for kw, label in ART_KEYWORDS:
+        if kw in hay:
+            return label
+    return None
+
+
+def character_key(name, clean_name):
+    """Base character/subject name: variants of the same character group
+    together ("Monkey.D.Luffy (001)" and "Monkey.D.Luffy (Alternate Art)"
+    both -> "Monkey.D.Luffy")."""
+    base = (clean_name or name or "").strip()
+    base = re.sub(r"\s*\(.*?\)", "", base)
+    base = base.split(" - ")[0]
+    base = re.sub(r"\s*#\S+$", "", base).strip()
+    return base if len(base) >= 3 else None
+
+
+def card_attrs(game):
+    """pid -> the grouping attributes trend detection slices on. Game DBs
+    don't share one schema (color/cost/subtypes exist only where the game has
+    them), so the query is built from the columns actually present."""
+    con = sqlite3.connect(os.path.join(BASE, GAMES[game]["db"]))
+    have = {r[1] for r in con.execute("PRAGMA table_info(cards)")}
+    want = ["name", "clean_name", "set_name", "rarity", "card_type",
+            "color", "cost", "subtypes"]
+    sel = ", ".join(c if c in have else "NULL" for c in want)
+    out = {}
+    for pid, name, clean, s, r, t, c, cost, subs in con.execute(
+            f"SELECT product_id, {sel} FROM cards"):
+        cost = str(cost).strip() if cost not in (None, "") else ""
+        out[pid] = {
+            "set": (s or "").strip() or None,
+            "rarity": (r or "").strip() or None,
+            "type": (t or "").strip() or None,
+            "color": (c or "").strip() or None,
+            "cost": f"cost {cost}" if cost else None,
+            "character": character_key(name, clean),
+            "art": art_treatment(r, subs, name),
+        }
+    con.close()
+    return out
+
+
+def find_trends(game, moves, attrs):
+    """Attribute groups that moved TOGETHER this week, ranked. Breadth is the
+    qualifier that separates "the set is up" from "one chase card dragged the
+    average": at least TREND_MIN_BREADTH of a group's week-priced members must
+    move the median's direction."""
+    groups = collections.defaultdict(list)
+    for m in moves:
+        pid, printing = m[0], (m[5] if len(m) > 5 else "")
+        a = attrs.get(pid)
+        if not a:
+            continue
+        entity_dims = dict(a)
+        if printing:
+            entity_dims["printing"] = printing   # printings are a trend dim too
+        for dim, val in entity_dims.items():
+            if val:
+                groups[(dim, val)].append(m)
+    trends = []
+    for (dim, val), members in groups.items():
+        n = len(members)
+        if n < MIN_TREND_N:
+            continue
+        med = statistics.median(m[4] for m in members)
+        if abs(med) < TREND_MIN_MEDIAN:
+            continue
+        rising = med > 0
+        same = sum(1 for m in members if (m[4] > 0.5 if rising else m[4] < -0.5))
+        breadth = same / n
+        if breadth < TREND_MIN_BREADTH:
+            continue
+        trends.append({"game": game, "dim": dim, "value": val, "n": n,
+                       "same": same, "median": med, "rising": rising,
+                       "score": abs(med) * breadth * log2(n), "members": members})
+    trends.sort(key=lambda t: -t["score"])
+    # A hot set resurfaces as its rarity/character/cost slices — keep only the
+    # highest-scoring framing of any largely-overlapping pack of cards.
+    kept, seen = [], []
+    for t in trends:
+        ids = {m[0] for m in t["members"]}
+        if any(len(ids & s) / len(ids) > 0.6 for s in seen):
+            continue
+        kept.append(t)
+        seen.append(ids)
+    return kept
+
+
+def short_label(value, n=20):
+    v = str(value)
+    return v if len(v) <= n else v[:n - 1] + "…"
+
+
+# Trend dims that map onto a real catalog filter: the group name links to the
+# catalog with that filter applied. sets/rarities are comma-split lists in the
+# catalog's URL scheme, so values containing a comma stay unlinked.
+CATALOG_FILTER_PARAM = {"set": "sets", "rarity": "rarities", "character": "searchTerm"}
+
+
+def group_link(t):
+    label = f"<strong>{esc(t['value'])}</strong>"
+    param = CATALOG_FILTER_PARAM.get(t["dim"])
+    if not param or (param != "searchTerm" and "," in t["value"]):
+        return label
+    return (f'<a href="/catalog?game={t["game"]}&amp;{param}={quote(t["value"], safe="")}">'
+            f"{label}</a>")
+
+
+def trend_phrase(t):
+    """One prose sentence for a trend — the group is the subject (linked to
+    the catalog filtered to it, where a filter exists), individual cards
+    appear only as linked examples inside it."""
+    label = DIM_LABELS[t["dim"]].lower()
+    # Distinct display names only: a card-family trend's printings often share
+    # one name, and "Essence Warden and Essence Warden" reads broken.
+    ex, seen = [], set()
+    for m in sorted(t["members"], key=lambda m: -m[4] if t["rising"] else m[4]):
+        if m[1] not in seen:
+            ex.append(m)
+            seen.add(m[1])
+        if len(ex) == TREND_EXAMPLES:
+            break
+    links = " and ".join(
+        f"{card_link(t['game'], m[0], m[1], m[5] if len(m) > 5 else '')} ({pct(m[4])})"
+        for m in ex)
+    direction = "up" if t["rising"] else "down"
+    # "tracked" not "week-priced" (2026-08-29, user report): the count excludes
+    # BOTH cards missing a price on either end of the week AND sub-$5 cards
+    # (whose % moves are noise) — one word can't carry that, the legend does.
+    return (f"{group_link(t)} ({label}): {t['same']} of "
+            f"{t['n']} tracked cards {direction}, median {pct(t['median'])} "
+            f"— e.g. {links}.")
 
 
 def forecast_corner(pred, games_live):
     """Top model 1M forecast gainers across live games (base >= $10)."""
     rows = pred.execute(
-        "SELECT game, product_id, base_price, forecast_price FROM forecasts "
+        "SELECT game, product_id, printing, base_price, forecast_price FROM forecasts "
         "WHERE target='ungraded' AND horizon='1m' AND base_price>=10 "
         "ORDER BY forecast_price/base_price DESC LIMIT 30").fetchall()
     picks = []
-    for game, pid, base, fcst in rows:
+    for game, pid, printing, base, fcst in rows:
         if game in games_live and pid in games_live[game]:
-            picks.append((game, pid, games_live[game][pid], base, fcst))
+            name = games_live[game][pid] + (f" — {printing}" if printing else "")
+            picks.append((game, pid, name, base, fcst, printing))
         if len(picks) == OVERALL_N:
             break
     return picks
@@ -123,7 +383,7 @@ def live_accuracy(pred, horizon, days, by_game=False):
     grade instantly against old history — real cohorts take wall-clock time,
     so without this gate the report would claim matured 6-month calls months
     before the first one could exist."""
-    where = ("substr(model_version,1,2) != '__' AND horizon = ? "
+    where = ("printing='' AND substr(model_version,1,2) != '__' AND horizon = ? "
              "AND date(substr(scored_at,1,10)) <= date('now', ?)")
     args = (horizon, f"-{days} days")
     if by_game:
@@ -166,18 +426,45 @@ def direction_split(pred, live):
     1-month cohort; otherwise the backtest vintages, matching the rest of the
     report card's population."""
     if live:
-        where = ("substr(model_version,1,2) != '__' AND horizon = '1m' "
+        where = ("printing='' AND substr(model_version,1,2) != '__' AND horizon = '1m' "
                  "AND date(substr(scored_at,1,10)) <= date('now', '-28 days')")
     else:
         where = "model_version LIKE '__bt-%' AND length(model_version) = 12 AND horizon = '1m'"
     return pred.execute(DIRECTION_SPLIT_SELECT + where).fetchone()
 
 
+def weekly_coverage(pred, weeks=8):
+    """Band coverage week over week: the nightly dated 1-month cohorts
+    (ungraded tier) bucketed by the Monday of the week they came DUE.
+
+    Only the dated stream matures continuously, so it's the only honest
+    weekly series: month-bucket rows (graded tiers, early ungraded vintages)
+    all land on the 1st and would spike whichever week contains it. The
+    day-01 exclusion drops those stragglers from the ungraded slice too, at
+    the cost of ~1/30 of genuine dated rows — a rounding error at cohort
+    sizes, and unbiased for coverage."""
+    rows = pred.execute(
+        "SELECT date(substr(realized_at, 1, 10), '-6 days', 'weekday 1') wk, "
+        "  COUNT(*), "
+        "  AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END), "
+        "  AVG(ABS(ret - realized_ret)), "
+        f" SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
+        f" AVG(CASE WHEN {DECISIVE} THEN "
+        "   (CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END) "
+        "FROM forecast_archive "
+        "WHERE horizon = '1m' AND realized_ret IS NOT NULL AND target = 'ungraded' "
+        "  AND printing = '' AND substr(model_version, 1, 2) != '__' "
+        "  AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
+        "GROUP BY wk HAVING COUNT(*) >= " + str(MIN_GRADED) +
+        " ORDER BY wk DESC LIMIT ?", (weeks,)).fetchall()
+    return rows[::-1]
+
+
 # ---- inline SVG bar charts -------------------------------------------------
 # Self-contained horizontal bars embedded in the stored report HTML. Colors
 # ride the site's CSS variables (with hard fallbacks), so they follow the
 # theme without any client-side chart code.
-CHART_W, ROW_H, LABEL_W, CHART_PAD = 640, 26, 150, 8
+CHART_W = 640
 
 
 def chart_title(title, w=CHART_W):
@@ -187,48 +474,54 @@ def chart_title(title, w=CHART_W):
             f"fill='var(--text-muted, #8b96ad)'>{esc(title.upper())}</text>")
 
 
-def bar_chart(rows, unit="%", signed=True, color=None, title=None):
+def bar_chart(rows, unit="%", signed=True, color=None, title=None, decimals=1):
     """[(label, value, annotation)] -> horizontal bar SVG string.
 
-    signed=True draws a diverging chart around a zero line (positive green,
-    negative red); color forces one fill for all bars (unsigned metrics like
-    error size, where green/red would editorialize).
+    Each row is TWO lines — label above, bar below, value+annotation
+    right-aligned on the label line — so labels, values, and bars never share
+    a horizontal band (640 viewBox units can't fit set names + annotations +
+    bars side by side without collisions). signed=True colors by direction
+    and, when signs are mixed, diverges around a center zero line; a chart
+    whose values all share one sign anchors bars to the zero EDGE (left for
+    gains, right for losses) so the full width carries resolution. color
+    forces one fill (unsigned metrics like error size, where green/red would
+    editorialize).
     """
     if not rows:
         return ""
     top = 20 if title else 0
-    h = ROW_H * len(rows) + CHART_PAD * 2 + top
+    LABEL_H, BAR_H, GAP, PAD = 15, 12, 13, 8
+    row_h = LABEL_H + BAR_H + GAP
+    h = top + PAD * 2 + row_h * len(rows) - GAP
     span = max(abs(v) for _, v, _ in rows) or 1.0
-    has_neg = signed and any(v < 0 for _, v, _ in rows)
-    labels = [(f"{v:+.1f}{unit}" if signed else f"{v:.1f}{unit}")
-              + (f"  {note}" if note else "") for _, v, note in rows]
-    # Right gutter sized to the longest annotation (mono-typeset, ~6.6px/char
-    # at 11px) so a full-width bar's label never runs past the viewBox.
-    gutter = max(110, int(max(map(len, labels)) * 6.6) + 14)
-    plot_w = CHART_W - LABEL_W - gutter
-    zero_x = LABEL_W + (plot_w / 2 if has_neg else 0)
-    scale = (plot_w / 2 if has_neg else plot_w) / span
+    neg = signed and any(v < 0 for _, v, _ in rows)
+    pos = not signed or any(v >= 0 for _, v, _ in rows)
+    mixed = neg and pos
+    plot_w = CHART_W - PAD * 2
+    zero_x = PAD + (plot_w / 2 if mixed else (plot_w if neg else 0))
+    scale = (plot_w / 2 if mixed else plot_w) / span
     parts = [f"<svg class='report-chart' viewBox='0 0 {CHART_W} {h}' "
              f"role='img' xmlns='http://www.w3.org/2000/svg'>"]
     if title:
         parts.append(chart_title(title))
-    if has_neg:
-        parts.append(f"<line x1='{zero_x}' y1='{CHART_PAD + top}' x2='{zero_x}' y2='{h - CHART_PAD}' "
+    y = PAD + top
+    if mixed:
+        parts.append(f"<line x1='{zero_x}' y1='{y}' x2='{zero_x}' y2='{h - PAD}' "
                      "stroke='var(--border, #2e3a52)'/>")
-    y = CHART_PAD + top
-    for (label, v, _note), text in zip(rows, labels):
-        bw = max(abs(v) * scale, 1.0)
+    for label, v, note in rows:
+        ly = y + LABEL_H - 4
+        vtxt = (f"{v:+.{decimals}f}{unit}" if signed else f"{v:.{decimals}f}{unit}") \
+            + (f" · {note}" if note else "")
+        parts.append(f"<text x='{PAD}' y='{ly}' font-size='12' "
+                     f"fill='var(--text, #e8ecf4)'>{esc(short_label(label, 58))}</text>")
+        parts.append(f"<text x='{CHART_W - PAD}' y='{ly}' text-anchor='end' font-size='11' "
+                     f"fill='var(--text-muted, #8b96ad)'>{esc(vtxt)}</text>")
+        bw = max(abs(v) * scale, 1.5)
         x = zero_x - bw if v < 0 else zero_x
         fill = color or ("var(--down, #ff7a7a)" if v < 0 else "var(--up, #3fd98a)")
-        cy = y + ROW_H / 2 + 4
-        parts.append(f"<text x='{LABEL_W - 8}' y='{cy}' text-anchor='end' font-size='12' "
-                     f"fill='var(--text, #e8ecf4)'>{esc(label)}</text>")
-        parts.append(f"<rect x='{x:.1f}' y='{y + 5}' width='{bw:.1f}' height='{ROW_H - 10}' "
-                     f"rx='2' fill='{fill}'/>")
-        tx, anchor = (zero_x - bw - 6, "end") if v < 0 else (zero_x + bw + 6, "start")
-        parts.append(f"<text x='{tx:.1f}' y='{cy}' text-anchor='{anchor}' font-size='11' "
-                     f"fill='var(--text-muted, #8b96ad)'>{esc(text)}</text>")
-        y += ROW_H
+        parts.append(f"<rect x='{x:.1f}' y='{y + LABEL_H}' width='{bw:.1f}' "
+                     f"height='{BAR_H}' rx='2' fill='{fill}'/>")
+        y += row_h
     parts.append("</svg>")
     return "".join(parts)
 
@@ -238,18 +531,23 @@ GAME_COLORS = ["#3d7dca", "#ffcb05", "#3fd98a", "#ff7a7a",
                "#c678dd", "#ff9e64", "#4dd0e1", "#f06292"]
 
 
-def game_week_series(pc, game, names, dates):
-    """% change vs the window's first snapshot, per snapshot day — the MEAN
-    across this game's cards priced both days (None where too few). Mean, not
-    median: most cards don't reprice on any given day, so the median is
-    pinned to exactly 0 and hides the market's drift."""
+def game_week_series(synth, game, names, dates):
+    """% change vs the window's first day, per day — the MEAN across this game's
+    cards with a TCGplayer NM price on both that day and the first (None where too
+    few). TCGplayer-only points, so the line never jumps on a source change. Mean,
+    not median: most cards don't reprice on any given day, so the median is pinned
+    to exactly 0 and hides the market's drift."""
     per_card = {}
-    for pid, d, price in pc.execute(
-            "SELECT product_id, date, price FROM graded_price_history "
-            "WHERE game=? AND grade='ungraded' AND date>=? AND date<=? AND price>0",
-            (game, dates[0], dates[-1])):
-        if pid in names:
-            per_card.setdefault(pid, {})[d] = price
+    for key, series in synth.items():
+        # Base printings only: synth mixes (game, pid) base keys with
+        # (game, pid, printing) labeled keys (2026-08-10); labeled series are
+        # forward-filled weekly buckets and would double-count card families
+        # in the game index. (Unpacking key as a 2-tuple crashed the first
+        # printing-aware Friday generation, 2026-08-14.)
+        g, pid = key[0], key[1]
+        if g != game or len(key) == 3 or pid not in names:
+            continue
+        per_card[pid] = {d: p for d, (p, src) in series.items() if src == "tcg"}
     base = {pid: s[dates[0]] for pid, s in per_card.items()
             if s.get(dates[0], 0) >= MIN_BASE}
     out = []
@@ -305,6 +603,12 @@ def line_chart(dates, series, title=None):
     labels.sort()
     for i in range(1, len(labels)):
         labels[i][0] = max(labels[i][0], labels[i - 1][0] + 13)
+    # The forward pass only pushes DOWN — a cluster near the floor runs off
+    # the canvas. Clamp the bottom and push the pile back up.
+    if labels:
+        labels[-1][0] = min(labels[-1][0], H - 8)
+        for i in range(len(labels) - 2, -1, -1):
+            labels[i][0] = min(labels[i][0], labels[i + 1][0] - 13)
     for y, text, color in labels:
         parts.append(f"<text x='{LX + plot_w + 8}' y='{y + 4:.1f}' font-size='11' "
                      f"fill='{color}'>{esc(text)}</text>")
@@ -320,8 +624,17 @@ def pct(v):
     return f"{v:+.1f}%"
 
 
-def build_report(force=False):
-    today = date.today()
+def build_report(force=False, as_of=None):
+    # --date pins the report's slug/title when REGENERATING a past report (a
+    # Saturday regen of Friday's report must update the Friday slug, not mint
+    # a new Saturday one).
+    # No --date: the run's nominal day is the UTC date (2026-08-14 site-wide
+    # decision): the 22:00 CDT nightly is 03:00 UTC, so the whole run shares
+    # one UTC day. The Thursday-night run IS Friday in UTC — its model block
+    # (Friday ~10:00 UTC on the trainer) generates the report, which is
+    # therefore LIVE on Friday morning instead of Saturday.
+    today = (date.fromisoformat(as_of) if as_of
+             else datetime.now(timezone.utc).date())
     if today.weekday() != 4 and not force:   # 4 = Friday
         print("Not Friday — skipping (use --force to write anyway).")
         return
@@ -330,8 +643,13 @@ def build_report(force=False):
     pred = sqlite3.connect(PRED_DB)
     baseline, latest, window_dates = week_window(pc)
     if not baseline or baseline == latest:
-        print("Not enough snapshot history for a weekly window — skipping.")
+        print("Not enough TCGplayer NM history for a weekly window yet — skipping.")
         return
+    # Daily ungraded prices (TCGplayer NM over PriceCharting) for the window days,
+    # built once and shared by the movers tables and the per-game line chart.
+    synth = synth_series(pc, window_dates)
+    young = young_series(pc)
+    print(f"excluding {len(young)} young series (<2 months) from movers/trends")
 
     games_live = {}
     per_game = {}
@@ -340,7 +658,7 @@ def build_report(force=False):
         names = visible_cards(game)
         if not names:
             continue
-        moves = game_moves(pc, game, baseline, latest, names)
+        moves = game_moves(synth, game, baseline, latest, names, young)
         if not moves:
             continue
         games_live[game] = names
@@ -367,35 +685,38 @@ def build_report(force=False):
                f"and {downs:,} fell an average of {abs(avg_loss):.1f}%.")
 
     body = [f"<p class='report-lede'>{esc(summary)} Price window: {baseline} to {latest}, "
-            f"ungraded market prices.</p>"]
+            f"ungraded market prices.</p>",
+            # Legend for "tracked" (2026-08-29, user report: '12 of 15' read as
+            # arbitrary): the count is smaller than the full set on purpose,
+            # and the reader deserves to know both reasons once, up front.
+            "<p class='report-note'>“Tracked” cards are those with a market price "
+            "on both ends of the week <em>and</em> worth at least $5 at the start "
+            "— cheaper cards are left out because a few cents of movement "
+            "reads as a large, meaningless percentage. A group like “12 of 15 "
+            "tracked” may belong to a bigger set; the rest simply "
+            "couldn’t be measured honestly this week.</p>"]
 
-    top = sorted(all_moves, key=lambda m: -m[5])[:OVERALL_N]
-    bottom = sorted(all_moves, key=lambda m: m[5])[:OVERALL_N]
-    for label, rows in (("Biggest gainers", top), ("Biggest losers", bottom)):
-        body.append(f"<h2>{label} this week</h2><table class='report-table'>"
-                    "<thead><tr><th>Card</th><th>Then</th><th>Now</th><th>Move</th></tr></thead><tbody>")
-        for game, pid, name, old, new, p in rows:
-            body.append(f"<tr><td>{card_link(game, pid, name)} "
-                        f"<span class='report-game'>{esc(GAMES[game]['label'])}</span></td>"
-                        f"<td>{money(old)}</td><td>{money(new)}</td><td>{pct(p)}</td></tr>")
-        body.append("</tbody></table>")
+    # Trends are computed per game and each game is discussed exactly ONCE.
+    # Individual cards never get their own table — they appear only as linked
+    # examples inside their group's sentence.
+    trends_by_game = {g: find_trends(g, m, card_attrs(g)) for g, m in per_game.items()}
 
-    # Overall game movement: each game's median price index across the week's
-    # daily snapshots, drawn as one line per game.
+    # The week-drift line chart sits directly under the lede: one overview
+    # visual, then the per-game sections in the chart's own order (steepest
+    # weekly move first, so the legend order matches the reading order).
     series = []
-    for i, (game, _moves) in enumerate(sorted(per_game.items())):
-        ys = game_week_series(pc, game, games_live[game], window_dates)
+    drift = {}
+    for i, game in enumerate(sorted(per_game)):
+        ys = game_week_series(synth, game, games_live[game], window_dates)
         if any(v is not None for v in ys):
+            drift[game] = next(v for v in reversed(ys) if v is not None)
             series.append((GAMES[game]["label"], ys, GAME_COLORS[i % len(GAME_COLORS)]))
     if series:
-        # steepest weekly move first, so the legend order carries information
         series.sort(key=lambda s: -abs(next(v for v in reversed(s[1]) if v is not None)))
-        body.append("<h2>This week by game</h2>"
-                    "<p>Average price change across each game's tracked cards, day by "
-                    "day through the week.</p>"
-                    + line_chart(window_dates, series, title="Price drift this week by game"))
+        body.append(line_chart(window_dates, series, title="Price drift this week by game"))
 
-    for game, moves in per_game.items():
+    for game in sorted(per_game, key=lambda g: -abs(drift.get(g, 0.0))):
+        moves = per_game[game]
         ggains = [m[4] for m in moves if m[4] > 0.5]
         glosses = [m[4] for m in moves if m[4] < -0.5]
         gups, gdowns = len(ggains), len(glosses)
@@ -405,14 +726,23 @@ def build_report(force=False):
                     f"<p>{gups:,} of {len(moves):,} tracked cards rose this week "
                     f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
                     f"(down an average of {abs(gavg_loss):.1f}%).</p>")
-        gtop = sorted(moves, key=lambda m: -m[4])[:TOP_N]
-        gbot = sorted(moves, key=lambda m: m[4])[:TOP_N]
-        body.append("<table class='report-table'>"
-                    "<thead><tr><th>Card</th><th>Then</th><th>Now</th><th>Move</th></tr></thead><tbody>")
-        for pid, name, old, new, p in gtop + gbot:
-            body.append(f"<tr><td>{card_link(game, pid, name)}</td>"
-                        f"<td>{money(old)}</td><td>{money(new)}</td><td>{pct(p)}</td></tr>")
-        body.append("</tbody></table>")
+        gts = trends_by_game.get(game, [])[:GAME_TRENDS]
+        if gts:
+            # One line per trend, direction-marked, rising first.
+            for t in sorted(gts, key=lambda t: (not t["rising"], -abs(t["median"]))):
+                marker = ("<span class='report-up'>▲</span>" if t["rising"]
+                          else "<span class='report-down'>▼</span>")
+                body.append(f"<p class='report-trendline'>{marker} {trend_phrase(t)}</p>")
+            rows = [(t["value"], t["median"], f"{t['same']}/{t['n']} cards")
+                    for t in sorted(gts, key=lambda t: -t["median"])]
+            body.append(bar_chart(rows, signed=True,
+                                  title=f"{GAMES[game]['label']}: group moves this week — median %"))
+        else:
+            bt = max(moves, key=lambda m: m[4])
+            wt = min(moves, key=lambda m: m[4])
+            body.append("<p>No group-wide trend stood out this week — movement was "
+                        f"scattered. The outliers: {card_link(game, bt[0], bt[1], bt[5] if len(bt) > 5 else '')} "
+                        f"({pct(bt[4])}) and {card_link(game, wt[0], wt[1], wt[5] if len(wt) > 5 else '')} ({pct(wt[4])}).</p>")
 
     picks = forecast_corner(pred, games_live)
     if picks:
@@ -420,8 +750,8 @@ def build_report(force=False):
                     "<p>The cards our 1-month model is most optimistic about right now:</p>"
                     "<table class='report-table'>"
                     "<thead><tr><th>Card</th><th>Current</th><th>1M forecast</th><th>Implied</th></tr></thead><tbody>")
-        for game, pid, name, base, fcst in picks:
-            body.append(f"<tr><td>{card_link(game, pid, name)} "
+        for game, pid, name, base, fcst, printing in picks:
+            body.append(f"<tr><td>{card_link(game, pid, name, printing)} "
                         f"<span class='report-game'>{esc(GAMES[game]['label'])}</span></td>"
                         f"<td>{money(base)}</td><td>{money(fcst)}</td>"
                         f"<td>{pct((fcst / base - 1) * 100)}</td></tr>")
@@ -468,6 +798,37 @@ def build_report(force=False):
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("</tbody></table>")
+
+        # Week over week (2026-09-27, user request): the same calibration
+        # story as a trend, not a snapshot. Nightly dated cohorts only — see
+        # weekly_coverage() — so every row is a true ~28-day forecast.
+        wow = weekly_coverage(pred)
+        if len(wow) >= 2:
+            this_monday = (today - timedelta(days=today.weekday())).isoformat()
+            def wk_label(wk):
+                d = date.fromisoformat(wk)
+                return f"{d.strftime('%b')} {d.day}" + (" (so far)" if wk == this_monday else "")
+            body.append("<h3>Week over week: band coverage</h3>"
+                        "<p>Each row is the nightly 1-month forecasts that came due "
+                        "that week, graded against ungraded market prices (graded "
+                        "tiers settle on the 1st of the month, so they can't be "
+                        "read weekly). 80% is perfect calibration &mdash; higher "
+                        "means cautious bands, lower means overconfident.</p>")
+            body.append("<table class='report-table'>"
+                        "<thead><tr><th>Week of</th><th>Graded</th><th>80% band</th>"
+                        "<th>Typical miss</th><th>Direction</th></tr></thead><tbody>")
+            for wk, n_wk, hit, mae, dir_n, dir_acc in wow:
+                body.append(f"<tr><td>{wk_label(wk)}</td><td>{n_wk:,}</td>"
+                            f"<td>{hit * 100:.1f}%</td>"
+                            f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                            f"<td>{dir_cell(dir_acc)}</td></tr>")
+            body.append("</tbody></table>")
+            body.append(bar_chart(
+                [(wk_label(wk), hit * 100, f"of {n_wk:,}")
+                 for wk, n_wk, hit, _mae, _dn, _da in wow],
+                signed=False, color="var(--primary, #3d7dca)",
+                title="80% band coverage by week — 80% is perfect calibration"))
+
         by_game = [r for r in live_accuracy(pred, "1m", 28, by_game=True) if r[0] in GAMES]
     else:
         bt = backtest_accuracy(pred)
@@ -525,7 +886,11 @@ def build_report(force=False):
         if down_acc is not None:
             split_rows.append(("Predicted fall", down_acc * 100, f"of {down_n:,} down-calls"))
         split_rows.append(("Overall", all_acc * 100, f"of {all_n:,} calls"))
+        # Two decimals here (2026-08-29, user report): up/down/overall accuracy
+        # can legitimately near-tie, and at one decimal a real tie reads as a
+        # copy-paste bug (all three showed "53.7%").
         body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
+                              decimals=2,
                               title=f"Direction accuracy: up vs down calls{split_tag} — 50% is a coin flip"))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
@@ -545,4 +910,15 @@ def build_report(force=False):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description="Weekly market report generator")
     ap.add_argument("--force", action="store_true", help="write even if today isn't Friday")
-    build_report(force=ap.parse_args().force)
+    ap.add_argument("--date", help="report date YYYY-MM-DD (regenerate a past "
+                                   "report under ITS slug instead of today's)")
+    args = ap.parse_args()
+    # Non-fatal in the nightly: the report is a nice-to-have and runs at ~step 20
+    # of the daily refresh, BEFORE the deploy. An error here must not abort the
+    # run (weekly_refresh exits on any non-zero step) and cost the night's push.
+    try:
+        build_report(force=args.force, as_of=args.date)
+    except Exception as e:
+        import traceback
+        print(f"market_report: non-fatal error: {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc()

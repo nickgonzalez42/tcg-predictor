@@ -7,11 +7,14 @@
     <meta name="theme-color" content="#101623" />
 
     <!-- SEO. Per-page titles/descriptions are set client-side (usePageMeta);
-         these are the crawler-visible defaults. TODO: swap SITE_URL here, in
-         sitemap.xml, and robots.txt when the domain is chosen. -->
+         these are the crawler-visible defaults for the SPA shell. Reports and
+         guides are ALSO served as real static HTML (Caddy file-first from
+         /srv/tcg/static — see pipeline/report_pages.py), so the site's
+         editorial content is crawlable without JavaScript. -->
     <title>CardStock: Trading Card Price Predictions</title>
     <meta name="description" content="AI price predictions for Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards. See where card prices are headed one month to a year out, with graded price history and a portfolio that benchmarks against the S&P 500." />
     <link rel="canonical" href="https://cardstock.guide/" />
+    <meta name='impact-site-verification' value='7bff3025-2f3e-4682-9142-9dbdfc5ec089'>
 
     <!-- Open Graph (Facebook, Discord, Slack, iMessage…) -->
     <meta property="og:type" content="website" />

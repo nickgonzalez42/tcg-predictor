@@ -10,7 +10,7 @@ export default function AboutPage() {
       <header className="article__head">
         <h1 className="article__title">How the forecasts work</h1>
         <div className="mono article__meta">
-          Updated July 2026 · model version forecast-deep-v4.4 · retrained daily
+          Updated August 2026 · model version forecast-deep-v4.4 · retrained daily
         </div>
         <p className="article__lede">
           CardStock treats trading cards like a market you can actually study. Every card gets a
@@ -42,6 +42,15 @@ export default function AboutPage() {
           <em>log-return</em>, r = log(P<sub>t+h</sub> / P<sub>t</sub>), and shows you the target
           price P<sub>t</sub>·e<sup>r</sup>.
         </p>
+        <p>
+          One thing you will sometimes see is a card with <em>no</em> forecast. Brand-new cards
+          — a set that just released, or a card whose price data we recently repaired — carry no
+          prediction until they have at least two months of clean price history. We tested
+          whether a new card's first weeks can be predicted from how similar cards launched, and
+          the honest answer was: not well enough to publish. So a young card shows its price and
+          nothing more, rather than a guess dressed up as a forecast. A clearly-labeled early
+          estimate for new cards, with its own public track record, is in testing.
+        </p>
       </section>
 
       <section className="panel article__section">
@@ -49,12 +58,22 @@ export default function AboutPage() {
         <p>
           The forecasts are only as trustworthy as the prices behind them, so both sources are
           public and checkable. What each card <em>is</em> (names, sets, rarities, stat lines,
-          artwork) comes from TCGplayer's catalog. What each card has <em>cost</em> comes from
-          PriceCharting: monthly per-grade price history reaching back to roughly 2020 (ungraded
-          plus Grade 7, 8, 9, 9.5, and PSA/BGS/CGC/SGC 10), refreshed with daily snapshots. The
-          two are joined by exact product id, and a sanity check quarantines any match whose price
-          is off from the card's historical reference by 25x or more, so a bad match leaves a card
-          unpriced rather than mispriced.
+          artwork) comes from TCGplayer's catalog. What each card <em>costs</em> comes from two
+          places with a clear division of labor: raw (ungraded) prices are TCGplayer's own
+          sales-backed market price, collected daily; graded prices (Grade 7 through PSA/BGS/CGC
+          10) come from PriceCharting's per-grade sales history, which reaches back to roughly
+          2020. The two are joined by exact product id, and a sanity check quarantines any match
+          whose price is off from the card's historical reference by 25x or more, so a bad match
+          leaves a card unpriced rather than mispriced.
+        </p>
+        <p>
+          Prices also police each other. A market price is only trusted while real sales stand
+          behind it — a listing nobody buys can sit frozen at any number, high or low. Every
+          night the two sources are compared in both directions, and a card whose TCGplayer
+          price has stopped moving while sales elsewhere disagree with it is flagged and
+          reviewed; if the listing turns out to be fiction, the card's raw price switches to the
+          sales-backed source instead. When neither source has defensible data, the card shows
+          no price at all — we would rather show you nothing than a made-up number.
         </p>
       </section>
 
@@ -105,9 +124,7 @@ export default function AboutPage() {
           HistGradientBoostingRegressor), which handles cards with missing history gracefully and
           captures the way these signals interact. Higher-priced cards carry more training weight,
           so accuracy lands where the dollars are. All three horizons are trained directly on
-          historical outcomes. A 1-week forecast is on the roadmap: daily price collection began
-          in July 2026, and once a few months of weekly history accrues, a true weekly model
-          will start training on real week-over-week outcomes and join the lineup.
+          historical outcomes.
         </p>
       </section>
 

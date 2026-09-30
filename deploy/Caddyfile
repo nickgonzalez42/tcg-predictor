@@ -18,6 +18,41 @@ cardstock.guide {
 		reverse_proxy 127.0.0.1:5000
 	}
 
+	# Crawler-visible static pages (2026-08-29, AdSense "low value content"
+	# fix): weekly reports + guides exist as real HTML in /srv/tcg/static —
+	# served file-first, so /reports/{slug} and /guides/{name} work without
+	# JavaScript. Anything without a file falls through to the SPA.
+	@static-pages {
+		path /reports/* /guides/*
+		file {
+			root /srv/tcg/static
+			try_files {path}.html {path}
+		}
+	}
+	handle @static-pages {
+		root * /srv/tcg/static
+		try_files {path}.html {path}
+		file_server
+	}
+
+	# Dynamic rendering for crawlers (2026-09-26): bots receive prerendered
+	# static HTML at the SAME URLs — equivalent content, regenerated on this
+	# box by /srv/tcg/prerender_pages.py after every data push. Humans get
+	# the SPA. Pages without a prerender file fall through to the SPA.
+	@bots {
+		header_regexp ua User-Agent (?i)(googlebot|adsbot|mediapartners|apis-google|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|gptbot|ccbot|claudebot|perplexitybot)
+		path / /about /privacy /terms /contact /catalog/*
+		file {
+			root /srv/tcg/static
+			try_files /prerender{path}.html /prerender{path}index.html
+		}
+	}
+	handle @bots {
+		root * /srv/tcg/static
+		rewrite {http.matchers.file.relative}
+		file_server
+	}
+
 	handle {
 		root * /srv/tcg/client
 		try_files {path} /index.html

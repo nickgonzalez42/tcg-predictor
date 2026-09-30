@@ -9,7 +9,7 @@
 //   3. Put the same id in client/public/ads.txt (replace the placeholder).
 //   4. After approval, create ad units and put their slot ids in the
 //      <AdSlot slot="..."/> placements (Catalog, CardDetails).
-export const ADSENSE_CLIENT = "";   // e.g. "ca-pub-1234567890123456"
+export const ADSENSE_CLIENT = "ca-pub-3270328826867583";   // matches index.html + public/ads.txt (2026-09-26)
 
 let loaded = false;
 
