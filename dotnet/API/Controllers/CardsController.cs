@@ -459,18 +459,42 @@ public partial class CardsController(
         horizon = horizon is "mix" or "1m" or "6m" ? horizon : "12m";
         trend = trend == null ? null : CardMarketData.NormalizeTrend(trend);   // null = per-game default
 
-        var result = await cache.GetOrCreateAsync($"movers:{count}:{horizon}:{trend}:{perGame}", entry =>
+        var key = $"movers:{count}:{horizon}:{trend}:{perGame}";
+        if (cache.TryGetValue(key, out object? hit)) return Ok(hit);
+
+        // SINGLE-FLIGHT across every movers key: GetOrCreateAsync runs the
+        // factory once PER CALLER, so concurrent cold requests — the homepage
+        // alone fires three (ticker, grid, hero) — each launched their own
+        // cross-database scan and thrashed the box's two vCPUs (measured
+        // 2026-09-30: two parallel recomputes took 119s/132s where one alone
+        // takes ~25s). One gate serializes the recomputes; waiters re-check
+        // the cache and leave with the finished result.
+        await MoversGate.WaitAsync();
+        try
         {
-            // The ranking's inputs change once per day, at the nightly data
-            // push — which restarts this process and empties the cache. A day
-            // is therefore "until the data actually changes"; the old 5-minute
-            // TTL made every quiet stretch of the day re-pay the ~25s cold
-            // recompute (cold-homepage report 2026-08-27).
-            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24);
-            return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl);
-        });
-        return Ok(result);
+            var result = await cache.GetOrCreateAsync(key, entry =>
+            {
+                // The ranking's inputs change only when a data push swaps the
+                // DBs, and every push restarts this process — so the cache is
+                // valid for the PROCESS LIFETIME. Under the twice-weekly
+                // cadence (Sun/Thu) the old 24h TTL expired mid-window and
+                // handed some visitor the cold recompute each day
+                // (slow-homepage reports 2026-08-27 and 2026-09-30). The
+                // 7-day cap is a safety valve for a process outliving a
+                // failed refresh's restart.
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);
+                entry.Priority = CacheItemPriority.NeverRemove;
+                return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl);
+            });
+            return Ok(result);
+        }
+        finally
+        {
+            MoversGate.Release();
+        }
     }
+
+    private static readonly SemaphoreSlim MoversGate = new(1, 1);
 
     // ----- Catalog paging -----
     // The default path sorts and paginates in SQL. Sorts or filters that key on
