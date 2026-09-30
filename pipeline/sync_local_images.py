@@ -44,6 +44,13 @@ def sync(game, image_dir):
 
     # Generous busy timeout: a catalog scrape may be writing this DB in parallel.
     con = sqlite3.connect(os.path.join(BASE, f"{game}_cards.db"), timeout=60)
+    tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "cards" not in tables:
+        # A registered game whose catalog crawl hasn't created `cards` yet
+        # (onboarding in progress) -- nothing to sync yet.
+        con.close()
+        print(f"[{game}] no cards table yet — skipped")
+        return
     ids = [r[0] for r in con.execute("SELECT product_id FROM cards")]
     with_art = [(os.path.join(image_dir, f"{pid}.jpg"), pid) for pid in ids if pid in in_bucket]
     without = [(pid,) for pid in ids if pid not in in_bucket]

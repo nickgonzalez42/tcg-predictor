@@ -2,6 +2,11 @@
 # One-time AWS provisioning for TCG Predictor (us-east-1, t3.small, 30GB gp3,
 # Elastic IP). Idempotent-ish: tags everything tcg-predictor and skips pieces
 # that already exist. Prints the SSH line and Elastic IP at the end.
+# Pin to the cardstock account: this Mac also has a 'client' profile
+# (870397520032) that must never receive cardstock infrastructure.
+export AWS_PROFILE=default
+ACCT=$(aws sts get-caller-identity --query Account --output text 2>/dev/null)
+[ "$ACCT" = "522029196375" ] || { echo "ABORT: wrong AWS account '${ACCT:-none}'"; exit 1 }
 set -euo pipefail
 export AWS_DEFAULT_REGION=us-east-1
 NAME=tcg-predictor
