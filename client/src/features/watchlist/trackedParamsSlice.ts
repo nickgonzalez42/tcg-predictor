@@ -10,6 +10,8 @@ const initialState: CardParams = {
     pageSize: 50,
     sets: [],
     rarities: [],
+    confidence: [],
+    printings: [],
     searchTerm: '',
     orderBy: '',
     grade: '',

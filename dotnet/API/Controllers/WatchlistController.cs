@@ -44,13 +44,14 @@ public class WatchlistController(
         if (!TryNormalizeGrade(dto.Grade, out var grade))
             return BadRequest(UnknownGrade(dto.Grade));
 
-        // Wishlist is one-per-card, so skip if it's already there. Owned is
-        // one-per-copy: every add creates a new copy at the given condition
-        // (further purchase detail is filled in later from the Owned page).
+        var printing = dto.Printing ?? "";
+        // Wishlist is one-per-(card, printing): the same card's 1st Edition and
+        // base are different watches. Owned is one-per-copy as before.
         if (kind == TrackKind.Wishlist)
         {
             var exists = await context.TrackedCards.AnyAsync(
-                x => x.UserName == user && x.Game == dto.Game && x.ProductId == dto.ProductId && x.Kind == kind);
+                x => x.UserName == user && x.Game == dto.Game && x.ProductId == dto.ProductId
+                     && x.Kind == kind && x.Printing == printing);
             if (exists) return Ok();
         }
 
@@ -61,17 +62,22 @@ public class WatchlistController(
             UserName = user,
             Game = dto.Game,
             ProductId = dto.ProductId,
+            Printing = printing,
             Kind = kind,
             Grade = ownedGrade,
-            // Remember the NM price at watch time so the wishlist can show "since added".
-            WatchedAtPrice = kind == TrackKind.Wishlist ? await NearMintPrice(dto.Game, dto.ProductId) : null,
+            // Remember the shown price at watch time ("since added" baseline):
+            // the printing's own latest for a non-base printing.
+            WatchedAtPrice = kind == TrackKind.Wishlist
+                ? (printing == "" ? await NearMintPrice(dto.Game, dto.ProductId)
+                                  : await PrintingPrice(dto.Game, dto.ProductId, printing))
+                : null,
             AddedAt = now,
             // Owned copies always carry an acquired date + a cost basis: auto
             // price resolves the market price on the acquired date (0 = no data).
             AcquiredAt = kind == TrackKind.Owned ? now : null,
             AutoPrice = true,
             PurchasePrice = kind == TrackKind.Owned
-                ? await AutoPriceOf(dto.Game, dto.ProductId, ownedGrade, now) : null,
+                ? await AutoPriceOf(dto.Game, dto.ProductId, ownedGrade, now, printing) : null,
         });
         await context.SaveChangesAsync();
 
@@ -327,17 +333,30 @@ public class WatchlistController(
     // The card's market price at the copy's condition tier on a given date:
     // the last known history point at-or-before it, else 0 (no data that far
     // back — young games, or dates before PriceCharting tracked the game).
-    private async Task<double> AutoPriceOf(string game, int productId, string? grade, DateTime acquired)
+    private async Task<double> AutoPriceOf(string game, int productId, string? grade,
+        DateTime acquired, string printing = "")
     {
         var tier = GradeTiers.PriceTier(grade);
         var date = acquired.ToString("yyyy-MM-dd");
-        var price = await priceCharting.History
+        var price = await priceCharting.History.IgnoreQueryFilters()
             .Where(h => h.Game == game && h.ProductId == productId && h.Grade == tier
+                        && h.Printing == printing
                         && string.Compare(h.Date, date) <= 0)
             .OrderByDescending(h => h.Date)
             .Select(h => (double?)h.Price)
             .FirstOrDefaultAsync();
         return price ?? 0;
+    }
+
+    // Latest price of a specific printing's ungraded series.
+    private async Task<double?> PrintingPrice(string game, int productId, string printing)
+    {
+        return await priceCharting.History.IgnoreQueryFilters()
+            .Where(h => h.Game == game && h.ProductId == productId
+                        && h.Printing == printing && h.Grade == "ungraded")
+            .OrderByDescending(h => h.Date)
+            .Select(h => (double?)h.Price)
+            .FirstOrDefaultAsync();
     }
 
     private Task<TrackedCard?> FindOwnedCopy(int id) =>

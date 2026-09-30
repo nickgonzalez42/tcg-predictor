@@ -6,6 +6,7 @@ public class Forecast
 {
     public string Game { get; set; } = "";
     public int ProductId { get; set; }
+    public string Printing { get; set; } = ""; // '' = base printing
     public string Target { get; set; } = "";    // ungraded | psa10
     public string Horizon { get; set; } = "";    // 6m | 12m
     public string? AsOf { get; set; }
@@ -26,6 +27,7 @@ public class Forecast
 // horizon elapses.
 public class ArchivedForecast
 {
+    public string Printing { get; set; } = ""; // '' = base printing
     public string Game { get; set; } = "";
     public int ProductId { get; set; }
     public string Target { get; set; } = "";

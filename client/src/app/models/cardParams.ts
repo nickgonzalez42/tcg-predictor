@@ -4,6 +4,8 @@ export type CardParams = {
     searchTerm?: string;
     sets: string[];
     rarities: string[];
+    confidence: string[];  // forecast confidence levels to keep: high|med|low
+    printings: string[];   // keep only cards carrying one of these printings
     grade?: string;
     minPrice?: string;    // range on the shown price; '' = unset
     maxPrice?: string;

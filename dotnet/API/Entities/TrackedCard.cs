@@ -14,6 +14,7 @@ public class TrackedCard
     public required string UserName { get; set; }  // owner (Identity user name / email)
     public required string Game { get; set; }      // onepiece | pokemon
     public int ProductId { get; set; }
+    public string Printing { get; set; } = "";  // '' = base printing of the product
     public string Kind { get; set; } = TrackKind.Wishlist;  // owned | wishlist
     public DateTime AddedAt { get; set; } = DateTime.UtcNow;
 

@@ -101,6 +101,8 @@ internal static class CardMapping
         card.Property(x => x.CardType).HasColumnName("card_type");
         card.Property(x => x.Description).HasColumnName("description");
         card.Property(x => x.NearMintPrice).HasColumnName("near_mint_price");
+        card.Property(x => x.Printings).HasColumnName("printings");
+        card.Property(x => x.BasePrinting).HasColumnName("base_printing");
         card.Property(x => x.ImageUrl).HasColumnName("image_url");
         card.Property(x => x.ImagePath).HasColumnName("image_path");
     }

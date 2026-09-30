@@ -11,4 +11,8 @@ public class CardParams : PaginationParams
     public string? Trend { get; set; }     // trend window for sparkline/movement: 1w|1m|6m|1y (default 1m)
     public double? MinPrice { get; set; }  // range filter on the SHOWN price (the selected tier's)
     public double? MaxPrice { get; set; }
+    public string? Printings { get; set; }  // comma separated variant names: keep only cards
+                                            // carrying one of these printings (e.g. "1st Edition")
+    public string? Confidence { get; set; } // comma separated high|med|low: keep only cards whose
+                                            // shown forecast (tier + trend horizon) has that confidence
 }

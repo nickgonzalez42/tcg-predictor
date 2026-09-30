@@ -17,7 +17,10 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
         builder.Entity<ArchivedForecast>(f =>
         {
             f.ToTable("forecast_archive");
-            f.HasKey(x => new { x.Game, x.ProductId, x.Target, x.Horizon, x.AsOf });
+            f.HasKey(x => new { x.Game, x.ProductId, x.Printing, x.Target, x.Horizon, x.AsOf });
+            // Base printing by default; per-printing paths opt out explicitly.
+            f.HasQueryFilter(x => x.Printing == "");
+            f.Property(x => x.Printing).HasColumnName("printing");
             f.Property(x => x.Game).HasColumnName("game");
             f.Property(x => x.ProductId).HasColumnName("product_id");
             f.Property(x => x.Target).HasColumnName("target");
@@ -49,7 +52,9 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
         builder.Entity<Forecast>(f =>
         {
             f.ToTable("forecasts");
-            f.HasKey(x => new { x.Game, x.ProductId, x.Target, x.Horizon });
+            f.HasKey(x => new { x.Game, x.ProductId, x.Printing, x.Target, x.Horizon });
+            f.HasQueryFilter(x => x.Printing == "");
+            f.Property(x => x.Printing).HasColumnName("printing");
             f.Property(x => x.Game).HasColumnName("game");
             f.Property(x => x.ProductId).HasColumnName("product_id");
             f.Property(x => x.Target).HasColumnName("target");

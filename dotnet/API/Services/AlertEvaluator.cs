@@ -22,21 +22,34 @@ public class AlertEvaluator(PredictionsContext predictions, PriceChartingContext
             var pricedById = (await priceCharting.GradedPrices
                     .Where(p => p.Game == game && ids.Contains(p.ProductId)).ToListAsync())
                 .ToDictionary(p => p.ProductId);
-            var fcByKey = (await predictions.Forecasts
+            var fcByKey = (await predictions.Forecasts.IgnoreQueryFilters()
                     .Where(f => f.Game == game && ids.Contains(f.ProductId))
-                    .Select(f => new { f.ProductId, f.Target, f.Horizon, f.BasePrice, f.ForecastPrice })
+                    .Select(f => new { f.ProductId, f.Printing, f.Target, f.Horizon, f.BasePrice, f.ForecastPrice })
                     .ToListAsync())
-                .ToDictionary(f => (f.ProductId, f.Target, f.Horizon));
+                .ToDictionary(f => (f.ProductId, f.Printing, f.Target, f.Horizon));
+            // Labeled-printing price alerts read the printing's own series
+            // (there is no snapshot table for printings).
+            var printedIds = group.Where(a => a.Printing != "").Select(a => a.ProductId).Distinct().ToList();
+            var printedPrices = printedIds.Count == 0 ? [] :
+                (await priceCharting.History.IgnoreQueryFilters()
+                    .Where(h => h.Game == game && printedIds.Contains(h.ProductId) && h.Printing != "")
+                    .Select(h => new { h.ProductId, h.Printing, h.Grade, h.Date, h.Price })
+                    .ToListAsync())
+                .GroupBy(h => (h.ProductId, h.Printing, h.Grade))
+                .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Date).First().Price);
 
             foreach (var a in group)
             {
                 double? current = null;
                 if (a.Kind == AlertKind.Price)
                 {
-                    current = pricedById.GetValueOrDefault(a.ProductId)?.PriceFor(a.Grade);
+                    current = a.Printing == ""
+                        ? pricedById.GetValueOrDefault(a.ProductId)?.PriceFor(a.Grade)
+                        : printedPrices.GetValueOrDefault(
+                              (a.ProductId, a.Printing, GradeTiers.PriceTier(a.Grade)));
                 }
                 else if (fcByKey.TryGetValue(
-                             (a.ProductId, GradeTiers.ForecastTarget(a.Grade), a.Horizon ?? ""), out var f)
+                             (a.ProductId, a.Printing, GradeTiers.ForecastTarget(a.Grade), a.Horizon ?? ""), out var f)
                          && f.ForecastPrice is { } fp)
                 {
                     current = a.Kind == AlertKind.ForecastPrice

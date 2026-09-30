@@ -10,6 +10,7 @@ public class CardAlert
     public required string UserName { get; set; }  // owner (Identity user name / email)
     public required string Game { get; set; }
     public int ProductId { get; set; }
+    public string Printing { get; set; } = "";  // '' = base printing
     public string? Grade { get; set; }             // condition tier; null = ungraded
     public string Kind { get; set; } = AlertKind.Price;
     public string? Horizon { get; set; }           // forecast kinds only: 1w | 1m | 6m | 12m

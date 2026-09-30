@@ -30,7 +30,7 @@ function AvatarPicker({ onPick, onClose }: {
 
     const searching = debounced.length >= 2;
     const { data: results, isFetching } = useFetchCardsQuery({
-        game, orderBy: '', searchTerm: debounced, sets: [], rarities: [],
+        game, orderBy: '', searchTerm: debounced, sets: [], rarities: [], confidence: [], printings: [],
         pageNumber: 1, pageSize: 50,
     }, { skip: !searching });
 

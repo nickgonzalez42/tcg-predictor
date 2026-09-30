@@ -13,6 +13,12 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
     // ToTable("price_history_unified") once the blended table is built.
     public DbSet<PriceHistoryPoint> History => Set<PriceHistoryPoint>();
 
+    // Dated NM prices from the nightly crawl (see NmDailyPoint).
+    public DbSet<NmDailyPoint> NmDaily => Set<NmDailyPoint>();
+
+    // Raw PriceCharting rows (see PcRawPoint) — cutover-bridge reads only.
+    public DbSet<PcRawPoint> PcRaw => Set<PcRawPoint>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -20,13 +26,42 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
         builder.Entity<PriceHistoryPoint>(h =>
         {
             h.ToTable("price_history_unified");   // blended TCGplayer + PriceCharting
-            h.HasKey(x => new { x.Game, x.ProductId, x.Grade, x.Date });
+            h.HasKey(x => new { x.Game, x.ProductId, x.Printing, x.Grade, x.Date });
+            // Every query is BASE-printing by default — per-printing paths
+            // opt out explicitly with IgnoreQueryFilters (Phase 3, 2026-08-09).
+            h.HasQueryFilter(x => x.Printing == "");
             h.Property(x => x.Game).HasColumnName("game");
             h.Property(x => x.ProductId).HasColumnName("product_id");
+            h.Property(x => x.Printing).HasColumnName("printing");
             h.Property(x => x.Grade).HasColumnName("grade");
             h.Property(x => x.Date).HasColumnName("date");
             h.Property(x => x.Price).HasColumnName("price");
             h.Property(x => x.Source).HasColumnName("source");
+        });
+
+        builder.Entity<NmDailyPoint>(p =>
+        {
+            p.ToTable("tcg_nm_history");
+            p.HasKey(x => new { x.Game, x.ProductId, x.Printing, x.Date });
+            p.HasQueryFilter(x => x.Printing == "");
+            p.Property(x => x.Game).HasColumnName("game");
+            p.Property(x => x.ProductId).HasColumnName("product_id");
+            p.Property(x => x.Printing).HasColumnName("printing");
+            p.Property(x => x.Date).HasColumnName("date");
+            p.Property(x => x.Price).HasColumnName("price");
+        });
+
+        builder.Entity<PcRawPoint>(p =>
+        {
+            p.ToTable("graded_price_history");
+            p.HasKey(x => new { x.Game, x.ProductId, x.Printing, x.Grade, x.Date });
+            p.HasQueryFilter(x => x.Printing == "");
+            p.Property(x => x.Game).HasColumnName("game");
+            p.Property(x => x.ProductId).HasColumnName("product_id");
+            p.Property(x => x.Printing).HasColumnName("printing");
+            p.Property(x => x.Grade).HasColumnName("grade");
+            p.Property(x => x.Date).HasColumnName("date");
+            p.Property(x => x.Price).HasColumnName("price");
         });
 
         builder.Entity<GradedPrice>(p =>

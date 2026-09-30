@@ -7,6 +7,7 @@ public class PriceHistoryPoint
 {
     public string Game { get; set; } = "";
     public int ProductId { get; set; }
+    public string Printing { get; set; } = ""; // '' = base printing; else variant name (1st Edition, ...)
     public string Grade { get; set; } = "";   // ungraded, grade7..psa10, bgs10, cgc10, sgc10
     public string Date { get; set; } = "";     // YYYY-MM-DD
     public double Price { get; set; }

@@ -17,7 +17,8 @@ public class AlertsController(
     StoreContext store, CardSources sources, AlertEvaluator evaluator) : BaseApiController
 {
     public record CreateAlertDto(
-        string Game, int ProductId, string? Grade, string Kind,
+        string Game, int ProductId,
+        string? Printing, string? Grade, string Kind,
         string? Horizon, string Direction, double Target);
 
     private static readonly HashSet<string> Kinds =
@@ -103,6 +104,7 @@ public class AlertsController(
         var alert = new CardAlert
         {
             UserName = user, Game = game, ProductId = dto.ProductId, Grade = grade,
+            Printing = dto.Printing ?? "",
             Kind = kind, Horizon = horizon, Direction = direction, Target = dto.Target,
         };
         store.CardAlerts.Add(alert);

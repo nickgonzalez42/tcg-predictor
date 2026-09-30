@@ -11,6 +11,8 @@ public abstract class CardBase
     public string? CardType { get; set; }    // card_type
     public string? Description { get; set; }
     public double? NearMintPrice { get; set; } // near_mint_price — latest ungraded price (PriceCharting) from price_history_unified
+    public string? Printings { get; set; }   // printings — JSON array, base first (printing_ingest)
+    public string? BasePrinting { get; set; } // base_printing — the variant the '' series tracks
     public string? ImageUrl { get; set; }    // image_url (remote TCGplayer image)
     public string? ImagePath { get; set; }   // image_path — local art on disk; NULL = art pending,
                                              // and the card is stored but served nowhere on the site

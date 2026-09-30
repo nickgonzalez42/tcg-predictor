@@ -6,6 +6,7 @@ public class TrackedCardDto
     public int ProductId { get; set; }
     public string? Kind { get; set; }   // owned | wishlist (defaults to wishlist)
     public string? Grade { get; set; }  // owned only: the copy's condition (copy-grade vocab)
+    public string? Printing { get; set; } // specific printing ('' / null = base)
 }
 
 // One owned physical copy, returned with an owned card (CardDto.OwnedCopies).
