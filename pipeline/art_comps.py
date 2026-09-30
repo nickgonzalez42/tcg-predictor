@@ -33,7 +33,7 @@ def retention12(game):
     """product_id -> latest_price / price_12_months_ago from the ungraded series."""
     rows = sqlite3.connect(PC_DB, timeout=30).execute(
         "SELECT product_id, date, price FROM price_history_unified "
-        "WHERE game=? AND grade='ungraded' ORDER BY date", (game,)).fetchall()
+        "WHERE printing='' AND game=? AND grade='ungraded' ORDER BY date", (game,)).fetchall()
     series = {}
     for pid, d, p in rows:
         series.setdefault(pid, {})[d[:7]] = p

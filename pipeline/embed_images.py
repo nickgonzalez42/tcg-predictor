@@ -51,6 +51,12 @@ def embed_game(game: str, model, preprocess, device: str, limit: int | None):
     csv_path = os.path.join(DATA, f"{game}_cards.csv")
     out_path = os.path.join(DATA, f"{game}_img_emb.npz")
 
+    if not os.path.exists(csv_path):
+        # export_for_ml.py skips a registered game until its catalog crawl
+        # has created `cards` (onboarding in progress) -- nothing to embed yet.
+        print(f"[{game}] no export CSV yet — skipped")
+        return
+
     # engine="python": the C parser's chunked reader has a usecols bug that
     # trips on these files' quoted multi-line card text (IndexError, content-
     # dependent — it surfaced when the 2026-07 image prune shifted row bytes).

@@ -41,10 +41,22 @@ def export(game: dict) -> None:
     conn.row_factory = sqlite3.Row
 
     cols = [r[1] for r in conn.execute("PRAGMA table_info(cards)") if r[1] not in EXCLUDE]
+    if not cols:
+        # A registered game whose catalog crawl hasn't created `cards` yet
+        # (onboarding in progress) -- skip it rather than emit `SELECT  FROM
+        # cards`, which is a syntax error, not an empty result.
+        conn.close()
+        print(f"{game['name']:9s} -> skipped (no cards table yet)")
+        return
     out_cols = cols + ["image_file", "has_local_image"]
 
+    # Write to a temp file and rename into place atomically -- a crash
+    # mid-write (any exception, not just this script's own) must never leave
+    # a partial/malformed CSV sitting at out_path for a downstream step to
+    # read as if it were valid.
+    tmp_path = out_path + ".tmp"
     total = priced = with_image = 0
-    with open(out_path, "w", newline="", encoding="utf-8") as f:
+    with open(tmp_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(out_cols)
         for row in conn.execute(f"SELECT {', '.join(cols)} FROM cards"):
@@ -58,6 +70,7 @@ def export(game: dict) -> None:
             with_image += has_image
 
     conn.close()
+    os.replace(tmp_path, out_path)
     print(f"{game['name']:9s} -> {out_path}")
     print(f"            {total} rows | {len(out_cols)} cols | "
           f"priced: {priced} ({total - priced} null) | "

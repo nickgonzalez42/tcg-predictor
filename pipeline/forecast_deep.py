@@ -55,7 +55,7 @@ MAX_CATEGORIES = 250
 
 def load_matrix(game, grade):
     rows = sqlite3.connect(PC_DB, timeout=180).execute(
-        "SELECT product_id, date, price FROM price_history_unified WHERE game=? AND grade=?",
+        "SELECT product_id, date, price FROM price_history_unified WHERE printing='' AND game=? AND grade=?",
         (game, grade)).fetchall()
     by = collections.defaultdict(dict)
     for pid, d, p in rows:
@@ -68,6 +68,28 @@ def load_matrix(game, grade):
         for m, price in by[pid].items():
             P[i, didx[m]] = price
     return np.array(pids), dates, P
+
+
+def load_matrix_all(game, grade):
+    """Base + labeled-PRINTING series on one month axis (per-printing
+    forecasts, 2026-08-10): (pids, printings, dates, P). A labeled row shares
+    its base card's identity for static/art features (printings[i] names the
+    variant, '' = base) while its price series is entirely its own."""
+    rows = sqlite3.connect(PC_DB, timeout=180).execute(
+        "SELECT product_id, printing, date, price FROM price_history_unified "
+        "WHERE game=? AND grade=?", (game, grade)).fetchall()
+    by = collections.defaultdict(dict)
+    for pid, pr, d, p in rows:
+        by[(pid, pr)][d[:7]] = p
+    dates = sorted({d[:7] for _, _, d, _ in rows})
+    didx = {d: i for i, d in enumerate(dates)}
+    keys = sorted(by)
+    P = np.full((len(keys), len(dates)), np.nan)
+    for i, k in enumerate(keys):
+        for m, price in by[k].items():
+            P[i, didx[m]] = price
+    return (np.array([k[0] for k in keys]),
+            np.array([k[1] for k in keys], dtype=object), dates, P)
 
 
 def art_pids(game):
@@ -169,7 +191,7 @@ def market_index():
         return _MKT_CACHE
     rows = sqlite3.connect(PC_DB, timeout=180).execute(
         "SELECT game, product_id, date, price FROM price_history_unified "
-        "WHERE grade='ungraded' AND price > 0").fetchall()
+        "WHERE printing='' AND grade='ungraded' AND price > 0").fetchall()
     series = collections.defaultdict(dict)
     for g, pid, d, p in rows:
         series[(g, pid)][d[:7]] = p
@@ -231,16 +253,22 @@ def extra_signal_matrices(game, pids, dates):
         return {}
     df = pd.read_csv(path)
     didx = {d: i for i, d in enumerate(dates)}
-    pidx = {int(p): i for i, p in enumerate(pids)}
+    # A pid can appear on several rows (one per printing) — a signal must land
+    # on ALL of them, not just the last (dict-keyed indexing dropped the base
+    # row's fcerr once labeled rows joined the matrix).
+    pidx = {}
+    for i, p in enumerate(pids):
+        pidx.setdefault(int(p), []).append(i)
     out = {}
     for col in df.columns:
         if col in ("product_id", "month"):
             continue
         M = np.full((len(pids), len(dates)), np.nan)
         for pid, m, v in zip(df["product_id"], df["month"], df[col]):
-            i, j = pidx.get(int(pid)), didx.get(str(m)[:7])
-            if i is not None and j is not None:
-                M[i, j] = v
+            ii, j = pidx.get(int(pid)), didx.get(str(m)[:7])
+            if ii is not None and j is not None:
+                for i in ii:
+                    M[i, j] = v
         out[col] = M
     return out
 

@@ -16,18 +16,20 @@ Run:  .venv/bin/python forecast_predict.py
 """
 
 import csv
+import math
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_absolute_error
 
-from forecast_deep import (load_matrix, static_features, traj_block,
+from forecast_deep import (load_matrix, load_matrix_all, static_features, traj_block,
                            set_matrix, extra_signal_matrices, market_features,
                            cum_stats, model_new, model_quantile, rolling_cutoff,
                            art_pids)
+import forecast_calib as fcal
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
@@ -40,14 +42,12 @@ MODEL_VERSION = "forecast-deep-v4.4"  # v4.4: art embedding PCA back in; cards
                                       # v4.2: cross-game market features
                                       # v4.1: confidence, set/age/drawdown, reasons
 HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
-# Price data is monthly, so a true 1-week model has no training targets. The 1w
-# horizon is the 1-month forecast pro-rated to 7 days — disclosed in its reason.
-# The POINT forecast scales linearly with time; the BAND scales with sqrt(t)
-# (volatility compounds like a random walk, not linearly — the old linear band
-# scaling made ungraded 1w bands hit only ~65% vs the 80% target).
-WEEK_FRACTION = 7 / 30.44
-WEEK_BAND_FRACTION = WEEK_FRACTION ** 0.5
-TARGETS = ["ungraded", "grade7", "grade8", "grade9", "grade95", "psa10", "bgs10", "cgc10", "sgc10"]
+# (WEEK_FRACTION / the pro-rated 1w horizon removed 2026-08-14 — a true weekly
+# model arrives once the daily NM data matures, ~Oct 2026.)
+# bgs10/cgc10/sgc10 dropped 2026-08-01: their only source was the retired paid
+# PriceCharting CSV; no public page carries them, and their unified history is
+# no longer built — the segments would just load empty matrices.
+TARGETS = ["ungraded", "grade7", "grade8", "grade9", "grade95", "psa10"]
 RET_CLIP = np.log(10.0)
 # Segments with no valid temporal split (young games) have NO out-of-sample
 # evidence at all — default above MAX_SEGMENT_MAE so they publish flagged
@@ -55,7 +55,11 @@ RET_CLIP = np.log(10.0)
 DEFAULT_BAND = 0.65
 MIN_SAMPLES = 200
 CONF_TARGET = 0.80      # nominal band coverage; conformal widening enforces it
-MAX_TRAIN_SAMPLES = 3_000_000   # per (game, tier, horizon); see subsample below
+# Lowered 3M -> 1.2M on 2026-08-01: un-gating ungraded brought ~57k extra cards
+# into the big segments (magic ungraded hit 2.57M train rows) and the full-size
+# fit OOM-killed the nightly on this 8GB machine. The subsample keeps a random
+# stratum of rows; watch the affected segments' OOS retMAE for drift.
+MAX_TRAIN_SAMPLES = 1_200_000   # per (game, tier, horizon); see subsample below
 # Publication gates: a segment whose out-of-sample retMAE is worse than this
 # publishes nothing (mature games run ~0.08-0.53), and an individual card's
 # low-confidence call beyond ~±200% log-return is dropped as decorated noise.
@@ -389,6 +393,15 @@ def premium_matrices(game, pids, dates):
     return {"premium": PREM, "premchg3": CH3}
 
 
+def anchor_dates_all(game, grade):
+    """(pid, printing) -> real date of that series' newest history point."""
+    from forecast_deep import PC_DB
+    rows = sqlite3.connect(PC_DB, timeout=180).execute(
+        "SELECT product_id, printing, MAX(date) FROM price_history_unified "
+        "WHERE game=? AND grade=? GROUP BY product_id, printing", (game, grade)).fetchall()
+    return {(pid, pr): d[:10] for pid, pr, d in rows if d}
+
+
 def anchor_dates(game, grade):
     """pid -> real date of the tier's newest history point. The model anchors
     on the month bucket (whose price IS that newest point); this is the honest
@@ -396,7 +409,7 @@ def anchor_dates(game, grade):
     from forecast_deep import PC_DB
     rows = sqlite3.connect(PC_DB, timeout=180).execute(
         "SELECT product_id, MAX(date) FROM price_history_unified "
-        "WHERE game=? AND grade=? GROUP BY product_id", (game, grade)).fetchall()
+        "WHERE printing='' AND game=? AND grade=? GROUP BY product_id", (game, grade)).fetchall()
     return {pid: d[:10] for pid, d in rows if d}
 
 
@@ -425,27 +438,67 @@ def reviewed_pids(game):
     return {pid for pid, pc in cur if ok.get(pid) == pc}
 
 
-def forecast_game_target(game, target, now, as_of=None, horizons=None):
+def _rolling_live_widen(game, target, hname, days=150, min_n=200):
+    """Conformal widen implied by RECENTLY GRADED live forecasts (self-healing
+    calibration source). None when the archive is missing or too thin — the
+    split-conformal path then stands alone. Read-only on OUT_DB; a backtest
+    or first run without an archive is a silent no-op."""
+    try:
+        c = sqlite3.connect(OUT_DB, timeout=10)
+        rows = c.execute(
+            "SELECT base_price, low, high, realized_ret FROM forecast_archive "
+            "WHERE game=? AND target=? AND horizon=? AND realized_ret IS NOT NULL "
+            "  AND low > 0 AND high > 0 AND base_price > 0 "
+            "  AND substr(model_version, 1, 2) != '__' "
+            "  AND graded_at >= datetime('now', ?)",
+            (game, target, hname, f"-{days} day")).fetchall()
+        c.close()
+    except sqlite3.Error:
+        return None
+    if len(rows) < min_n:
+        return None
+    E = [max(math.log(lo / b) - r, r - math.log(hi / b))
+         for b, lo, hi, r in rows]
+    return float(fcal.conformal_quantile(np.array(E), CONF_TARGET))
+
+
+def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None):
     horizons = horizons or HORIZONS
+    # Calibration flags (2026-08-11) — validated by backtest_forecast.py before
+    # being switched on; both transforms are fit on the segment's rolling OOS
+    # window each run, so they track the current model, not stale cohorts.
+    # Horizon-scoped: "1" = every horizon, else a comma list ("6m,12m") — the
+    # 1m backtest (btA 2026-08-12) showed debias HURTS at 1m (noisy short-window
+    # bias estimates) while the 6m/12m miscalibration is where the value is.
+    def _flag_horizons(name):
+        v = os.environ.get(name, "")
+        if v == "1":
+            return set(horizons)
+        return {h.strip() for h in v.split(",") if h.strip()}
+    debias_h = _flag_horizons("TCG_FC_DEBIAS")
+    cqr_h = _flag_horizons("TCG_FC_CQR")
     # Backtest rows carry a "__" version so the scorecard's accuracy table and
     # feedback signals never count them (its existing test-row convention).
     version = f"__bt-{as_of}" if as_of else MODEL_VERSION
-    pids, dates, P = load_matrix(game, target)
+    pids, prints, dates, P = load_matrix_all(game, target)
     # v4.4: artwork is a model input, and a card with no artwork on file is
     # not forecast at all (~0-2% of priced cards per game).
     arts = art_pids(game)
     have = np.fromiter((p in arts for p in pids), dtype=bool, count=len(pids))
-    # Match-review gate: unconfirmed PriceCharting matches sit out until the
-    # user reviews them in the GUI (typically Sunday's new cards, picked up
-    # by Monday's run once confirmed).
-    ok = reviewed_pids(game)
+    # Match-review gate applies to GRADED tiers only: those prices ride the
+    # PriceCharting match, so an unconfirmed/drifted match must sit out (it would
+    # train on some other card's graded ladder). UNGRADED is TCGplayer Near Mint,
+    # matched by the card's OWN product_id — no PC match involved — so it's
+    # forecast for any card with an NM series, PriceCharting-matched or not. This
+    # brings the ~57k TCGplayer-priced-but-unmatched cards into the ungraded model.
+    ok = reviewed_pids(game) if target != "ungraded" else None
     if ok is not None:
         before = int(have.sum())
         have &= np.fromiter((p in ok for p in pids), dtype=bool, count=len(pids))
         held = before - int(have.sum())
         if held:
             print(f"[{game}/{target}] {held} card(s) held out pending match review", flush=True)
-    pids, P = pids[have], P[have]
+    pids, prints, P = pids[have], prints[have], P[have]
     if as_of:
         # Pretend the run happened at the end of `as_of` month: drop every
         # later price column BEFORE anything trains or anchors, so neither
@@ -458,7 +511,9 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
     # enough (t, t+k) pairs, so a 11-bucket game gets 1m/6m but no 12m yet.
     if P.shape[1] < 4 or len(pids) < 30:
         return []
-    real_dates = anchor_dates(game, target)
+    real_dates = anchor_dates_all(game, target)
+    stale_pids = set()   # cards suppressed by the stale-anchor gate (see below)
+    thin_pids = set()    # cards suppressed by the minimum-history gate
     R = np.log(P[:, 1:] / P[:, :-1])
     # TCGplayer volume is no longer collected (pricing is PriceCharting-only);
     # the earlier volume A/B showed no accuracy gain, so the feature is dropped.
@@ -481,7 +536,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
 
     # The trajectory block at month t is horizon-independent, so build it once
     # per t and slice it for every horizon (was: rebuilt 3x per pipeline run).
-    samples = {h: ([], [], [], []) for h in horizons}   # h -> (Xr, y, is_test, w)
+    samples = {h: ([], [], [], [], []) for h in horizons}  # h -> (Xr, y, is_test, w, base_t)
     for t in range(1, len(dates) - min(horizons.values())):
         tb_full = None
         for hname, k in horizons.items():
@@ -494,11 +549,12 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
                 tb_full = traj_block(P, R, t, V, S, EXTRA, CUM, MKT)
             tb = tb_full.loc[v].reset_index(drop=True)
             sb = static.iloc[np.where(v)[0]].reset_index(drop=True)
-            Xr, ys, tests, ws = samples[hname]
+            Xr, ys, tests, ws, bs = samples[hname]
             Xr.append(pd.concat([tb, sb], axis=1))
             ys.append(np.log(P[v, t + k] / P[v, t]))
             tests.append(np.full(int(v.sum()), dates[t] >= cutoffs[hname]))
             ws.append(price_weight(P[v, t]))
+            bs.append(P[v, t])   # base price at t: bucketed conformal strata
 
     # "Now" features are also horizon-independent: one block per distinct
     # latest-priced month, assembled once and reused for every horizon.
@@ -511,7 +567,9 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
 
     rows = []
     for hname, k in horizons.items():
-        Xr, ys, tests, ws = samples[hname]
+        use_debias = hname in debias_h
+        use_cqr = hname in cqr_h
+        Xr, ys, tests, ws, bs = samples[hname]
         if not Xr:
             continue
         X = pd.concat(Xr, ignore_index=True)
@@ -520,26 +578,50 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
             continue
         test = np.concatenate(tests)
         w = np.concatenate(ws)
+        base_t = np.concatenate(bs)
 
         # Magic-scale guard: a huge game (112k+ cards x months) can assemble
         # tens of millions of samples; past a few million, HGB gains nothing
         # but memory pressure. Uniform subsample keeps train/test proportions.
         if len(y) > MAX_TRAIN_SAMPLES:
             idx = np.random.default_rng(42).choice(len(y), MAX_TRAIN_SAMPLES, replace=False)
-            X, y, test, w = X.iloc[idx].reset_index(drop=True), y[idx], test[idx], w[idx]
+            X, y, test, w, base_t = (X.iloc[idx].reset_index(drop=True), y[idx],
+                                     test[idx], w[idx], base_t[idx])
             print(f"  [{game}/{target}/{hname}] subsampled {len(y)} of a larger pool", flush=True)
 
         # A NUMERIC feature with <2 distinct finite values (e.g. a feedback
         # signal that just switched on with a single graded forecast behind it)
         # crashes HGB's binning (sliding_window_view over distinct values).
-        # Drop such columns; Xnow is built from X.columns so it follows
-        # automatically. Categorical columns bin differently and are exempt.
+        # Checked on the TRAIN SLICE as well as the full frame: the OOS split
+        # fits on rows outside the test window, and a signal that only exists
+        # in the last few months is finite in X yet ALL-NaN inside that slice —
+        # sklearn then derives an EMPTY distinct-value array and dies with
+        # "window shape cannot be larger than input array shape" (the 2026-08-02
+        # nightly: pokemon/onepiece/digimon segments as their post-cutover
+        # signals started accruing). Drop such columns; Xnow is built from
+        # X.columns so it follows automatically. Categorical columns bin
+        # differently and are exempt.
         degenerate = []
+        train_slice = ~test
+        # Non-NaN support per column within the fit slice: HGB's own internal
+        # 90/10 early-stopping split can strand a column's ONLY finite values on
+        # the validation side (magic/ungraded, 2026-08-02: a signal finite on a
+        # handful of 1.08M rows), which reaches the same empty-array crash even
+        # when the column passes the distinct-value checks. A column finite on
+        # fewer than MIN_FINITE rows carries no signal — drop it outright.
+        MIN_FINITE = 50
+        finite_counts = X.loc[train_slice].count()
         for c in X.columns:
             if isinstance(X[c].dtype, pd.CategoricalDtype):
                 continue
-            mn = X[c].min()
-            if pd.isna(mn) or mn == X[c].max():
+            drop = finite_counts[c] < MIN_FINITE
+            if not drop:
+                for view in (X[c], X[c][train_slice]):
+                    mn = view.min()
+                    if pd.isna(mn) or mn == view.max():
+                        drop = True
+                        break
+            if drop:
                 degenerate.append(c)
         if degenerate:
             X = X.drop(columns=degenerate)
@@ -551,29 +633,73 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
         # Gate on the WEIGHTED error — "can the model call value-relevant cards?" —
         # with the raw number printed alongside for continuity with older logs.
         conf_widen = 0.0
+        bias = 0.0
+        calib = None
         if test.sum() >= 50 and (~test).sum() >= 300:
             m = model_new().fit(X[~test], y[~test], sample_weight=w[~test])
             pred_oos = m.predict(X[test])
-            band = float(mean_absolute_error(y[test], pred_oos, sample_weight=w[test]))
-            raw = float(mean_absolute_error(y[test], pred_oos))
+            # Debias: weighted-median OOS residual. Fit unconditionally (so the
+            # log tracks it) but applied only under the flag — and everything
+            # downstream (band, conformal scores) is measured on the SAME
+            # predictions the emission will use.
+            bias = fcal.fit_debias(pred_oos, y[test], w[test])
+            applied_bias = bias if use_debias else 0.0
+            band = float(mean_absolute_error(y[test], pred_oos - applied_bias,
+                                             sample_weight=w[test]))
+            raw = float(mean_absolute_error(y[test], pred_oos - applied_bias))
             print(f"  [{game}/{target}/{hname}] OOS retMAE {band:.3f} weighted "
                   f"(raw {raw:.3f}; train {(~test).sum()}, test {test.sum()})", flush=True)
+            print(f"  [{game}/{target}/{hname}] OOS bias {bias:+.3f}"
+                  + (" (applied)" if use_debias else " (measured only)"), flush=True)
 
             # Split-conformal band widening: quantile models fit on train only,
             # nonconformity scored on the held-out window, and the final bands
             # widen by the amount that makes recent coverage hit CONF_TARGET.
             # (The final quantile models refit on ALL data below — applying the
             # same widening there is the standard practical approximation.)
+            q10_pred_t = q90_pred_t = None
             if test.sum() >= 200:
                 q10t = model_quantile(0.10).fit(X[~test], y[~test], sample_weight=w[~test])
                 q90t = model_quantile(0.90).fit(X[~test], y[~test], sample_weight=w[~test])
-                E = np.maximum(q10t.predict(X[test]) - y[test],
-                               y[test] - q90t.predict(X[test]))
-                n = len(E)
-                qlvl = min(1.0, np.ceil((n + 1) * CONF_TARGET) / n)
-                conf_widen = max(0.0, float(np.quantile(E, qlvl)))
+                q10_pred_t, q90_pred_t = q10t.predict(X[test]), q90t.predict(X[test])
+                E = fcal.nonconformity(q10_pred_t, q90_pred_t, y[test], applied_bias)
+                conf_widen = fcal.conformal_quantile(E, CONF_TARGET)
                 print(f"  [{game}/{target}/{hname}] conformal widen +{conf_widen:.3f} "
                       f"(held-out coverage was {float(np.mean(E <= 0)):.2f})", flush=True)
+                # Bucketed (Mondrian) variant: per-price-stratum widening.
+                calib = fcal.fit_bucket_conformal(base_t[test], E, CONF_TARGET)
+                # Rolling live recalibration (2026-08-22, self-healing): blend
+                # in the nonconformity of RECENTLY GRADED live forecasts so a
+                # regime the split never saw still widens bands within days of
+                # its first matured cohorts (the 6m/12m under-coverage fix —
+                # arms itself as those horizons mature). Measured always;
+                # applied per TCG_FC_ROLLCAL (comma horizons, "1" = all).
+                live_widen = _rolling_live_widen(game, target, hname)
+                if live_widen is not None:
+                    roll_on = hname in _flag_horizons("TCG_FC_ROLLCAL")
+                    print(f"  [{game}/{target}/{hname}] rolling live widen "
+                          f"+{live_widen:.3f} "
+                          f"({'applied' if roll_on else 'measured only'})", flush=True)
+                    if roll_on:
+                        conf_widen = max(conf_widen, live_widen)
+                        calib = {**calib,
+                                 "global": max(calib["global"], live_widen),
+                                 "widen": [max(w_, live_widen)
+                                           for w_ in calib["widen"]]}
+                if use_cqr:
+                    print(f"  [{game}/{target}/{hname}] bucket widen "
+                          + "/".join(f"{v:+.2f}" for v in calib["widen"]), flush=True)
+            if debug is not None:
+                debug[hname] = {
+                    "pred_oos": pred_oos, "y_test": y[test].copy(),
+                    "w_test": w[test].copy(), "base_test": base_t[test].copy(),
+                    "q10_test": q10_pred_t, "q90_test": q90_pred_t,
+                    "bias": bias, "conf_widen": conf_widen, "calib": calib,
+                    "band": band,
+                }
+                if debug.get("capture_frames"):
+                    debug[hname].update({"X": X, "y": y, "test": test, "w": w,
+                                         "base_t": base_t})
         else:
             band = DEFAULT_BAND
 
@@ -596,20 +722,34 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
         Xnow = pd.concat([traj_now.loc[keep].reset_index(drop=True),
                           static.loc[keep].reset_index(drop=True)], axis=1)[X.columns]
 
-        ret = np.clip(model.predict(Xnow), -RET_CLIP, RET_CLIP)
-        # quantile crossings happen at the tails — enforce lo <= ret <= hi.
-        # conf_widen is the split-conformal adjustment measured above.
-        lo_ret = np.clip(np.minimum(q10.predict(Xnow) - conf_widen, ret), -RET_CLIP, RET_CLIP)
-        hi_ret = np.clip(np.maximum(q90.predict(Xnow) + conf_widen, ret), -RET_CLIP, RET_CLIP)
+        base = P[keep, last_idx[keep]]
+        pred_now = model.predict(Xnow)
+        q10_now = q10.predict(Xnow)
+        q90_now = q90.predict(Xnow)
+        # Per-card widening under CQR (each card gets its price stratum's
+        # widening); the classic scalar otherwise. Debias shifts point + band.
+        widen = (fcal.bucket_widen_for(base, calib) if (use_cqr and calib is not None)
+                 else conf_widen)
+        # quantile crossings happen at the tails — emit_bands enforces
+        # lo <= ret <= hi and applies the conformal adjustment measured above.
+        ret, lo_ret, hi_ret = fcal.emit_bands(pred_now, q10_now, q90_now, widen,
+                                              bias if use_debias else 0.0, RET_CLIP)
         width = hi_ret - lo_ret   # 80% interval width in log-return
         conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
         if unreliable:
             conf = np.full(len(ret), "low", dtype=object)
 
+        if debug is not None and hname in debug:
+            debug[hname]["emit"] = {
+                "pids": pids[keep].copy(), "prints": prints[keep].copy(),
+                "base": base.copy(), "pred_now": pred_now, "q10_now": q10_now,
+                "q90_now": q90_now, "last_idx": last_idx[keep].copy(),
+                "Xnow": Xnow if debug.get("capture_frames") else None,
+            }
+
         deltas = bucket_deltas(model, Xnow, X)   # per-card trait attribution
         comps = art_comps(game)
         traits = card_traits(game)
-        base = P[keep, last_idx[keep]]
         fc = np.round(base * np.exp(ret), 2)
         low = np.round(base * np.exp(lo_ret), 2)
         high = np.round(base * np.exp(hi_ret), 2)
@@ -622,7 +762,35 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
         volchg = tn["volchg"].to_numpy() if "volchg" in tn else np.full(len(tn), np.nan)
         set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
 
+        # Stale-anchor gate (live runs only): a card whose newest REAL price for
+        # this tier is months old would still "forecast" off that stale anchor,
+        # and its junk % change can top the catalog's movers sorts (2026-08-01:
+        # Chopper Treasure Cup, ungraded frozen at June 1, ranked page 1 of the
+        # 1m list). Ungraded is crawled nightly so 45 days is generous; graded
+        # rotates ~monthly on month-bucketed charts, so 75. Training above is
+        # unaffected — this only suppresses publishing. Backtests (as_of) keep
+        # every card: their anchors are historical by construction.
+        stale_cut = (datetime.now(timezone.utc)
+                     - timedelta(days=45 if target == "ungraded" else 75)).strftime("%Y-%m-%d")
+
+        # Minimum-history gate (2026-08-19): a card whose tier series has a
+        # single monthly bucket has never shown the model one realized return —
+        # its "forecast" is a pure trait guess (the 2026-08-18 wipe left
+        # 1-bucket cards that promptly emitted 1m/6m/12m rows off one fresh
+        # point). Require >= 2 buckets. Surgical: ~1.2k ungraded cards sit at
+        # 1 bucket vs ~59k at 2, and a young card graduates at its second
+        # month boundary. Live runs only — backtests keep every card.
+        hist_k = np.isfinite(P[keep]).sum(axis=1)
+
+        prints_k = prints[keep]
         for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
+            pr = str(prints_k[i])
+            if not as_of and real_dates.get((int(pid), pr), a) < stale_cut:
+                stale_pids.add((int(pid), pr))
+                continue
+            if not as_of and hist_k[i] < 2:
+                thin_pids.add((int(pid), pr))
+                continue
             comp = comps.get(int(pid))
             # resolve up to two look-alike cards by name, skipping self-references
             examples = []
@@ -649,47 +817,36 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None):
                            " in — such calls have historically been unreliable.")
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
-                         str(conf[i]), version, now, real_dates.get(int(pid), a)))
-
-            # 1w: the 1-month forecast pro-rated to 7 days (monthly data has no
-            # weekly targets to train on) — same drivers, disclosed in the text.
-            # Composed through make_reason (not sliced out of the 1m text), so
-            # phrasing changes there can't garble this row.
-            # Skipped in backtests: 1w rows grade against scored_at + 7 days,
-            # and a backtest's scored_at is today, not the pretend issue date.
-            if hname == "1m" and not as_of:
-                rw = float(r) * WEEK_FRACTION
-                # point scales with t; the band scales with sqrt(t) (vol compounds
-                # like a random walk — linear scaling under-covered badly at 1w)
-                lw = rw - (float(r) - float(lo_ret[i])) * WEEK_BAND_FRACTION
-                hw = rw + (float(hi_ret[i]) - float(r)) * WEEK_BAND_FRACTION
-                wreason = make_reason(rw, mom3[i], trend12[i], vol6[i], "1w",
-                                      vol_now[i], volchg[i],
-                                      comp=comp,
-                                      deltas_i={bkt: d[i] for bkt, d in deltas.items()},
-                                      traits=traits.get(int(pid)), pid=int(pid),
-                                      set12=set12[i], comp_examples=examples)
-                wreason += " Pro-rated from the 1-month model (price data is monthly)."
-                if unreliable:
-                    wreason += (" Caution: the model's recent out-of-sample accuracy for"
-                                " this game and horizon is poor — treat this forecast as"
-                                " speculative.")
-                rows.append((game, int(pid), target, "1w", a, round(float(b), 2),
-                             round(float(b) * float(np.exp(rw)), 2),
-                             round(float(b) * float(np.exp(lw)), 2),
-                             round(float(b) * float(np.exp(hw)), 2),
-                             round(rw, 4), wreason, str(conf[i]), version, now,
-                             real_dates.get(int(pid), a)))
-    print(f"[{game}/{target}] {len(rows)} rows", flush=True)
+                         str(conf[i]), version, now, real_dates.get((int(pid), pr), a),
+                         pr))
+            # (1w rows removed 2026-08-14: they were the 1-month forecast
+            # pro-rated to 7 days — synthetic, and retired ahead of the true
+            # weekly model planned once daily data matures, ~Oct 2026.)
+    print(f"[{game}/{target}] {len(rows)} rows"
+          + (f" ({len(stale_pids)} stale-anchored card(s) not published)" if stale_pids else "")
+          + (f" ({len(thin_pids)} single-bucket card(s) not published)" if thin_pids else ""),
+          flush=True)
     return rows
 
 
 def archive(conn, rows):
-    """Keep the FIRST forecast issued per (card, tier, horizon, as_of) forever.
+    """Archive issued forecasts for later grading.
 
     `forecasts` is dropped and rebuilt every run, so it can never answer "what
-    did the model say last month?". This table can: INSERT OR IGNORE means a
-    nightly retrain on the same underlying price month never rewrites history.
+    did the model say last month?". This table can. Two retention regimes
+    (2026-08-14):
+
+    - 1m: EVERY nightly forecast is kept (as_of = the issue date), so a
+      freshly matured 1m dot appears on card pages daily. Once an issue
+      month's cohorts have all matured, forecast_scorecard.py's compactor
+      keeps each card's MEDIAN-|error| row (a real forecast — real issue
+      date, base and outcome; 2026-08-29, no synthetic averages) and
+      persists the month's full stats to forecast_accuracy_monthly —
+      long-term growth is identical to the old one-row-per-month.
+    - 6m/12m: one FIRST-issued row per anchor month (as_of = month 1st,
+      INSERT OR IGNORE dedupes) — a year of nightly near-identical copies
+      awaiting maturity would be hundreds of millions of pending rows.
+
     forecast_scorecard.py grades each row (fills the realized_* columns) once
     its horizon has elapsed, and feeds the errors back into training.
     """
@@ -702,18 +859,32 @@ def archive(conn, rows):
             base_price REAL, forecast_price REAL, low REAL, high REAL, ret REAL,
             confidence TEXT, model_version TEXT, scored_at TEXT,
             realized_price REAL, realized_ret REAL, realized_at TEXT, graded_at TEXT,
-            PRIMARY KEY (game, product_id, target, horizon, as_of)
+            printing TEXT NOT NULL DEFAULT '',   -- '' = base printing
+            PRIMARY KEY (game, product_id, printing, target, horizon, as_of)
         )
         """)
+    # ~470k 1m rows/night held to maturity (2026-08-27): compaction, grading
+    # and audits all slice by (horizon, as_of) — unindexed, each was a full
+    # scan of a multi-GB table (minutes on the t3.small serving copy).
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_horizon_asof "
+                 "ON forecast_archive(horizon, as_of)")
+    payload = []
+    for r in rows:   # drops r[10] (bulky reason) and r[14] (anchor_date)
+        rec = list(r[:10] + r[11:14] + (r[15],))
+        if r[3] == "1m":
+            # Nightly cohort: key on the ISSUE date. r[13] is the run's `now`
+            # ISO timestamp; backtest rows keep their month key (their `now`
+            # is a synthetic tag, and __bt rows are ignored anyway).
+            iso = str(r[13])[:10]
+            if len(iso) == 10 and iso[4] == "-" and iso[7] == "-":
+                rec[4] = iso
+        payload.append(tuple(rec))
     added = conn.executemany(
         "INSERT OR IGNORE INTO forecast_archive "
         "(game, product_id, target, horizon, as_of, base_price, forecast_price,"
-        " low, high, ret, confidence, model_version, scored_at)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [r[:10] + r[11:14] for r in rows]).rowcount   # drops r[10] (bulky reason) and r[14] (anchor_date):
-                                                      # the archive keys on the MONTH bucket so a nightly
-                                                      # rerun on the same price month stays a no-op
-    print(f"archived {added} first-issued forecast(s) for later grading")
+        " low, high, ret, confidence, model_version, scored_at, printing)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload).rowcount
+    print(f"archived {added} forecast(s) for later grading")
 
 
 def main():
@@ -771,22 +942,29 @@ def main():
     # site with exit 0. Refuse to publish if a game that had forecasts now
     # has none, or the total collapsed; the old table keeps serving.
     try:
-        prev = dict(conn.execute(
-            "SELECT game, COUNT(*) FROM forecasts GROUP BY game").fetchall())
+        prev = dict(((g, t), n) for g, t, n in conn.execute(
+            "SELECT game, target, COUNT(*) FROM forecasts GROUP BY game, target"))
     except sqlite3.OperationalError:
         prev = {}   # first run against this DB: nothing to protect
-    checked = {g: n for g, n in prev.items() if g in games} if args.game else prev
+    checked = ({k: n for k, n in prev.items() if k[0] in games} if args.game
+               else {k: n for k, n in prev.items() if k[1] in TARGETS})
     if checked:
         new_counts = {}
         for r in all_rows:
-            new_counts[r[0]] = new_counts.get(r[0], 0) + 1
-        gone = [g for g, n in checked.items() if n >= 1000 and not new_counts.get(g)]
+            k = (r[0], r[2])
+            new_counts[k] = new_counts.get(k, 0) + 1
+        # Per (game, target), not per game: 2026-08-02 a single crashed segment
+        # (magic/ungraded — the game's headline tier and the movers' input)
+        # shipped because magic still had graded rows. Any segment that had a
+        # real presence and now returns nothing blocks the publish.
+        gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
         total_prev = sum(checked.values())
-        total_new = sum(new_counts.get(g, 0) for g in checked)
+        total_new = sum(new_counts.get(k, 0) for k in checked)
         if gone or total_new < total_prev * 0.5:
-            print(f"[forecast] PUBLISH GATE: refusing to rebuild — games with no "
-                  f"rows: {gone or 'none'}; rows {total_new} vs {total_prev} "
-                  f"previous. Existing forecasts left untouched.", flush=True)
+            print(f"[forecast] PUBLISH GATE: refusing to rebuild — segments with "
+                  f"no rows: {[f'{g}/{t}' for g, t in gone] or 'none'}; rows "
+                  f"{total_new} vs {total_prev} previous. Existing forecasts "
+                  f"left untouched.", flush=True)
             conn.close()
             raise SystemExit(1)
 
@@ -799,7 +977,8 @@ def main():
             confidence TEXT,          -- model-reported: high | med | low (80% interval width)
             model_version TEXT, scored_at TEXT,
             anchor_date TEXT,         -- REAL date of the anchor price (as_of is its month bucket)
-            PRIMARY KEY (game, product_id, target, horizon)
+            printing TEXT NOT NULL DEFAULT '',   -- '' = base printing
+            PRIMARY KEY (game, product_id, printing, target, horizon)
         );
         """
     if args.game:
@@ -808,7 +987,7 @@ def main():
         conn.executemany("DELETE FROM forecasts WHERE game = ?", [(g,) for g in games])
     else:
         conn.executescript("DROP TABLE IF EXISTS forecasts;" + schema)
-    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
+    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
     archive(conn, all_rows)
     conn.commit()
     conn.close()
