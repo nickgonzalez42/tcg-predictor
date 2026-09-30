@@ -130,6 +130,15 @@ def run_game(game, suffix, baseline, limit, seen):
 
     unlinked = catalog_pids(game) - linked_pids(game)
     have = load_suggestions()
+    # Special-print PC pages ([1st Edition]/[Shadowless]) embed the SAME tcg id
+    # as the regular page (TCGplayer bundles printings), so an exact-id match
+    # is NOT proof of the right page. Those suggestions get a distinct source
+    # string so take_exact_suggestions won't auto-confirm them — a human
+    # decides in match review. (Bug class found 2026-08-08: 99 regular-print
+    # pokemon cards auto-linked to 1st Edition pages.)
+    SPECIAL = ("1st edition", "shadowless")
+    card_names = dict(sqlite3.connect(db_path(game)).execute(
+        "SELECT product_id, name FROM cards"))
     new_seen, new_sugg = [], []
     for pc_id, pc_name in capped:
         ids, status = page_tcg_ids(pc_id)
@@ -138,7 +147,11 @@ def run_game(game, suffix, baseline, limit, seen):
         new_seen.append([game, pc_id])            # 200 or 404 => triaged
         for tcg in (ids or set()):
             if tcg in unlinked and (game, tcg, pc_id) not in have:
-                new_sugg.append([game, tcg, pc_id, pc_name, "page-embedded tcg-id", now()])
+                pl, cl = pc_name.lower(), (card_names.get(tcg) or "").lower()
+                src = ("special-print page — needs review"
+                       if any(t in pl and t not in cl for t in SPECIAL)
+                       else "page-embedded tcg-id")
+                new_sugg.append([game, tcg, pc_id, pc_name, src, now()])
                 have.add((game, tcg, pc_id))
 
     if new_seen:

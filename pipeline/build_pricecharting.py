@@ -26,6 +26,7 @@ Run:  .venv/bin/python build_pricecharting.py
 import csv
 import os
 import sqlite3
+import time
 from datetime import datetime, timezone
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
@@ -196,7 +197,150 @@ def import_game(game, card_db, csv_name, now):
     return rows, suspects, review
 
 
+# The bulk price-guide CSVs (loose + all graded tiers, daily) came from the paid
+# PriceCharting subscription, which has ended. Their files now sit frozen at the
+# last good download. Rebuilding the match table from them would (a) re-freeze in
+# stale prices and (b) write fake "today" snapshot points, so once they go stale
+# we STOP rebuilding: the existing match table is preserved (scrape_graded_history
+# still uses it for pc_id targets), graded prices come from the public
+# product-page crawl, and this step does blocklist maintenance only.
+# Gate at < 1 day: the download step ran minutes before this one, so a live CSV is
+# always well under a day old — anything older means the feed is dead.
+CSV_STALE_DAYS = 1
+
+
+def csvs_usable():
+    """True only if every bulk-download game's CSV is present and fresh. Games
+    priced from their own scrapers (gundam/starwars, pc_category=None) don't gate
+    this — only the ones that came from the retired paid bulk download."""
+    for g in priced_games():
+        if not GAMES[g].get("pc_category"):
+            continue   # scraper-fed game, not a paid-download CSV
+        p = os.path.join(BASE, GAMES[g]["pc_csv"])
+        if not os.path.exists(p) or (time.time() - os.path.getmtime(p)) > CSV_STALE_DAYS * 86400:
+            return False
+    return True
+
+
+SUGGEST_CSV = os.path.join(BASE, "ml_data", "pc_link_suggestions.csv")
+REVIEWED_CSV = os.path.join(BASE, "ml_data", "pc_match_reviewed.csv")
+
+
+def take_exact_suggestions(game):
+    """Pop pc_link_suggest's exact links for a game: PriceCharting's own page
+    lists the TCGplayer ID (the js-tcg-id-link anchor), so a suggestion sourced
+    from it IS PriceCharting's mapping — no human review needed (per 2026-08-01
+    decision; match_review only handles the ambiguous leftovers). Returns
+    {product_id: pc_id} and rewrites the CSV without the consumed rows."""
+    if not os.path.exists(SUGGEST_CSV):
+        return {}
+    with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
+        rows = list(csv.DictReader(f))
+    take = {int(r["product_id"]): int(r["pc_id"]) for r in rows
+            if r["game"] == game and r.get("source") == "page-embedded tcg-id"}
+    if take:
+        keep = [r for r in rows
+                if not (r["game"] == game and r.get("source") == "page-embedded tcg-id")]
+        with open(SUGGEST_CSV, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=rows[0].keys())
+            w.writeheader()
+            w.writerows(keep)
+    return take
+
+
+def mark_reviewed(rows):
+    """Append (game, product_id, pc_id) confirms to pc_match_reviewed.csv so the
+    forecast's graded match-review gate passes for auto-linked cards."""
+    new = not os.path.exists(REVIEWED_CSV)
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    with open(REVIEWED_CSV, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["game", "product_id", "pc_id", "status", "reviewed_at"])
+        w.writerows([[g, pid, pc, "confirmed", now] for g, pid, pc in rows])
+
+
+def apply_confirmed_links(conn):
+    """Insert new-card links into the frozen match table so scrape_graded_history
+    will crawl their graded history. Two sources: human-confirmed overrides
+    (pc_match_overrides.csv) and pc_link_suggest's exact page-embedded tcg-ids
+    (auto-applied — see take_exact_suggestions). On the preserve path there is no
+    bulk CSV to pull the PC row from, so we store just the pc_id (+ our catalog
+    name as a placeholder); the graded crawl then fills the history and
+    build_unified's current-graded refresh fills the price columns. pc_id 0 =
+    confirmed exclusion (no correct PC page) — skipped. Only product_ids not
+    already linked are added, so this is cheap and idempotent."""
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    added = 0
+    auto_reviewed = []
+    for game, (card_db, _csv) in SOURCES.items():
+        overrides = load_overrides(game)                 # product_id -> pc_id
+        exact = take_exact_suggestions(game)             # auto-links (no review)
+        merged = {**exact, **overrides}                  # a human override wins
+        linked = {pid for (pid,) in conn.execute(
+            "SELECT product_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,))}
+        new_links = [(pid, pc) for pid, pc in merged.items() if pc and pid not in linked]
+        auto_reviewed += [(game, pid, pc) for pid, pc in new_links if pid in exact]
+        # Human OVERRIDES are authoritative for already-linked cards too — a
+        # match found pointing at the wrong PC page (e.g. a [1st Edition] page
+        # for a regular-print card) gets corrected, not silently ignored. Only
+        # rows whose pc_id actually differs are touched (no nightly churn).
+        for pid, pc in overrides.items():
+            if pc and pid in linked:
+                cur = conn.execute(
+                    "SELECT pc_id FROM pricecharting WHERE game=? AND product_id=?",
+                    (game, pid)).fetchone()
+                if cur and cur[0] != pc:
+                    conn.execute(
+                        "UPDATE pricecharting SET pc_id=?, updated_at=? "
+                        "WHERE game=? AND product_id=?", (pc, now, game, pid))
+                    added += 1
+        if not new_links:
+            continue
+        names = {}
+        try:
+            cc = sqlite3.connect(os.path.join(BASE, card_db))
+            q = ",".join("?" * len(new_links))
+            names = dict(cc.execute(
+                f"SELECT product_id, name FROM cards WHERE product_id IN ({q})",
+                [pid for pid, _ in new_links]))
+            cc.close()
+        except sqlite3.OperationalError:
+            pass
+        for pid, pc in new_links:
+            if conn.execute("SELECT 1 FROM pricecharting WHERE game=? AND product_id=?",
+                            (game, pid)).fetchone():
+                conn.execute("UPDATE pricecharting SET pc_id=?, updated_at=? "
+                             "WHERE game=? AND product_id=?", (pc, now, game, pid))
+            else:
+                conn.execute(
+                    "INSERT INTO pricecharting (game, product_id, pc_id, pc_name, updated_at) "
+                    "VALUES (?,?,?,?,?)", (game, pid, pc, names.get(pid), now))
+            added += 1
+    if added:
+        conn.commit()
+    if auto_reviewed:
+        mark_reviewed(auto_reviewed)
+    print(f"applied {added} new-card link(s) into the match table "
+          f"({len(auto_reviewed)} auto-confirmed from page-embedded tcg-ids)")
+
+
 def main():
+    if not csvs_usable():
+        # Subscription ended: keep the existing pricecharting match table intact
+        # (graded now refreshes from the public crawl), apply any human-confirmed
+        # new-card links, and run the nightly blocklist deletion so a re-scraped
+        # blocklisted card can't reappear.
+        print("PriceCharting bulk CSVs are stale/absent (subscription ended) — "
+              "preserving the existing match table; graded is sourced from the "
+              "public product-page crawl. Applying confirmed links + blocklist only.")
+        for game, (card_db, csv_name) in SOURCES.items():
+            apply_blocklist(game, card_db)
+        conn = sqlite3.connect(OUT_DB, timeout=60)
+        apply_confirmed_links(conn)
+        conn.close()
+        return
+
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     all_rows, all_suspects, all_review = [], [], []
     for game, (card_db, csv_name) in SOURCES.items():
@@ -286,7 +430,8 @@ def append_snapshot_history(conn, snapshot_rows):
         for i, tier in enumerate(HISTORY_TIERS)
         if row[3 + i] is not None
     ]
-    conn.executemany("INSERT OR REPLACE INTO graded_price_history VALUES (?,?,?,?,?)", points)
+    conn.executemany("INSERT OR REPLACE INTO graded_price_history "
+                     "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)", points)
     print(f"appended {len(points)} snapshot points ({today}) to graded_price_history")
 
 

@@ -136,7 +136,7 @@ def orphans(game, limit=50):
     pids = [r[0] for r in conn.execute(
         "SELECT DISTINCT h.product_id FROM price_history_unified h "
         "LEFT JOIN pricecharting p ON p.game = h.game AND p.product_id = h.product_id "
-        "WHERE h.game=? AND p.product_id IS NULL ORDER BY h.product_id DESC LIMIT ?",
+        "WHERE printing='' AND h.game=? AND p.product_id IS NULL ORDER BY h.product_id DESC LIMIT ?",
         (game, limit + 1))]
     conn.close()
     more = len(pids) > limit

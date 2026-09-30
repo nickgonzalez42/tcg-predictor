@@ -60,6 +60,7 @@ import requests
 PRODUCT_LINE = "pokemon"               # TCGplayer product-line url slug
 SEARCH_URL = "https://mp-search-api.tcgplayer.com/v1/search/request"
 PRICE_HISTORY_URL = "https://infinite-api.tcgplayer.com/price/history/{pid}/detailed"
+PRICEPOINTS_URL = "https://mpapi.tcgplayer.com/v2/product/{pid}/pricepoints"
 # Detailed history range. "annual" is the longest range the endpoint exposes.
 PRICE_HISTORY_RANGE = "annual"
 # CDN image template. 1000x1000 is the largest standard size.
@@ -509,6 +510,26 @@ def fetch_price_history(session, product_id, base_delay):
     resp = request_with_retries(
         session, "GET", url, base_delay,
         params={"range": PRICE_HISTORY_RANGE},
+        headers={"Referer": f"https://www.tcgplayer.com/product/{product_id}"},
+    )
+    if resp is None or resp.status_code != 200:
+        return None
+    try:
+        return resp.json()
+    except ValueError:
+        return None
+
+
+def fetch_pricepoints(session, product_id, base_delay):
+    """The product page's price TABLE: [{printingType, marketPrice, ...}].
+
+    The chart's per-CONDITION series can be junk for illiquid cards (Retro
+    Pack Dark Magician charted NM $22 while the page's Near Mint row and
+    search both said $145 — the $22 was a thin condition sub-series). The
+    table's product-level marketPrice is the number TCGplayer stands behind,
+    so chart adoption is gated on agreeing with it (2026-08-18)."""
+    resp = request_with_retries(
+        session, "GET", PRICEPOINTS_URL.format(pid=product_id), base_delay,
         headers={"Referer": f"https://www.tcgplayer.com/product/{product_id}"},
     )
     if resp is None or resp.status_code != 200:

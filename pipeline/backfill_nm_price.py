@@ -21,7 +21,7 @@ def latest_ungraded(game):
     """product_id -> most-recent ungraded (Near Mint) price."""
     rows = sqlite3.connect(PC_DB).execute(
         "SELECT product_id, date, price FROM price_history_unified "
-        "WHERE game=? AND grade='ungraded'", (game,)).fetchall()
+        "WHERE printing='' AND game=? AND grade='ungraded'", (game,)).fetchall()
     latest, on = {}, {}
     for pid, d, p in rows:
         if pid not in on or d > on[pid]:
