@@ -257,7 +257,19 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: textMuted },
             grid: { vertLines: { color: border }, horzLines: { color: border } },
             rightPriceScale: { borderColor: border },
-            timeScale: { borderColor: border },
+            timeScale: {
+                borderColor: border,
+                // The daily whitespace grid (below) can put thousands of
+                // slots on a multi-year card; the default 0.5px minimum bar
+                // width would stop "ALL" from fitting on narrow charts.
+                minBarSpacing: 0.05,
+                // Uniform tick labels (2026-10-01, user request): always
+                // "Sep 29". The library's default mixes "Sep", "29" and
+                // "2027" marks, which read as equal spans side by side.
+                tickMarkFormatter: (t: Time) =>
+                    new Date(String(t) + 'T00:00:00Z').toLocaleDateString('en-US',
+                        { month: 'short', day: 'numeric', timeZone: 'UTC' }),
+            },
             // Zoom is a first-class control (2026-08-22): wheel zooms around
             // the cursor, pinch zooms on touch, horizontal drag pans. Vertical
             // touch drag stays OFF so the page still scrolls over the chart.
@@ -531,6 +543,28 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // the dashed forecast chain (it can reach a year past the last real
         // point), matching the old fitContent.
         const chainEnd = chainPts.length > 1 ? String(chainPts[chainPts.length - 1].time) : lastDate;
+
+        // Time-proportional axis (2026-10-01): lightweight-charts spaces
+        // BARS equally, not time — a monthly point, a lone daily print and a
+        // next-month forecast each took one slot, so "Sep", "29" and "Oct"
+        // read as equal gaps. This invisible series owns a slot for EVERY
+        // calendar day from the first drawn point through the forecast
+        // chain's end; the real series stay sparse and draw across the
+        // whitespace, so horizontal distance equals elapsed time in every
+        // tier and at every zoom.
+        const grid = chart.addSeries(LineSeries, {
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+        });
+        {
+            const gridEnd = Date.parse(chainEnd > lastDate ? chainEnd : lastDate);
+            const days: { time: Time }[] = [];
+            for (let t = Date.parse(all[0].date); t <= gridEnd; t += 86400e3)
+                days.push({ time: new Date(t).toISOString().slice(0, 10) as Time });
+            grid.setData(days);
+        }
+
         let windowEnd = chainEnd > lastDate ? chainEnd : lastDate;
         // Narrow screens, 1M tab: cap the window ~4 weeks past the last real
         // point so history isn't squeezed into a quarter of the plot by the
