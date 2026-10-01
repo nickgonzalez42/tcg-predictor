@@ -32,10 +32,14 @@
   border-radius: var(--radius);
 }
 
+/* Compact editor row (2026-10-01 rework): intrinsically-sized fields that
+   wrap, bottoms aligned, instead of a 2-column 1fr grid that ballooned every
+   input to half the panel on wide screens. The note takes the slack. */
 .owned-copy__fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-5);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-10) var(--space-15);
   flex: 1;
   min-width: 0;
 }
@@ -51,22 +55,42 @@
 
 .owned-copy__fields .input {
   font-size: 12.8px;
-  padding: var(--space-5);
+  min-height: 32px;
+  padding: 0 var(--space-10);
+}
+
+.owned-copy__grade { width: 170px; }
+.owned-copy__paid { width: 110px; }
+.owned-copy__date { width: 160px; }
+
+/* Checkbox rides the control row, not a stacked label of its own. */
+.owned-copy__auto {
+  flex-direction: row !important;
+  align-items: center;
+  gap: var(--space-5);
+  padding-bottom: 8px;
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .owned-copy__note {
-  grid-column: 1 / -1;
+  flex: 1 1 200px;
 }
 
 .owned-copy__actions {
   display: flex;
-  flex-direction: column;
   gap: var(--space-5);
 }
 
 .owned-copy__actions .btn {
-  padding: var(--space-5) var(--space-10);
+  min-height: 32px;
+  padding: 0 var(--space-10);
   font-size: 12.8px;
+}
+
+/* Source chips match the editor's 32px control scale. */
+.owned-copy__fields .src-toggle .btn {
+  min-height: 32px;
 }
 
 /* (card + condition) owned tile */

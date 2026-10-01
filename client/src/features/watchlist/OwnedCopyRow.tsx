@@ -62,29 +62,29 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
     return (
         <div className="owned-copy">
             <div className="owned-copy__fields">
-                <label>Grade
+                <label className="owned-copy__grade">Grade
                     <select className="input" value={grade} onChange={e => setGrade(e.target.value)}>
                         {copyGradeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                 </label>
-                <label className="owned-copy__source">Acquired
+                <label className="owned-copy__source">Acquired via
                     <SourceToggle value={source} onChange={setSource} />
                 </label>
                 {source === 'paid' && (
                     <>
-                        <label>Paid
+                        <label className="owned-copy__paid">Paid
                             <input className="input" type="number" min="0" step="0.01" inputMode="decimal"
                                 value={auto ? String(copy.purchasePrice ?? 0) : price} disabled={auto}
                                 title={auto ? "Auto price: the market price on the acquired date" : undefined}
                                 onChange={e => setPrice(e.target.value)} />
                         </label>
                         <label className="owned-copy__auto" title="Set the paid price automatically from the market price on the acquired date ($0 if no data goes back that far)">
-                            Auto price
                             <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
+                            Auto price
                         </label>
                     </>
                 )}
-                <label>Acquired
+                <label className="owned-copy__date">Acquired
                     <input className="input" type="date" value={acquired} max={new Date().toISOString().slice(0, 10)}
                         onChange={e => setAcquired(e.target.value)} />
                 </label>
