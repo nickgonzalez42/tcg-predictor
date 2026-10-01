@@ -100,6 +100,7 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                             </div>
                             {copies.map(copy => (
                                 <OwnedCopyRow key={copy.id} copy={copy}
+                                    onDone={() => setExpanded(false)}
                                     onClose={() => setExpanded(false)} />
                             ))}
                         </div>
