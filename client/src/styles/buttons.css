@@ -10,7 +10,14 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-10);
-  padding: var(--space-10);
+  /* Geometry comes from the shared control height, not from padding, so
+     every standard button is exactly as tall as the next one (2026-10-01
+     unification: heights ranged ~29-41px depending on each button's padding
+     and line box). Vertical centering is the flexbox, which also centers
+     text glyphs doing icon duty (★ ☆ + −) regardless of font metrics. */
+  min-height: var(--control-h);
+  padding: 0 var(--space-15);
+  line-height: 1.2;
   border: 1px solid var(--brand-border);
   border-radius: var(--radius);
   background: var(--brand);
@@ -19,6 +26,26 @@
   cursor: pointer;
   font-size: 15.2px;
   transition: background 0.15s ease, filter 0.15s ease;
+}
+
+/* Compact size: chips, tabs, pills. Composes with --outline/--active. */
+.btn--sm {
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-10);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Square icon-only button (glyph or svg), standard height. */
+.btn--icon {
+  width: var(--control-h);
+  padding: 0;
+  flex: none;
+  line-height: 1;
+}
+
+.btn--icon.btn--sm {
+  width: var(--control-h-sm);
 }
 
 .btn:hover {
@@ -71,7 +98,8 @@
 }
 
 .view-toggle__btn {
-  padding: var(--space-5) var(--space-15);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-15);
   font-size: 13.12px;
 }
 
@@ -98,6 +126,7 @@
 .btn.btn--circle {
   width: 32px;
   height: 32px;
+  min-height: 32px;   /* beats .btn's standard min-height */
   padding: 0;
   border-radius: 50%;
   display: inline-flex;

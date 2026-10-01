@@ -50,6 +50,10 @@
   --space-50: 50px;
   --space-95: 95px;    /* page clearance under the fixed navbar */
   --space-130: 130px;  /* …when the ticker strip is showing */
+  /* Control heights — every interactive control is one of two sizes, so
+     buttons, chips and icon squares line up wherever they share a row. */
+  --control-h: 38px;     /* standard buttons, pagination, inputs */
+  --control-h-sm: 28px;  /* chips, tabs, pills */
   --sidebar-w: 300px;  /* desktop left-rail nav width */
   --page-top: 30px;    /* gap from the top of the page to the first element */
   --container-max: 1280px;   /* .container max-width */

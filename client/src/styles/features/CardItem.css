@@ -171,9 +171,13 @@
 /* Right-side round "＋" toggle, vertically centered to the price row.
    Open (aria-pressed) it spins 45° so the ＋ reads as an ✕. */
 .card__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   width: 36px;
   height: 36px;
+  min-height: 36px;   /* beats .btn's standard min-height */
   padding: 0;
   border-radius: 50%;
   font-size: 22.4px;

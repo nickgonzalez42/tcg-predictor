@@ -39,6 +39,12 @@
 /* ⓘ opens the forecast's detail + reasoning in a modal (inline text made the
    table too wide for smaller screens). */
 .why-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
   padding: 0;
   background: none;
   border: none;
@@ -353,9 +359,12 @@
 }
 
 .printing-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-h-sm);
   font-family: var(--mono);
   font-size: 12px;
-  padding: var(--space-5) var(--space-10);
+  padding: 0 var(--space-10);
   border: 1px solid var(--border);
   border-radius: 999px;
   background: transparent;

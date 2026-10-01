@@ -121,7 +121,8 @@
 }
 
 .range-tab {
-  padding: var(--space-5) var(--space-10);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-10);
   font-size: 12px;
   font-family: var(--mono);
 }

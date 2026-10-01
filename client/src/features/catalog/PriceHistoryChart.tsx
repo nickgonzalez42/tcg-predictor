@@ -611,7 +611,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                     {grades.map(g => (
                         <button
                             key={g}
-                            className={`btn btn--outline${g === grade ? ' btn--active' : ''}`}
+                            className={`btn btn--outline range-tab${g === grade ? ' btn--active' : ''}`}
                             onClick={() => setGrade(g)}
                         >
                             {GRADE_TIER_LABEL[g] ?? g}

@@ -21,12 +21,21 @@
 
 .input {
   width: 100%;
-  padding: var(--space-10);
+  /* Same control height as .btn, so an input and the button beside it
+     (quantity + add, search + apply) sit flush in a shared row. */
+  min-height: var(--control-h);
+  padding: 0 var(--space-10);
   background: var(--surface-2);
   border: 1px solid var(--input-border);
   border-radius: var(--radius);
   color: var(--text);
   font-size: 15.2px;
+}
+
+/* Multi-line fields keep block padding; the control height is for one-liners. */
+textarea.input {
+  min-height: 0;
+  padding: var(--space-10);
 }
 
 .input:focus {

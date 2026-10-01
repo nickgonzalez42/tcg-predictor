@@ -319,8 +319,8 @@
   font-size: 16px;
 }
 
+/* Geometry comes from .btn (shared control height). */
 .filters__apply {
-  padding: var(--space-10);
   font-weight: 700;
 }
 

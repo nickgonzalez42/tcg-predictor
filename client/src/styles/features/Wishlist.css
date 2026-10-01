@@ -1,13 +1,19 @@
 /* Wishlist: star toggle + price-alert chips. */
 
 .star-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  padding: 0;
   background: none;
   border: none;
   cursor: pointer;
   font-size: 17.6px;
+  line-height: 1;
   color: var(--brand);
-  padding: var(--space-5);
-  vertical-align: middle;
 }
 
 .star-btn:hover {
@@ -15,6 +21,9 @@
 }
 
 .alert-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;   /* table-compact: the one deliberate size below --control-h-sm */
   font-family: var(--mono);
   font-size: 10.5px;
   letter-spacing: 0.02em;
