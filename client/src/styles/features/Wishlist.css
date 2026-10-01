@@ -4,8 +4,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  /* Same control height as the "＋ Own it" / track buttons it sits beside. */
+  width: var(--control-h);
+  height: var(--control-h);
   flex: none;
   padding: 0;
   background: none;
