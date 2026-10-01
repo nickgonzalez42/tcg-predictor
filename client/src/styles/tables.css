@@ -112,12 +112,13 @@
   margin-right: auto;
 }
 
-/* Buttons sitting directly in the header row (e.g. Import + the "?" circle)
-   share one height — the circle's fixed 32px. */
-.table-head > .btn {
-  height: 32px;
-  padding-top: 0;
-  padding-bottom: 0;
+/* Buttons sitting directly in the header row (Export/Import/Clear + the
+   "?" circle) share the standard control height — the circle, 32px in
+   dense table rows elsewhere, scales up to match its siblings here. */
+.table-head > .btn.btn--circle {
+  width: var(--control-h);
+  height: var(--control-h);
+  min-height: var(--control-h);
 }
 
 .table-head__search {
