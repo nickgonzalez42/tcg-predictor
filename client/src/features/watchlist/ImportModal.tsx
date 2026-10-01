@@ -41,7 +41,8 @@ function parseRows(text: string): ImportRow[] {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (!lines.length) return [];
 
-    let idx = { game: 0, card: 1, condition: 2, quantity: 3, pricePaid: 4, acquiredDate: 5, tcgplayerId: -1 };
+    let idx = { game: 0, card: 1, condition: 2, quantity: 3, pricePaid: 4, acquiredDate: 5,
+                tcgplayerId: -1, source: -1 };
     const first = splitCsv(lines[0]);
     if (!isGame(first[0])) {
         const norm = (s: string) => s.toLowerCase().replace(/[^a-z]/g, '');
@@ -55,6 +56,7 @@ function parseRows(text: string): ImportRow[] {
             pricePaid: find('pricepaid', 'price', 'paid'),
             acquiredDate: find('acquireddate', 'acquired', 'date'),
             tcgplayerId: find('tcgplayerid', 'tcgplayer'),
+            source: find('source', 'acquiredvia', 'origin'),
         };
         lines.shift();
     }
@@ -83,6 +85,10 @@ function parseRows(text: string): ImportRow[] {
             quantity: Number.isInteger(qty) && qty > 0 ? qty : 1,
             purchasePrice: priceRaw !== '' && isFinite(priceNum) && priceNum >= 0 ? priceNum : undefined,
             acquiredAt: get(idx.acquiredDate) || undefined,
+            // No source column (pre-feature files): the server infers paid
+            // from a present price, pack from a blank one.
+            source: /^(pack|paid)$/i.test(get(idx.source))
+                ? get(idx.source).toLowerCase() as 'pack' | 'paid' : undefined,
         };
     });
 }

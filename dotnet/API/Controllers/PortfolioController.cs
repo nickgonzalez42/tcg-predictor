@@ -29,8 +29,13 @@ public class PortfolioController(
     // Optional ?game= narrows the whole rollup to one game's copies — the
     // value chart's game chips use this; the page's headline numbers keep
     // using the unfiltered call.
+    // includePacks=false drops pack pulls from the whole rollup (value,
+    // chart, allocation, count) — the "hide cards I didn't buy" view. Pack
+    // pulls NEVER enter the money sections (paid P/L, invested, benchmark)
+    // either way: no dollars were individually spent on them.
     [HttpGet("summary")]
-    public async Task<IActionResult> GetSummary([FromQuery] string? game = null)
+    public async Task<IActionResult> GetSummary(
+        [FromQuery] string? game = null, [FromQuery] bool includePacks = true)
     {
         var user = User.Identity!.Name!;
         var copiesQuery = store.TrackedCards
@@ -41,8 +46,11 @@ public class PortfolioController(
             copiesQuery = copiesQuery.Where(x => x.Game == key);
         }
         var copies = await copiesQuery.ToListAsync();
+        var packCopies = copies.Count(c => c.Source == AcquireSource.Pack);
+        if (!includePacks)
+            copies = copies.Where(c => c.Source == AcquireSource.Paid).ToList();
         if (copies.Count == 0)
-            return Ok(new { totalValue = 0.0, copies = 0 });
+            return Ok(new { totalValue = 0.0, copies = 0, packCopies });
 
         // Full monthly history for every (game, product, tier) the portfolio touches.
         var seriesByKey = new Dictionary<(string Game, int Id, string Tier), List<(string Date, double Price)>>();
@@ -154,6 +162,7 @@ public class PortfolioController(
             return at.Price > 0 ? at.Price : s[0].Price;  // brand-new card: first known price
         }
         var contribs = copies
+            .Where(c => c.Source == AcquireSource.Paid)   // pack pulls spent no dollars
             .Select(c => (Added: OwnedDate(c), Basis: Basis(c)))
             .Where(l => l.Basis > 0)
             .ToList();
@@ -189,8 +198,9 @@ public class PortfolioController(
                 .Sum(l => l.Basis * p.Close / l.Entry), 2),
         }).ToList();
 
-        // ----- P/L vs what was paid (only copies with a purchase price) -----
-        var paidCopies = copies.Where(c => c.PurchasePrice is > 0).ToList();
+        // ----- P/L vs what was paid (only paid copies with a purchase price) -----
+        var paidCopies = copies
+            .Where(c => c.Source == AcquireSource.Paid && c.PurchasePrice is > 0).ToList();
         var paid = paidCopies.Sum(c => c.PurchasePrice!.Value);
         var paidValue = paidCopies.Sum(c => LatestOf(c) ?? 0);
         object? allTime = paid > 0 ? new
@@ -250,6 +260,7 @@ public class PortfolioController(
             benchmark,
             invested,
             accountCreated = acctDate,
+            packCopies,
         });
     }
 }

@@ -97,6 +97,12 @@
   gap: var(--space-5);
 }
 
+/* Pack-pull / Paid acquisition chips (portfolio add + edit flows). */
+.src-toggle {
+  display: inline-flex;
+  gap: var(--space-5);
+}
+
 .view-toggle__btn {
   min-height: var(--control-h-sm);
   padding: 0 var(--space-15);

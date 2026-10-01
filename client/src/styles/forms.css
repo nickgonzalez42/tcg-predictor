@@ -32,6 +32,17 @@
   font-size: 15.2px;
 }
 
+/* Auto-price checkbox row in the add-to-portfolio flows. */
+.auto-price-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+  margin: var(--space-10) 0;
+  font-size: 13.5px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
 /* Multi-line fields keep block padding; the control height is for one-liners. */
 textarea.input {
   min-height: 0;

@@ -53,6 +53,9 @@ export type PortfolioSummary = {
     // strip contributions out of the chart's change figures.
     invested?: { date: string; value: number }[];
     accountCreated?: string;
+    // Pack pulls among the (game-filtered) owned copies — shown on the
+    // include/hide toggle even when the rollup itself excludes them.
+    packCopies?: number;
 }
 
 // --- Bulk CSV import (POST /watchlist/owned/import) ---
@@ -66,6 +69,7 @@ export type ImportRow = {
     quantity: number;
     purchasePrice?: number;
     acquiredAt?: string;   // yyyy-MM-dd
+    source?: 'pack' | 'paid';  // omitted: a price means paid, none means pack
 }
 
 // A candidate card returned when a name matched more than one card.
@@ -130,6 +134,7 @@ export type OwnedCopyEdit = {
     acquiredAt?: string | null;      // null resets to the copy's added date
     note?: string | null;
     autoPrice?: boolean;
+    source?: 'pack' | 'paid';        // pack pulls carry no price fields
 }
 
 export const watchlistApi = createApi({
@@ -170,7 +175,9 @@ export const watchlistApi = createApi({
         }),
         // Set the number of copies owned at one condition (catalog quantity field).
         // Server only adds/removes blank copies; detailed ones are never auto-deleted.
-        setOwnedQuantity: builder.mutation<{ quantity: number }, { game: string; productId: number; grade?: string; quantity: number }>({
+        setOwnedQuantity: builder.mutation<{ quantity: number },
+            { game: string; productId: number; grade?: string; quantity: number;
+              source?: 'pack' | 'paid'; purchasePrice?: number }>({
             query: (body) => ({ url: 'watchlist/owned/quantity', method: 'PUT', body }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
@@ -208,9 +215,19 @@ export const watchlistApi = createApi({
             invalidatesTags: ['Alerts'],
         }),
         // Portfolio rollup: total value, monthly series, allocation, best/worst.
-        fetchPortfolioSummary: builder.query<PortfolioSummary, string | void>({
-            query: (game) => game && game !== 'all'
-                ? `portfolio/summary?game=${game}` : 'portfolio/summary',
+        // String arg = game (legacy shape); object adds includePacks.
+        fetchPortfolioSummary: builder.query<PortfolioSummary,
+            string | { game?: string; includePacks?: boolean } | void>({
+            query: (arg) => {
+                const { game, includePacks } =
+                    typeof arg === 'string' ? { game: arg, includePacks: true }
+                    : { game: arg?.game, includePacks: arg?.includePacks ?? true };
+                const q = new URLSearchParams();
+                if (game && game !== 'all') q.set('game', game);
+                if (!includePacks) q.set('includePacks', 'false');
+                const qs = q.toString();
+                return qs ? `portfolio/summary?${qs}` : 'portfolio/summary';
+            },
             providesTags: ['Summary'],
         }),
     }),

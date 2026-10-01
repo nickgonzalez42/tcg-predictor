@@ -18,6 +18,10 @@ public class OwnedImportRow
     public int Quantity { get; set; } = 1;
     public double? PurchasePrice { get; set; }  // null => auto price (market on the acquired date)
     public string? AcquiredAt { get; set; }     // yyyy-MM-dd; null/blank => today
+    // pack | paid. Null infers from the row: a purchase price means paid,
+    // no price means a pack pull (CSV files from before this field exist
+    // priced rows as manual buys, blank rows as pulls).
+    public string? Source { get; set; }
 }
 
 public class OwnedImportResult

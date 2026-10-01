@@ -24,13 +24,18 @@ const fade = (hex: string, alpha: number) => {
 // copy's add date) vs a dashed S&P 500 what-if line (the same dollars put
 // into SPX on the same days), both from account creation. Hovering a legend
 // entry dims the other series.
-export default function ValueChart({ summary }: { summary: PortfolioSummary }) {
+export default function ValueChart({ summary, includePacks = true, onIncludePacks }: {
+    summary: PortfolioSummary;
+    includePacks?: boolean;
+    onIncludePacks?: (v: boolean) => void;
+}) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [range, setRange] = useState('all');
     // Game chips: the chart (and its stats) can narrow to one game's copies.
     // 'all' reuses the page's summary; a game fetches its own filtered rollup.
     const [game, setGame] = useState('all');
-    const { data: gameSummary } = useFetchPortfolioSummaryQuery(game, { skip: game === 'all' });
+    const { data: gameSummary } = useFetchPortfolioSummaryQuery(
+        { game, includePacks }, { skip: game === 'all' });
     const s = game === 'all' ? summary : gameSummary;
     const hasBench = !!s?.benchmark?.length;
 
@@ -152,12 +157,23 @@ export default function ValueChart({ summary }: { summary: PortfolioSummary }) {
             <div className="chart-tabs">
                 {/* Game picker (left) and timeframe chips (right) share one row;
                     .chart-tabs space-between splits them. */}
-                <select className="input chart-game" aria-label="Game" value={game}
-                    onChange={e => setGame(e.target.value)}>
-                    {[{ value: 'all', label: 'All games' }, ...GAMES].map(g => (
-                        <option key={g.value} value={g.value}>{g.label}</option>
-                    ))}
-                </select>
+                <div style={{ display: 'inline-flex', gap: 'var(--space-10)', alignItems: 'center' }}>
+                    <select className="input chart-game" aria-label="Game" value={game}
+                        onChange={e => setGame(e.target.value)}>
+                        {[{ value: 'all', label: 'All games' }, ...GAMES].map(g => (
+                            <option key={g.value} value={g.value}>{g.label}</option>
+                        ))}
+                    </select>
+                    {onIncludePacks && (s?.packCopies ?? 0) > 0 && (
+                        <button
+                            className={`btn btn--outline btn--sm${includePacks ? ' btn--active' : ''}`}
+                            aria-pressed={includePacks}
+                            onClick={() => onIncludePacks(!includePacks)}
+                            title="Cards opened in packs have no individual purchase cost. Toggle whether they count in the value and chart.">
+                            Pack pulls{s?.packCopies ? ` (${s.packCopies})` : ''}
+                        </button>
+                    )}
+                </div>
                 <div className="range-tabs" role="group" aria-label="Time range">
                     {RANGES.map(r => (
                         <button key={r.key}

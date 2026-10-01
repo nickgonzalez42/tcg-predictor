@@ -30,7 +30,10 @@ export default function Portfolio() {
     const dispatch = useAppDispatch();
 
     const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', ...params });
-    const { data: summary } = useFetchPortfolioSummaryQuery();
+    // Pack pulls can be hidden from the whole review (headline value, chart,
+    // allocation, best/worst) — they never count in the money lines either way.
+    const [includePacks, setIncludePacks] = useState(true);
+    const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks });
 
     // The game filter defaults to wherever the user most recently added a
     // card, and keeps following that until they pick a game themselves
@@ -94,7 +97,8 @@ export default function Portfolio() {
                         <ChangePill value={summary.allTime.plPct} suffix="vs cost" />
                     )}
                 </div>
-                {summary && <ValueChart summary={summary} />}
+                {summary && <ValueChart summary={summary}
+                    includePacks={includePacks} onIncludePacks={setIncludePacks} />}
             </div>
             )}
 

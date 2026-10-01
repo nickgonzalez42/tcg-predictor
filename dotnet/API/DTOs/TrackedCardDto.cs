@@ -19,6 +19,7 @@ public class OwnedCopyDto
     public bool AutoPrice { get; set; }            // price tracks the acquired date's market
     public string? Note { get; set; }
     public DateTime AddedAt { get; set; }
+    public string Source { get; set; } = "pack";   // pack | paid
 }
 
 // Set how many copies of a card the user owns at one condition
@@ -30,6 +31,11 @@ public class SetOwnedQuantityDto
     public int ProductId { get; set; }
     public string? Grade { get; set; }   // condition (copy vocab); null/blank = unspecified bucket
     public int Quantity { get; set; }
+    // Acquisition of any NEW copies this request creates: pack pull (default)
+    // or an individual purchase. Paid + no price = auto price (market on the
+    // add date); paid + a price = that manual cost basis per copy.
+    public string? Source { get; set; }
+    public double? PurchasePrice { get; set; }
 }
 
 // Editable per-copy fields (PATCH /watchlist/owned/{id}). All optional; a null
@@ -41,4 +47,5 @@ public class UpdateOwnedCopyDto
     public DateTime? AcquiredAt { get; set; }     // null -> reset to the copy's AddedAt
     public string? Note { get; set; }
     public bool AutoPrice { get; set; } = true;
+    public string? Source { get; set; }           // pack (default) | paid
 }

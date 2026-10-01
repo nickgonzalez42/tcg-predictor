@@ -25,6 +25,14 @@ public class TrackedCard
     public DateTime? AcquiredAt { get; set; }      // acquisition date; defaults to AddedAt on owned rows
     public string? Note { get; set; }              // freeform per-copy note
 
+    // How the copy was acquired (2026-10-01): opened in a sealed pack (the
+    // default on add) or paid for individually. Pack pulls carry no
+    // individual cost basis (PurchasePrice 0, AutoPrice off), sit out of
+    // paid P/L, the invested line and the S&P benchmark, and can be hidden
+    // from the portfolio rollup. Pre-feature rows were migrated to "paid"
+    // so their P/L and benchmark behavior didn't change.
+    public string Source { get; set; } = AcquireSource.Pack;  // pack | paid
+
     // Auto price: keep PurchasePrice synced to the card's market price on its
     // acquired date (0 when no data exists that far back). Off = the user
     // typed their own price.
@@ -33,11 +41,23 @@ public class TrackedCard
     // Wishlist-only detail (null for owned rows).
     public double? WatchedAtPrice { get; set; }    // NM price when the card was wishlisted
 
-    // A copy the user has personalized (manual price, note, or a hand-set
-    // acquired date) displays as its own unit and is never auto-deleted by
-    // quantity changes; untouched auto-priced copies stack. (Get-only => unmapped.)
-    public bool HasDetail => !AutoPrice || !string.IsNullOrWhiteSpace(Note)
+    // A copy the user has personalized (marked paid, manual price, note, or a
+    // hand-set acquired date) displays as its own unit and is never
+    // auto-deleted by quantity changes; untouched pack pulls stack.
+    // (Get-only => unmapped.)
+    public bool HasDetail => Source == AcquireSource.Paid || !AutoPrice
+        || !string.IsNullOrWhiteSpace(Note)
         || (AcquiredAt != null && AcquiredAt.Value.Date != AddedAt.Date);
+}
+
+public static class AcquireSource
+{
+    public const string Pack = "pack";
+    public const string Paid = "paid";
+
+    // Anything that isn't explicitly "paid" is a pack pull — the add default.
+    public static string Normalize(string? source) =>
+        string.Equals(source, Paid, StringComparison.OrdinalIgnoreCase) ? Paid : Pack;
 }
 
 public static class TrackKind

@@ -5,6 +5,7 @@ import {
     useRemoveOwnedCopyMutation,
 } from "./watchlistApi";
 import { PRICE_TIER_OPTIONS } from "./grades";
+import SourceToggle from "./SourceToggle";
 
 // Per-copy grade select: the PriceCharting tiers ('' = Ungraded, i.e. raw).
 const copyGradeOptions = PRICE_TIER_OPTIONS;
@@ -24,6 +25,7 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
     const initialAcquired = (copy.acquiredAt || copy.addedAt).slice(0, 10);
 
     const [grade, setGrade] = useState(copy.grade ?? '');
+    const [source, setSource] = useState<'pack' | 'paid'>(copy.source ?? 'pack');
     const [auto, setAuto] = useState(copy.autoPrice ?? true);
     const [price, setPrice] = useState(String(copy.purchasePrice ?? 0));
     const [acquired, setAcquired] = useState(initialAcquired);
@@ -31,8 +33,9 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
 
     const dirty =
         grade !== (copy.grade ?? '') ||
-        auto !== (copy.autoPrice ?? true) ||
-        (!auto && price !== String(copy.purchasePrice ?? 0)) ||
+        source !== (copy.source ?? 'pack') ||
+        (source === 'paid' && auto !== (copy.autoPrice ?? true)) ||
+        (source === 'paid' && !auto && price !== String(copy.purchasePrice ?? 0)) ||
         acquired !== initialAcquired ||
         note !== (copy.note ?? '');
 
@@ -41,8 +44,12 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
             await update({
                 id: copy.id,
                 grade: grade || null,
-                autoPrice: auto,
-                purchasePrice: auto ? null : (price.trim() === '' ? 0 : Number(price)),
+                source,
+                // Price fields only mean anything on paid copies; the server
+                // zeroes them for pack pulls regardless.
+                autoPrice: source === 'paid' && auto,
+                purchasePrice: source !== 'paid' || auto ? null
+                    : (price.trim() === '' ? 0 : Number(price)),
                 acquiredAt: acquired || null,   // null -> server resets to added date
                 note: note.trim() === '' ? null : note.trim(),
             }).unwrap();
@@ -60,16 +67,23 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
                         {copyGradeOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                 </label>
-                <label>Paid
-                    <input className="input" type="number" min="0" step="0.01" inputMode="decimal"
-                        value={auto ? String(copy.purchasePrice ?? 0) : price} disabled={auto}
-                        title={auto ? "Auto price: the market price on the acquired date" : undefined}
-                        onChange={e => setPrice(e.target.value)} />
+                <label className="owned-copy__source">Acquired
+                    <SourceToggle value={source} onChange={setSource} />
                 </label>
-                <label className="owned-copy__auto" title="Set the paid price automatically from the market price on the acquired date ($0 if no data goes back that far)">
-                    Auto price
-                    <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
-                </label>
+                {source === 'paid' && (
+                    <>
+                        <label>Paid
+                            <input className="input" type="number" min="0" step="0.01" inputMode="decimal"
+                                value={auto ? String(copy.purchasePrice ?? 0) : price} disabled={auto}
+                                title={auto ? "Auto price: the market price on the acquired date" : undefined}
+                                onChange={e => setPrice(e.target.value)} />
+                        </label>
+                        <label className="owned-copy__auto" title="Set the paid price automatically from the market price on the acquired date ($0 if no data goes back that far)">
+                            Auto price
+                            <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
+                        </label>
+                    </>
+                )}
                 <label>Acquired
                     <input className="input" type="date" value={acquired} max={new Date().toISOString().slice(0, 10)}
                         onChange={e => setAcquired(e.target.value)} />

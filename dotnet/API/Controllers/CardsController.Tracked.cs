@@ -313,6 +313,7 @@ public partial class CardsController
                     AutoPrice = x.AutoPrice,
                     Note = x.Note,
                     AddedAt = x.AddedAt,
+                    Source = x.Source,
                 }).ToList();
                 if (forecastSort is { } sort && UnitChange(u.ProductId, u.Grade) is { } ch)
                     CardMarketData.ApplyExpected(dto, ch, sort);

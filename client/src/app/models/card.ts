@@ -50,6 +50,7 @@ export type OwnedCopy = {
     autoPrice: boolean       // price tracks the acquired date's market price
     note?: string
     addedAt: string
+    source: 'pack' | 'paid'  // opened in a pack (default) vs bought individually
 }
 
 export type Forecast = {

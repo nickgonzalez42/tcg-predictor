@@ -72,12 +72,12 @@ public class WatchlistController(
                                   : await PrintingPrice(dto.Game, dto.ProductId, printing))
                 : null,
             AddedAt = now,
-            // Owned copies always carry an acquired date + a cost basis: auto
-            // price resolves the market price on the acquired date (0 = no data).
+            // Owned copies default to PACK PULLS (2026-10-01): no individual
+            // cost basis until the user marks the copy as paid.
             AcquiredAt = kind == TrackKind.Owned ? now : null,
-            AutoPrice = true,
-            PurchasePrice = kind == TrackKind.Owned
-                ? await AutoPriceOf(dto.Game, dto.ProductId, ownedGrade, now, printing) : null,
+            AutoPrice = false,
+            PurchasePrice = kind == TrackKind.Owned ? 0 : null,
+            Source = AcquireSource.Pack,
         });
         await context.SaveChangesAsync();
 
@@ -112,7 +112,14 @@ public class WatchlistController(
         if (target > copies.Count)
         {
             var now = DateTime.UtcNow;
-            var autoPrice = await AutoPriceOf(game, dto.ProductId, grade, now);
+            // New copies: pack pulls by default (no cost basis). Paid copies
+            // auto-price to today's market unless a manual price came along.
+            var source = AcquireSource.Normalize(dto.Source);
+            var paid = source == AcquireSource.Paid;
+            var manual = paid && dto.PurchasePrice is >= 0;
+            var basis = !paid ? 0
+                : manual ? dto.PurchasePrice!.Value
+                : await AutoPriceOf(game, dto.ProductId, grade, now);
             for (var i = copies.Count; i < target; i++)
                 context.TrackedCards.Add(new TrackedCard
                 {
@@ -123,8 +130,9 @@ public class WatchlistController(
                     Grade = grade,
                     AddedAt = now,
                     AcquiredAt = now,
-                    AutoPrice = true,
-                    PurchasePrice = autoPrice,
+                    AutoPrice = paid && !manual,
+                    PurchasePrice = basis,
+                    Source = source,
                 });
         }
         else if (target < copies.Count)
@@ -193,7 +201,8 @@ public class WatchlistController(
             else { rr.Message = "Row needs a card name or product id."; continue; }
 
             var acquired = ParseDateOrNow(row.AcquiredAt);
-            await CreateOwnedCopies(user, game, productId, grade, quantity, row.PurchasePrice, acquired);
+            await CreateOwnedCopies(user, game, productId, grade, quantity, row.PurchasePrice, acquired,
+                                    row.Source);
             rr.Status = "imported";
             rr.Added = quantity;
             result.Added += quantity;
@@ -220,8 +229,10 @@ public class WatchlistController(
 
         var groups = copies
             .GroupBy(c => (c.Game, c.ProductId, c.Grade,
-                           Paid: c.AutoPrice ? (double?)null : c.PurchasePrice ?? 0,
-                           Date: (c.AcquiredAt ?? c.AddedAt).ToString("yyyy-MM-dd")))
+                           Paid: c.Source != AcquireSource.Paid ? null
+                               : c.AutoPrice ? (double?)null : c.PurchasePrice ?? 0,
+                           Date: (c.AcquiredAt ?? c.AddedAt).ToString("yyyy-MM-dd"),
+                           c.Source))
             .OrderBy(g => g.Key.Game).ThenBy(g => g.Key.ProductId).ThenBy(g => g.Key.Grade)
             .ToList();
 
@@ -237,7 +248,7 @@ public class WatchlistController(
                 nameByKey[(game, c.Id)] = c.Name;
         }
 
-        var sb = new StringBuilder("game,card,condition,quantity,pricePaid,acquiredDate,name\n");
+        var sb = new StringBuilder("game,card,condition,quantity,pricePaid,acquiredDate,source,name\n");
         foreach (var g in groups)
         {
             var name = nameByKey.GetValueOrDefault((g.Key.Game, g.Key.ProductId)) ?? "";
@@ -247,6 +258,7 @@ public class WatchlistController(
               .Append(g.Count()).Append(',')
               .Append(g.Key.Paid?.ToString("0.##", CultureInfo.InvariantCulture) ?? "").Append(',')
               .Append(g.Key.Date).Append(',')
+              .Append(g.Key.Source).Append(',')
               .Append(CsvField(name)).Append('\n');
         }
         return File(Encoding.UTF8.GetBytes(sb.ToString()), "text/csv", "cardstock-portfolio.csv");
@@ -267,12 +279,23 @@ public class WatchlistController(
         // can't be in the future (client enforces max=today too).
         var acquired = dto.AcquiredAt ?? copy.AddedAt;
         copy.AcquiredAt = acquired > DateTime.UtcNow ? DateTime.UtcNow : acquired;
-        copy.AutoPrice = dto.AutoPrice;
-        // Auto: price follows the market on the acquired date (recomputed here
-        // since grade/date may have changed). Manual: the typed price, never null.
-        copy.PurchasePrice = dto.AutoPrice
-            ? await AutoPriceOf(copy.Game, copy.ProductId, copy.Grade, copy.AcquiredAt.Value)
-            : dto.PurchasePrice ?? 0;
+        // Pack pulls carry no cost basis; the price fields only mean anything
+        // on paid copies. Auto: price follows the market on the acquired date
+        // (recomputed here since grade/date may have changed). Manual: the
+        // typed price, never null.
+        copy.Source = AcquireSource.Normalize(dto.Source);
+        if (copy.Source == AcquireSource.Pack)
+        {
+            copy.AutoPrice = false;
+            copy.PurchasePrice = 0;
+        }
+        else
+        {
+            copy.AutoPrice = dto.AutoPrice;
+            copy.PurchasePrice = dto.AutoPrice
+                ? await AutoPriceOf(copy.Game, copy.ProductId, copy.Grade, copy.AcquiredAt.Value)
+                : dto.PurchasePrice ?? 0;
+        }
         copy.Note = Blank(dto.Note) ? null : dto.Note!.Trim();
         await context.SaveChangesAsync();
 
@@ -395,10 +418,18 @@ public class WatchlistController(
     // date. Copies keep the acquired date, so past dates read as personalized.
     private async Task CreateOwnedCopies(
         string user, string game, int productId, string? grade, int quantity,
-        double? purchasePrice, DateTime acquired)
+        double? purchasePrice, DateTime acquired, string? source = null)
     {
-        var manual = purchasePrice is >= 0;
-        var basis = manual ? purchasePrice!.Value : await AutoPriceOf(game, productId, grade, acquired);
+        // Source: explicit when given; otherwise a supplied price means an
+        // individual purchase and no price means a pack pull (pre-feature CSV
+        // files carry no source column).
+        var src = source != null ? AcquireSource.Normalize(source)
+            : purchasePrice is >= 0 ? AcquireSource.Paid : AcquireSource.Pack;
+        var paid = src == AcquireSource.Paid;
+        var manual = paid && purchasePrice is >= 0;
+        var basis = !paid ? 0
+            : manual ? purchasePrice!.Value
+            : await AutoPriceOf(game, productId, grade, acquired);
         var now = DateTime.UtcNow;
         for (var i = 0; i < quantity; i++)
             context.TrackedCards.Add(new TrackedCard
@@ -410,8 +441,9 @@ public class WatchlistController(
                 Grade = grade,
                 AddedAt = now,
                 AcquiredAt = acquired,
-                AutoPrice = !manual,
+                AutoPrice = paid && !manual,
                 PurchasePrice = basis,
+                Source = src,
             });
     }
 

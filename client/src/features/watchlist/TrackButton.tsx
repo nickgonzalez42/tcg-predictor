@@ -7,6 +7,7 @@ import {
     useSetOwnedQuantityMutation,
 } from "./watchlistApi";
 import { tierLabel } from "./grades";
+import SourceToggle from "./SourceToggle";
 
 type Props = {
     game: string;
@@ -70,15 +71,33 @@ function AddToCollection({ game, productId, grade, owned, onOpenChange }: {
     const [setQty, { isLoading }] = useSetOwnedQuantityMutation();
     const [open, setOpen] = useState(false);
     const [value, setValue] = useState('1');
+    // Pack pull by default; a paid copy auto-prices to today's market unless
+    // a manual price is typed.
+    const [source, setSource] = useState<'pack' | 'paid'>('pack');
+    const [autoPrice, setAutoPrice] = useState(true);
+    const [price, setPrice] = useState('');
 
     const parsed = Number(value);
-    const valid = value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999;
+    const priceNum = Number(price);
+    const priceOk = source !== 'paid' || autoPrice
+        || (price.trim() !== '' && isFinite(priceNum) && priceNum >= 0);
+    const valid = value.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999
+        && priceOk;
 
-    const close = () => { setOpen(false); setValue('1'); onOpenChange?.(false); };
+    const close = () => {
+        setOpen(false); setValue('1');
+        setSource('pack'); setAutoPrice(true); setPrice('');
+        onOpenChange?.(false);
+    };
     const submit = async () => {
         if (!valid || isLoading) return;
         try {
-            await setQty({ game, productId, grade, quantity: Math.min(owned + parsed, 999) }).unwrap();
+            await setQty({
+                game, productId, grade,
+                quantity: Math.min(owned + parsed, 999),
+                source,
+                purchasePrice: source === 'paid' && !autoPrice ? priceNum : undefined,
+            }).unwrap();
             close();
         } catch {
             // add failed — keep the input open so the user can retry
@@ -96,6 +115,27 @@ function AddToCollection({ game, productId, grade, owned, onOpenChange }: {
 
     return (
         <span className="own-qty" title={`Copies to add · ${tierLabel(grade)}`}>
+            <SourceToggle value={source} onChange={v => {
+                setSource(v);
+                if (v === 'pack') { setAutoPrice(true); setPrice(''); }
+            }} disabled={isLoading} />
+            {source === 'paid' && (
+                <label className="auto-price-check" style={{ margin: 0 }}
+                    title="Use today's market price as the price paid">
+                    <input type="checkbox" checked={autoPrice}
+                        onChange={e => setAutoPrice(e.target.checked)} />
+                    auto&nbsp;$
+                </label>
+            )}
+            {source === 'paid' && !autoPrice && (
+                <input
+                    className="input own-qty__input"
+                    type="number" min="0" step="any" inputMode="decimal"
+                    placeholder="$" aria-label="Price paid per copy"
+                    value={price} disabled={isLoading}
+                    onChange={e => setPrice(e.target.value)}
+                />
+            )}
             <input
                 className="input own-qty__input"
                 type="number" min="1" max="999" step="1" inputMode="numeric"

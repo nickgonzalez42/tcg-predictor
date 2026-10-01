@@ -23,14 +23,16 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
     const grade = card.ownedGrade ?? '';
     const mktValue = card.price != null ? card.price * qty : null;
 
-    const paidCopies = copies.filter(c => c.purchasePrice != null);
+    // P/L compares only PAID copies — pack pulls have no recorded cost, so a
+    // $0 basis would read as pure profit.
+    const paidCopies = copies.filter(c => (c.source ?? 'paid') === 'paid');
     const paid = paidCopies.length ? paidCopies.reduce((s, c) => s + (c.purchasePrice ?? 0), 0) : null;
-    // P/L compares only the copies that have a recorded cost.
     const pl = paid != null && card.price != null ? card.price * paidCopies.length - paid : null;
 
     const addOne = () => addCopy({ game: gameKey(card.game), productId: card.id, kind: 'owned', grade });
     const removeOne = () => {
-        const blank = [...copies].reverse().find(c => c.purchasePrice == null && !c.acquiredAt && !c.note);
+        // Prefer deleting an untouched pack pull over a personalized copy.
+        const blank = [...copies].reverse().find(c => (c.source ?? 'pack') !== 'paid' && !c.note);
         const target = blank ?? copies[copies.length - 1];
         if (target) removeCopy({ id: target.id });
     };
