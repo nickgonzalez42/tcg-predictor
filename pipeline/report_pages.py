@@ -58,6 +58,8 @@ padding-left:10px}
 .report-table th,.report-table td{padding:6px 10px 6px 0;border-bottom:1px solid var(--border)}
 .report-chart{display:block;margin:20px 0}
 svg{max-width:100%;height:auto}
+@media (max-width:480px){.report-table{font-size:12px}
+.report-table th,.report-table td{padding-right:5px}}
 footer.site{border-top:1px solid var(--border);margin-top:36px;padding-top:14px;
 color:var(--text-muted);font-size:13.5px}
 """

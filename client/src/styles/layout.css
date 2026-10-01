@@ -28,6 +28,12 @@
   grid-template-columns: repeat(12, 1fr);
   column-gap: 40px;
   width: 100%;
+  /* Rows hug their content. The default (stretch) hands any leftover
+     viewport height — pages shorter than 100vh, tall monitors, the
+     pre-data loading state — equally to every auto row, inflating section
+     gaps and stretching panels with top-anchored content (2026-10-01
+     design review). */
+  align-content: start;
 }
 
 .subgrid {

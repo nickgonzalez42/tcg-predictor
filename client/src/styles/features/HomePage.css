@@ -134,6 +134,11 @@
   flex-wrap: wrap;
 }
 
+/* "PAST 6M" stays one token beside its sparkline on narrow tiles. */
+.mover__trend .mono {
+  white-space: nowrap;
+}
+
 .mover__price {
   color: var(--price);
   font-weight: 700;

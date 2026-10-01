@@ -133,3 +133,16 @@
   padding: var(--space-5) var(--space-10) var(--space-5) 0;
   border-bottom: 1px solid var(--border);
 }
+
+/* Phones: five-column report-card tables exceed the viewport's min-content
+   width by a few px — tighten them instead of letting the page pan. */
+@media (max-width: 480px) {
+  .report__body .report-table {
+    font-size: 12px;
+  }
+
+  .report__body .report-table th,
+  .report__body .report-table td {
+    padding-right: var(--space-5);
+  }
+}
