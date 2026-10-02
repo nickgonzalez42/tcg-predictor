@@ -29,3 +29,22 @@ export function tierLabel(grade?: string): string {
     const key = grade || 'ungraded';
     return GRADE_TIER_LABEL[key] ?? key;
 }
+
+// Booster-pack MSRP per game (USD, approximate 2026 retail). Pack pulls list
+// at this price in the positions table — display only, in the pack accent
+// color; it never enters paid P/L, the invested line or the S&P benchmark.
+// Tune freely as retail moves.
+export const PACK_PRICE: Record<string, number> = {
+    pokemon: 4.49,
+    onepiece: 4.69,
+    magic: 5.49,
+    yugioh: 4.49,
+    lorcana: 5.99,
+    digimon: 4.49,
+    gundam: 4.99,
+    starwars: 4.99,
+};
+
+export function packPrice(game: string): number {
+    return PACK_PRICE[game] ?? 4.49;
+}

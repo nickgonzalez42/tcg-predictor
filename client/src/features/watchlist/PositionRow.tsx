@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAddToWatchlistMutation, useRemoveOwnedCopyMutation } from "./watchlistApi";
 import { OwnedCopyRow } from "./OwnedCopyRow";
-import { tierLabel } from "./grades";
+import { packPrice, tierLabel } from "./grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
@@ -28,6 +28,10 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
     const paidCopies = copies.filter(c => (c.source ?? 'paid') === 'paid');
     const paid = paidCopies.length ? paidCopies.reduce((s, c) => s + (c.purchasePrice ?? 0), 0) : null;
     const pl = paid != null && card.price != null ? card.price * paidCopies.length - paid : null;
+    // Pack pulls LIST at booster MSRP (2026-10-02, user request) in the pack
+    // accent color — a visual cost anchor only, never counted in P/L.
+    const packPulls = copies.length - paidCopies.length;
+    const packCost = packPulls * packPrice(gameKey(card.game));
 
     const addOne = () => addCopy({ game: gameKey(card.game), productId: card.id, kind: 'owned', grade });
     const removeOne = () => {
@@ -66,10 +70,22 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                         {card.name}
                     </Link>
                     <div className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</div>
+                    {/* Phones hide the Condition column; the tier moves here. */}
+                    <div className="screener__cond-inline">
+                        <span className="owned-condition">{tierLabel(card.ownedGrade)}</span>
+                    </div>
                 </td>
                 <td><span className="owned-condition">{tierLabel(card.ownedGrade)}</span></td>
                 <td className="screener__num">{qty}</td>
-                <td className="screener__num">{paid != null ? currencyFormat(paid) : '—'}</td>
+                <td className="screener__num">
+                    {paid != null ? currencyFormat(paid) : packCost <= 0 ? '—' : null}
+                    {packCost > 0 && (
+                        <div className="pack-paid mono"
+                            title={`${packPulls} pack pull${packPulls === 1 ? '' : 's'} listed at booster price — not counted in P/L`}>
+                            {paid != null ? '+' : ''}{currencyFormat(packCost)} pack
+                        </div>
+                    )}
+                </td>
                 <td className="screener__num screener__price">
                     {mktValue != null ? currencyFormat(mktValue) : '—'}
                     {card.priceAsOf && <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>}
@@ -91,21 +107,18 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                 </td>
             </tr>
             {expanded && (
-                <tr className="position-editor">
-                    <td colSpan={10}>
-                        <div className="owned-copies" style={{ borderTop: 'none', marginTop: 0 }}>
-                            <div className="owned-copies__head">
-                                Copies at {tierLabel(card.ownedGrade)}. A copy with a paid price,
-                                date or note becomes its own position row.
-                            </div>
-                            {copies.map(copy => (
-                                <OwnedCopyRow key={copy.id} copy={copy}
-                                    onDone={() => setExpanded(false)}
-                                    onClose={() => setExpanded(false)} />
-                            ))}
-                        </div>
-                    </td>
-                </tr>
+                <Modal title={`${card.name} · ${tierLabel(card.ownedGrade)}`}
+                    onClose={() => setExpanded(false)}>
+                    <p className="est-note" style={{ marginTop: 0 }}>
+                        A copy with a paid price, date or note becomes its own position row.
+                    </p>
+                    <div className="owned-copies owned-copies--modal">
+                        {copies.map(copy => (
+                            <OwnedCopyRow key={copy.id} copy={copy}
+                                onDone={() => setExpanded(false)} />
+                        ))}
+                    </div>
+                </Modal>
             )}
         </>
     );

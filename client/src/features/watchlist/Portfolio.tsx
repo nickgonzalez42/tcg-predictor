@@ -152,7 +152,7 @@ export default function Portfolio() {
                 ) : data && data.items.length > 0 ? (
                     <>
                         <div className="screener-wrap">
-                            <table className="screener">
+                            <table className="screener screener--positions">
                                 <thead>
                                     <tr>
                                         <th aria-label="Card image" />

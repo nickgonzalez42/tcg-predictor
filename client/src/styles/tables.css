@@ -98,6 +98,69 @@
   pointer-events: none;
 }
 
+/* Positions table never scrolls sideways (2026-10-02, user request):
+   columns drop by priority instead, and the copy editor opens in a modal.
+   Columns: 1 thumb · 2 card · 3 condition · 4 qty · 5 paid · 6 value ·
+   7 P/L · 8 fcst · 9 trend · 10 actions. */
+@media (max-width: 1023px) {
+  .screener--positions th:nth-child(5),
+  .screener--positions td:nth-child(5),
+  .screener--positions th:nth-child(8),
+  .screener--positions td:nth-child(8),
+  .screener--positions th:nth-child(9),
+  .screener--positions td:nth-child(9) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .screener--positions th:nth-child(1),
+  .screener--positions td:nth-child(1),
+  .screener--positions th:nth-child(3),
+  .screener--positions td:nth-child(3),
+  .screener--positions th:nth-child(7),
+  .screener--positions td:nth-child(7) {
+    display: none;
+  }
+
+  .screener--positions th,
+  .screener--positions td {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+
+  .screener--positions td:nth-child(2) {
+    max-width: 140px;
+  }
+
+  .screener--positions td:nth-child(2) .screener__name,
+  .screener--positions td:nth-child(2) .mono {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The hidden Condition column's tier shows under the name instead. */
+  .screener--positions .screener__cond-inline {
+    display: block;
+    margin-top: 4px;
+  }
+}
+
+/* Hidden except on phones (rule above). */
+.screener__cond-inline {
+  display: none;
+}
+
+/* Pack pulls list at booster MSRP — the accent color marks them as pack
+   cost, not recorded spend. */
+.pack-paid {
+  color: var(--accent, #c678dd);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+
 /* Table header row: title + search + sort + game chips. */
 .table-head {
   display: flex;

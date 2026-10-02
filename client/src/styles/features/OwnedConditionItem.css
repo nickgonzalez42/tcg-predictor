@@ -32,6 +32,16 @@
   border-radius: var(--radius);
 }
 
+/* Copies list inside the position-editor modal: stacked cards, no table
+   chrome (the modal brings its own frame). */
+.owned-copies--modal {
+  border-top: none;
+  margin-top: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
 /* Compact editor row (2026-10-01 rework): intrinsically-sized fields that
    wrap, bottoms aligned, instead of a 2-column 1fr grid that ballooned every
    input to half the panel on wide screens. The note takes the slack. */
