@@ -169,8 +169,10 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
                             className={`btn btn--outline btn--sm${includePacks ? ' btn--active' : ''}`}
                             aria-pressed={includePacks}
                             onClick={() => onIncludePacks(!includePacks)}
-                            title="Cards opened in packs have no individual purchase cost. Toggle whether they count in the value and chart.">
-                            Pack pulls{s?.packCopies ? ` (${s.packCopies})` : ''}
+                            title="Cards opened in packs have no individual purchase cost. Toggle whether they count in the value, chart and positions list.">
+                            {includePacks
+                                ? `Pack pulls (${s!.packCopies})`
+                                : `Pack pulls hidden (${s!.packCopies})`}
                         </button>
                     )}
                 </div>

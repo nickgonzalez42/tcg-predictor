@@ -15,15 +15,19 @@ public partial class CardsController
 {
     [Authorize]
     [HttpGet("tracked")]
-    public async Task<ActionResult<List<CardDto>>> GetTracked([FromQuery] CardParams cardParams, [FromQuery] string? kind)
+    public async Task<ActionResult<List<CardDto>>> GetTracked(
+        [FromQuery] CardParams cardParams, [FromQuery] string? kind,
+        [FromQuery] bool includePacks = true)
     {
         var listKind = TrackKind.Normalize(kind);
         var game = GameRegistry.KeyOrDefault(cardParams.Game);
 
         // Owned is shown one tile per (card + condition) with a quantity, so it has
-        // its own paging path. Wishlist is one tile per card.
+        // its own paging path. Wishlist is one tile per card. includePacks=false
+        // drops pack-pull copies from the list, matching the portfolio summary's
+        // toggle (positions left with no copies disappear).
         if (listKind == TrackKind.Owned)
-            return await PageOwnedByCondition(sources.Cards(game), cardParams, game);
+            return await PageOwnedByCondition(sources.Cards(game), cardParams, game, includePacks);
 
         var user = User.Identity!.Name!;
         var tracked = await store.TrackedCards
@@ -165,13 +169,15 @@ public partial class CardsController
     // its quantity and the individual copies at that condition, is priced by that
     // condition's market price, and honors the same search/filter/sort/paging.
     private async Task<List<CardDto>> PageOwnedByCondition(
-        IQueryable<CardBase> source, CardParams p, string folder)
+        IQueryable<CardBase> source, CardParams p, string folder, bool includePacks = true)
     {
         var user = User.Identity!.Name!;
 
         var copies = await store.TrackedCards
             .Where(x => x.UserName == user && x.Game == folder && x.Kind == TrackKind.Owned)
             .ToListAsync();
+        if (!includePacks)
+            copies = copies.Where(c => c.Source == AcquireSource.Paid).ToList();
 
         // Card rows for the owned products, honoring search / set / rarity filters.
         var ids = copies.Select(x => x.ProductId).Distinct().ToList();

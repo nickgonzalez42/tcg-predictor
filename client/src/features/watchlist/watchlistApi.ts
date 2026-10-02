@@ -150,10 +150,15 @@ export const watchlistApi = createApi({
             providesTags: ['Owned', 'Wishlist'],
         }),
         // A single list's cards, with catalog-style filtering/sorting/pagination.
-        fetchTrackedCards: builder.query<{ items: Card[], pagination: Pagination }, { kind: TrackKind } & CardParams>({
-            query: ({ kind, ...params }) => ({
+        fetchTrackedCards: builder.query<{ items: Card[], pagination: Pagination },
+            { kind: TrackKind; includePacks?: boolean } & CardParams>({
+            query: ({ kind, includePacks, ...params }) => ({
                 url: 'cards/tracked',
-                params: toApiParams({ ...params, kind }),
+                params: toApiParams({
+                    ...params, kind,
+                    // Only sent when hiding, so existing cache keys stay stable.
+                    ...(includePacks === false ? { includePacks: false } : {}),
+                }),
             }),
             transformResponse: (items: Card[], meta) => {
                 const header = meta?.response?.headers.get('Pagination');

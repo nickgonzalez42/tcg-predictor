@@ -29,10 +29,11 @@ export default function Portfolio() {
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
 
-    const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', ...params });
-    // Pack pulls can be hidden from the whole review (headline value, chart,
-    // allocation, best/worst) — they never count in the money lines either way.
+    // Pack pulls can be hidden from the whole review — headline value, chart,
+    // allocation, best/worst AND the positions list below (2026-10-02). They
+    // never count in the money lines either way.
     const [includePacks, setIncludePacks] = useState(true);
+    const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', includePacks, ...params });
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks });
 
     // The game filter defaults to wherever the user most recently added a
