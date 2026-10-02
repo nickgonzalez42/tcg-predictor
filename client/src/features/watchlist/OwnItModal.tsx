@@ -3,7 +3,6 @@ import Modal from "../../app/shared/components/Modal";
 import type { Card } from "../../app/models/card";
 import { useImportOwnedMutation, useRemoveFromWatchlistMutation } from "./watchlistApi";
 import { PRICE_TIER_OPTIONS } from "./grades";
-import SourceToggle from "./SourceToggle";
 
 // "Own it" from the watchlist: collect the copy's details, add it to the
 // portfolio (one bulk-import row — it handles grade/quantity/price/date), then
@@ -15,7 +14,6 @@ export default function OwnItModal({ card, game, defaultGrade, onClose }: {
     const [removeWatch] = useRemoveFromWatchlistMutation();
     const [grade, setGrade] = useState(defaultGrade);
     const [qty, setQty] = useState('1');
-    const [source, setSource] = useState<'pack' | 'paid'>('pack');
     const [paid, setPaid] = useState('');
     const [acquired, setAcquired] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -37,8 +35,9 @@ export default function OwnItModal({ card, game, defaultGrade, onClose }: {
                     productId: card.id,
                     grade: grade || undefined,
                     quantity,
-                    source,
-                    purchasePrice: source === 'paid' && paid.trim() !== '' ? paidNum : undefined,
+                    // A typed price marks a purchase; blank = pack pull (the
+                    // server infers the source the same way).
+                    purchasePrice: paid.trim() === '' ? undefined : paidNum,
                     acquiredAt: acquired || undefined,
                 }],
             }).unwrap();
@@ -77,20 +76,11 @@ export default function OwnItModal({ card, game, defaultGrade, onClose }: {
                         inputMode="numeric" value={qty} onChange={e => setQty(e.target.value)} />
                 </div>
                 <div className="field">
-                    <span className="field-label">Acquired</span>
-                    <SourceToggle value={source} onChange={v => {
-                        setSource(v);
-                        if (v === 'pack') setPaid('');
-                    }} />
+                    <label className="field-label" htmlFor="own-paid">Price paid per copy (optional)</label>
+                    <input id="own-paid" className="input" type="number" min="0" step="any"
+                        inputMode="decimal" placeholder="Blank = pack pull (no recorded cost)"
+                        value={paid} onChange={e => setPaid(e.target.value)} />
                 </div>
-                {source === 'paid' && (
-                    <div className="field">
-                        <label className="field-label" htmlFor="own-paid">Price paid per copy (optional)</label>
-                        <input id="own-paid" className="input" type="number" min="0" step="any"
-                            inputMode="decimal" placeholder="Blank = market price on the acquired date"
-                            value={paid} onChange={e => setPaid(e.target.value)} />
-                    </div>
-                )}
                 <div className="field">
                     <label className="field-label" htmlFor="own-date">Date acquired (optional)</label>
                     <input id="own-date" className="input" type="date" max={today}

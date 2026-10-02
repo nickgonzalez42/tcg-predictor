@@ -10,7 +10,6 @@ import {
 import { useUserInfoQuery } from "../account/accountApi";
 import { currencyFormat, shortDate } from "../../lib/util";
 import PriceHistoryChart from "./PriceHistoryChart";
-import SourceToggle from "../watchlist/SourceToggle";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { PRICE_TIER_OPTIONS, GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
 import { confidence } from "./confidence";
@@ -47,18 +46,9 @@ function OrderTicket({ game, productId, printing = '' }: { game: string; product
     const [setQty, { isLoading: settingQty }] = useSetOwnedQuantityMutation();
     const [grade, setGrade] = useState('');   // '' = Ungraded (raw copy)
     const [qty, setQty_] = useState('1');
-    // Acquisition: pack pull by default; paid copies auto-price to the
-    // market unless the user turns auto off and types what they paid.
-    const [source, setSource] = useState<'pack' | 'paid'>('pack');
-    const [autoPrice, setAutoPrice] = useState(true);
-    const [paidPrice, setPaidPrice] = useState('');
 
     const parsed = Number(qty);
-    const paidNum = Number(paidPrice);
-    const priceOk = source !== 'paid' || autoPrice
-        || (paidPrice.trim() !== '' && isFinite(paidNum) && paidNum >= 0);
-    const valid = qty.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999
-        && priceOk;
+    const valid = qty.trim() !== '' && Number.isInteger(parsed) && parsed >= 1 && parsed <= 999;
 
     // Printing-aware: watching the 1st Edition is a separate watch.
     const wishlisted = !!watchlist?.some(
@@ -69,17 +59,13 @@ function OrderTicket({ game, productId, printing = '' }: { game: string; product
     const ownedTotal = watchlist?.filter(
         w => w.game === game && w.productId === productId && w.kind === 'owned').length ?? 0;
 
+    // Adds are PACK PULLS by default (2026-10-02, user decision) — marking a
+    // copy as paid happens in the portfolio's copy editor afterwards.
     const addToPortfolio = async () => {
         if (!valid || settingQty) return;
         try {
-            await setQty({
-                game, productId, grade,
-                quantity: Math.min(ownedAtGrade + parsed, 999),
-                source,
-                purchasePrice: source === 'paid' && !autoPrice ? paidNum : undefined,
-            }).unwrap();
+            await setQty({ game, productId, grade, quantity: Math.min(ownedAtGrade + parsed, 999) }).unwrap();
             setQty_('1');
-            setPaidPrice('');
         } catch { /* keep the form as-is so the user can retry */ }
     };
 
@@ -96,24 +82,6 @@ function OrderTicket({ game, productId, printing = '' }: { game: string; product
                     <label className="field-label" htmlFor="ticket-qty" style={{ marginTop: 'var(--space-15)' }}>Quantity</label>
                     <input id="ticket-qty" className="input" type="number" min="1" max="999" step="1"
                         inputMode="numeric" value={qty} onChange={e => setQty_(e.target.value)} />
-                    <span className="field-label" style={{ marginTop: 'var(--space-15)' }}>Acquired</span>
-                    <SourceToggle value={source} onChange={setSource} />
-                    {source === 'paid' && (
-                        <>
-                            <label className="auto-price-check"
-                                title="Use the market price on the day you add it">
-                                <input type="checkbox" checked={autoPrice}
-                                    onChange={e => setAutoPrice(e.target.checked)} />
-                                Auto price (today&apos;s market)
-                            </label>
-                            {!autoPrice && (
-                                <input className="input" type="number" min="0" step="any"
-                                    inputMode="decimal" placeholder="Price paid per copy"
-                                    aria-label="Price paid per copy" value={paidPrice}
-                                    onChange={e => setPaidPrice(e.target.value)} />
-                            )}
-                        </>
-                    )}
                     <button className="btn btn--block" style={{ marginTop: 'var(--space-15)' }}
                         disabled={!valid || settingQty} onClick={addToPortfolio}>
                         {settingQty ? 'Adding…' : `＋ Add to Portfolio${ownedTotal > 0 ? ` (${ownedTotal} owned)` : ''}`}
