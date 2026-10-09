@@ -38,7 +38,7 @@
 
 /* Affiliate buy button under the card art. */
 .buy-tcg {
-  margin-top: var(--space-10);
+  margin: var(--space-10) 0 var(--space-20);
 }
 
 .buy-tcg__disclosure {
