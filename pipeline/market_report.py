@@ -777,7 +777,13 @@ def build_report(force=False, as_of=None):
 
     picks = forecast_corner(pred, games_live)
     if picks:
-        body.append("<h2>Model corner</h2>"
+        # Highlighted panel (2026-10-09, user request): the model's picks are
+        # the report's signature content, so they get the site's "ticket"
+        # treatment — tinted surface with the forecast-yellow edge the charts
+        # already use for the model line. Older SPA bundles unwrap the div
+        # harmlessly.
+        body.append("<div class='report-model-corner'>"
+                    "<h2>Model corner</h2>"
                     "<p>The cards our 1-month model is most optimistic about right now:</p>"
                     "<table class='report-table'>"
                     "<thead><tr><th>Card</th><th>Current</th><th>1M forecast</th><th>Implied</th></tr></thead><tbody>")
@@ -788,7 +794,7 @@ def build_report(force=False, as_of=None):
                         f"<td>{pct((fcst / base - 1) * 100)}</td></tr>")
         body.append("</tbody></table>"
                     "<p class='report-note'>Forecasts are model estimates, not financial advice; "
-                    "see the About page for how they work and how they're graded.</p>")
+                    "see the About page for how they work and how they're graded.</p></div>")
 
     # Model report card. Live horizons appear once their first cohort has had
     # wall-clock time to mature; until then the backtest vintages (retrained

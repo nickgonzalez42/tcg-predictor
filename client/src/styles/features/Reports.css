@@ -124,6 +124,22 @@
   margin-bottom: var(--space-15);
 }
 
+/* Model corner: the report's signature section gets the site's "ticket"
+   panel treatment, edged in the same yellow the charts use for the model's
+   forecast line — the one highlighted block on the page. */
+.report__body .report-model-corner {
+  background: var(--ticket-bg);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--brand);
+  border-radius: var(--radius);
+  padding: var(--space-5) var(--space-20) var(--space-10);
+  margin: var(--space-40) 0;
+}
+
+.report__body .report-model-corner h2 {
+  margin: var(--space-15) 0 var(--space-10);
+}
+
 /* Metric-definition bullets in the report card: stack with even spacing. */
 .report__body ul {
   display: flex;

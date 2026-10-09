@@ -65,6 +65,9 @@ cursor:pointer;list-style:none;font-size:16.5px}
 .report-game-sec[open] summary::before{transform:rotate(90deg)}
 .report-game-teaser{margin-left:auto;color:var(--text-muted);font-size:12px;white-space:nowrap}
 .report-game-sec > :last-child{margin-bottom:15px}
+.report-model-corner{background:#1c2438;border:1px solid var(--border);
+border-left:4px solid #ffcb05;border-radius:10px;padding:2px 18px 6px;margin:40px 0}
+.report-model-corner h2{margin:14px 0 10px}
 svg{max-width:100%;height:auto}
 @media (max-width:480px){.report-table{font-size:12px}
 .report-table th,.report-table td{padding-right:5px}}
