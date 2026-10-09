@@ -74,5 +74,79 @@ color:var(--text-muted);font-size:13.5px}
   <a href="https://cardstock.guide/privacy">Privacy</a> · <a href="https://cardstock.guide/terms">Terms</a></p>
 </footer>
 </div>
+<script>
+(function () {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var ease = function (t) { return 1 - Math.pow(1 - t, 3); };
+  function tween(dur, step) {
+    var t0 = null;
+    requestAnimationFrame(function frame(now) {
+      if (t0 === null) t0 = now;
+      var p = Math.min((now - t0) / dur, 1);
+      step(ease(p));
+      if (p < 1) requestAnimationFrame(frame);
+    });
+  }
+  var charts = [].slice.call(document.querySelectorAll('svg.report-chart'));
+  charts.forEach(function (svg) {
+    // Hide the marks up front (runs pre-paint, so nothing flashes). Bars are
+    // anchored to the zero line when the chart has one; original geometry is
+    // stashed in data- attributes. Static labels (text-anchor="end") and the
+    // caption stay visible; value/series labels fade in with the marks.
+    var zero = svg.querySelector('line');
+    var zx = zero ? zero.getAttribute('x1') : null;
+    [].forEach.call(svg.querySelectorAll('rect'), function (r) {
+      r.dataset.x = r.getAttribute('x');
+      r.dataset.w = r.getAttribute('width');
+      r.setAttribute('x', zx === null ? r.dataset.x : zx);
+      r.setAttribute('width', 0);
+    });
+    [].forEach.call(svg.querySelectorAll('polyline'), function (l) {
+      var len = 0;
+      try { len = l.getTotalLength(); } catch (e) {}
+      if (!len) return;
+      l.dataset.len = len;
+      l.style.strokeDasharray = len;
+      l.style.strokeDashoffset = len;
+    });
+    [].forEach.call(svg.querySelectorAll('text'), function (t) {
+      if (t.getAttribute('text-anchor') === 'end' ||
+          (t.getAttribute('class') || '').indexOf('report-chart-title') >= 0) return;
+      t.style.opacity = 0;
+      t.dataset.fade = 1;
+    });
+  });
+  function reveal(svg) {
+    [].forEach.call(svg.querySelectorAll('rect'), function (r) {
+      var x = parseFloat(r.dataset.x), w = parseFloat(r.dataset.w);
+      var zx = x, zero = svg.querySelector('line');
+      if (zero) zx = parseFloat(zero.getAttribute('x1'));
+      tween(600, function (p) {
+        r.setAttribute('x', zx + (x - zx) * p);
+        r.setAttribute('width', w * p);
+      });
+    });
+    [].forEach.call(svg.querySelectorAll('polyline'), function (l) {
+      var len = parseFloat(l.dataset.len || 0);
+      if (!len) return;
+      tween(900, function (p) { l.style.strokeDashoffset = len * (1 - p); });
+    });
+    setTimeout(function () {
+      [].forEach.call(svg.querySelectorAll('text'), function (t) {
+        if (!t.dataset.fade) return;
+        tween(350, function (p) { t.style.opacity = p; });
+      });
+    }, 350);
+  }
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      io.unobserve(e.target);
+      reveal(e.target);
+    });
+  }, { rootMargin: '0px 0px -12% 0px' });
+  charts.forEach(function (svg) { io.observe(svg); });
+})();
+</script>
 </body>
 </html>
