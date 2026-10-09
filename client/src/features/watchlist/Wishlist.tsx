@@ -99,6 +99,7 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
             <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
             <td className="screener__mid" onClick={e => e.stopPropagation()}><AlertChip card={card} ownGrade={ownGrade} /></td>
             <td className="screener__actions" onClick={e => e.stopPropagation()}>
+                <BuyTcgLink productId={card.id} />
                 <button className="btn btn--outline"
                     onClick={() => setShowOwn(true)} title="Add to your portfolio">
                     ＋ Own it

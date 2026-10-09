@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import BuyTcgLink from "../../app/shared/components/BuyTcgLink";
+import { affiliateWrap } from "../../lib/affiliate";
 import { useFetchPublicProfileQuery, useFetchPublicCardsQuery } from "./socialApi";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { currencyFormat, shortDate } from "../../lib/util";
@@ -66,6 +68,7 @@ function CardsSection({ handle, list, title, showQty }: {
                                         orderBy={orderBy} onSort={sort} />}
                                     <SortTh label="Value" k="value" className="screener__num"
                                         orderBy={orderBy} onSort={sort} />
+                                    <th aria-label="Buy on TCGplayer" />
                                 </tr>
                             </thead>
                             <tbody>
@@ -84,6 +87,9 @@ function CardsSection({ handle, list, title, showQty }: {
                                         {showQty && <td className="screener__mid">{r.quantity}</td>}
                                         <td className="screener__num screener__price">
                                             {r.price != null ? currencyFormat(r.price * r.quantity) : '—'}
+                                        </td>
+                                        <td className="screener__mid">
+                                            <BuyTcgLink productId={r.productId} compact />
                                         </td>
                                     </tr>
                                 ))}
@@ -124,8 +130,9 @@ export default function PublicProfilePage() {
                     <h1>@{profile.handle}</h1>
                     <p className="est-note">Collecting since {shortDate(profile.joined)}</p>
                     {profile.storefrontUrl && (
-                        <a className="btn btn--outline pub-profile__store" href={profile.storefrontUrl}
-                            target="_blank" rel="noreferrer nofollow">
+                        <a className="btn btn--outline pub-profile__store"
+                            href={affiliateWrap(profile.storefrontUrl)}
+                            target="_blank" rel="sponsored noreferrer nofollow">
                             Visit storefront ↗
                         </a>
                     )}

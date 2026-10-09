@@ -13,3 +13,17 @@ export function tcgBuyUrl(productId: number): string | null {
     const target = `https://www.tcgplayer.com/product/${productId}`;
     return `${TRACKING_BASE}?u=${encodeURIComponent(target)}`;
 }
+
+// Any outbound URL: tcgplayer.com destinations route through the affiliate
+// deep link (user storefronts, search links, …); everything else passes
+// through untouched. partner.tcgplayer.com is already an affiliate link.
+export function affiliateWrap(url: string): string {
+    if (!TRACKING_BASE || !url) return url;
+    try {
+        const h = new URL(url).hostname.toLowerCase();
+        const isTcg = h === 'tcgplayer.com' || h.endsWith('.tcgplayer.com');
+        if (isTcg && h !== 'partner.tcgplayer.com')
+            return `${TRACKING_BASE}?u=${encodeURIComponent(url)}`;
+    } catch { /* not an absolute URL — leave it alone */ }
+    return url;
+}

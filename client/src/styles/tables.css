@@ -216,3 +216,10 @@
 .screener th.sortable--active {
   color: var(--text);
 }
+
+/* Compact affiliated TCGplayer link in card rows. */
+.buy-tcg-inline {
+  color: var(--link);
+  font-size: 12px;
+  white-space: nowrap;
+}
