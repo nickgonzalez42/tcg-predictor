@@ -21,31 +21,45 @@ export default function ReportPage() {
     // all its bars grow out of the zero line together and all its lines trace
     // left-to-right together; labels fade in behind them. Marks are hidden up
     // front via gsap.set so nothing flashes before the trigger fires.
+    //
+    // The per-game sections are collapsed <details>, which complicates this
+    // two ways: a chart inside a closed dropdown has no layout, so a
+    // ScrollTrigger created for it computes a garbage start and plays
+    // invisibly at mount; and toggling any dropdown reflows the whole page,
+    // leaving every other trigger's position stale. So charts are primed
+    // (hidden) immediately but armed with a trigger only once visible — at
+    // mount for top-level charts, on first open for dropdown charts — and
+    // every toggle refreshes all trigger positions.
     useEffect(() => {
         const root = bodyRef.current;
         if (!root || !report) return;
         if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+        const cleanups: (() => void)[] = [];
         const ctx = gsap.context(() => {
-            for (const svg of root.querySelectorAll<SVGSVGElement>("svg.report-chart")) {
-                const tl = gsap.timeline({
-                    scrollTrigger: { trigger: svg, start: "top 85%" },
-                    defaults: { ease: "power2.out" },
-                });
+            // Hide the chart's marks now (works without layout) and return an
+            // arm() that creates the scroll-triggered reveal; original
+            // geometry is captured here because the gsap.set overwrites it.
+            const prime = (svg: SVGSVGElement) => {
                 // Diverging bar charts carry a zero line; every bar is anchored
                 // to it (negative bars slide left as they grow). Without one,
                 // each bar simply grows from its own left edge.
                 const zeroAttr = svg.querySelector("line")?.getAttribute("x1");
                 const zeroX = zeroAttr ? parseFloat(zeroAttr) : null;
-                for (const bar of svg.querySelectorAll<SVGRectElement>("rect")) {
-                    const x = parseFloat(bar.getAttribute("x") ?? "0");
-                    const width = parseFloat(bar.getAttribute("width") ?? "0");
+                const bars = Array.from(svg.querySelectorAll<SVGRectElement>("rect"))
+                    .map(bar => ({
+                        bar,
+                        x: parseFloat(bar.getAttribute("x") ?? "0"),
+                        width: parseFloat(bar.getAttribute("width") ?? "0"),
+                    }));
+                for (const { bar, x } of bars)
                     gsap.set(bar, { attr: { x: zeroX ?? x, width: 0 } });
-                    tl.to(bar, { attr: { x, width }, duration: 0.6 }, 0);
-                }
+                const lines: { line: SVGPolylineElement }[] = [];
                 for (const line of svg.querySelectorAll<SVGPolylineElement>("polyline")) {
-                    const len = line.getTotalLength();
+                    let len = 0;
+                    try { len = line.getTotalLength(); } catch { /* no layout yet */ }
+                    if (!len) continue;
                     gsap.set(line, { strokeDasharray: len, strokeDashoffset: len });
-                    tl.to(line, { strokeDashoffset: 0, duration: 0.9, ease: "none" }, 0);
+                    lines.push({ line });
                 }
                 // text-anchor="end" marks the static labels (row names, axis
                 // values) and report-chart-title the chart's caption — both
@@ -54,13 +68,48 @@ export default function ReportPage() {
                 const texts = Array.from(svg.querySelectorAll("text"))
                     .filter(t => t.getAttribute("text-anchor") !== "end"
                         && !t.classList.contains("report-chart-title"));
-                if (texts.length) {
-                    gsap.set(texts, { opacity: 0 });
-                    tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.25");
-                }
+                if (texts.length) gsap.set(texts, { opacity: 0 });
+                return () => {
+                    const tl = gsap.timeline({
+                        scrollTrigger: { trigger: svg, start: "top 85%" },
+                        defaults: { ease: "power2.out" },
+                    });
+                    for (const { bar, x, width } of bars)
+                        tl.to(bar, { attr: { x, width }, duration: 0.6 }, 0);
+                    for (const { line } of lines)
+                        tl.to(line, { strokeDashoffset: 0, duration: 0.9, ease: "none" }, 0);
+                    if (texts.length)
+                        tl.to(texts, { opacity: 1, duration: 0.35 }, "-=0.25");
+                };
+            };
+
+            for (const svg of root.querySelectorAll<SVGSVGElement>("svg.report-chart")) {
+                const arm = prime(svg);
+                const closed = svg.closest("details:not([open])");
+                if (!closed) { arm(); continue; }
+                const onOpen = () => {
+                    if (!(closed as HTMLDetailsElement).open) return;
+                    // ctx.add so the deferred tweens still revert on unmount.
+                    ctx.add(arm);
+                    closed.removeEventListener("toggle", onOpen);
+                };
+                closed.addEventListener("toggle", onOpen);
+                cleanups.push(() => closed.removeEventListener("toggle", onOpen));
+            }
+
+            // Any dropdown toggle changes the page length under every chart
+            // below it; recompute all trigger positions. (Registered after
+            // the arm handlers, so a fresh trigger is refreshed too.)
+            for (const det of root.querySelectorAll("details")) {
+                const refresh = () => ScrollTrigger.refresh();
+                det.addEventListener("toggle", refresh);
+                cleanups.push(() => det.removeEventListener("toggle", refresh));
             }
         }, root);
-        return () => ctx.revert();
+        return () => {
+            for (const fn of cleanups) fn();
+            ctx.revert();
+        };
     }, [report]);
 
     if (isLoading) return <CardLoader />;
