@@ -208,7 +208,11 @@ STEPS = [
     # match_review.py. Runs after pc-match so it only suggests cards STILL
     # unlinked; reads the sweep's _scraped review CSVs (flip to '' at cutover).
     # pc_link_suggest.py always exits 0 — a link hiccup must not fail the night.
-    ("pc-link-suggest", ["pc_link_suggest.py"]),
+    # --drain: work back through the link backlog the 2026-08 cutover
+    # grandfathered (~99k unmatched PC pages never read for tcg-ids; whole
+    # sets were missing graded data). ~1 page/s, so 1500 adds ~25-45 min per
+    # run night; small games drain first, magic is the months-long tail.
+    ("pc-link-suggest", ["pc_link_suggest.py", "--drain", "1500"]),
 ]
 
 

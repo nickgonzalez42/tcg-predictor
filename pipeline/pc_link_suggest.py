@@ -34,9 +34,24 @@ from scrape_pc_prices import bulk_games         # the games losing the paid API
 ML_DATA = os.environ.get("MATCH_REVIEW_STATE", os.path.join(BASE, "ml_data"))
 SEEN_CSV = os.path.join(ML_DATA, "pc_link_seen.csv")            # game,pc_id (triaged)
 SUGGEST_CSV = os.path.join(ML_DATA, "pc_link_suggestions.csv")  # pending suggestions
+DRAINED_CSV = os.path.join(ML_DATA, "pc_link_drained.csv")      # backlog pages fetched once
 TCG_ID_RE = re.compile(r"tcgplayer\.com/product/(\d+)")
+TITLE_RE = re.compile(r"<title>(.*?)(?:\s*Prices)?\s*[|<]", re.S)
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
 DEFAULT_LIMIT = 500                              # max page fetches per game per run
+
+# --drain works back through the --baseline backlog (2026-10-09, missing-
+# grades check: the 2026-08 cutover marked ~99k unmatched PC pages "seen"
+# without ever reading their tcg-ids, so whole sets lack graded data).
+# Small games first: every game but magic drains in weeks, magic is the
+# long tail. Each backlog page is fetched ONCE ever (DRAINED_CSV) — pages
+# with no embedded tcg-id (PC hasn't linked them) can't auto-match and
+# stay available for manual overrides only.
+DRAIN_ORDER = ["digimon", "onepiece", "lorcana", "pokemon", "yugioh", "magic"]
+
+# Special-print PC pages ([1st Edition]/[Shadowless]) embed the SAME tcg id
+# as the regular page — never auto-confirm those (see run_game).
+SPECIAL = ("1st edition", "shadowless")
 
 
 def page_tcg_ids(pc_id):
@@ -110,6 +125,91 @@ def candidates(game, suffix):
         return [(int(r["pc_id"]), r.get("pc_name", "")) for r in csv.DictReader(f) if r.get("pc_id")]
 
 
+def page_ids_and_title(pc_id):
+    """(set_of_tcg_ids | None, page title, status) — title stands in for
+    pc_name on backlog pages, which have no sweep-CSV row anymore."""
+    status, html = fetch(f"https://www.pricecharting.com/game/{pc_id}")
+    if status != 200:
+        return None, "", status
+    ids = {int(x) for x in TCG_ID_RE.findall(urllib.parse.unquote(html))}
+    m = TITLE_RE.search(html)
+    return ids, (m.group(1).strip() if m else ""), status
+
+
+def load_drained():
+    d = {}
+    if os.path.exists(DRAINED_CSV):
+        with open(DRAINED_CSV, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                d.setdefault(r["game"], set()).add(int(r["pc_id"]))
+    return d
+
+
+def append_drained(rows):
+    new = not os.path.exists(DRAINED_CSV)
+    os.makedirs(ML_DATA, exist_ok=True)
+    with open(DRAINED_CSV, "a", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        if new:
+            w.writerow(["game", "pc_id", "status", "drained_at"])
+        w.writerows(rows)
+
+
+def linked_pc_ids(game):
+    conn = sqlite3.connect(PC_DB, timeout=30)
+    ids = set()
+    for (x,) in conn.execute(
+            "SELECT pc_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,)):
+        try:
+            ids.add(int(x))
+        except (TypeError, ValueError):
+            pass
+    conn.close()
+    return ids
+
+
+def run_drain(budget, seen):
+    """Fetch up to `budget` baselined-but-still-unmatched pages, small games
+    first, and queue link suggestions exactly like run_game (exact embedded
+    tcg-ids auto-confirm at the next pc-match; special prints go to review)."""
+    drained = load_drained()
+    have = load_suggestions()
+    total = 0
+    for game in DRAIN_ORDER:
+        if budget <= 0:
+            break
+        pool = seen.get(game, set()) - drained.get(game, set()) - linked_pc_ids(game)
+        if not pool:
+            continue
+        unlinked = catalog_pids(game) - linked_pids(game)
+        card_names = dict(sqlite3.connect(db_path(game)).execute(
+            "SELECT product_id, name FROM cards"))
+        batch = sorted(pool)[:budget]
+        budget -= len(batch)
+        new_drained, new_sugg = [], []
+        for pc_id in batch:
+            ids, title, status = page_ids_and_title(pc_id)
+            if ids is None and status not in (404,):
+                continue                          # transient — retry on a later drain
+            new_drained.append([game, pc_id, status, now()])
+            for tcg in (ids or set()):
+                if tcg in unlinked and (game, tcg, pc_id) not in have:
+                    pl, cl = title.lower(), (card_names.get(tcg) or "").lower()
+                    src = ("special-print page — needs review"
+                           if any(t in pl and t not in cl for t in SPECIAL)
+                           else "page-embedded tcg-id")
+                    new_sugg.append([game, tcg, pc_id, title, src, now()])
+                    have.add((game, tcg, pc_id))
+        if new_drained:
+            append_drained(new_drained)
+        if new_sugg:
+            append_suggestions(new_sugg)
+        print(f"[drain:{game}] fetched {len(new_drained)} of {len(pool)} backlog "
+              f"page(s) -> {len(new_sugg)} link suggestion(s)", flush=True)
+        total += len(new_sugg)
+    return total
+
+
 def run_game(game, suffix, baseline, limit, seen):
     game_seen = seen.get(game, set())
     fresh = [(pc_id, name) for pc_id, name in candidates(game, suffix)
@@ -136,7 +236,6 @@ def run_game(game, suffix, baseline, limit, seen):
     # string so take_exact_suggestions won't auto-confirm them — a human
     # decides in match review. (Bug class found 2026-08-08: 99 regular-print
     # pokemon cards auto-linked to 1st Edition pages.)
-    SPECIAL = ("1st edition", "shadowless")
     card_names = dict(sqlite3.connect(db_path(game)).execute(
         "SELECT product_id, name FROM cards"))
     new_seen, new_sugg = [], []
@@ -176,6 +275,9 @@ def main():
                     help="seed all current unmatched pc_ids as seen WITHOUT fetching (first run)")
     ap.add_argument("--limit", type=int, default=DEFAULT_LIMIT,
                     help="max page fetches per game per run")
+    ap.add_argument("--drain", type=int, default=0,
+                    help="also fetch up to N baselined-but-unmatched backlog "
+                         "pages (small games first; each page fetched once ever)")
     args = ap.parse_args()
 
     games = args.games.split(",") if args.games else bulk_games()
@@ -183,6 +285,8 @@ def main():
     total = 0
     for game in games:
         total += run_game(game, args.suffix, args.baseline, args.limit, seen)
+    if args.drain and not args.baseline:
+        total += run_drain(args.drain, seen)
     if not args.baseline:
         print(f"\n{total} new suggestion(s) -> {SUGGEST_CSV}")
 
