@@ -906,7 +906,24 @@ def main():
                            and args.as_of.replace("-", "").isdigit()):
         ap.error("--as-of must look like YYYY-MM")
     games = args.game if args.game else priced_games()
-    horizons = {"1m": 1} if args.as_of else None
+    # --as-of backtests train 1m only. Otherwise TCG_FC_HORIZONS (e.g. "1m")
+    # limits the run's horizons: Thursday nights run 1m only (2026-10-09,
+    # user decision — 6m/12m stay unvalidated until their first cohorts
+    # mature in 2027, their calls barely move between runs, and skipping
+    # them cuts the model block roughly in two-thirds). Sunday's full
+    # rebuild trains all three; the standing 6m/12m rows keep serving
+    # between Sundays (see the horizon-scoped delete below).
+    env_h = os.environ.get("TCG_FC_HORIZONS", "").strip()
+    if args.as_of:
+        horizons = {"1m": 1}
+    elif env_h:
+        horizons = {h: HORIZONS[h] for h in env_h.split(",") if h in HORIZONS} or None
+    else:
+        horizons = None
+    subset = horizons is not None and set(horizons) != set(HORIZONS)
+    if subset:
+        print(f"[forecast] horizon-limited run: {sorted(horizons)} only "
+              f"(other horizons' standing forecasts untouched)", flush=True)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_seg = len(games) * len(TARGETS)
@@ -941,9 +958,17 @@ def main():
     # and rebuilding from the survivors would silently wipe games off the
     # site with exit 0. Refuse to publish if a game that had forecasts now
     # has none, or the total collapsed; the old table keeps serving.
+    # Horizon-limited runs compare like for like: a 1m-only night produces a
+    # third of a full run's rows, which would trip the collapse ratio against
+    # an all-horizons baseline.
+    h_where, h_args = "", ()
+    if subset:
+        h_where = f" WHERE horizon IN ({','.join('?' * len(horizons))})"
+        h_args = tuple(horizons)
     try:
         prev = dict(((g, t), n) for g, t, n in conn.execute(
-            "SELECT game, target, COUNT(*) FROM forecasts GROUP BY game, target"))
+            f"SELECT game, target, COUNT(*) FROM forecasts{h_where} "
+            "GROUP BY game, target", h_args))
     except sqlite3.OperationalError:
         prev = {}   # first run against this DB: nothing to protect
     checked = ({k: n for k, n in prev.items() if k[0] in games} if args.game
@@ -982,9 +1007,21 @@ def main():
         );
         """
     if args.game:
-        # Partial rerun: replace only the requested games' rows.
+        # Partial rerun: replace only the requested games' rows (and only the
+        # run's horizons when limited).
         conn.executescript(schema)
-        conn.executemany("DELETE FROM forecasts WHERE game = ?", [(g,) for g in games])
+        if subset:
+            conn.executemany("DELETE FROM forecasts WHERE game = ? AND horizon = ?",
+                             [(g, h) for g in games for h in horizons])
+        else:
+            conn.executemany("DELETE FROM forecasts WHERE game = ?", [(g,) for g in games])
+    elif subset:
+        # Horizon-limited full run: replace those horizons' rows only. The
+        # standing 6m/12m (and launch1m) forecasts must survive a 1m-only
+        # Thursday or the site would lose them until Sunday.
+        conn.executescript(schema)
+        conn.executemany("DELETE FROM forecasts WHERE horizon = ?",
+                         [(h,) for h in horizons])
     else:
         conn.executescript("DROP TABLE IF EXISTS forecasts;" + schema)
     conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)

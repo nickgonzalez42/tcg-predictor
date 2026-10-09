@@ -24,6 +24,16 @@ export AWS_PROFILE=default
 export TCG_FC_CQR=1m
 export TCG_FC_ROLLCAL=1m
 export TCG_FC_LAUNCH=1
+# 6m/12m retrain on the FULL-REBUILD night only (2026-10-09, user decision):
+# they stay unvalidated until their first cohorts mature in 2027 and barely
+# move between runs; a 1m-only night cuts the model block roughly in half.
+# Sunday local = Mon UTC (1); the legacy Monday kick = Tue UTC (2). Other
+# nights keep serving Sunday's standing 6m/12m rows (horizon-scoped delete
+# in forecast_predict.py).
+u=$(date -u +%u)
+if [ "$u" != "1" ] && [ "$u" != "2" ]; then
+  export TCG_FC_HORIZONS=1m
+fi
 
 echo "=== LOCAL model block — $(date '+%F %T') ==="
 for step in forecast_scorecard forecast_predict forecast_launch market_report; do
