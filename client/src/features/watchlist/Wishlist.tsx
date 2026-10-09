@@ -7,6 +7,7 @@ import {
     useFetchAlertsQuery,
 } from "./watchlistApi";
 import OwnItModal from "./OwnItModal";
+import BuyTcgLink from "../../app/shared/components/BuyTcgLink";
 import AlertModal from "./AlertModal";
 import { wishlistParamsSlice } from "./trackedParamsSlice";
 import { tierLabel } from "./grades";
