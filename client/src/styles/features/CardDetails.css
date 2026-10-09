@@ -36,6 +36,22 @@
   margin-top: var(--space-5);
 }
 
+/* Launch-model forecasts show badged as early estimates, never silently
+   mixed in with the standard model's calls. */
+.early-badge {
+  display: inline-block;
+  margin-left: var(--space-5);
+  padding: 1px 6px;
+  border: 1px solid var(--accent, #c678dd);
+  border-radius: 999px;
+  color: var(--accent, #c678dd);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  vertical-align: 2px;
+  cursor: help;
+}
+
 /* ⓘ opens the forecast's detail + reasoning in a modal (inline text made the
    table too wide for smaller screens). */
 .why-btn {

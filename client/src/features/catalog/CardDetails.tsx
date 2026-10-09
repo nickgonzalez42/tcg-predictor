@@ -167,12 +167,26 @@ function ForecastSection({ forecasts, game, id }: {
                                     )}
                                 </td>
                                 {HORIZONS.map(h => {
-                                    const f = tierForecasts.find(x => x.horizon === h);
+                                    // Launch-tier fallback (2026-10-09): a card too
+                                    // new for the standard model may carry a
+                                    // launch1m forecast — show it in the 1-month
+                                    // slot, clearly badged as an early estimate.
+                                    const f = tierForecasts.find(x => x.horizon === h)
+                                        ?? (h === '1m'
+                                            ? tierForecasts.find(x => x.horizon === 'launch1m')
+                                            : undefined);
                                     if (!f) return <td key={h}>—</td>;
+                                    const early = f.horizon === 'launch1m';
                                     const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                     return (
                                         <td key={h}>
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
+                                            {early && (
+                                                <span className="early-badge"
+                                                    title="Early estimate: this card is too new for the standard model. This comes from the launch model — its set's cohort behavior blended with the card's short history — and is graded on the same public scorecard.">
+                                                    EARLY
+                                                </span>
+                                            )}
                                             <div className="forecast-chg">
                                                 <ChangePill value={chg} digits={h === '1m' ? 1 : 0} />
                                             </div>

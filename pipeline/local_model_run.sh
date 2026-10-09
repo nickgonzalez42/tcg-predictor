@@ -49,9 +49,21 @@ for step in forecast_scorecard forecast_predict forecast_launch market_report; d
 done
 
 echo "=== push predictions.db -> prod ($SERVER_IP) ==="
-$RSYNC -az --partial -e "$SSH" "$CARDS/predictions.db" \
-  "ubuntu@$SERVER_IP:/srv/tcg/data/cards/" \
-  || { echo "=== predictions.db PUSH FAILED ==="; exit 1; }
+# Publish-retry (2026-10-09, after the 10-02 offline-at-publish failure):
+# the model block can finish with the laptop offline — retry every 15 min
+# for ~4 h instead of dying on the first attempt. A closed lid suspends the
+# sleep and resumes on wake, so this naturally waits out "offline until the
+# user opens the laptop somewhere with wifi".
+push_ok=0
+for attempt in {1..16}; do
+  if $RSYNC -az --partial -e "$SSH" "$CARDS/predictions.db" \
+       "ubuntu@$SERVER_IP:/srv/tcg/data/cards/"; then
+    push_ok=1; break
+  fi
+  echo "=== push attempt $attempt failed (offline?) — retrying in 15 min — $(date '+%F %T') ==="
+  sleep 900
+done
+[ "$push_ok" = 1 ] || { echo "=== predictions.db PUSH FAILED (all retries) ==="; exit 1; }
 
 # Static report pages (crawler-visible content) ride every model run.
 "$PY" "$DIR/report_pages.py" --db --out "$HOME/tcg-backups/report_pages" \

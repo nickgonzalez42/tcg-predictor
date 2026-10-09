@@ -390,7 +390,88 @@ def premium_matrices(game, pids, dates):
     CH3 = np.full_like(PREM, np.nan)
     if PREM.shape[1] > 3:
         CH3[:, 3:] = PREM[:, 3:] - PREM[:, :-3]
-    return {"premium": PREM, "premchg3": CH3}
+    out = {"premium": PREM, "premchg3": CH3}
+
+    # Slice 5 — cross-tier ladder (TCG_FC_FEAT_LADDER, backtest-gated,
+    # default OFF): the card's graded premium relative to its SET's median
+    # premium that month. "Rich or cheap against the cohort norm" is the
+    # mean-reversion signal the raw premium level can't carry, since set
+    # norms differ wildly. Sets with <3 premium-priced members stay NaN.
+    if os.environ.get("TCG_FC_FEAT_LADDER"):
+        import warnings
+        from forecast_deep import _set_labels
+        name_of = _set_labels(game)
+        labels = np.array([name_of.get(int(p), "") for p in pids])
+        REL = np.full_like(PREM, np.nan)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", category=RuntimeWarning)
+            for s in np.unique(labels):
+                rows = labels == s
+                if not s or rows.sum() < 3:
+                    continue
+                REL[rows] = PREM[rows] - np.nanmedian(PREM[rows], axis=0)
+        out["premrel"] = REL
+    return out
+
+
+def liquidity_matrices(game, target, pids, dates):
+    """Slice 4b — NM tape liquidity (TCG_FC_FEAT_LIQ, backtest-gated,
+    default OFF). From tcg_nm_history, per (card, month), over a trailing
+    3-bucket window: sig_liqmove = fraction of consecutive prints whose
+    price actually CHANGED (a 90-day flat tape is an asking-price echo, not
+    a market), and sig_liqobs = log1p(prints observed). Ungraded only — the
+    daily NM tape is a TCGplayer thing; months before collection began
+    (2026-07) stay NaN and HGB handles the missing era natively. Trailing
+    windows only, so --as-of backtests can't see past their cutoff."""
+    if target != "ungraded" or not os.environ.get("TCG_FC_FEAT_LIQ"):
+        return {}
+    from forecast_deep import PC_DB
+    didx = {d: j for j, d in enumerate(dates)}
+    pidx = {}
+    for i, p in enumerate(pids):
+        pidx.setdefault(int(p), []).append(i)
+    obs, mov, last = {}, {}, {}
+    conn = sqlite3.connect(PC_DB, timeout=180)
+    for pid, m, price in conn.execute(
+            "SELECT product_id, substr(date, 1, 7), price FROM tcg_nm_history "
+            "WHERE game=? ORDER BY product_id, date", (game,)):
+        if pid not in pidx or price is None:
+            continue
+        k = (pid, m)
+        obs[k] = obs.get(k, 0) + 1
+        prev = last.get(pid)
+        if prev is not None and abs(price - prev) > 1e-9:
+            mov[k] = mov.get(k, 0) + 1
+        last[pid] = price
+    conn.close()
+    if not obs:
+        return {}
+    shape = (len(pids), len(dates))
+    O = np.zeros(shape)
+    Mv = np.zeros(shape)
+    seen = np.zeros(shape)
+    for (pid, m), n in obs.items():
+        j = didx.get(m)
+        if j is not None:
+            for i in pidx[pid]:
+                O[i, j] += n
+                seen[i, j] = 1.0
+    for (pid, m), n in mov.items():
+        j = didx.get(m)
+        if j is not None:
+            for i in pidx[pid]:
+                Mv[i, j] += n
+    w = 3
+    def trail(C):
+        c = np.cumsum(C, axis=1)
+        out_ = c.copy()
+        out_[:, w:] = c[:, w:] - c[:, :-w]
+        return out_
+    Ow, Mw, Sw = trail(O), trail(Mv), trail(seen)
+    pairs = np.maximum(Ow - Sw, 1.0)   # ~ n-1 consecutive pairs per observed month
+    MOVE = np.where(Sw > 0, Mw / pairs, np.nan)
+    OBS = np.where(Sw > 0, np.log1p(Ow), np.nan)
+    return {"liqmove": MOVE, "liqobs": OBS}
 
 
 def anchor_dates_all(game, grade):
@@ -521,6 +602,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     S = set_matrix(game, pids, P)
     EXTRA = extra_signal_matrices(game, pids, dates)
     EXTRA.update(premium_matrices(game, pids, dates))   # graded/raw premium context
+    EXTRA.update(liquidity_matrices(game, target, pids, dates))  # slice 4b, flag-gated
     MKT = market_features(game, dates)   # cross-game market context (level-1 blend)
     static = static_features(game, pids)   # v4.4: art PCA in (artless cards dropped above)
     last_idx = np.array([np.where(np.isfinite(P[i]))[0][-1] if np.isfinite(P[i]).any() else -1
