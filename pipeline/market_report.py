@@ -24,6 +24,7 @@ from urllib.parse import quote
 
 from _paths import DATA_DIR as BASE
 from games import GAMES
+from report_editorial import write_editorial
 
 API_DATA = os.path.normpath(os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards"))
 PC_DB = os.path.join(API_DATA, "pricecharting.db")
@@ -705,18 +706,6 @@ def build_report(force=False, as_of=None):
                f"at both ends of the window, {ups:,} rose an average of {avg_gain:.1f}% "
                f"and {downs:,} fell an average of {abs(avg_loss):.1f}%.")
 
-    body = [f"<p class='report-lede'>{esc(summary)} Price window: {baseline} to {latest}, "
-            f"ungraded market prices.</p>",
-            # Legend for "tracked" (2026-08-29, user report: '12 of 15' read as
-            # arbitrary): the count is smaller than the full set on purpose,
-            # and the reader deserves to know both reasons once, up front.
-            "<p class='report-note'>“Tracked” cards are those with a market price "
-            "on both ends of the week <em>and</em> worth at least $5 at the start "
-            "— cheaper cards are left out because a few cents of movement "
-            "reads as a large, meaningless percentage. A group like “12 of 15 "
-            "tracked” may belong to a bigger set; the rest simply "
-            "couldn’t be measured honestly this week.</p>"]
-
     # Trends are computed per game and each game is discussed exactly ONCE.
     # Individual cards never get their own table — they appear only as linked
     # examples inside their group's sentence.
@@ -734,9 +723,82 @@ def build_report(force=False, as_of=None):
             series.append((GAMES[game]["label"], ys, GAME_COLORS[i % len(GAME_COLORS)]))
     if series:
         series.sort(key=lambda s: -abs(next(v for v in reversed(s[1]) if v is not None)))
+
+    game_order = sorted(per_game, key=lambda g: -abs(drift.get(g, 0.0)))
+    picks = forecast_corner(pred, games_live)
+    live = [(label, *row) for h, label, days in REPORT_HORIZONS
+            for row in [live_accuracy(pred, h, days)] if row]
+    wow = [r for r in weekly_coverage(pred)
+           if (today - date.fromisoformat(r[0])).days >= 7]
+
+    # Claude-written editorial (2026-10-09): every number above is final, so
+    # pack the facts and let the model write the prose around them. Each
+    # field falls back to the templated sentence independently; see
+    # report_editorial.py for the contract.
+    r1 = lambda v: round(v, 1)
+    facts = {
+        "week": {"start": baseline, "end": latest},
+        "totals": {"tracked": n, "rose": ups, "fell": downs,
+                   "avg_gain_pct": r1(avg_gain), "avg_loss_pct": r1(avg_loss)},
+        "games": {}, "model_corner_picks": [], "model": {},
+    }
+    for game in game_order:
+        moves = per_game[game]
+        g_g = [m[4] for m in moves if m[4] > 0.5]
+        g_l = [m[4] for m in moves if m[4] < -0.5]
+        gf = {"label": GAMES[game]["label"], "tracked": len(moves),
+              "rose": len(g_g), "fell": len(g_l),
+              "avg_gain_pct": r1(statistics.mean(g_g)) if g_g else 0.0,
+              "avg_loss_pct": r1(statistics.mean(g_l)) if g_l else 0.0,
+              "week_drift_pct": r1(drift.get(game, 0.0)), "trends": []}
+        for t in trends_by_game.get(game, [])[:GAME_TRENDS]:
+            gf["trends"].append({
+                "group": t["value"], "dimension": DIM_LABELS[t["dim"]].lower(),
+                "moved": t["same"], "of_tracked": t["n"],
+                "median_pct": r1(t["median"]),
+                "examples": [{"name": m[1], "pct": r1(m[4])}
+                             for m in sorted(t["members"], key=lambda m: -abs(m[4]))[:2]]})
+        if not gf["trends"] and moves:
+            bt_, wt_ = max(moves, key=lambda m: m[4]), min(moves, key=lambda m: m[4])
+            gf["outliers"] = {"best": {"name": bt_[1], "pct": r1(bt_[4])},
+                              "worst": {"name": wt_[1], "pct": r1(wt_[4])}}
+        facts["games"][game] = gf
+    facts["model_corner_picks"] = [
+        {"name": name, "game": GAMES[game]["label"], "current_usd": round(base, 2),
+         "forecast_1m_usd": round(fcst, 2), "implied_pct": r1((fcst / base - 1) * 100)}
+        for game, pid, name, base, fcst, printing in picks]
+    if live:
+        facts["model"]["live_record"] = [
+            {"horizon": label, "graded": n_g,
+             "typical_miss_pct": r1((exp(mae) - 1) * 100),
+             "bias_pct": r1((exp(bias) - 1) * 100), "band80_pct": r1(hit * 100),
+             "direction_pct": r1(da * 100) if da is not None else None}
+            for label, n_g, mae, bias, hit, dn, da in live]
+    if wow:
+        facts["model"]["band_coverage_by_week"] = [
+            {"week_of": wk, "graded": n_wk, "band80_pct": r1(hit * 100)}
+            for wk, n_wk, hit, _mae, _dn, _da in wow]
+    prose = write_editorial(facts) or {}
+    if prose.get("lede"):
+        summary = prose["lede"]   # index card + meta description too
+
+    body = [f"<p class='report-lede'>{esc(summary)} Price window: {baseline} to {latest}, "
+            f"ungraded market prices.</p>",
+            # Legend for "tracked" (2026-08-29, user report: '12 of 15' read as
+            # arbitrary): the count is smaller than the full set on purpose,
+            # and the reader deserves to know both reasons once, up front.
+            "<p class='report-note'>“Tracked” cards are those with a market price "
+            "on both ends of the week <em>and</em> worth at least $5 at the start "
+            "— cheaper cards are left out because a few cents of movement "
+            "reads as a large, meaningless percentage. A group like “12 of 15 "
+            "tracked” may belong to a bigger set; the rest simply "
+            "couldn’t be measured honestly this week.</p>"]
+    if prose.get("overview"):
+        body.append(f"<p>{esc(prose['overview'])}</p>")
+    if series:
         body.append(line_chart(window_dates, series, title="Price drift this week by game"))
 
-    for game in sorted(per_game, key=lambda g: -abs(drift.get(g, 0.0))):
+    for game in game_order:
         moves = per_game[game]
         ggains = [m[4] for m in moves if m[4] > 0.5]
         glosses = [m[4] for m in moves if m[4] < -0.5]
@@ -748,14 +810,19 @@ def build_report(force=False, as_of=None):
         # teaser so the collapsed report still scans. No scripts — works
         # identically on the SPA (sanitizer allows details/summary) and the
         # static crawler pages.
+        # The opening paragraph is Claude-written when available (the teaser
+        # and trendlines carry the exact counts); templated otherwise.
+        game_para = prose.get("games", {}).get(game)
+        if not game_para:
+            game_para = (f"{gups:,} of {len(moves):,} tracked cards rose this week "
+                         f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
+                         f"(down an average of {abs(gavg_loss):.1f}%).")
         body.append(
             "<details class='report-game-sec'>"
             f"<summary><strong>{esc(GAMES[game]['label'])}</strong>"
             f"<span class='report-game-teaser'>{gups:,} ▲ · {gdowns:,} ▼ "
             f"· {len(moves):,} tracked</span></summary>"
-            f"<p>{gups:,} of {len(moves):,} tracked cards rose this week "
-            f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
-            f"(down an average of {abs(gavg_loss):.1f}%).</p>")
+            f"<p>{esc(game_para)}</p>")
         gts = trends_by_game.get(game, [])[:GAME_TRENDS]
         if gts:
             # One line per trend, direction-marked, rising first.
@@ -775,7 +842,6 @@ def build_report(force=False, as_of=None):
                         f"({pct(bt[4])}) and {card_link(game, wt[0], wt[1], wt[5] if len(wt) > 5 else '')} ({pct(wt[4])}).</p>")
         body.append("</details>")
 
-    picks = forecast_corner(pred, games_live)
     if picks:
         # Highlighted panel (2026-10-09, user request): the model's picks are
         # the report's signature content, so they get the site's "ticket"
@@ -820,8 +886,6 @@ def build_report(force=False, as_of=None):
                 "against a flat month is neither right nor wrong and isn't "
                 "counted.</li></ul>")
 
-    live = [(label, *row) for h, label, days in REPORT_HORIZONS
-            for row in [live_accuracy(pred, h, days)] if row]
     def dir_cell(dir_acc):
         return f"{dir_acc * 100:.0f}%" if dir_acc is not None else "—"
 
@@ -835,14 +899,15 @@ def build_report(force=False, as_of=None):
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("</tbody></table>")
+        if prose.get("model_note"):
+            body.append(f"<p>{esc(prose['model_note'])}</p>")
 
         # Week over week (2026-09-27, user request): the same calibration
         # story as a trend, not a snapshot. Nightly dated cohorts only — see
         # weekly_coverage() — so every row is a true ~28-day forecast.
         # Complete Fri→Thu weeks only — a report generated Friday morning
         # would otherwise lead with a one-day stub of its own week.
-        wow = [r for r in weekly_coverage(pred)
-               if (today - date.fromisoformat(r[0])).days >= 7]
+        # (wow is computed above, before the facts pack.)
         if len(wow) >= 2:
             def wk_label(wk):
                 d = date.fromisoformat(wk)
