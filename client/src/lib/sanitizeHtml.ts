@@ -11,7 +11,8 @@ const ALLOWED = new Set(
 // tables, internal card links, and inline SVG bar/line charts.
 const REPORT_SVG = new Set(['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE']);
 const REPORT_ALLOWED = new Set(
-    [...ALLOWED, 'A', 'H2', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD', ...REPORT_SVG]);
+    [...ALLOWED, 'A', 'H2', 'H3', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD',
+     'DETAILS', 'SUMMARY', ...REPORT_SVG]);
 const VOID = new Set(['BR']);
 const DROP_CONTENT = new Set(['SCRIPT', 'STYLE']);
 

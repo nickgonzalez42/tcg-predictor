@@ -743,10 +743,19 @@ def build_report(force=False, as_of=None):
         gups, gdowns = len(ggains), len(glosses)
         gavg_gain = statistics.mean(ggains) if ggains else 0.0
         gavg_loss = statistics.mean(glosses) if glosses else 0.0
-        body.append(f"<h2>{esc(GAMES[game]['label'])}</h2>"
-                    f"<p>{gups:,} of {len(moves):,} tracked cards rose this week "
-                    f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
-                    f"(down an average of {abs(gavg_loss):.1f}%).</p>")
+        # Each game is a native <details> dropdown (2026-10-09, user request):
+        # collapsed by default, the summary row carries the name + a breadth
+        # teaser so the collapsed report still scans. No scripts — works
+        # identically on the SPA (sanitizer allows details/summary) and the
+        # static crawler pages.
+        body.append(
+            "<details class='report-game-sec'>"
+            f"<summary><strong>{esc(GAMES[game]['label'])}</strong>"
+            f"<span class='report-game-teaser'>{gups:,} ▲ · {gdowns:,} ▼ "
+            f"· {len(moves):,} tracked</span></summary>"
+            f"<p>{gups:,} of {len(moves):,} tracked cards rose this week "
+            f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
+            f"(down an average of {abs(gavg_loss):.1f}%).</p>")
         gts = trends_by_game.get(game, [])[:GAME_TRENDS]
         if gts:
             # One line per trend, direction-marked, rising first.
@@ -764,6 +773,7 @@ def build_report(force=False, as_of=None):
             body.append("<p>No group-wide trend stood out this week — movement was "
                         f"scattered. The outliers: {card_link(game, bt[0], bt[1], bt[5] if len(bt) > 5 else '')} "
                         f"({pct(bt[4])}) and {card_link(game, wt[0], wt[1], wt[5] if len(wt) > 5 else '')} ({pct(wt[4])}).</p>")
+        body.append("</details>")
 
     picks = forecast_corner(pred, games_live)
     if picks:

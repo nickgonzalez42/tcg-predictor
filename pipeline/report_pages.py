@@ -57,6 +57,14 @@ padding-left:10px}
 .report-table th{text-align:left;color:var(--text-muted);font-weight:600;font-size:13px}
 .report-table th,.report-table td{padding:6px 10px 6px 0;border-bottom:1px solid var(--border)}
 .report-chart{display:block;margin:20px 0}
+.report-game-sec{border:1px solid var(--border);border-radius:10px;padding:0 15px;margin:10px 0}
+.report-game-sec summary{display:flex;align-items:center;gap:10px;min-height:38px;
+cursor:pointer;list-style:none;font-size:16.5px}
+.report-game-sec summary::-webkit-details-marker{display:none}
+.report-game-sec summary::before{content:'▸';color:var(--text-muted);transition:transform .15s}
+.report-game-sec[open] summary::before{transform:rotate(90deg)}
+.report-game-teaser{margin-left:auto;color:var(--text-muted);font-size:12px;white-space:nowrap}
+.report-game-sec > :last-child{margin-bottom:15px}
 svg{max-width:100%;height:auto}
 @media (max-width:480px){.report-table{font-size:12px}
 .report-table th,.report-table td{padding-right:5px}}
