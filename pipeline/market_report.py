@@ -13,6 +13,7 @@ Run:  .venv/bin/python market_report.py            # no-op unless Friday
 import argparse
 import collections
 import html
+import json
 import os
 import re
 import sqlite3
@@ -188,11 +189,16 @@ MIN_TREND_N = 6           # a trend needs at least this many week-priced cards
 TREND_MIN_MEDIAN = 2.0    # ...with at least this median % move
 TREND_MIN_BREADTH = 0.65  # ...and this share moving the same direction
 TREND_EXAMPLES = 2        # linked example cards woven into each trend sentence
-GAME_TRENDS = 4           # groups discussed + charted per game
+GAME_TRENDS = 5           # groups discussed + charted per game
 
 DIM_LABELS = {"set": "Set", "rarity": "Rarity", "type": "Card type",
               "color": "Color", "cost": "Cost", "character": "Card family",
-              "art": "Art treatment", "printing": "Printing"}
+              "art": "Art treatment", "printing": "Printing",
+              "level": "Level", "stat": "Stat line", "trait": "Trait",
+              "attribute": "Attribute", "series": "Source series",
+              "artist": "Illustrator", "text": "Card text", "ink": "Ink",
+              "aspect": "Aspect", "energy": "Energy type", "form": "Form",
+              "stage": "Stage"}
 
 # Art/finish treatments recognizable from rarity/subtype/name text. (True
 # art-similarity clustering over the CLIP embeddings is a possible upgrade;
@@ -225,20 +231,138 @@ def character_key(name, clean_name):
     return base if len(base) >= 3 else None
 
 
+def _num(v):
+    m = re.search(r"-?\d+", str(v or "").replace(",", ""))
+    return int(m.group()) if m else None
+
+
+def _vals(v):
+    """Multi-valued attribute -> clean list. Accepts a delimited string
+    ("Dragon / Effect", "Hero;Princess") or a JSON array (some extended
+    attributes, e.g. Gundam's color, arrive as lists)."""
+    if not v:
+        return []
+    parts = v if isinstance(v, list) else re.split(r"\s*[;,/]\s*", str(v))
+    seen, out = set(), []
+    for s in parts:
+        s = str(s).strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return out
+
+
+def _sval(v):
+    """Scalar attribute that may arrive as a one-element JSON array."""
+    if isinstance(v, list):
+        v = v[0] if v else ""
+    return str(v or "").strip() or None
+
+
+# Mechanic timing markers that appear on huge swaths of a game's cards —
+# a "trend" across them is the market, not a story.
+TEXT_STOP = {"once per turn", "on play", "when attacking", "main", "counter",
+             "trigger", "your turn", "end of your turn", "activate: main",
+             "rule", "on your opponent's attack", "opponent's turn", "dp"}
+TEXT_KW_RE = re.compile(r"[\[<＜]([A-Za-z][A-Za-z0-9 +&'’\-]{2,22})[\]>＞]")
+
+
+def text_keywords(desc):
+    """Bracketed mechanic keywords from rules text ([Blocker], <Jamming>,
+    [Double Attack]) — the ability keywords collectors actually chase."""
+    if not desc:
+        return []
+    out, seen = [], set()
+    for kw in TEXT_KW_RE.findall(str(desc)):
+        kw = re.sub(r"\s+", " ", kw).strip()
+        low = kw.lower()
+        if low in TEXT_STOP or low in seen or re.search(r"\d{3,}", kw):
+            continue
+        seen.add(low)
+        out.append(f"[{kw}]")
+        if len(out) == 4:
+            break
+    return out
+
+
+def _custom_dims(game, cu):
+    """Trend dims mined from TCGplayer's per-game extended attributes: the
+    stat lines, levels, tribes/traits, inks/aspects — the axes the model's
+    attribute features see — plus Gundam's illustrator and source series."""
+    d = {}
+    if game == "digimon":
+        d["color"] = _vals(cu.get("color"))
+        lv = _num(cu.get("levelLv"))
+        d["level"] = f"Level {lv}" if lv else None
+        d["trait"] = _vals(cu.get("digimonType"))
+        dp = _num(cu.get("digimonPowerDp"))
+        d["stat"] = f"{dp:,} DP" if dp else None
+        c = _num(cu.get("playCost"))
+        d["cost"] = f"cost {c}" if c is not None else None
+        d["form"] = _sval(cu.get("digimonForm"))
+    elif game == "magic":
+        d["color"] = _vals(cu.get("color"))
+        mv = _num(cu.get("convertedCost"))
+        d["cost"] = f"mana value {mv}" if mv is not None else None
+        p, t = _num(cu.get("powerNumber")), _num(cu.get("toughnessNumber"))
+        if p is not None and t is not None:
+            d["stat"] = f"{p}/{t}"
+        ft = str(cu.get("fullType") or "")
+        if "—" in ft:
+            d["trait"] = _vals(ft.split("—", 1)[1].replace(" ", ";"))
+    elif game == "yugioh":
+        d["attribute"] = _sval(cu.get("attribute"))
+        d["trait"] = _vals(cu.get("monsterType"))
+        lv = _num(cu.get("level"))
+        d["level"] = f"Level {lv}" if lv else None
+        atk = _num(cu.get("attack"))
+        d["stat"] = f"ATK {atk:,}" if atk is not None else None
+    elif game == "lorcana":
+        d["ink"] = _sval(cu.get("inkType"))
+        c = _num(cu.get("costInk"))
+        d["cost"] = f"cost {c}" if c is not None else None
+        s, w = _num(cu.get("strength")), _num(cu.get("willpower"))
+        if s is not None and w is not None:
+            d["stat"] = f"{s}/{w}"
+        d["trait"] = _vals(cu.get("classification"))
+    elif game == "gundam":
+        d["color"] = _vals(cu.get("color"))
+        lv = _num(cu.get("level"))
+        d["level"] = f"Level {lv}" if lv else None
+        c = _num(cu.get("cost"))
+        d["cost"] = f"cost {c}" if c is not None else None
+        d["trait"] = _vals(cu.get("trait"))
+        d["series"] = _sval(cu.get("sourceTitle"))
+        d["artist"] = _sval(cu.get("illustrator"))
+        ap, hp = _num(cu.get("attackPoints")), _num(cu.get("hitPoints"))
+        if ap is not None and hp is not None:
+            d["stat"] = f"AP {ap} / HP {hp}"
+    elif game == "starwars":
+        d["aspect"] = _vals(cu.get("aspect"))
+        d["trait"] = _vals(cu.get("traits"))
+    elif game == "pokemon":
+        d["energy"] = _sval(cu.get("energyType"))
+        d["stage"] = _sval(cu.get("stage"))
+    return d
+
+
 def card_attrs(game):
     """pid -> the grouping attributes trend detection slices on. Game DBs
     don't share one schema (color/cost/subtypes exist only where the game has
-    them), so the query is built from the columns actually present."""
+    them), so the query is built from the columns actually present; the rest
+    comes from the custom_attributes JSON. Values may be lists (a card with
+    two traits belongs to both groups)."""
     con = sqlite3.connect(os.path.join(BASE, GAMES[game]["db"]))
     have = {r[1] for r in con.execute("PRAGMA table_info(cards)")}
     want = ["name", "clean_name", "set_name", "rarity", "card_type",
-            "color", "cost", "subtypes"]
+            "color", "cost", "subtypes", "power", "description",
+            "custom_attributes"]
     sel = ", ".join(c if c in have else "NULL" for c in want)
     out = {}
-    for pid, name, clean, s, r, t, c, cost, subs in con.execute(
-            f"SELECT product_id, {sel} FROM cards"):
+    for (pid, name, clean, s, r, t, c, cost, subs, pw, desc,
+         custom) in con.execute(f"SELECT product_id, {sel} FROM cards"):
         cost = str(cost).strip() if cost not in (None, "") else ""
-        out[pid] = {
+        a = {
             "set": (s or "").strip() or None,
             "rarity": (r or "").strip() or None,
             "type": (t or "").strip() or None,
@@ -246,7 +370,24 @@ def card_attrs(game):
             "cost": f"cost {cost}" if cost else None,
             "character": character_key(name, clean),
             "art": art_treatment(r, subs, name),
+            "trait": _vals(subs),
+            "text": text_keywords(desc),
         }
+        pw = _num(pw)
+        if pw:
+            a["stat"] = f"{pw:,} power"
+        if custom:
+            try:
+                cu = json.loads(custom)
+            except ValueError:
+                cu = None
+            if isinstance(cu, dict):
+                for dim, val in _custom_dims(game, cu).items():
+                    if val:
+                        a[dim] = val
+                if not a["text"]:
+                    a["text"] = text_keywords(cu.get("description"))
+        out[pid] = a
     con.close()
     return out
 
@@ -266,12 +407,18 @@ def find_trends(game, moves, attrs):
         if printing:
             entity_dims["printing"] = printing   # printings are a trend dim too
         for dim, val in entity_dims.items():
-            if val:
-                groups[(dim, val)].append(m)
+            # Multi-valued dims (traits, text keywords, dual colors): the
+            # card belongs to every group it names.
+            for v in (val if isinstance(val, list) else [val]):
+                if v and len(str(v)) <= 40:
+                    groups[(dim, v)].append(m)
     trends = []
     for (dim, val), members in groups.items():
         n = len(members)
         if n < MIN_TREND_N:
+            continue
+        # A text keyword shared by half the game is a mechanic, not a story.
+        if dim == "text" and n > 40:
             continue
         med = statistics.median(m[4] for m in members)
         if abs(med) < TREND_MIN_MEDIAN:
@@ -295,6 +442,21 @@ def find_trends(game, moves, attrs):
         kept.append(t)
         seen.append(ids)
     return kept
+
+
+def pick_trends(trends, k=GAME_TRENDS, max_per_dim=2):
+    """Top-k with variety (2026-10-09, user request): cap each dimension at
+    two slots so a heavy week surfaces sets AND stat lines AND art, not four
+    set rows — the analysis reads differently game to game and week to week."""
+    out, per_dim = [], collections.Counter()
+    for t in trends:
+        if per_dim[t["dim"]] >= max_per_dim:
+            continue
+        out.append(t)
+        per_dim[t["dim"]] += 1
+        if len(out) == k:
+            break
+    return out
 
 
 def short_label(value, n=20):
@@ -709,7 +871,8 @@ def build_report(force=False, as_of=None):
     # Trends are computed per game and each game is discussed exactly ONCE.
     # Individual cards never get their own table — they appear only as linked
     # examples inside their group's sentence.
-    trends_by_game = {g: find_trends(g, m, card_attrs(g)) for g, m in per_game.items()}
+    trends_by_game = {g: pick_trends(find_trends(g, m, card_attrs(g)))
+                      for g, m in per_game.items()}
 
     # The week-drift line chart sits directly under the lede: one overview
     # visual, then the per-game sections in the chart's own order (steepest
@@ -751,7 +914,7 @@ def build_report(force=False, as_of=None):
               "avg_gain_pct": r1(statistics.mean(g_g)) if g_g else 0.0,
               "avg_loss_pct": r1(statistics.mean(g_l)) if g_l else 0.0,
               "week_drift_pct": r1(drift.get(game, 0.0)), "trends": []}
-        for t in trends_by_game.get(game, [])[:GAME_TRENDS]:
+        for t in trends_by_game.get(game, []):
             gf["trends"].append({
                 "group": t["value"], "dimension": DIM_LABELS[t["dim"]].lower(),
                 "moved": t["same"], "of_tracked": t["n"],
@@ -825,7 +988,7 @@ def build_report(force=False, as_of=None):
             f"<span class='report-down'>{gdowns:,} ▼</span> "
             f"· {len(moves):,} tracked</span></summary>"
             f"<p>{esc(game_para)}</p>")
-        gts = trends_by_game.get(game, [])[:GAME_TRENDS]
+        gts = trends_by_game.get(game, [])
         if gts:
             # One line per trend, direction-marked, rising first.
             for t in sorted(gts, key=lambda t: (not t["rising"], -abs(t["median"]))):
