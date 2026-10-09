@@ -215,6 +215,32 @@ def ensure_monthly_accuracy(conn):
         """)
 
 
+def ensure_weekly_coverage(conn):
+    """Full-cohort WEEKLY coverage tallies, banked additively as compaction
+    deletes rows (2026-10-09): median-error survivors are coverage-biased —
+    the first compaction lifted a landing week's displayed band coverage
+    from 52.8% to 84.6% in the Friday report. Weeks key on the FRIDAY they
+    start (report-aligned). Ungraded dated stream only (what the report's
+    week-over-week section reads)."""
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS forecast_coverage_weekly (
+            week TEXT PRIMARY KEY,
+            n INTEGER NOT NULL,
+            band_hits INTEGER NOT NULL,
+            abs_err_sum REAL NOT NULL,
+            dir_n INTEGER NOT NULL,
+            dir_hits INTEGER NOT NULL
+        )
+        """)
+
+
+# SQLite %w: Sunday=0 … Friday=5. (w+2)%7 days back = the week's Friday.
+WEEK_FRI = ("date(substr(realized_at, 1, 10), '-' || "
+            "((CAST(strftime('%w', substr(realized_at, 1, 10)) AS INTEGER) + 2) % 7)"
+            " || ' days')")
+
+
 def compact_1m(conn, now_iso):
     """Keep ONE REAL forecast per card-month once the month has fully matured.
 
@@ -290,6 +316,30 @@ def compact_1m(conn, now_iso):
         conn.execute("DROP TABLE IF EXISTS temp.keep_1m")
         conn.execute("CREATE TEMP TABLE keep_1m (rowid INTEGER PRIMARY KEY)")
         conn.executemany("INSERT INTO temp.keep_1m VALUES (?)", [(k,) for k in keep])
+        # Bank the weekly tallies of the rows about to be DELETED (survivors
+        # keep reporting through the live query; deleted + live = full cohort).
+        ensure_weekly_coverage(conn)
+        for wk, n_, hits, errs, dn, dh in conn.execute(
+                f"SELECT {WEEK_FRI}, COUNT(*), "
+                "  SUM(CASE WHEN realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
+                "  SUM(ABS(COALESCE(ret, 0) - realized_ret)), "
+                "  SUM(CASE WHEN ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01 "
+                "      THEN 1 ELSE 0 END), "
+                "  SUM(CASE WHEN ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01 "
+                "      AND (COALESCE(ret, 0) > 0) = (realized_ret > 0) THEN 1 ELSE 0 END) "
+                "FROM forecast_archive "
+                "WHERE horizon='1m' AND substr(as_of, 1, 7)=? AND realized_ret IS NOT NULL "
+                "  AND substr(model_version, 1, 2) != '__' AND target='ungraded' "
+                "  AND printing='' AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
+                "  AND rowid NOT IN (SELECT rowid FROM temp.keep_1m) "
+                "GROUP BY 1", (m,)):
+            conn.execute(
+                "INSERT INTO forecast_coverage_weekly VALUES (?,?,?,?,?,?) "
+                "ON CONFLICT(week) DO UPDATE SET n = n + excluded.n, "
+                "  band_hits = band_hits + excluded.band_hits, "
+                "  abs_err_sum = abs_err_sum + excluded.abs_err_sum, "
+                "  dir_n = dir_n + excluded.dir_n, dir_hits = dir_hits + excluded.dir_hits",
+                (wk, n_, hits or 0, errs or 0.0, dn or 0, dh or 0))
         n = conn.execute(
             "DELETE FROM forecast_archive "
             "WHERE horizon='1m' AND substr(as_of, 1, 7)=? "

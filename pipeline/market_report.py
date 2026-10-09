@@ -435,29 +435,50 @@ def direction_split(pred, live):
 
 def weekly_coverage(pred, weeks=8):
     """Band coverage week over week: the nightly dated 1-month cohorts
-    (ungraded tier) bucketed by the Monday of the week they came DUE.
+    (ungraded tier) bucketed by the FRIDAY-STARTING week they came due —
+    aligned to this report's own cadence, so the newest row is a complete
+    Fri→Thu week at generation time instead of a "(so far)" stub.
 
     Only the dated stream matures continuously, so it's the only honest
     weekly series: month-bucket rows (graded tiers, early ungraded vintages)
-    all land on the 1st and would spike whichever week contains it. The
-    day-01 exclusion drops those stragglers from the ungraded slice too, at
-    the cost of ~1/30 of genuine dated rows — a rounding error at cohort
-    sizes, and unbiased for coverage."""
-    rows = pred.execute(
-        "SELECT date(substr(realized_at, 1, 10), '-6 days', 'weekday 1') wk, "
-        "  COUNT(*), "
-        "  AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END), "
-        "  AVG(ABS(ret - realized_ret)), "
-        f" SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
-        f" AVG(CASE WHEN {DECISIVE} THEN "
-        "   (CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END) "
-        "FROM forecast_archive "
-        "WHERE horizon = '1m' AND realized_ret IS NOT NULL AND target = 'ungraded' "
-        "  AND printing = '' AND substr(model_version, 1, 2) != '__' "
-        "  AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
-        "GROUP BY wk HAVING COUNT(*) >= " + str(MIN_GRADED) +
-        " ORDER BY wk DESC LIMIT ?", (weeks,)).fetchall()
-    return rows[::-1]
+    all land on the 1st and would spike whichever week contains it; the
+    day-01 exclusion drops those stragglers.
+
+    Live rows alone are NOT the full story once compaction has run: the
+    kept median-error representatives are coverage-biased (the first
+    compaction lifted one week from 52.8% to 84.6%). compact_1m banks each
+    deleted row's weekly tallies in forecast_coverage_weekly; merging the
+    banked sums with the surviving live rows reproduces the full cohort."""
+    # SQLite %w: Sunday=0 … Friday=5; (w+2)%7 days back = the week's Friday.
+    wk_expr = ("date(substr(realized_at, 1, 10), '-' || "
+               "((CAST(strftime('%w', substr(realized_at, 1, 10)) AS INTEGER) + 2) % 7)"
+               " || ' days')")
+    agg = {}
+    for wk, n, hits, errs, dn, dh in pred.execute(
+            f"SELECT {wk_expr} wk, COUNT(*), "
+            "  SUM(CASE WHEN realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
+            "  SUM(ABS(ret - realized_ret)), "
+            f" SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
+            f" SUM(CASE WHEN {DECISIVE} AND (ret > 0) = (realized_ret > 0) "
+            "      THEN 1 ELSE 0 END) "
+            "FROM forecast_archive "
+            "WHERE horizon = '1m' AND realized_ret IS NOT NULL AND target = 'ungraded' "
+            "  AND printing = '' AND substr(model_version, 1, 2) != '__' "
+            "  AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
+            "GROUP BY wk"):
+        agg[wk] = [n, hits or 0, errs or 0.0, dn or 0, dh or 0]
+    try:
+        for wk, n, hits, errs, dn, dh in pred.execute(
+                "SELECT week, n, band_hits, abs_err_sum, dir_n, dir_hits "
+                "FROM forecast_coverage_weekly"):
+            a = agg.setdefault(wk, [0, 0, 0.0, 0, 0])
+            a[0] += n; a[1] += hits; a[2] += errs; a[3] += dn; a[4] += dh
+    except sqlite3.OperationalError:
+        pass   # pre-persistence DB: live rows only
+    rows = [(wk, n, hits / n, errs / n, dn, (dh / dn) if dn else None)
+            for wk, (n, hits, errs, dn, dh) in sorted(agg.items())
+            if n >= MIN_GRADED]
+    return rows[-weeks:]
 
 
 # ---- inline SVG bar charts -------------------------------------------------
@@ -802,18 +823,23 @@ def build_report(force=False, as_of=None):
         # Week over week (2026-09-27, user request): the same calibration
         # story as a trend, not a snapshot. Nightly dated cohorts only — see
         # weekly_coverage() — so every row is a true ~28-day forecast.
-        wow = weekly_coverage(pred)
+        # Complete Fri→Thu weeks only — a report generated Friday morning
+        # would otherwise lead with a one-day stub of its own week.
+        wow = [r for r in weekly_coverage(pred)
+               if (today - date.fromisoformat(r[0])).days >= 7]
         if len(wow) >= 2:
-            this_monday = (today - timedelta(days=today.weekday())).isoformat()
             def wk_label(wk):
                 d = date.fromisoformat(wk)
-                return f"{d.strftime('%b')} {d.day}" + (" (so far)" if wk == this_monday else "")
+                return f"{d.strftime('%b')} {d.day}" + (
+                    " (so far)" if (today - d).days < 7 else "")
             body.append("<h3>Week over week: band coverage</h3>"
                         "<p>Each row is the nightly 1-month forecasts that came due "
                         "that week, graded against ungraded market prices (graded "
                         "tiers settle on the 1st of the month, so they can't be "
-                        "read weekly). 80% is perfect calibration &mdash; higher "
-                        "means cautious bands, lower means overconfident.</p>")
+                        "read weekly). Weeks run Friday to Thursday, matching this "
+                        "report's cadence, so the newest row is a complete week. "
+                        "80% is perfect calibration &mdash; higher means cautious "
+                        "bands, lower means overconfident.</p>")
             body.append("<table class='report-table'>"
                         "<thead><tr><th>Week of</th><th>Graded</th><th>80% band</th>"
                         "<th>Typical miss</th><th>Direction</th></tr></thead><tbody>")
