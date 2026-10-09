@@ -4,8 +4,9 @@
 // Create a Link, generate a link for any URL, and strip everything from
 // "?u=" on. Empty string = no buy buttons render anywhere (safe dormant
 // state until the real link is pasted in).
-const TRACKING_BASE = "";
-// e.g. "https://tcgplayer.pxf.io/c/1234567/1830156/21018"
+// Verified 2026-10-09: redirects to the exact ?u= product page carrying
+// irclickid + irpid=7852100 (this account) — clicks track, cards deep-link.
+const TRACKING_BASE = "https://partner.tcgplayer.com/c/7852100/1830156/21018";
 
 export function tcgBuyUrl(productId: number): string | null {
     if (!TRACKING_BASE) return null;
