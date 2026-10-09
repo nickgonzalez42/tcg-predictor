@@ -820,7 +820,9 @@ def build_report(force=False, as_of=None):
         body.append(
             "<details class='report-game-sec'>"
             f"<summary><strong>{esc(GAMES[game]['label'])}</strong>"
-            f"<span class='report-game-teaser'>{gups:,} ▲ · {gdowns:,} ▼ "
+            f"<span class='report-game-teaser'>"
+            f"<span class='report-up'>{gups:,} ▲</span> · "
+            f"<span class='report-down'>{gdowns:,} ▼</span> "
             f"· {len(moves):,} tracked</span></summary>"
             f"<p>{esc(game_para)}</p>")
         gts = trends_by_game.get(game, [])[:GAME_TRENDS]
