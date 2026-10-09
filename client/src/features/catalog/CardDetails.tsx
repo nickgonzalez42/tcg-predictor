@@ -25,6 +25,7 @@ const HORIZON_LABEL: Record<string, string> = {
 };
 import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { tcgBuyUrl } from "../../lib/affiliate";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CommentSection from "../social/CommentSection";
 
@@ -333,6 +334,19 @@ export default function CardDetails() {
                     alt={card.name}
                     onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                 />
+                {tcgBuyUrl(cardId) && (
+                    <div className="buy-tcg">
+                        {/* rel=sponsored: affiliate links must be marked for
+                            crawlers; the visible disclosure covers the FTC. */}
+                        <a className="btn btn--block" href={tcgBuyUrl(cardId)!}
+                            target="_blank" rel="sponsored noopener">
+                            Buy on TCGplayer ↗
+                        </a>
+                        <div className="buy-tcg__disclosure mono">
+                            Affiliate link — CardStock may earn a commission.
+                        </div>
+                    </div>
+                )}
                 <OrderTicket game={gameId} productId={cardId} printing={printing} psa10={g?.psa10} />
                 {gradeRows.length > 0 && (
                     <div className="panel detail-panel">
