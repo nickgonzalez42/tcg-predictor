@@ -8,6 +8,7 @@ import { tierLabel } from "../watchlist/grades"
 import ChangePill from "../../app/shared/components/ChangePill"
 import Sparkline from "../../app/shared/components/Sparkline"
 import PricePair from "../../app/shared/components/PricePair"
+import PredictedPrice, { releaseLabel } from "../../app/shared/components/PredictedPrice"
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { useUserInfoQuery } from "../account/accountApi";
 
@@ -40,9 +41,15 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
         return () => ro.disconnect()
     }, [user, quick])   // quick mode unmounts the rotator; re-sync when it returns
 
+    // Pre-release (2026-10-10): no market price yet — a distinct tile (violet
+    // dashed frame + ribbon) carrying the predicted launch price and release
+    // date where the price, trend and sparkline would be.
+    const pre = !!card.isPrerelease;
+
     return (
-        <div className={`card${quick ? ' card--quick' : ''}`}>
+        <div className={`card${quick ? ' card--quick' : ''}${pre ? ' card--prerelease' : ''}`}>
             <div className="media__container" ref={mediaRef}>
+                {pre && <span className="card__ribbon mono" aria-label="Pre-release card">Pre-release</span>}
                 <Link to={detailPath} style={{ display: 'block' }}>
                     <img
                         className="card__media"
@@ -94,11 +101,16 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
                     <div className="card__info">
                         <div className="card__price">
                             {/* no asOf: catalog tiles omit the price date (it lives on the card page) */}
-                            <PricePair
-                                price={card.price}
-                                forecast={card.fcstTo}
-                                horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
-                            />
+                            {pre ? (
+                                <PredictedPrice price={card.predictedPrice}
+                                    low={card.predictedLow} high={card.predictedHigh} />
+                            ) : (
+                                <PricePair
+                                    price={card.price}
+                                    forecast={card.fcstTo}
+                                    horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
+                                />
+                            )}
                         </div>
                     </div>
                     {user && !quick && (
@@ -114,9 +126,13 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
                         <QuickAdd game={gameKey(card.game)} productId={card.id} grade={ownGrade} />
                     </div>
                 )}
-                {/* Past-movement pill + sparkline share one line. */}
+                {/* Past-movement pill + sparkline share one line; a pre-release
+                    card has neither and shows its release date instead. */}
                 <div className="card__footer">
-                    {(card.trendPct != null || (card.sparkline?.length ?? 0) >= 2) && (
+                    {pre && (
+                        <div className="card__release mono">{releaseLabel(card.releaseDate) || 'No market price yet'}</div>
+                    )}
+                    {!pre && (card.trendPct != null || (card.sparkline?.length ?? 0) >= 2) && (
                         <div className="card__market"
                             title={`Price history over the past ${(card.trendPeriod ?? '1m').toUpperCase()}`}>
                             {card.trendPct != null && (

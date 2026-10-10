@@ -23,6 +23,8 @@
   --down-bg: rgba(255, 93, 93, 0.14);
   --warn: #f0b429;               /* medium-confidence amber */
   --warn-bg: rgba(240, 180, 41, 0.14);
+  --pre: #c678dd;                /* pre-release estimates: violet, never confused with price yellow */
+  --pre-bg: rgba(198, 120, 221, 0.14);
   --nav-bg: #1e3a5f;             /* navbar navy */
   --nav-link: #dbe4f0;
   --chart-history: #3d7dca;

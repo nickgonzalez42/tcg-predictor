@@ -244,8 +244,14 @@ price actually did — misses stay on display on each card's chart. The weekly r
 accuracy, bias, and how often prices landed inside the model's ranges, whether flattering or not. Since October 2026 the published number is also held to a flat-price baseline: the point
 forecast is scaled to what recently graded calls support, and the ranges are widened per
 volatility stratum until they cover 80% of outcomes in practice.</p>
-<p>New cards carry no forecast until they have at least two months of clean price history — we
-tested launch-window prediction and the honest answer was: not well enough to publish.</p>
+<p>New cards carry no regular forecast until they have at least two months of clean price
+history. Cards with no price at all yet — an upcoming set on pre-order, or one released days
+ago — instead get a clearly labeled predicted launch price, built only from what the card is:
+how its rarity has priced in the game's recent sets, what earlier cards of the same character
+fetched at launch, the set's structure, its printed stats, and its artwork. The method is tested
+on each game's most recent sets as if they were unreleased, the typical miss from that test
+(often 50–100% — these are ballpark, ranking-grade calls) is printed beside every estimate, and
+each estimate is archived and graded against the card's first two months of real trading.</p>
 """
 PROSE["privacy"] = """
 <h1>Privacy Policy</h1>

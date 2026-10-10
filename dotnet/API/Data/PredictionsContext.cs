@@ -9,10 +9,37 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     public DbSet<Forecast> Forecasts => Set<Forecast>();
     public DbSet<ArchivedForecast> ForecastArchive => Set<ArchivedForecast>();
     public DbSet<MarketReport> Reports => Set<MarketReport>();
+    // Pre-release estimates (2026-10-10). The table is created by the first
+    // model run that includes forecast_prerelease.py; CardMarketData guards
+    // every read so an older predictions.db simply serves none.
+    public DbSet<PrereleaseEstimate> Prerelease => Set<PrereleaseEstimate>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<PrereleaseEstimate>(e =>
+        {
+            e.ToTable("prerelease_estimates");
+            e.HasKey(x => new { x.Game, x.ProductId, x.Printing });
+            e.HasQueryFilter(x => x.Printing == "");
+            e.Property(x => x.Game).HasColumnName("game");
+            e.Property(x => x.ProductId).HasColumnName("product_id");
+            e.Property(x => x.Printing).HasColumnName("printing");
+            e.Property(x => x.ReleaseDate).HasColumnName("release_date");
+            e.Property(x => x.AsOf).HasColumnName("as_of");
+            e.Property(x => x.Predicted).HasColumnName("predicted");
+            e.Property(x => x.Low).HasColumnName("low");
+            e.Property(x => x.High).HasColumnName("high");
+            e.Property(x => x.Confidence).HasColumnName("confidence");
+            e.Property(x => x.Reason).HasColumnName("reason");
+            e.Property(x => x.ModelVersion).HasColumnName("model_version");
+            e.Property(x => x.NTrain).HasColumnName("n_train");
+            e.Property(x => x.ValSets).HasColumnName("val_sets");
+            e.Property(x => x.ValMissPct).HasColumnName("val_miss_pct");
+            e.Property(x => x.ValWithin50).HasColumnName("val_within50");
+            e.Property(x => x.ScoredAt).HasColumnName("scored_at");
+        });
 
         builder.Entity<ArchivedForecast>(f =>
         {

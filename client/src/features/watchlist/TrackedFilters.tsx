@@ -27,7 +27,7 @@ type Props = {
 export default function TrackedFilters({ params, actions, sortGroups, showGrade = true }: Props) {
     const dispatch = useAppDispatch();
     // Set/rarity vocabularies are game-level metadata, shared with the catalog.
-    const { data: filtersData } = useFetchFiltersQuery(params.game);
+    const { data: filtersData } = useFetchFiltersQuery({ game: params.game });
 
     const [open, setOpen] = useState(false);
     useEffect(() => {

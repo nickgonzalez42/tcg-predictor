@@ -50,6 +50,18 @@ public class CardDto
     // Wishlist rows only.
     public double? WatchedAtPrice { get; set; }    // price when the card was wishlisted
     public DateTime? WatchedSince { get; set; }    // when the card was wishlisted
+    // Pre-release (2026-10-10): a card with NO market price yet, carrying a
+    // trait-only launch-price estimate instead of a forecast. Price stays
+    // null so nothing downstream mistakes the estimate for a market price.
+    public bool IsPrerelease { get; set; }
+    public double? PredictedPrice { get; set; }    // expected price over the first ~2 months of trading
+    public double? PredictedLow { get; set; }      // 80% range from held-out launches
+    public double? PredictedHigh { get; set; }
+    public string? PredictedConfidence { get; set; } // low | med
+    public string? PredictedReason { get; set; }   // plain-English basis + the method's typical miss
+    public string? PredictedAsOf { get; set; }     // issue date
+    public double? PredictedMissPct { get; set; }  // typical miss on the game's held-out sets (%)
+    public string? ReleaseDate { get; set; }       // ISO date the set releases/released
 }
 
 public class GradedPriceDto

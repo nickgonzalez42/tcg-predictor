@@ -43,13 +43,29 @@ export default function AboutPage() {
           price P<sub>t</sub>·e<sup>r</sup>.
         </p>
         <p>
-          One thing you will sometimes see is a card with <em>no</em> forecast. Brand-new cards
-          — a set that just released, or a card whose price data we recently repaired — carry no
-          prediction until they have at least two months of clean price history. We tested
-          whether a new card's first weeks can be predicted from how similar cards launched, and
-          the honest answer was: not well enough to publish. So a young card shows its price and
-          nothing more, rather than a guess dressed up as a forecast. A clearly-labeled early
-          estimate for new cards, with its own public track record, is in testing.
+          One thing you will sometimes see is a card with <em>no</em> regular forecast. A card
+          needs at least two months of clean price history before the model will call where it is
+          heading; a younger card shows its price and nothing more, rather than a guess dressed
+          up as a forecast.
+        </p>
+        <p>
+          Cards with no price <em>at all</em> yet are a different case and get a different
+          treatment. An upcoming set still on pre-order, or one that released days ago, has no
+          sales to anchor a forecast to, so instead each card gets a clearly labeled{" "}
+          <strong>predicted launch price</strong> built only from what the card is. That
+          estimate learns from every earlier launch in the same game: how its rarity has been
+          pricing in the recent sets, what earlier cards of the same character fetched when they
+          launched, how many cards in the set share its rarity, its printed stats, and its
+          artwork (via the same CLIP embedding, including the launch prices of the cards it most
+          resembles). Before anything is published, the method is tested on the game's most
+          recent sets as if they were still unreleased, and the typical miss from that test is
+          printed beside every estimate. Expect that miss to be large, often 50–100%: these are
+          ballpark calls, much better at ranking a set's chase cards than at nailing a price,
+          which is why they show a likely range and are framed in violet, never in the yellow of
+          a market price. Every estimate is archived the day it is issued and graded against the
+          card's first two months of real trading, so the pre-release calls carry a public track
+          record of their own. Find them under the catalog's <strong>Pre-release</strong>{" "}
+          filter.
         </p>
       </section>
 

@@ -1,6 +1,6 @@
 import { createSlice } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
-import { trendForSort } from "./sortOptions";
+import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
 export const DEFAULT_ORDER = 'chgUsd1mDesc';   // 1M $ growth: desc (2026-08-16)
 export const DEFAULT_PAGE_SIZE = 30;
@@ -33,6 +33,7 @@ const initialState: CardParams = {
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
     // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
     trend: trendForSort(DEFAULT_ORDER) ?? '1y',
+    prerelease: false,
     view: getInitialView(),
     quickAdd: getInitialQuickAdd()
 }
@@ -124,6 +125,24 @@ export const catalogSlice = createSlice({
         setTrend(state, action) {
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
         },
+        // Pre-release mode (2026-10-10): the unpriced half of the catalog,
+        // shown with predicted launch prices. Game-agnostic. The two modes
+        // have different set/rarity vocabularies, so those clear on a switch;
+        // entering moves the sort onto one the estimate can serve and drops
+        // the tier/confidence filters, which have nothing to key on there.
+        setPrerelease(state, action) {
+            const on = !!action.payload;
+            if (on === !!state.prerelease) return;
+            state.prerelease = on;
+            state.sets = [];
+            state.rarities = [];
+            state.pageNumber = 1;
+            if (on) {
+                if (!PRERELEASE_SORTS.includes(state.orderBy)) state.orderBy = 'priceDesc';
+                state.grade = '';
+                state.confidence = [];
+            }
+        },
         resetParams(state) {
             // Reset filters only — the cards/rows view choice is presentation,
             // not a filter, and the game default stays decided.
@@ -143,4 +162,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setPrerelease, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

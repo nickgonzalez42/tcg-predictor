@@ -161,6 +161,26 @@
   min-height: 35.2px;
 }
 
+/* Pre-release mode (2026-10-10): the trend chips give way to a label saying
+   what the numbers are; the filter rail's mode note sits under its radio. */
+.results-note {
+  color: var(--pre);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  cursor: help;
+}
+
+.filters__note {
+  margin: var(--space-10) 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.screener__muted {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
 /* Min/max shown-price range inside the "Price shown" panel. */
 .price-range {
   display: flex;

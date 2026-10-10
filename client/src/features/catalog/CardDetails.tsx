@@ -18,6 +18,7 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 import { sanitizeHtml } from "../../lib/sanitizeHtml";
 import CardLoader from "../../app/shared/components/CardLoader";
 import Modal from "../../app/shared/components/Modal";
+import { releaseLabel } from "../../app/shared/components/PredictedPrice";
 
 const HORIZONS = ['1m', '6m', '12m'];
 const HORIZON_LABEL: Record<string, string> = {
@@ -263,8 +264,11 @@ export default function CardDetails() {
     const { data: forecastData } = useFetchCardForecastQuery(
         { game: gameId, id: cardId, printing: printing || undefined });
 
-    usePageMeta(card ? `${card.name} Price Prediction · ${card.setName ?? card.game}` : undefined,
-        card ? `AI price prediction, market price, and graded history for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).` : undefined);
+    const prerelease = !!card && card.price == null && !!card.isPrerelease && card.predictedPrice != null;
+    usePageMeta(card ? `${card.name} ${prerelease ? 'Predicted Launch Price' : 'Price Prediction'} · ${card.setName ?? card.game}` : undefined,
+        card ? (prerelease
+            ? `Pre-release: a predicted launch price for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}) before it has a market price.`
+            : `AI price prediction, market price, and graded history for ${card.name} (${[card.setName, card.rarity].filter(Boolean).join(", ")}).`) : undefined);
 
     // Stable identity: the chart effect keys off this array, so a fresh copy per
     // render would tear the chart down on unrelated re-renders. (Hooks must run
@@ -317,7 +321,7 @@ export default function CardDetails() {
     // are filtered out of the catalog but reachable by direct link, image
     // search, or a watchlist — so the detail page says so plainly instead of
     // rendering a blank price area over an empty chart.
-    const noSales = card.price == null && gradeRows.length === 0;
+    const noSales = card.price == null && gradeRows.length === 0 && !prerelease;
 
     return (
         <>
@@ -400,7 +404,39 @@ export default function CardDetails() {
                         ))}
                     </div>
                 )}
-                {noSales ? (
+                {prerelease ? (
+                    /* Pre-release (2026-10-10): the estimate stands where the price
+                       row, chart and forecast table would be — framed in violet and
+                       tagged, so it never reads as market data. */
+                    <section className="panel detail-panel detail-prerelease">
+                        <div className="detail-prerelease__head">
+                            <span className="mono predicted__tag">Predicted</span>
+                            <h4 className="mono detail-panel__title">Pre-release · no market price yet</h4>
+                        </div>
+                        <div className="detail-prerelease__pricerow">
+                            <span className="detail-prerelease__price">{currencyFormat(card.predictedPrice)}</span>
+                            {card.predictedLow != null && card.predictedHigh != null && (
+                                <span className="mono detail-prerelease__range"
+                                    title="Likely range: 80% of the game's past launches landed inside the equivalent band">
+                                    likely {currencyFormat(card.predictedLow)}–{currencyFormat(card.predictedHigh)}
+                                </span>
+                            )}
+                        </div>
+                        <div className="mono detail-prerelease__release">
+                            {releaseLabel(card.releaseDate) || 'Not trading yet'}
+                            {card.predictedMissPct != null && ` · typical miss on past launches ~${Math.round(card.predictedMissPct)}%`}
+                        </div>
+                        {card.predictedReason && <p className="detail-prerelease__why">{card.predictedReason}</p>}
+                        <p className="est-note">
+                            This is a model estimate of where the card will trade over its first
+                            couple of months, built only from what the card is — its rarity, set,
+                            printed stats, the history of earlier cards with the same character, and
+                            its artwork. There are no sales behind it yet. Once the card starts
+                            trading, its real market price and the regular forecast take over here,
+                            and this estimate is graded on the public track record. Not financial advice.
+                        </p>
+                    </section>
+                ) : noSales ? (
                     <section className="panel detail-panel detail-nosales">
                         <h4 className="mono detail-panel__title">No sales info</h4>
                         <p className="est-note detail-nosales__body">

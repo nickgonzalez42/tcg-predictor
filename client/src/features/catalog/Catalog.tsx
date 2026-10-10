@@ -20,7 +20,8 @@ export default function Catalog() {
     usePageMeta("Card Prices and Predictions",
         "Browse and screen Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards by price prediction, trend, and graded tier.");
   const cardParams = useAppSelector(state => state.catalog);
-  const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery(cardParams.game);
+  const pre = !!cardParams.prerelease;
+  const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, prerelease: pre });
   const { data, isLoading } = useFetchCardsQuery(cardParams);
   const dispatch = useAppDispatch();
   // Games without year-deep data (no 12m forecasts, <12mo history) lose the
@@ -64,6 +65,7 @@ export default function Catalog() {
     if (get('pageNumber')) p.pageNumber = +get('pageNumber')!;
     if (get('pageSize')) p.pageSize = +get('pageSize')!;
     if (get('trend')) p.trend = get('trend')!;
+    if (get('prerelease')) p.prerelease = get('prerelease') === '1';
     if (get('view')) p.view = get('view') === 'rows' ? 'rows' : 'cards';
     if (Object.keys(p).length) {
       dispatch(resetToDefaults());
@@ -105,6 +107,7 @@ export default function Catalog() {
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);
     if (cardParams.trend && cardParams.trend !== '1y') sp.trend = cardParams.trend;
+    if (cardParams.prerelease) sp.prerelease = '1';
     if (cardParams.view === 'rows') sp.view = 'rows';
     setSearchParams(sp, { replace: true });
   }, [cardParams, setSearchParams]);
@@ -128,20 +131,28 @@ export default function Catalog() {
           <span className="mono">
             {totalCount != null ? `${totalCount.toLocaleString('en-US')} CARDS` : ' '}
           </span>
-          <div className="range-tabs" role="group" aria-label="Trend period"
-            title="Window for the trend line and price movement (price data updates monthly)">
-            {(['1m', '6m', '1y'] as const).map(t => (
-              <button key={t}
-                className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}
-                onClick={() => dispatch(setTrend(t))}
-                aria-pressed={(cardParams.trend ?? '1m') === t}
-                disabled={t === '1y' && !hasYear}
-                title={t === '1y' && !hasYear ? 'This game has under a year of price data' : undefined}
-              >
-                {t.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          {pre ? (
+            /* No history to window in pre-release mode: say what the numbers are instead. */
+            <span className="mono results-note"
+              title="Model estimates from each card's traits — rarity, set, character history, art — validated on the game's past launches. No sales yet.">
+              PREDICTED LAUNCH PRICES · NO SALES YET
+            </span>
+          ) : (
+            <div className="range-tabs" role="group" aria-label="Trend period"
+              title="Window for the trend line and price movement (price data updates monthly)">
+              {(['1m', '6m', '1y'] as const).map(t => (
+                <button key={t}
+                  className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}
+                  onClick={() => dispatch(setTrend(t))}
+                  aria-pressed={(cardParams.trend ?? '1m') === t}
+                  disabled={t === '1y' && !hasYear}
+                  title={t === '1y' && !hasYear ? 'This game has under a year of price data' : undefined}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          )}
           {user && (
             <label className="switch-field"
               title={quick
@@ -188,7 +199,7 @@ export default function Catalog() {
             <AdSlot slot="" />
           </>
         ) : (
-          <h3>There are no results for this filter</h3>
+          <h3>{pre ? 'No pre-release cards for this game right now' : 'There are no results for this filter'}</h3>
         )}
       </div>
     </div>

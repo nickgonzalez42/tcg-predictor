@@ -1,5 +1,6 @@
 using API.Data;
 using API.DTOS;
+using API.Entities;
 using API.RequestHelpers;
 using Microsoft.EntityFrameworkCore;
 
@@ -54,6 +55,60 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             .Select(f => f.ProductId)
             .ToListAsync();
         return ids.ToHashSet();
+    }
+
+    // ----- Pre-release estimates (2026-10-10) -----
+    // Trait-only launch-price estimates for cards with no market price yet
+    // (pipeline/forecast_prerelease.py). The table arrives with the first
+    // model run that includes that step; against an older predictions.db the
+    // query throws "no such table" and we serve none rather than fail a page.
+    public async Task<Dictionary<int, PrereleaseEstimate>> PrereleaseEstimates(
+        string game, List<int>? ids = null)
+    {
+        if (ids is { Count: 0 }) return [];
+        try
+        {
+            var q = predictions.Prerelease.Where(e => e.Game == game);
+            if (ids != null && ids.Count <= IdBatch) q = q.Where(e => ids.Contains(e.ProductId));
+            var rows = await q.ToListAsync();
+            if (ids != null && ids.Count > IdBatch)
+            {
+                var wanted = ids.ToHashSet();
+                rows = rows.Where(r => wanted.Contains(r.ProductId)).ToList();
+            }
+            return rows.ToDictionary(r => r.ProductId);
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            return [];   // predictions.db predates the prerelease_estimates table
+        }
+    }
+
+    // Decorate UNPRICED cards with their estimate. Priced cards are left alone:
+    // the estimate only ever shows where there is no market price, so nothing
+    // downstream can mistake it for one.
+    public async Task ApplyPrerelease(List<CardDto> cards, string game)
+    {
+        var unpriced = cards.Where(c => c.Price == null).Select(c => c.Id).ToList();
+        if (unpriced.Count == 0) return;
+        ApplyPrerelease(cards, await PrereleaseEstimates(game, unpriced));
+    }
+
+    public static void ApplyPrerelease(List<CardDto> cards, Dictionary<int, PrereleaseEstimate> estimates)
+    {
+        foreach (var card in cards)
+        {
+            if (card.Price != null || !estimates.TryGetValue(card.Id, out var e)) continue;
+            card.IsPrerelease = true;
+            card.PredictedPrice = e.Predicted;
+            card.PredictedLow = e.Low;
+            card.PredictedHigh = e.High;
+            card.PredictedConfidence = e.Confidence;
+            card.PredictedReason = e.Reason;
+            card.PredictedAsOf = e.AsOf;
+            card.PredictedMissPct = e.ValMissPct;
+            card.ReleaseDate = e.ReleaseDate;
+        }
     }
 
     private static string WindowStart(string window) =>

@@ -171,7 +171,7 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
           --message "$(printf 'Full refresh finished %s — crawls, local model block, and prod push all complete.\n\nSteps:\n%s\n\nModel block:\n%s' \
               "$(date '+%F %T')" \
               "$(grep -E '^  (ok|FAIL) |^Done\. [0-9]+ Near Mint|^total budget' "$LOG" | head -40)" \
-              "$(grep -E '^--- (forecast_|market_report).* rc=|rows -> |Wrote report|forecast_launch: |predictions.db pushed' "$LOG" | tail -14)")" \
+              "$(grep -E '^--- (forecast_|market_report).* rc=|rows -> |Wrote report|forecast_launch: |forecast_prerelease: |predictions.db pushed' "$LOG" | tail -14)")" \
           >/dev/null 2>&1 || echo "(completion SNS failed — non-fatal)"
         # Best-effort S3 backups (nightly CSVs; Saturdays add the big dumps) —
         # never fails the refresh.

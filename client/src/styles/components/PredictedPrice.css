@@ -1,0 +1,47 @@
+/* Pre-release launch-price estimate: violet, tagged PREDICTED, always with
+   its range — visibly not a market price (see PricePair for those). */
+
+.predicted {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-5);
+  white-space: nowrap;
+}
+
+.predicted__row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-5);
+}
+
+.predicted__price {
+  color: var(--pre);
+  font-weight: 700;
+}
+
+.predicted__tag {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 1px 6px;
+  border: 1px solid var(--pre);
+  border-radius: 999px;
+  color: var(--pre);
+  background: var(--pre-bg);
+  vertical-align: 2px;
+}
+
+.predicted__range {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.predicted__release {
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.predicted--compact .predicted__range {
+  font-size: 10px;
+}

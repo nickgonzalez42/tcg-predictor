@@ -15,4 +15,9 @@ public class CardParams : PaginationParams
                                             // carrying one of these printings (e.g. "1st Edition")
     public string? Confidence { get; set; } // comma separated high|med|low: keep only cards whose
                                             // shown forecast (tier + trend horizon) has that confidence
+    // Pre-release mode (2026-10-10): list the game's cards that have NO
+    // market price yet but carry a launch-price estimate, instead of the
+    // priced catalog. Price range + price sorts then key on the estimate;
+    // grade/confidence/forecast sorts don't apply.
+    public bool Prerelease { get; set; }
 }

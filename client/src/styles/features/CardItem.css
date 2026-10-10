@@ -245,6 +245,37 @@
   }
 }
 
+/* Pre-release tile (2026-10-10): violet dashed frame, a ribbon over the art
+   and the predicted launch price in place of the market price — a tile that
+   can't be mistaken for a priced one. */
+.card--prerelease {
+  border: 1px dashed var(--pre);
+}
+
+.card__ribbon {
+  position: absolute;
+  top: var(--space-10);
+  left: var(--space-10);
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--pre);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.card__release {
+  margin-top: var(--space-5);
+  border-top: 1px dashed var(--border);
+  padding-top: var(--space-10);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* Quick-add mode (2026-10-10): no reveal, no rotator — an always-visible
    strip under the price row. Compact controls so the tile stays one tile. */
 .card__quick {

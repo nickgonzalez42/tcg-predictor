@@ -26,10 +26,10 @@ export function filterEmptyValues(values: object) {
 // CardParams fields that are presentation state and must never reach the API.
 const CLIENT_ONLY_PARAMS = ['view', 'gameInitialized', 'quickAdd'];
 
-// Query-string payload for a card list request: drops client-only fields and
-// empty values in one place.
+// Query-string payload for a card list request: drops client-only fields,
+// empty values and `false` flags (an off toggle is the API's default) in one place.
 export function toApiParams(params: object) {
     return filterEmptyValues(Object.fromEntries(
-        Object.entries(params).filter(([key]) => !CLIENT_ONLY_PARAMS.includes(key))
+        Object.entries(params).filter(([key, value]) => !CLIENT_ONLY_PARAMS.includes(key) && value !== false)
     ));
 }

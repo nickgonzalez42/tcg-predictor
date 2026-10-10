@@ -378,6 +378,52 @@
   line-height: 1.5;
 }
 
+/* Pre-release detail (2026-10-10): the estimate stands where the price row
+   and chart would be — framed in violet so it never reads as market data. */
+.detail-prerelease {
+  border: 1px dashed var(--pre);
+}
+
+.detail-prerelease__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-10);
+  margin-bottom: var(--space-10);
+}
+
+.detail-prerelease__head .detail-panel__title {
+  margin: 0;
+}
+
+.detail-prerelease__pricerow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-10);
+  flex-wrap: wrap;
+}
+
+.detail-prerelease__price {
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--pre);
+}
+
+.detail-prerelease__range {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.detail-prerelease__release {
+  margin-top: var(--space-5);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.detail-prerelease__why {
+  margin: var(--space-15) 0 var(--space-10);
+  line-height: 1.5;
+}
+
 /* Printing selector (multi-printing support, Phase 3) */
 .printing-pills {
   display: flex;

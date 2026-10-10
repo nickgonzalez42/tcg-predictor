@@ -20,6 +20,7 @@
 @import "./styles/components/MarketTicker.css";
 @import "./styles/components/Sparkline.css";
 @import "./styles/components/PricePair.css";
+@import "./styles/components/PredictedPrice.css";
 @import "./styles/components/AppPagination.css";
 @import "./styles/components/MultiSelectDropdown.css";
 @import "./styles/components/CardLoader.css";

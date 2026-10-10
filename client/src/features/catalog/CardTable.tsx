@@ -8,6 +8,7 @@ import TrackButton from "../watchlist/TrackButton";
 import QuickAdd from "../watchlist/QuickAdd";
 import { tierLabel } from "../watchlist/grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
+import PredictedPrice, { releaseLabel } from "../../app/shared/components/PredictedPrice";
 
 type Props = {
     cards: Card[]
@@ -63,17 +64,28 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                     </Link>
                                 </td>
                                 <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
+                                {/* Pre-release rows (2026-10-10): the predicted launch price
+                                    stands in for the market price; nothing to forecast or
+                                    chart until the card trades. */}
                                 <td className="screener__num screener__price">
-                                    {card.price != null ? currencyFormat(card.price) : '—'}
-                                    {card.priceAsOf && (
+                                    {card.isPrerelease ? (
+                                        <PredictedPrice compact price={card.predictedPrice}
+                                            low={card.predictedLow} high={card.predictedHigh} />
+                                    ) : card.price != null ? currencyFormat(card.price) : '—'}
+                                    {!card.isPrerelease && card.priceAsOf && (
                                         <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>
                                     )}
                                 </td>
                                 <td className="screener__mid">
-                                    <ChangePill value={fcstPct}
-                                        title={`${fcstLabel} model forecast`} />
+                                    {card.isPrerelease
+                                        ? <span className="mono screener__muted" title="No forecast until the card has a market price">pre-release</span>
+                                        : <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />}
                                 </td>
-                                <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
+                                <td className="screener__mid">
+                                    {card.isPrerelease
+                                        ? <span className="mono screener__muted">{releaseLabel(card.releaseDate, true) || '—'}</span>
+                                        : <Sparkline points={card.sparkline} />}
+                                </td>
                                 <td className="screener__actions" onClick={e => e.stopPropagation()}>
                                     {quick
                                         ? <QuickAdd game={gameKey(card.game)} productId={card.id} grade={ownGrade} />

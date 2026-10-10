@@ -50,6 +50,9 @@ export TCG_FC_ROLLCAL=1m
 # not served by the API's trend windows); its self-healing record accrues
 # until the labeled UI ships.
 export TCG_FC_LAUNCH=1
+# Pre-release estimates (2026-10-10): trait-only launch prices for cards with
+# no market price yet (upcoming sets). Non-fatal step; see forecast_prerelease.py.
+export TCG_FC_PRERELEASE=1
 cd "$H/parent/one-piece"
 
 notify_failure() {  # $1 = failed step
@@ -129,7 +132,7 @@ EOF
 }
 
 echo "=== AWS model run $(date -u '+%F %T UTC') (push=$PUSH auto-stop=$AUTO_STOP) ==="
-for step in forecast_scorecard forecast_predict forecast_launch market_report; do
+for step in forecast_scorecard forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
   echo "--- $step $(date -u '+%T') ---"
   t0=$(date +%s)
   "$PY" "$PIPE/$step.py"; rc=$?

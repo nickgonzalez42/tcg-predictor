@@ -43,8 +43,16 @@ export const catalogApi = createApi({
                 return { url: 'cards/image-search', method: 'POST', body };
             }
         }),
-        fetchFilters: builder.query<{ sets: string[], rarities: string[], hasYear?: boolean, printings?: string[] }, string>({
-            query: (game) => `cards/filters?game=${game}`
+        // Facets for one game. prerelease=true swaps to the unpriced-with-
+        // estimate population's sets/rarities; prereleaseCount rides every
+        // response so the client offers the mode only when there is something
+        // to show.
+        fetchFilters: builder.query<
+            { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number },
+            { game: string; prerelease?: boolean }
+        >({
+            query: ({ game, prerelease }) =>
+                `cards/filters?game=${game}${prerelease ? '&prerelease=true' : ''}`
         }),
         fetchCardHistory: builder.query<
             { game: string, productId: number, series: Record<string, { date: string, price: number, source?: string }[]> },

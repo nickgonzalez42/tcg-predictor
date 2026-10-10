@@ -24,6 +24,9 @@ export AWS_PROFILE=default
 export TCG_FC_CQR=1m
 export TCG_FC_ROLLCAL=1m
 export TCG_FC_LAUNCH=1
+# Pre-release estimates (2026-10-10): trait-only launch prices for cards with
+# no market price yet (upcoming sets). Non-fatal step; see forecast_prerelease.py.
+export TCG_FC_PRERELEASE=1
 # 6m/12m retrain on the FULL-REBUILD night only (2026-10-09, user decision):
 # they stay unvalidated until their first cohorts mature in 2027 and barely
 # move between runs; a 1m-only night cuts the model block roughly in half.
@@ -36,7 +39,7 @@ if [ "$u" != "1" ] && [ "$u" != "2" ]; then
 fi
 
 echo "=== LOCAL model block — $(date '+%F %T') ==="
-for step in forecast_scorecard forecast_predict forecast_launch market_report; do
+for step in forecast_scorecard forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
   echo "--- $step $(date '+%T') ---"
   t0=$SECONDS
   "$PY" "$DIR/$step.py"

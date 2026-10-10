@@ -49,7 +49,7 @@ export default function Portfolio() {
     }, [tracked, params.gameInitialized, dispatch]);
     // Young games (digimon/gundam) have no 12m horizon yet — the forecast
     // column falls back to their 6m numbers and relabels itself.
-    const { data: filtersData } = useFetchFiltersQuery(params.game);
+    const { data: filtersData } = useFetchFiltersQuery({ game: params.game });
     const hasYear = filtersData?.hasYear ?? true;
 
     // A truly empty portfolio (no copies at all, filters aside) skips the page

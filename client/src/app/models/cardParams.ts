@@ -12,6 +12,8 @@ export type CardParams = {
     pageNumber: number;
     pageSize: number;
     trend?: string;       // trend window for sparkline/movement: 1w|1m|6m|1y
+    prerelease?: boolean; // pre-release mode: cards with no market price yet, shown with
+                          // a predicted launch price (sent to the API only when true)
     view?: CatalogView;   // client-only presentation state (never sent to the API)
     quickAdd?: boolean;   // client-only: catalog quick-add mode (one-click +1 on every card)
     gameInitialized?: boolean;  // client-only: the default game has been decided

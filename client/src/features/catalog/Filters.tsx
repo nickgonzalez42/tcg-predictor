@@ -4,12 +4,12 @@ import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setConfidence, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setRarities, setPrintings, setSets } from "./catalogSlice";
+import { resetParams, setConfidence, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setPrerelease, setRarities, setPrintings, setSets } from "./catalogSlice";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
-import { catalogSortGroups, withoutYearSorts } from "./sortOptions";
+import { catalogSortGroups, prereleaseSortGroups, withoutYearSorts } from "./sortOptions";
 import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
 
@@ -27,12 +27,21 @@ const CONFIDENCE_OPTIONS = [
 ];
 
 
+// Which half of the catalog to list (2026-10-10): the priced cards, or the
+// pre-release/just-released cards that have no market price yet and show a
+// predicted launch price instead. Offered only while the game has some.
+const MARKET_OPTIONS = [
+    { value: '', label: 'With market price' },
+    { value: 'pre', label: 'Pre-release' },
+];
+
 type Props = {
-    filtersData: { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[] }
+    filtersData: { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number }
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view, prerelease } = useAppSelector(state => state.catalog);
+    const pre = !!prerelease;
     const dispatch = useAppDispatch();
 
     // Dropdown mode: the panels collapse behind a full-width toggle — on
@@ -59,8 +68,9 @@ export default function Filters({ filtersData: data }: Props) {
     const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(capPrice(v))));
 
     // Young games (no 12m forecasts, <12mo history) don't offer 1Y sorts.
-    const sortGroups = (data.hasYear ?? true)
-        ? catalogSortGroups : withoutYearSorts(catalogSortGroups);
+    // Pre-release mode has only the estimate to sort on.
+    const sortGroups = pre ? prereleaseSortGroups
+        : (data.hasYear ?? true) ? catalogSortGroups : withoutYearSorts(catalogSortGroups);
 
     return (
         <div className={`filters${dropdown ? ' filters--dropdown' : ''}`}>
@@ -96,15 +106,23 @@ export default function Filters({ filtersData: data }: Props) {
                                 </div>
                             )}
                             <div className="panel">
-                                <label htmlFor="grade-select" className="field-label">Price shown</label>
-                                <select
-                                    id="grade-select"
-                                    className="input"
-                                    value={grade ?? ''}
-                                    onChange={e => dispatch(setGrade(e.target.value))}
-                                >
-                                    {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                                </select>
+                                {pre ? (
+                                    /* No tiers before a card trades: the range filters the
+                                       predicted launch price instead. */
+                                    <span className="field-label">Predicted price</span>
+                                ) : (
+                                    <>
+                                        <label htmlFor="grade-select" className="field-label">Price shown</label>
+                                        <select
+                                            id="grade-select"
+                                            className="input"
+                                            value={grade ?? ''}
+                                            onChange={e => dispatch(setGrade(e.target.value))}
+                                        >
+                                            {PRICE_TIER_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                                        </select>
+                                    </>
+                                )}
                                 <div className="price-range">
                                     {/* A number input can't hold "$10", so the $ is an
                                         overlay shown only while a value is present. */}
@@ -134,6 +152,21 @@ export default function Filters({ filtersData: data }: Props) {
                                     onChange={e => dispatch(setGame(e.target.value))}
                                 />
                             </div>
+                            {(pre || (data.prereleaseCount ?? 0) > 0) && (
+                                <div className="panel">
+                                    <span className="field-label">Cards shown</span>
+                                    <RadioButtonGroup
+                                        selectedValue={pre ? 'pre' : ''}
+                                        options={MARKET_OPTIONS}
+                                        onChange={e => dispatch(setPrerelease(e.target.value === 'pre'))}
+                                    />
+                                    <p className="est-note filters__note">
+                                        {pre
+                                            ? 'Upcoming and just-released cards with no sales yet, shown with a predicted launch price.'
+                                            : `${(data.prereleaseCount ?? 0).toLocaleString('en-US')} pre-release cards have a predicted price.`}
+                                    </p>
+                                </div>
+                            )}
                             <div className="panel">
                                 <MultiSelectDropdown
                                     label="Sets"
@@ -153,15 +186,17 @@ export default function Filters({ filtersData: data }: Props) {
                                     ))}
                                 </select>
                             </div>
-                            <div className="panel">
-                                <span className="field-label">Forecast confidence</span>
-                                <RadioButtonGroup
-                                    selectedValue={confidence[0] ?? ''}
-                                    options={CONFIDENCE_OPTIONS}
-                                    onChange={e => dispatch(setConfidence(
-                                        e.target.value ? [e.target.value] : []))}
-                                />
-                            </div>
+                            {!pre && (
+                                <div className="panel">
+                                    <span className="field-label">Forecast confidence</span>
+                                    <RadioButtonGroup
+                                        selectedValue={confidence[0] ?? ''}
+                                        options={CONFIDENCE_OPTIONS}
+                                        onChange={e => dispatch(setConfidence(
+                                            e.target.value ? [e.target.value] : []))}
+                                    />
+                                </div>
+                            )}
                         </div>
                         <div className="panels__column">
                             <div className="panel">

@@ -62,6 +62,20 @@ export const catalogSortGroups: SortGroup[] = [
     { label: 'Past growth', options: historySortOptions },
 ];
 
+// Pre-release mode (2026-10-10): the predicted launch price is the only
+// number these cards have, so it is the only thing to sort on.
+export const prereleaseSortGroups: SortGroup[] = [
+    {
+        label: 'Pre-release',
+        options: [
+            { value: 'priceDesc', label: 'Predicted price: desc' },
+            { value: 'price', label: 'Predicted price: asc' },
+            { value: 'name', label: 'Alphabetical' },
+        ],
+    },
+];
+export const PRERELEASE_SORTS = prereleaseSortGroups[0].options.map(o => o.value);
+
 // Tracked lists (Portfolio / Wishlist): the same groups as the catalog, plus
 // the list-specific "Recently added" default at the top.
 export const trackedSortGroups: SortGroup[] = [

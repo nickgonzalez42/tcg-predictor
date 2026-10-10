@@ -24,6 +24,9 @@ public partial class CardsController(
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
     {
         var game = GameRegistry.KeyOrDefault(cardParams.Game);
+        // Pre-release mode lists the OTHER half of the catalog: cards with no
+        // market price yet, shown with a launch-price estimate (2026-10-10).
+        if (cardParams.Prerelease) return await PagePrerelease(cardParams, game);
         return await Page(sources.Cards(game).VisibleInCatalog(), cardParams, game);
     }
 
@@ -58,6 +61,9 @@ public partial class CardsController(
         }
 
         await market.ApplyMarket([dto], folder);   // PriceAsOf + market context for the header
+        // An unpriced card (pre-release / not yet trading) carries its
+        // launch-price estimate instead, so a direct link isn't a blank page.
+        await market.ApplyPrerelease([dto], folder);
         if (nonBasePrinting)
         {
             // Market decorations above are BASE-series-derived; scrub the
@@ -131,9 +137,36 @@ public partial class CardsController(
     }
 
     [HttpGet("filters")]
-    public async Task<IActionResult> GetFilters([FromQuery] string? game)
+    public async Task<IActionResult> GetFilters([FromQuery] string? game,
+        [FromQuery] bool prerelease = false)
     {
         var key = GameRegistry.KeyOrDefault(game);
+
+        // Pre-release facets come from the unpriced-with-estimate population
+        // (so the Sets list offers the upcoming set, not the priced ones).
+        // The count rides every response so the client can offer the mode
+        // only when the game actually has pre-release cards right now.
+        var estimates = await market.PrereleaseEstimates(key);
+        var unpriced = estimates.Count == 0 ? [] : (await sources.Cards(key).WithArt()
+                .Where(c => c.NearMintPrice == null)
+                .Select(c => new { c.Id, c.SetName, c.Rarity })
+                .ToListAsync())
+            .Where(r => estimates.ContainsKey(r.Id)).ToList();
+        if (prerelease)
+        {
+            return Ok(new
+            {
+                sets = unpriced.Where(r => r.SetName != null).Select(r => r.SetName!)
+                    .Distinct().OrderBy(s => s).ToList(),
+                rarities = unpriced.Where(r => r.Rarity != null).Select(r => r.Rarity!)
+                    .Distinct().OrderBy(s => s).ToList(),
+                hasYear = true,
+                printings = new List<string>(),
+                prereleaseCount = unpriced.Count,
+            });
+        }
+        var prereleaseCount = unpriced.Count;
+
         var (sets, rarities) = await Facets(sources.Cards(key).VisibleInCatalog());
 
         // 1Y views only make sense once the game has year-deep data: a 12m
@@ -168,7 +201,38 @@ public partial class CardsController(
             .OrderBy(p => p)
             .ToList();
 
-        return Ok(new { sets, rarities, hasYear, printings });
+        return Ok(new { sets, rarities, hasYear, printings, prereleaseCount });
+    }
+
+    // ----- Pre-release paging (2026-10-10) -----
+    // The game's unpriced cards that carry a launch-price estimate, ranked by
+    // that estimate (default: highest first; "price"/"name" also honored —
+    // forecast/history sorts have nothing to key on here). All in memory:
+    // the population is a few hundred cards and the estimate lives in another
+    // DbContext. The price range filters on the estimate.
+    private async Task<List<CardDto>> PagePrerelease(CardParams p, string folder)
+    {
+        var estimates = await market.PrereleaseEstimates(folder);
+        var source = sources.Cards(folder).WithArt()
+            .Where(c => c.NearMintPrice == null)
+            .Search(p.SearchTerm)
+            .Filter(p.Sets, p.Rarities);
+        var slim = estimates.Count == 0
+            ? []
+            : await source.Select(c => new { c.Id, c.Name }).ToListAsync();
+        var rows = slim
+            .Where(r => estimates.ContainsKey(r.Id) && InPriceRange(estimates[r.Id].Predicted, p))
+            .ToList();
+        var ranked = (p.OrderBy switch
+        {
+            "price" => rows.OrderBy(r => estimates[r.Id].Predicted).ThenBy(r => r.Name),
+            "name" => rows.OrderBy(r => r.Name),
+            _ => rows.OrderByDescending(r => estimates[r.Id].Predicted).ThenBy(r => r.Name),
+        }).ToList();
+        var pageIds = PageSlice(ranked, p).Select(r => r.Id).ToList();
+        var cards = await PageEntities(source, pageIds, folder);
+        CardMarketData.ApplyPrerelease(cards, estimates);
+        return cards;
     }
 
     // Monthly price history per condition tier, for charting (TradingView-style).

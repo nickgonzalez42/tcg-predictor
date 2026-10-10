@@ -39,6 +39,17 @@ export type Card = {
     // Wishlist rows only.
     watchedAtPrice?: number     // price when the card was wishlisted
     watchedSince?: string       // when the card was wishlisted
+    // Pre-release (2026-10-10): no market price yet; a trait-only launch-price
+    // estimate stands in. `price` stays undefined so nothing reads it as market.
+    isPrerelease?: boolean
+    predictedPrice?: number     // expected price over the first ~2 months of trading
+    predictedLow?: number       // 80% range from held-out past launches
+    predictedHigh?: number
+    predictedConfidence?: string // low | med
+    predictedReason?: string    // plain-English basis + the method's typical miss
+    predictedAsOf?: string
+    predictedMissPct?: number   // typical miss on the game's held-out sets (%)
+    releaseDate?: string        // ISO date the set releases / released
 }
 
 // One owned physical copy of a card (grade/purchase detail all optional).
