@@ -79,6 +79,14 @@ INNER_SPLIT_Q = 0.8                     # newest 20% of training releases calibr
 MAX_CAT = 200                           # HGB max_bins is 255; cap vocabularies
 MIN_HALF_WIDTH = 0.25                   # log-space floor on each side of the band
 RNG = 42
+# Cross-game fallback for a game with too little launch history of its own
+# (a brand-new game): one model over every game's launches, on features that
+# mean the same thing in any game. Validated by holding out whole games.
+POOLED_VERSION = "prerelease-pooled-v1"
+POOLED_CAP = 6000                       # newest labeled launches per game in the pool
+POOLED_HOLDOUT_GAMES = 4                # leave-one-game-out covers the youngest games
+UNIVERSAL = ["set_size", "rarity_in_set", "rarity_share", "rarity_rank", "num_pos", "num_over",
+             "promo_set", "starter_set", "year_frac", "desc_len", "art_knn_price", "art_knn_sim"]
 
 JUNK_COLS = {
     "product_id", "name", "clean_name", "set_name", "set_url_name", "card_number",
@@ -613,6 +621,14 @@ def prepare_game(game, pc, today):
     sizes = df.groupby("set_name")["pid"].transform("count")
     df["set_size"] = sizes
     df["rarity_in_set"] = df.groupby(["set_name", "rarity"])["pid"].transform("count")
+    # Scarcity rank of the card's rarity within its set (0 = rarest, 1 = most
+    # common): a game-agnostic stand-in for rarity names in the cross-game pool.
+    uniq = (df.assign(share=df["rarity_in_set"] / df["set_size"].clip(lower=1))
+            .drop_duplicates(["set_name", "rarity"])[["set_name", "rarity", "share"]])
+    uniq["rank"] = uniq.groupby("set_name")["share"].rank(method="dense") - 1
+    uniq["k"] = uniq.groupby("set_name")["rank"].transform("max")
+    uniq["rarity_rank"] = np.where(uniq["k"] > 0, uniq["rank"] / uniq["k"].replace(0, 1), 0.5)
+    df = df.merge(uniq[["set_name", "rarity", "rarity_rank"]], on=["set_name", "rarity"], how="left")
     nums = [card_num(n, s) for n, s in zip(df["card_number"], df["set_size"])]
     df["num_pos"] = nums
     maxnum = df.assign(n=nums).groupby("set_name")["n"].transform("max")
@@ -680,19 +696,201 @@ def pick_holdout(df_lab):
     return chosen, cut
 
 
-def run_game(game, pc, today, out, dry_run=False):
-    prep = prepare_game(game, pc, today)
-    if prep is None:
+# ----------------------------------------------------------------------------
+# cross-game pool (new games)
+# ----------------------------------------------------------------------------
+
+def universal_frame(df):
+    f = pd.DataFrame(index=df.index)
+    for c in ("set_size", "rarity_in_set", "rarity_rank", "num_pos", "num_over", "year_frac", "desc_len"):
+        f[c] = df[c].astype(float)
+    f["rarity_share"] = (df["rarity_in_set"] / df["set_size"].clip(lower=1)).astype(float)
+    f["promo_set"] = df["set_name"].str.contains(PROMO_RE).astype(float)
+    f["starter_set"] = df["set_name"].str.contains(STARTER_RE).astype(float)
+    return f
+
+
+def query_matrix(df, emb, index, dim=512):
+    """Embedding rows aligned to df (zeros + flag where a card has none)."""
+    rows = np.array([index.get(int(pid), -1) if index else -1 for pid in df["pid"]])
+    ok = rows >= 0
+    q = np.zeros((len(df), emb.shape[1] if emb is not None else dim), dtype=np.float32)
+    if emb is not None and ok.any():
+        q[ok] = emb[rows[ok]]
+    return q, ok
+
+
+def pooled_rows(prep, exclude=None):
+    """The cross-game labeled pool: each game's newest POOLED_CAP launches
+    (so Magic's 23k don't drown the rest) with their embeddings."""
+    parts, embs = [], []
+    for g, p in prep.items():
+        if p is None or g == exclude or p["emb"] is None:
+            continue
+        lab = p["df"][p["df"]["y"].notna()].sort_values("rel_ord").tail(POOLED_CAP)
+        q, ok = query_matrix(lab, p["emb"], p["index"])
+        if not ok.any():
+            continue
+        parts.append(lab[ok].assign(game=g))
+        embs.append(q[ok])
+    if not parts:
+        return None, None
+    return pd.concat(parts, ignore_index=True), np.vstack(embs)
+
+
+def knn_cross(qE, q_rel, pE, p_rel, p_y, k=KNN_K):
+    """knn_prior with explicit matrices: mean label + similarity of each
+    query's k nearest pool cards released strictly before it."""
+    out_y, out_s = np.full(len(qE), np.nan), np.full(len(qE), np.nan)
+    if pE is None or len(pE) < k:
+        return out_y, out_s
+    CH = 1500
+    for s in range(0, len(qE), CH):
+        sims = qE[s:s + CH] @ pE.T
+        sims[p_rel[None, :] >= q_rel[s:s + CH][:, None]] = -np.inf
+        kk = min(k, sims.shape[1])
+        top = np.argpartition(-sims, kk - 1, axis=1)[:, :kk]
+        ts, ty = np.take_along_axis(sims, top, axis=1), p_y[top]
+        valid = np.isfinite(ts)
+        cnt = valid.sum(axis=1)
+        out_y[s:s + CH] = np.where(cnt > 0, np.where(valid, ty, 0.0).sum(1) / np.maximum(cnt, 1), np.nan)
+        out_s[s:s + CH] = np.where(cnt > 0, np.where(valid, ts, 0.0).sum(1) / np.maximum(cnt, 1), np.nan)
+    return out_y, out_s
+
+
+def pooled_features(df, qE, ok, pool, pE):
+    f = universal_frame(df)
+    ky, ks = knn_cross(qE, df["rel_ord"].to_numpy(), pE, pool["rel_ord"].to_numpy(), pool["y"].to_numpy())
+    ky[~ok], ks[~ok] = np.nan, np.nan
+    f["art_knn_price"], f["art_knn_sim"] = ky, ks
+    return f[UNIVERSAL]
+
+
+def fit_pooled(pool, pE):
+    from sklearn.ensemble import HistGradientBoostingRegressor as HGB
+    X = pooled_features(pool, pE, np.ones(len(pool), dtype=bool), pool, pE)
+    y = pool["y"].to_numpy()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        return HGB(loss="absolute_error", **HGB_PARAMS).fit(X, y, sample_weight=price_weight(y))
+
+
+def validate_pooled(prep, out, today, dry_run=False):
+    """Leave-one-game-out over the youngest games: train the pool without a
+    game, predict every one of its labeled launches. That is exactly what a
+    brand-new game faces. Returns (edges, bands) for the live band plus the
+    headline numbers quoted in reasons."""
+    labeled = {g: int(p["df"]["y"].notna().sum()) for g, p in prep.items() if p is not None}
+    games = [g for g, n in sorted(labeled.items(), key=lambda kv: kv[1]) if n >= 100][:POOLED_HOLDOUT_GAMES]
+    allp, ally = [], []
+    for g in games:
+        pool, pE = pooled_rows(prep, exclude=g)
+        if pool is None:
+            continue
+        model = fit_pooled(pool, pE)
+        te = prep[g]["df"][prep[g]["df"]["y"].notna()]
+        q, ok = query_matrix(te, prep[g]["emb"], prep[g]["index"])
+        p = model.predict(pooled_features(te, q, ok, pool, pE))
+        y = te["y"].to_numpy()
+        err = np.abs(p - y)
+        print(f"[pooled ⟂ {g}] {len(te):,} launches from {len(pool):,} other-game launches: typical miss "
+              f"{100 * (math.exp(np.median(err)) - 1):.0f}% · within ±50%: {100 * np.mean(err <= math.log(1.5)):.0f}% "
+              f"· rank corr {spearman(p, y):.2f} · bias {np.mean(p - y):+.2f}")
+        if not dry_run:
+            store_validation(out, f"pooled:{g}", today, {
+                "n_train": int(len(pool)), "n_test": int(len(te)), "sets": [g],
+                "mae_log": float(err.mean()), "med_log": float(np.median(err)),
+                "within50": float(np.mean(err <= math.log(1.5))), "within2x": float(np.mean(err <= math.log(2.0))),
+                "coverage": float("nan"), "spearman": spearman(p, y),
+                "baseline_mae_log": float("nan"), "baseline_spearman": float("nan"),
+                "band": band_strata(p, y - p)}, version=POOLED_VERSION)
+        allp.append(p); ally.append(y)
+    if not allp:
+        return None
+    p, y = np.concatenate(allp), np.concatenate(ally)
+    err = np.abs(p - y)
+    summary = {"n_games": len(games), "games": games, "med_log": float(np.median(err)),
+               "within50": float(np.mean(err <= math.log(1.5))), "spearman": spearman(p, y),
+               "band": band_strata(p, y - p)}
+    print(f"[pooled] across {len(games)} held-out games: typical miss {100 * (math.exp(summary['med_log']) - 1):.0f}% "
+          f"· within ±50%: {100 * summary['within50']:.0f}% · rank corr {summary['spearman']:.2f}")
+    return summary
+
+
+def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
+    """Estimates for a game whose own launch history is too thin: the
+    cross-game model, clearly labeled as such in every reason."""
+    p_g = prep[game]
+    cand, n_lab = p_g["cand"], int(p_g["df"]["y"].notna().sum())
+    if cand.empty:
+        return 0
+    pool, pE = pooled_rows(prep, exclude=game)
+    if pool is None:
+        return 0
+    model = fit_pooled(pool, pE)
+    q, ok = query_matrix(cand, p_g["emb"], p_g["index"])
+    X = pooled_features(cand, q, ok, pool, pE)
+    p = model.predict(X)
+    val = pooled["summary"]
+    edges, bands = val["band"] if val else ([], [(-1.5, 1.5)])
+    lo, hi = band_for(p, edges, bands)
+    miss = round(100 * (math.exp(val["med_log"]) - 1)) if val else None
+    within = round(100 * val["within50"]) if val else None
+    label = GAMES[game]["label"]
+    n_games = len({g for g in pool["game"]})
+    now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    rows = []
+    for i, (_, c) in enumerate(cand.iterrows()):
+        x = X.iloc[i]
+        bits = [f"{c['rarity']} in a {int(c['set_size'])}-card set ({int(c['rarity_in_set'])} cards at that rarity)"]
+        if np.isfinite(x["art_knn_sim"]) and x["art_knn_sim"] >= 0.7:
+            bits.append(f"the cards its art most resembles, across games, launched near ${math.exp(x['art_knn_price']):,.2f}")
+        txt = (f"Cross-game estimate: {label} has only {n_lab} priced launches of its own, so this "
+               f"comes from {len(pool):,} launches across {n_games} other games — " + "; ".join(bits) + ". ")
+        if val:
+            txt += (f"Tested by holding out whole games, the method's typical miss was about {miss}%, "
+                    f"with {within}% of cards within ±50% — a rough first read. ")
+        txt += "It updates nightly and hands off to this game's own model once it has enough launches."
+        pred = max(0.10, math.exp(p[i]))
+        rows.append((game, int(c["pid"]), "", _iso(c["rel"]), today.isoformat(), round(pred, 2),
+                     round(max(0.05, math.exp(lo[i])), 2), round(max(pred, math.exp(hi[i])), 2), "low",
+                     txt, POOLED_VERSION, int(len(pool)), val["n_games"] if val else 0, miss, within, now_iso))
+    if dry_run:
+        for r in sorted(rows, key=lambda r: -r[5])[:6]:
+            nm = cand.loc[cand["pid"] == r[1], "name"].iloc[0]
+            print(f"    {nm[:38]:38s} {r[3]}  ${r[5]:>8.2f}  [{r[6]:.2f}–{r[7]:.2f}]  (pooled)")
+        print(f"[{game}] dry run: {len(rows)} cross-game estimates (not written)")
+        return len(rows)
+    write_rows(out, game, rows)
+    print(f"[{game}] {len(rows)} cross-game pre-release estimates written (own launch history: {n_lab})")
+    return len(rows)
+
+
+def write_rows(out, game, rows):
+    out.execute("DELETE FROM prerelease_estimates WHERE game=?", (game,))
+    out.executemany(
+        "INSERT OR REPLACE INTO prerelease_estimates (game, product_id, printing, release_date, "
+        "as_of, predicted, low, high, confidence, reason, model_version, n_train, val_sets, "
+        "val_miss_pct, val_within50, scored_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    out.executemany(
+        "INSERT OR IGNORE INTO prerelease_archive (game, product_id, printing, release_date, "
+        "as_of, predicted, low, high, model_version, scored_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[10], r[15]) for r in rows])
+    out.commit()
+
+
+def run_game(game, prep, pc, today, out, dry_run=False):
+    p_g = prep.get(game)
+    if p_g is None:
         print(f"[{game}] no cards with release dates — skipped")
         return 0
-    df, attrs, cand, pts = prep
+    df, attrs, cand, emb, index = p_g["df"], p_g["attrs"], p_g["cand"], p_g["emb"], p_g["index"]
     lab = df[df["y"].notna()].copy()
     print(f"[{game}] {len(df):,} cards with art+release · {len(lab):,} labeled launch prices "
           f"· {len(cand):,} unpriced pre-release candidates")
     if len(lab) < MIN_LABELED:
-        print(f"[{game}] fewer than {MIN_LABELED} labeled cards — no estimates")
-        return 0
-    emb, index = load_embeddings(game)
+        print(f"[{game}] fewer than {MIN_LABELED} labeled launches of its own — cross-game model")
+        return None   # caller routes to the pooled model
     pcs = None
     if emb is not None:
         from sklearn.decomposition import PCA
@@ -782,18 +980,9 @@ def run_game(game, pc, today, out, dry_run=False):
         print(f"[{game}] dry run: {len(rows)} estimates (not written)")
         return len(rows)
 
-    out.execute("DELETE FROM prerelease_estimates WHERE game=?", (game,))
-    out.executemany(
-        "INSERT OR REPLACE INTO prerelease_estimates (game, product_id, printing, release_date, "
-        "as_of, predicted, low, high, confidence, reason, model_version, n_train, val_sets, "
-        "val_miss_pct, val_within50, scored_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
-    out.executemany(
-        "INSERT OR IGNORE INTO prerelease_archive (game, product_id, printing, release_date, "
-        "as_of, predicted, low, high, model_version, scored_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        [(r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[10], r[15]) for r in rows])
+    write_rows(out, game, rows)
     if val:
         store_validation(out, game, today, val)
-    out.commit()
     print(f"[{game}] {len(rows)} pre-release estimates written "
           f"({sum(1 for r in rows if r[3] > today.isoformat())} for sets not yet released)")
     return len(rows)
@@ -852,7 +1041,7 @@ def ensure_tables(out):
     """)
 
 
-def store_validation(out, game, today, v):
+def store_validation(out, game, today, v, version=MODEL_VERSION):
     out.execute(
         "INSERT OR REPLACE INTO prerelease_validation (game, as_of, n_train, n_test, test_sets, "
         "mae_log, med_log, within50, within2x, coverage, spearman, baseline_mae_log, "
@@ -861,7 +1050,7 @@ def store_validation(out, game, today, v):
         (game, today.isoformat(), v["n_train"], v["n_test"], json.dumps(v["sets"]),
          v["mae_log"], v["med_log"], v["within50"], v["within2x"], v["coverage"], v["spearman"],
          v["baseline_mae_log"], v["baseline_spearman"],
-         min(b[0] for b in v["band"][1]), max(b[1] for b in v["band"][1]), MODEL_VERSION))
+         min(b[0] for b in v["band"][1]), max(b[1] for b in v["band"][1]), version))
 
 
 def grade_archive(out, pc, today):
@@ -910,6 +1099,8 @@ def main():
     ap.add_argument("--db", default=OUT_DB, help="predictions db to write (default: production copy)")
     ap.add_argument("--dry-run", action="store_true", help="validate + print, write nothing")
     ap.add_argument("--force", action="store_true", help="run even without TCG_FC_PRERELEASE=1")
+    ap.add_argument("--validate-pooled", action="store_true",
+                    help="also run the leave-one-game-out validation of the cross-game model")
     args = ap.parse_args()
     if os.environ.get("TCG_FC_PRERELEASE") != "1" and not args.force:
         print("forecast_prerelease: TCG_FC_PRERELEASE not set — skipped")
@@ -919,12 +1110,47 @@ def main():
     out = sqlite3.connect(args.db, timeout=120)
     if not args.dry_run:
         ensure_tables(out)
-    total = 0
-    for g in (args.game or priced_games()):
+
+    # Prepare every game first: a game with too little history of its own
+    # borrows the others' launches (pooled model), so the pool needs them all.
+    games = args.game or priced_games()
+    prep = {}
+    for g in set(games) | set(priced_games()):
         try:
-            total += run_game(g, pc, today, out, dry_run=args.dry_run)
+            p = prepare_game(g, pc, today)
+            if p is None:
+                prep[g] = None
+                continue
+            df, attrs, cand, pts = p
+            emb, index = load_embeddings(g)
+            prep[g] = {"df": df, "attrs": attrs, "cand": cand, "emb": emb, "index": index}
+        except Exception as e:                      # noqa: BLE001
+            print(f"[{g}] prepare failed: {type(e).__name__}: {e}", file=sys.stderr)
+            prep[g] = None
+
+    total, needs_pool = 0, []
+    for g in games:
+        try:
+            n = run_game(g, prep, pc, today, out, dry_run=args.dry_run)
+            if n is None:
+                needs_pool.append(g)
+            else:
+                total += n
         except Exception as e:                      # noqa: BLE001 — one game never sinks the rest
             print(f"[{g}] prerelease failed: {type(e).__name__}: {e}", file=sys.stderr)
+            import traceback; traceback.print_exc()
+
+    pooled = {"summary": None}
+    if needs_pool or args.validate_pooled:
+        try:
+            pooled["summary"] = validate_pooled(prep, out, today, dry_run=args.dry_run)
+        except Exception as e:                      # noqa: BLE001
+            print(f"[pooled] validation failed: {type(e).__name__}: {e}", file=sys.stderr)
+    for g in needs_pool:
+        try:
+            total += run_pooled_game(g, prep, pooled, out, today, dry_run=args.dry_run)
+        except Exception as e:                      # noqa: BLE001
+            print(f"[{g}] pooled prerelease failed: {type(e).__name__}: {e}", file=sys.stderr)
             import traceback; traceback.print_exc()
     if not args.dry_run:
         n = grade_archive(out, pc, today)

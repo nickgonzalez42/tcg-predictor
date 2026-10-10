@@ -54,6 +54,21 @@ def load_slug_overrides(game):
         return {r["console"]: r["slug"] for r in csv.DictReader(f) if r["game"] == game}
 
 
+# Consoles PriceCharting added after the paid CSV ended, found by
+# pc_console_discover.py (category-page diff / slug probes). They have no
+# linked cards yet, so they are crawled by their exact slug and every product
+# lands in the review CSV for pc_link_suggest to read the embedded tcg-id.
+DISCOVERED_CSV = os.path.join(BASE, "ml_data", "pc_consoles_discovered.csv")
+
+
+def load_discovered(game):
+    if not os.path.exists(DISCOVERED_CSV):
+        return []
+    with open(DISCOVERED_CSV, newline="", encoding="utf-8") as f:
+        return [(r["slug"], r.get("name") or r["slug"])
+                for r in csv.DictReader(f) if r["game"] == game]
+
+
 def pc_punct_slug(console):
     """slugify() strips punctuation, but PC treats it two ways in the slug:
     KEEPS some URL-encoded (apostrophe -> %27, ampersand -> %26, comma -> %2C)
@@ -82,15 +97,39 @@ def scrape_game(conn, game, suffix, limit_sets):
     names = sorted(consoles)
     if limit_sets:
         names = names[:limit_sets]
+    # Discovered-but-unlinked consoles ride along by exact slug. Once their
+    # cards are linked (build_pricecharting stores the slug as pc_console),
+    # they enumerate through the match table like every other console.
+    known_slugs = {overrides.get(c) or slugify(c) for c in consoles}
+    discovered = [(slug, name) for slug, name in load_discovered(game) if slug not in known_slugs]
+    # Our own unlinked sets first (their slugs name the set), so a new set's
+    # products head the review CSV and pc_link_suggest's per-run page budget
+    # goes to them before any vintage/odd console the category page also lists.
+    try:
+        cdb = sqlite3.connect(f"file:{os.path.join(BASE, GAMES[game]['db'])}?mode=ro", uri=True)
+        linked = {pid for (pid,) in conn.execute(
+            "SELECT product_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,))}
+        want = set()
+        for s, pids in ((s, p.split(",")) for s, p in cdb.execute(
+                "SELECT set_name, GROUP_CONCAT(product_id) FROM cards WHERE set_name IS NOT NULL GROUP BY set_name")):
+            if not any(int(x) in linked for x in pids):
+                want.add(slugify(s))
+        cdb.close()
+        discovered.sort(key=lambda d: (not any(w and w in d[0] for w in want), d[0]))
+    except sqlite3.Error:
+        pass
+    if discovered:
+        print(f"[{game}] + {len(discovered)} discovered console(s) crawled by slug: "
+              f"{', '.join(s for s, _ in discovered[:6])}{'…' if len(discovered) > 6 else ''}")
 
     rows, review, missing, found = [], [], [], []
     priced_pcids = set()
-    for console in names:
-        slug = overrides.get(console) or slugify(console)
+    for console, fixed_slug in [(c, None) for c in names] + [(s, s) for s, _ in discovered]:
+        slug = fixed_slug or overrides.get(console) or slugify(console)
         products = crawl_console(slug)
         # PC keeps punctuation (apostrophe/ampersand/comma) URL-encoded where
         # slugify strips it — retry the preserving form before giving up.
-        if products is None and console not in overrides:
+        if products is None and fixed_slug is None and console not in overrides:
             alt = pc_punct_slug(console)
             if alt != slug:
                 products = crawl_console(alt)

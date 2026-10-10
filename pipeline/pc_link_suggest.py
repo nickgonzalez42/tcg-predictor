@@ -91,14 +91,32 @@ def load_suggestions():
     return have
 
 
+SUGGEST_COLS = ["game", "product_id", "pc_id", "pc_name", "source", "created", "console"]
+
+
 def append_suggestions(rows):
-    new = not os.path.exists(SUGGEST_CSV)
+    """Append suggestion rows ([game, product_id, pc_id, pc_name, source,
+    created, console?]). The console column (2026-10-10) carries a discovered
+    console's slug so build_pricecharting can store it; a file written before
+    the column existed is rewritten once with the new header."""
     os.makedirs(ML_DATA, exist_ok=True)
-    with open(SUGGEST_CSV, "a", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        if new:
-            w.writerow(["game", "product_id", "pc_id", "pc_name", "source", "created"])
-        w.writerows(rows)
+    legacy = None
+    if os.path.exists(SUGGEST_CSV):
+        with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
+            rd = csv.DictReader(f)
+            if rd.fieldnames and "console" not in rd.fieldnames:
+                legacy = list(rd)
+    if legacy is None and os.path.exists(SUGGEST_CSV):
+        with open(SUGGEST_CSV, "a", newline="", encoding="utf-8") as f:
+            csv.writer(f).writerows(rows)
+        return
+    with open(SUGGEST_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=SUGGEST_COLS)
+        w.writeheader()
+        for r in legacy or []:
+            w.writerow({c: r.get(c, "") for c in SUGGEST_COLS})
+        for r in rows:
+            w.writerow(dict(zip(SUGGEST_COLS, r)))
 
 
 def catalog_pids(game):
@@ -122,7 +140,8 @@ def candidates(game, suffix):
     if not os.path.exists(path):
         return []
     with open(path, newline="", encoding="utf-8") as f:
-        return [(int(r["pc_id"]), r.get("pc_name", "")) for r in csv.DictReader(f) if r.get("pc_id")]
+        return [(int(r["pc_id"]), r.get("pc_name", ""), r.get("console", ""))
+                for r in csv.DictReader(f) if r.get("pc_id")]
 
 
 def page_ids_and_title(pc_id):
@@ -212,14 +231,14 @@ def run_drain(budget, seen):
 
 def run_game(game, suffix, baseline, limit, seen):
     game_seen = seen.get(game, set())
-    fresh = [(pc_id, name) for pc_id, name in candidates(game, suffix)
+    fresh = [(pc_id, name, con) for pc_id, name, con in candidates(game, suffix)
              if pc_id not in game_seen]
     # de-dup within this run's candidate list (a pc_id can list on two consoles)
     seen_this = set()
-    fresh = [(p, n) for p, n in fresh if not (p in seen_this or seen_this.add(p))]
+    fresh = [(p, n, c) for p, n, c in fresh if not (p in seen_this or seen_this.add(p))]
 
     if baseline:
-        append_seen([[game, p] for p, _ in fresh])
+        append_seen([[game, p] for p, _, _ in fresh])
         print(f"[{game}] baseline: {len(fresh)} unmatched pc_ids marked seen (no fetch)")
         return 0
 
@@ -239,7 +258,7 @@ def run_game(game, suffix, baseline, limit, seen):
     card_names = dict(sqlite3.connect(db_path(game)).execute(
         "SELECT product_id, name FROM cards"))
     new_seen, new_sugg = [], []
-    for pc_id, pc_name in capped:
+    for pc_id, pc_name, console in capped:
         ids, status = page_tcg_ids(pc_id)
         if ids is None and status not in (404,):
             continue                              # transient — retry next run, stay unseen
@@ -250,7 +269,7 @@ def run_game(game, suffix, baseline, limit, seen):
                 src = ("special-print page — needs review"
                        if any(t in pl and t not in cl for t in SPECIAL)
                        else "page-embedded tcg-id")
-                new_sugg.append([game, tcg, pc_id, pc_name, src, now()])
+                new_sugg.append([game, tcg, pc_id, pc_name, src, now(), console or ""])
                 have.add((game, tcg, pc_id))
 
     if new_seen:

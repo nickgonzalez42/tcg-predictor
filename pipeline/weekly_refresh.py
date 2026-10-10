@@ -96,6 +96,12 @@ STEPS = [
     # rebuild from 3-tier console data. pc-link-suggest (last step) reads these
     # candidates, reads each page's embedded tcg-id, and queues links for
     # match_review.py to confirm.
+    # New-console discovery (2026-10-10): PriceCharting's category pages list
+    # every set it tracks; consoles we don't know yet (every set released
+    # after the paid CSV ended) are recorded for the sweep below, so a new
+    # set's cards flow into link-suggest and the graded crawl without a hand
+    # edit. Gundam/Star Wars (no category page) probe slugs for unlinked sets.
+    ("pc-console-discover", ["pc_console_discover.py"]),
     ("pc-console-sweep", ["scrape_pc_prices.py"]),
     # Weekly full stale sweep (Sunday-only by position): probe EVERY visible
     # card whose NM series stopped advancing — incl. never-search-priced ones —
@@ -221,12 +227,16 @@ def main():
     ap = argparse.ArgumentParser(description="Weekly data refresh (both games, both sources)")
     ap.add_argument("--list", action="store_true", help="print the steps and exit")
     ap.add_argument("--from", dest="start", choices=names, help="start at this step (resume)")
-    ap.add_argument("--to", dest="stop", choices=names,
+    ap.add_argument("--to", dest="stop", choices=names + ["catalog"],
                     help="stop AFTER this step (inclusive). With --from, runs a "
                          "contiguous slice — used to split the run around the AWS "
-                         "model block: Mac does ...--to art-comps, then s3-upload...")
+                         "model block: Mac does ...--to art-comps, then s3-upload... "
+                         "'catalog' = the last TCGplayer catalog crawl step (the daily "
+                         "night's crawl-only pass; stays right when games are added).")
     ap.add_argument("--only", choices=names, help="run a single step")
     args = ap.parse_args()
+    if args.stop == "catalog":
+        args.stop = [n for n in names if n in {f"tcg-{g}" for g in GAMES}][-1]
 
     if args.list:
         for n, cmd in STEPS:

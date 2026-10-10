@@ -141,6 +141,13 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
     "$PY" weekly_refresh.py --to art-comps
   else
     echo "=== daily refresh — $(date '+%F %T') ==="
+    # Catalog crawl on the daily night too (2026-10-10): --new-only makes it
+    # a single request per game on a quiet night, and it is what gets a set
+    # TCGplayer lists mid-week (presale) onto the site with pre-release
+    # estimates by Friday instead of the following Monday. Non-fatal: a
+    # crawl hiccup must not cost the price pipeline its night.
+    "$PY" weekly_refresh.py --to catalog \
+      || echo "(daily catalog crawl failed — continuing with prices)"
     "$PY" weekly_refresh.py --from tcg-nm-prices --to art-comps
   fi
   phaseA=$?
