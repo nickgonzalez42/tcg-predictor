@@ -143,16 +143,17 @@ export default function Catalog() {
             ))}
           </div>
           {user && (
-            <button
-              className={`btn btn--outline quick-toggle${quick ? ' btn--active' : ''}`}
-              onClick={() => dispatch(setQuickAdd(!quick))}
-              aria-pressed={quick}
+            <label className="switch-field"
               title={quick
                 ? 'Quick add is on: one click adds a copy (pack pull) at the selected condition'
-                : 'Quick add: show an Add button on every card, no reveal'}
-            >
-              ⚡ Quick add
-            </button>
+                : 'Quick add: show an Add button on every card, no reveal'}>
+              <span className="switch-field__label">Quick add</span>
+              <button type="button" role="switch" aria-checked={quick}
+                className={`switch${quick ? ' switch--on' : ''}`}
+                onClick={() => dispatch(setQuickAdd(!quick))}>
+                <span className="switch__knob" />
+              </button>
+            </label>
           )}
           {!isMobile && (
             <div className="view-toggle" role="group" aria-label="Results view">

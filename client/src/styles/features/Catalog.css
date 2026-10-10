@@ -389,11 +389,67 @@ body.filters-open {
 }
 }
 
-/* Quick-add toggle sits with the trend tabs / view toggle in the results head. */
-.quick-toggle {
-  height: var(--control-h-sm);
+/* Quick-add switch (2026-10-10): a labeled, animated toggle in the results
+   head. The knob slides and the track tints on the same transition. */
+.switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-10);
   min-height: var(--control-h-sm);
-  padding: 0 var(--space-10);
+  cursor: pointer;
+  user-select: none;
+}
+
+.switch-field__label {
   font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
   white-space: nowrap;
+  transition: color 0.2s ease;
+}
+
+.switch-field:has(.switch--on) .switch-field__label {
+  color: var(--text);
+}
+
+.switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: var(--surface-2);
+  cursor: pointer;
+  transition: background-color 0.25s ease, border-color 0.25s ease;
+}
+
+.switch:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.switch__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.25s ease;
+}
+
+.switch--on {
+  background: var(--brand);
+  border-color: var(--brand-border);
+}
+
+.switch--on .switch__knob {
+  transform: translateX(18px);
+  background: var(--on-brand);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .switch, .switch__knob, .switch-field__label { transition: none; }
 }
