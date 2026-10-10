@@ -85,6 +85,11 @@ RNG = 42
 POOLED_VERSION = "prerelease-pooled-v1"
 POOLED_CAP = 6000                       # newest labeled launches per game in the pool
 POOLED_HOLDOUT_GAMES = 4                # leave-one-game-out covers the youngest games
+# A pooled model cannot know a new game's overall price LEVEL (held-out games
+# ran +0.6..+1.0 log too high), so it only publishes once the game has a few
+# dozen priced launches of its own to calibrate that level with (the median
+# residual on its earliest launches). Below that: no estimates, honestly.
+POOLED_CALIB_MIN = 60
 UNIVERSAL = ["set_size", "rarity_in_set", "rarity_share", "rarity_rank", "num_pos", "num_over",
              "promo_set", "starter_set", "year_frac", "desc_len", "art_knn_price", "art_knn_sim"]
 
@@ -781,21 +786,29 @@ def validate_pooled(prep, out, today, dry_run=False):
     brand-new game faces. Returns (edges, bands) for the live band plus the
     headline numbers quoted in reasons."""
     labeled = {g: int(p["df"]["y"].notna().sum()) for g, p in prep.items() if p is not None}
-    games = [g for g, n in sorted(labeled.items(), key=lambda kv: kv[1]) if n >= 100][:POOLED_HOLDOUT_GAMES]
+    games = [g for g, n in sorted(labeled.items(), key=lambda kv: kv[1])
+             if n >= 2 * POOLED_CALIB_MIN][:POOLED_HOLDOUT_GAMES]
     allp, ally = [], []
     for g in games:
         pool, pE = pooled_rows(prep, exclude=g)
         if pool is None:
             continue
         model = fit_pooled(pool, pE)
-        te = prep[g]["df"][prep[g]["df"]["y"].notna()]
+        lab_g = prep[g]["df"][prep[g]["df"]["y"].notna()].sort_values("rel_ord")
+        # the game's EARLIEST launches calibrate the level (what a new game
+        # would have after its first set); everything later is the test
+        cal, te = lab_g.iloc[:POOLED_CALIB_MIN], lab_g.iloc[POOLED_CALIB_MIN:]
+        qc, okc = query_matrix(cal, prep[g]["emb"], prep[g]["index"])
+        shift = float(np.median(cal["y"].to_numpy() - model.predict(pooled_features(cal, qc, okc, pool, pE))))
         q, ok = query_matrix(te, prep[g]["emb"], prep[g]["index"])
-        p = model.predict(pooled_features(te, q, ok, pool, pE))
+        p_raw = model.predict(pooled_features(te, q, ok, pool, pE))
+        p = p_raw + shift
         y = te["y"].to_numpy()
-        err = np.abs(p - y)
-        print(f"[pooled ⟂ {g}] {len(te):,} launches from {len(pool):,} other-game launches: typical miss "
-              f"{100 * (math.exp(np.median(err)) - 1):.0f}% · within ±50%: {100 * np.mean(err <= math.log(1.5)):.0f}% "
-              f"· rank corr {spearman(p, y):.2f} · bias {np.mean(p - y):+.2f}")
+        err, err_raw = np.abs(p - y), np.abs(p_raw - y)
+        print(f"[pooled ⟂ {g}] {len(te):,} launches from {len(pool):,} other-game launches, level set by "
+              f"its first {len(cal)} ({shift:+.2f}): typical miss {100 * (math.exp(np.median(err)) - 1):.0f}% "
+              f"(uncalibrated {100 * (math.exp(np.median(err_raw)) - 1):.0f}%) · within ±50%: "
+              f"{100 * np.mean(err <= math.log(1.5)):.0f}% · rank corr {spearman(p, y):.2f} · bias {np.mean(p - y):+.2f}")
         if not dry_run:
             store_validation(out, f"pooled:{g}", today, {
                 "n_train": int(len(pool)), "n_test": int(len(te)), "sets": [g],
@@ -824,13 +837,21 @@ def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
     cand, n_lab = p_g["cand"], int(p_g["df"]["y"].notna().sum())
     if cand.empty:
         return 0
+    if n_lab < POOLED_CALIB_MIN:
+        print(f"[{game}] only {n_lab} priced launches of its own — fewer than the {POOLED_CALIB_MIN} "
+              f"needed to set the cross-game model's price level; no estimates yet")
+        return 0
     pool, pE = pooled_rows(prep, exclude=game)
     if pool is None:
         return 0
     model = fit_pooled(pool, pE)
+    own = p_g["df"][p_g["df"]["y"].notna()]
+    qo, oko = query_matrix(own, p_g["emb"], p_g["index"])
+    shift = float(np.median(own["y"].to_numpy() - model.predict(pooled_features(own, qo, oko, pool, pE))))
     q, ok = query_matrix(cand, p_g["emb"], p_g["index"])
     X = pooled_features(cand, q, ok, pool, pE)
-    p = model.predict(X)
+    p = model.predict(X) + shift
+    print(f"[{game}] cross-game level calibrated on its {n_lab} own launches: {shift:+.2f} log")
     val = pooled["summary"]
     edges, bands = val["band"] if val else ([], [(-1.5, 1.5)])
     lo, hi = band_for(p, edges, bands)
@@ -1140,7 +1161,18 @@ def main():
             print(f"[{g}] prerelease failed: {type(e).__name__}: {e}", file=sys.stderr)
             import traceback; traceback.print_exc()
 
+    # Cross-game fallback is OFF by default (TCG_PRE_POOLED=1 enables it).
+    # Leave-one-game-out verdict 2026-10-10: typical miss ~250% (digimon 500%+,
+    # lorcana 147%), rank corr ~0.5, and an own-level calibration on the game's
+    # first 60 launches helped two games and wrecked another. A dollar figure
+    # that rough would mislead; a new game waits for MIN_LABELED of its own
+    # launches (about one set plus two months) and gets the per-game model.
     pooled = {"summary": None}
+    if needs_pool and os.environ.get("TCG_PRE_POOLED", "0") != "1":
+        for g in needs_pool:
+            print(f"[{g}] no estimates yet: needs {MIN_LABELED} priced launches of its own "
+                  f"(cross-game model is off — held-out games missed by ~250%)")
+        needs_pool = []
     if needs_pool or args.validate_pooled:
         try:
             pooled["summary"] = validate_pooled(prep, out, today, dry_run=args.dry_run)
