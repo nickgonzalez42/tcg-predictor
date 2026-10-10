@@ -618,7 +618,12 @@ def prepare_game(game, pc, today):
     maxnum = df.assign(n=nums).groupby("set_name")["n"].transform("max")
     df["num_over"] = [(n / m) if (n is not None and m and m > 0) else np.nan
                       for n, m in zip(nums, maxnum)]
-    boxes = load_boxes(game) if os.environ.get("TCG_PRE_BOX", "1") == "1" else {}
+    # Booster-box features are OFF by default (2026-10-10 A/B on the held-out
+    # sets: Pokémon slightly better, Magic/Yu-Gi-Oh slightly worse, Lorcana
+    # flat — all within noise, and 2-3 holdout sets cannot validate a per-SET
+    # feature). sealed_prices.py keeps collecting so the live presale box
+    # price can be re-tested once a few pre-release cohorts have graded.
+    boxes = load_boxes(game) if os.environ.get("TCG_PRE_BOX", "0") == "1" else {}
     df = box_features(df, boxes)
     if boxes:
         print(f"[{game}] booster-box prices for {len(boxes)} sets "
