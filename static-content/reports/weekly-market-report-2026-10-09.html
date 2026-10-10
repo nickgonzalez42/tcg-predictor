@@ -47,6 +47,12 @@ cursor:pointer;list-style:none;font-size:16.5px}
 .report-model-corner{background:#1c2438;border:1px solid var(--border);
 border-left:4px solid #ffcb05;border-radius:10px;padding:2px 18px 6px;margin:40px 0}
 .report-model-corner h2{margin:14px 0 10px}
+.card-peek{position:fixed;z-index:1000;width:240px;pointer-events:none;
+opacity:0;transition:opacity .12s ease}
+.card-peek--on{opacity:1}
+.card-peek img{display:block;width:100%;border-radius:12px;
+border:1px solid var(--border);background:var(--panel);
+box-shadow:0 12px 30px rgba(0,0,0,.5)}
 svg{max-width:100%;height:auto}
 @media (max-width:480px){.report-table{font-size:12px}
 .report-table th,.report-table td{padding-right:5px}}
@@ -146,6 +152,60 @@ color:var(--text-muted);font-size:13.5px}
     });
   }, { rootMargin: '0px 0px -12% 0px' });
   charts.forEach(function (svg) { io.observe(svg); });
+})();
+
+// Hover card preview: hovering a card link floats that card's art beside
+// the cursor (pointer devices only; shown once the image loads). Card links
+// are /catalog/{game}/{id}; art lives on the public image CDN (the same
+// one the API's own responses point at).
+(function () {
+  if (!matchMedia('(hover: hover)').matches) return;
+  var peek = document.createElement('div');
+  peek.className = 'card-peek';
+  var img = document.createElement('img');
+  img.alt = '';
+  peek.appendChild(img);
+  document.body.appendChild(peek);
+  var current = '';
+  function place(e) {
+    var w = peek.offsetWidth || 244, h = peek.offsetHeight || 344;
+    var x = e.clientX + 16, y = e.clientY + 16;
+    if (x + w > innerWidth - 8) x = e.clientX - w - 16;
+    if (y + h > innerHeight - 8) y = Math.max(8, innerHeight - h - 8);
+    peek.style.left = x + 'px';
+    peek.style.top = y + 'px';
+  }
+  function linkOf(t) {
+    return t && t.closest ? t.closest('a[href*="/catalog/"]') : null;
+  }
+  document.addEventListener('mouseover', function (e) {
+    var a = linkOf(e.target);
+    if (!a) return;
+    var m = a.getAttribute('href').match(/\/catalog\/([a-z]+)\/(\d+)/);
+    if (!m) return;
+    var src = 'https://d18pzythfo0bgy.cloudfront.net/' + m[1] + '/' + m[2] + '.jpg';
+    current = src;
+    img.onload = function () {
+      if (current === src) peek.classList.add('card-peek--on');
+    };
+    if (img.getAttribute('src') !== src) {
+      peek.classList.remove('card-peek--on');
+      img.src = src;
+    } else if (img.complete && img.naturalWidth) {
+      peek.classList.add('card-peek--on');
+    }
+    place(e);
+  });
+  document.addEventListener('mouseout', function (e) {
+    var from = linkOf(e.target);
+    if (from && linkOf(e.relatedTarget) !== from) {
+      current = '';
+      peek.classList.remove('card-peek--on');
+    }
+  });
+  document.addEventListener('mousemove', function (e) {
+    if (peek.classList.contains('card-peek--on')) place(e);
+  });
 })();
 </script>
 </body>

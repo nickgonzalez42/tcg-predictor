@@ -194,6 +194,30 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Floating card-art preview that follows the cursor over report card
+   links. Shown only once its image has loaded (--on). */
+.card-peek {
+  position: fixed;
+  z-index: 1000;
+  width: 240px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.card-peek--on {
+  opacity: 1;
+}
+
+.card-peek img {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+}
+
 /* Phones: five-column report-card tables exceed the viewport's min-content
    width by a few px — tighten them instead of letting the page pan. */
 @media (max-width: 480px) {
