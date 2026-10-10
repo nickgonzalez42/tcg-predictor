@@ -72,6 +72,14 @@ done
   && echo "static report pages shipped" \
   || echo "(static report pages ship failed — non-fatal)"
 
+# Per-set SEO pages: fresh prices + forecasts every run; the manifest the
+# API's /sitemap-sets.xml reads ships with them.
+"$PY" "$DIR/set_pages.py" --out "$HOME/tcg-backups/set_pages" \
+  && $RSYNC -az --delete -e "$SSH" "$HOME/tcg-backups/set_pages/" \
+       "ubuntu@$SERVER_IP:/srv/tcg/static/sets/" \
+  && echo "set pages shipped" \
+  || echo "(set pages ship failed — non-fatal)"
+
 ${=SSH} "ubuntu@$SERVER_IP" \
   'sudo systemctl restart tcg-api && sleep 2 && systemctl is-active tcg-api' \
   || { echo "=== prod API RESTART FAILED ==="; exit 1; }

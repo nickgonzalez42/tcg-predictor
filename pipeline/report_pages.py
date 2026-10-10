@@ -68,6 +68,19 @@ cursor:pointer;list-style:none;font-size:16.5px}
 .report-model-corner{background:#1c2438;border:1px solid var(--border);
 border-left:4px solid #ffcb05;border-radius:10px;padding:2px 18px 6px;margin:40px 0}
 .report-model-corner h2{margin:14px 0 10px}
+.newsletter{display:flex;flex-wrap:wrap;gap:10px 20px;align-items:center;
+justify-content:space-between;background:#141c2e;border:1px solid var(--border);
+border-radius:10px;padding:14px 18px;margin:36px 0 0;position:relative}
+.newsletter-copy{display:flex;flex-direction:column;gap:2px}
+.newsletter-copy span{color:var(--text-muted);font-size:13px}
+.newsletter-row{display:flex;gap:10px}
+.newsletter-row input[type=email]{height:38px;padding:0 14px;min-width:210px;
+background:#0b101c;border:1px solid var(--border);border-radius:10px;
+color:var(--text);font:inherit;font-size:14px}
+.newsletter-row button{height:38px;padding:0 18px;background:#ffcb05;
+border:1px solid #e0b000;border-radius:10px;color:#101623;font:inherit;
+font-size:14px;font-weight:700;cursor:pointer}
+.newsletter-done{color:var(--report-up)}
 .card-peek{position:fixed;z-index:1000;width:240px;pointer-events:none;
 opacity:0;transition:opacity .12s ease}
 .card-peek--on{opacity:1}
@@ -216,6 +229,30 @@ JS = """
     if (peek.classList.contains('card-peek--on')) place(e);
   });
 })();
+
+// Weekly-report email signup -> the site's API (same origin).
+(function () {
+  var form = document.getElementById('nl');
+  if (!form) return;
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = form.email.value.trim();
+    if (!email) return;
+    form.querySelector('button').disabled = true;
+    fetch('/api/newsletter/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, source: 'static-' + location.pathname,
+                             website: form.website.value }),
+    }).then(function (r) {
+      form.outerHTML = r.ok
+        ? "<p class='newsletter-done'>You're on the list — the next report lands Friday morning.</p>"
+        : "<p>Something went wrong — try again later.</p>";
+    }).catch(function () {
+      form.querySelector('button').disabled = false;
+    });
+  });
+})();
 """
 
 
@@ -249,6 +286,18 @@ def page(slug, title, published_at, summary, body_html):
 <p class="published">Published {html.escape(published_at)} · CardStock weekly market report</p>
 {body_html}
 </article>
+<form class="newsletter" id="nl">
+  <div class="newsletter-copy"><strong>Get the weekly report by email</strong>
+  <span>One email every Friday — the market story, the movers and the model's
+  record. Nothing else.</span></div>
+  <div class="newsletter-row">
+    <input type="email" name="email" required placeholder="you@example.com"
+           aria-label="Email address">
+    <input type="text" name="website" tabindex="-1" autocomplete="off"
+           style="position:absolute;left:-9999px" aria-hidden="true">
+    <button type="submit">Subscribe</button>
+  </div>
+</form>
 <footer class="site">
   <p>CardStock tracks trading card prices and publishes model forecasts with a
   public track record. Not financial advice.

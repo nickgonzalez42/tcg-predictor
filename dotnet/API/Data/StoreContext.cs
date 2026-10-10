@@ -14,6 +14,7 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     public DbSet<CommentVote> CommentVotes => Set<CommentVote>();
     public DbSet<ProblemReport> ProblemReports => Set<ProblemReport>();
     public DbSet<CardAlert> CardAlerts => Set<CardAlert>();
+    public DbSet<NewsletterSubscriber> NewsletterSubscribers => Set<NewsletterSubscriber>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -23,6 +24,8 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
 
         // Handles are unique (case-insensitive via NOCASE collation).
         builder.Entity<User>().HasIndex(x => x.Handle).IsUnique();
+
+        builder.Entity<NewsletterSubscriber>().HasIndex(x => x.Email).IsUnique();
         builder.Entity<User>().Property(x => x.Handle).UseCollation("NOCASE");
 
         builder.Entity<Comment>().HasIndex(x => new { x.Game, x.ProductId, x.CreatedAt });

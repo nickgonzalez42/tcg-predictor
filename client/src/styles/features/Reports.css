@@ -194,6 +194,81 @@
   border-bottom: 1px solid var(--border);
 }
 
+/* Weekly-report email signup: a quiet panel under the index sub and at the
+   foot of each report. */
+.newsletter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-10) var(--space-20);
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface-tint);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-15) var(--space-20);
+  margin: 0 0 var(--space-25);
+}
+
+.report .newsletter {
+  margin: var(--space-40) 0 0;
+}
+
+.newsletter__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.newsletter__copy span {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.newsletter__row {
+  display: flex;
+  gap: var(--space-10);
+}
+
+.newsletter__row input {
+  height: var(--control-h);
+  padding: 0 var(--space-15);
+  min-width: 220px;
+  background: var(--surface-2);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.newsletter__row button {
+  height: var(--control-h);
+  padding: 0 var(--space-20);
+  background: var(--brand);
+  border: 1px solid var(--brand-border);
+  border-radius: var(--radius);
+  color: var(--on-brand);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.newsletter__row button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.newsletter__err {
+  width: 100%;
+  color: var(--down);
+  font-size: 13px;
+}
+
+.newsletter--done {
+  color: var(--up);
+}
+
 /* Floating card-art preview that follows the cursor over report card
    links. Shown only once its image has loaded (--on). */
 .card-peek {

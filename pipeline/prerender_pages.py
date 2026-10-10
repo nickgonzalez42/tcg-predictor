@@ -46,7 +46,8 @@ color:var(--muted);font-size:13.5px}
 """
 
 NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
-       f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/reports">Reports</a> '
+       f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
+       f'<a href="{SITE}/reports">Reports</a> '
        f'<a href="{SITE}/guides/how-to-read-price-charts">Guides</a> '
        f'<a href="{SITE}/about">About</a></nav></header>')
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
@@ -56,8 +57,13 @@ FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model fo
         f'<a href="{SITE}/contact">Contact</a></p></footer>')
 
 
-def page(path, title, desc, body):
+def page(path, title, desc, body, og_image=None):
+    # og:image + summary_large_image turn every link pasted into Discord,
+    # Slack or X into a rich card-art preview — the cheapest ad the site has.
     t, d = html.escape(title), html.escape(desc)
+    og_img = (f'<meta property="og:image" content="{html.escape(og_image)}">\n'
+              f'<meta name="twitter:card" content="summary_large_image">\n'
+              if og_image else '')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -67,7 +73,7 @@ def page(path, title, desc, body):
 <meta name='impact-site-verification' value='7bff3025-2f3e-4682-9142-9dbdfc5ec089'>
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}">
 <meta property="og:url" content="{SITE}{path}"><meta property="og:site_name" content="CardStock">
-{ADS}
+{og_img}{ADS}
 <style>{CSS}</style></head>
 <body><div class="wrap">{NAV}{body}{FOOT}</div></body></html>"""
 
@@ -164,10 +170,17 @@ def main():
             pid, name = r[0], r[1]
             fc = sorted(fcs.get((game, pid), []), key=lambda x: {"1m": 0, "6m": 1, "12m": 2}[x[0]])
             body = card_body(game, r, ladders.get((game, pid)), fc)
-            desc = (f"{name} ({r[2]}) price: {money(r[6])} Near Mint, graded prices and "
-                    f"AI price forecasts with a public accuracy record.")
+            # Forecast in the description = the hook in a link preview.
+            fc_bit = ""
+            if fc and r[6]:
+                _h, fp, _lo, _hi = fc[0]
+                if fp and r[6] > 0:
+                    fc_bit = f" 1-month forecast {money(fp)} ({(fp / r[6] - 1) * 100:+.1f}%)."
+            desc = (f"{name} ({r[2]}) price: {money(r[6])} Near Mint.{fc_bit} "
+                    f"Graded prices and AI forecasts with a public accuracy record.")
             write(out_new, f"catalog/{game}/{pid}.html",
-                  page(f"/catalog/{game}/{pid}", f"{name} price & forecast", desc, body))
+                  page(f"/catalog/{game}/{pid}", f"{name} price & forecast", desc, body,
+                       og_image=f"{IMG}/{game}/{pid}.jpg"))
             top_names[(game, pid)] = name
             n_cards += 1
         conn.close()

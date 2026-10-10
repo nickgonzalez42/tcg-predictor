@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
+import NewsletterSignup from "./NewsletterSignup";
 
 // Index of the weekly market reports (newest first).
 export default function ReportsPage() {
@@ -17,6 +18,7 @@ export default function ReportsPage() {
             <p className="est-note reports__sub">
                 A data-driven look at the week in card prices, published every Friday.
             </p>
+            <NewsletterSignup source="reports-index" />
             {!reports?.length ? (
                 <p className="est-note">The first weekly report lands this Friday.</p>
             ) : (
