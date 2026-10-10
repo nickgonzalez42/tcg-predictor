@@ -34,7 +34,11 @@ import forecast_calib as fcal
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
 
-MODEL_VERSION = "forecast-deep-v4.4"  # v4.4: art embedding PCA back in; cards
+MODEL_VERSION = "forecast-deep-v4.5"  # v4.5 (2026-10-10 review): absolute-error point
+# loss, steeper price weights, label guards, publish-time per-direction shrink
+# and width-stratified conformal bands (see forecast_calib). The archive keeps
+# every version's rows and the site never filters on this tag.
+# v4.4: art embedding PCA back in; cards
                                       # with no artwork on file are not forecast
                                       # v4.3: rolling OOS cutoff, log-price sample
                                       # weights, graded/raw premium features, split-
@@ -49,6 +53,11 @@ HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 # no longer built — the segments would just load empty matrices.
 TARGETS = ["ungraded", "grade7", "grade8", "grade9", "grade95", "psa10"]
 RET_CLIP = np.log(10.0)
+# Training-label guard (2026-10-10): a monthly move beyond 5x in either
+# direction is a listing-repair/data event (a lone bogus TCGplayer ask
+# stepping a card 5-10x and back), not a market move — the same bound the
+# weekly report applies. Such labels taught the model phantom reversions.
+LABEL_CLIP = np.log(5.0)
 # Segments with no valid temporal split (young games) have NO out-of-sample
 # evidence at all — default above MAX_SEGMENT_MAE so they publish flagged
 # low-confidence with the caution note instead of passing silently.
@@ -345,7 +354,10 @@ def price_weight(p):
     training (and every card still gets a forecast) while making the model
     attend to value-relevant moves: $0.25 -> 0.2, $1 -> 0.5, $10 -> 1, $100+ -> 1.5-2.
     """
-    return np.clip((np.log10(np.maximum(p, 0.01)) + 1.0) / 2.0, 0.1, 2.0)
+    # Doubles per price decade (2026-10-10 review): 88% of forecasts are
+    # sub-$10 cards whose daily market price is mostly noise; they still
+    # get forecasts, they just stop dominating the fit.
+    return np.clip(2.0 ** (np.log10(np.maximum(p, 0.01)) - 1.0), 0.15, 4.0)
 
 
 # Cross-tier context: the graded/raw premium is one of the most informative
@@ -543,6 +555,56 @@ def _rolling_live_widen(game, target, hname, days=150, min_n=200):
     return float(fcal.conformal_quantile(np.array(E), CONF_TARGET))
 
 
+def _rolling_live_width_widen(game, target, hname, days=150, min_n=200):
+    """Per-width-stratum version of _rolling_live_widen: {stratum: widen}
+    from recently graded live rows, keyed by each row's RAW band width
+    (published width for pre-v4.5 rows, which were barely widened)."""
+    try:
+        c = sqlite3.connect(OUT_DB, timeout=10)
+        rows = c.execute(
+            "SELECT base_price, low, high, realized_ret, raw_width FROM forecast_archive "
+            "WHERE game=? AND target=? AND horizon=? AND realized_ret IS NOT NULL "
+            "  AND low > 0 AND high > 0 AND base_price > 0 "
+            "  AND substr(model_version, 1, 2) != '__' "
+            "  AND graded_at >= datetime('now', ?)",
+            (game, target, hname, f"-{days} day")).fetchall()
+        c.close()
+    except sqlite3.Error:
+        return None
+    if len(rows) < min_n:
+        return None
+    E = np.array([max(math.log(lo / b) - r, r - math.log(hi / b)) for b, lo, hi, r, _ in rows])
+    width = np.array([rw if rw is not None else math.log(hi / lo) for _, lo, hi, _, rw in rows])
+    s = fcal.width_stratum(width)
+    return {int(si): float(fcal.conformal_quantile(E[s == si], CONF_TARGET))
+            for si in np.unique(s) if (s == si).sum() >= min_n}
+
+
+def _rolling_live_shrink(game, target, hname, version, days=120, min_n=500):
+    """Per-direction shrink refit on recently graded live rows of THIS model
+    version (a loss change rescales predictions, so other versions' rows
+    would mis-calibrate it). Fits on the RAW archived point so a shrink is
+    never compounded. None until enough same-version rows have graded."""
+    try:
+        c = sqlite3.connect(OUT_DB, timeout=10)
+        rows = c.execute(
+            "SELECT COALESCE(raw_ret, ret), realized_ret, base_price FROM forecast_archive "
+            "WHERE game=? AND target=? AND horizon=? AND realized_ret IS NOT NULL "
+            "  AND model_version=? AND base_price > 0 "
+            "  AND graded_at >= datetime('now', ?)",
+            (game, target, hname, version, f"-{days} day")).fetchall()
+        c.close()
+    except sqlite3.Error:
+        return None
+    if len(rows) < 2 * min_n:
+        return None
+    a = np.array(rows, float)
+    return fcal.fit_shrink(a[:, 0], a[:, 1], price_weight(a[:, 2]), min_n=min_n)
+
+
+RAW_EXTRA = {}   # (game, pid, printing, target, horizon) -> (raw_ret, raw_width)
+
+
 def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None):
     horizons = horizons or HORIZONS
     # Calibration flags (2026-08-11) — validated by backtest_forecast.py before
@@ -625,6 +687,9 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if t >= len(dates) - k:
                 continue
             v = np.isfinite(P[:, t]) & np.isfinite(P[:, t + k]) & (P[:, t] > 0) & (P[:, t + k] > 0)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                r_lab = np.log(P[:, t + k] / P[:, t])
+            v &= np.abs(np.where(np.isfinite(r_lab), r_lab, 0.0)) <= LABEL_CLIP
             if not v.any():
                 continue
             if tb_full is None:
@@ -717,6 +782,8 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         conf_widen = 0.0
         bias = 0.0
         calib = None
+        shrink = {"up": 1.0, "down": 1.0}   # publish-time point multipliers
+        wcal = None                          # width-stratified widening
         if test.sum() >= 50 and (~test).sum() >= 300:
             m = model_new().fit(X[~test], y[~test], sample_weight=w[~test])
             pred_oos = m.predict(X[test])
@@ -726,6 +793,12 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             # predictions the emission will use.
             bias = fcal.fit_debias(pred_oos, y[test], w[test])
             applied_bias = bias if use_debias else 0.0
+            # Per-direction shrink (2026-10-10): the multiplier on the point
+            # that minimizes weighted OOS MAE. Bootstraps the live archive
+            # fit below, which takes over once this version has graded rows.
+            shrink = fcal.fit_shrink(pred_oos - applied_bias, y[test], w[test])
+            print(f"  [{game}/{target}/{hname}] OOS shrink up x{shrink['up']:g} "
+                  f"down x{shrink['down']:g}", flush=True)
             band = float(mean_absolute_error(y[test], pred_oos - applied_bias,
                                              sample_weight=w[test]))
             raw = float(mean_absolute_error(y[test], pred_oos - applied_bias))
@@ -750,6 +823,12 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                       f"(held-out coverage was {float(np.mean(E <= 0)):.2f})", flush=True)
                 # Bucketed (Mondrian) variant: per-price-stratum widening.
                 calib = fcal.fit_bucket_conformal(base_t[test], E, CONF_TARGET)
+                wcal = fcal.fit_width_conformal(q10_pred_t, q90_pred_t, y[test],
+                                                applied_bias, base_t[test], CONF_TARGET)
+                print(f"  [{game}/{target}/{hname}] width-stratum widen "
+                      + " | ".join(f"{lab} +{min(c):.2f}..{max(c):.2f} (cov {cv if cv is None else round(cv, 2)})"
+                                   for lab, c, cv in zip(fcal.WIDTH_LABELS, wcal["strata"],
+                                                         wcal["stratum_cov"])), flush=True)
                 # Rolling live recalibration (2026-08-22, self-healing): blend
                 # in the nonconformity of RECENTLY GRADED live forecasts so a
                 # regime the split never saw still widens bands within days of
@@ -764,6 +843,17 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                           f"({'applied' if roll_on else 'measured only'})", flush=True)
                     if roll_on:
                         conf_widen = max(conf_widen, live_widen)
+                        live_w = _rolling_live_width_widen(game, target, hname)
+                        if live_w:
+                            wcal = fcal.merge_width_calib(wcal, live_w)
+                            print(f"  [{game}/{target}/{hname}] live width-stratum widen "
+                                  + " ".join(f"{fcal.WIDTH_LABELS[k]}+{v:.2f}" for k, v in sorted(live_w.items())),
+                                  flush=True)
+                        live_s = _rolling_live_shrink(game, target, hname, version)
+                        if live_s:
+                            shrink = live_s
+                            print(f"  [{game}/{target}/{hname}] live shrink up x{shrink['up']:g} "
+                                  f"down x{shrink['down']:g} (archive)", flush=True)
                         calib = {**calib,
                                  "global": max(calib["global"], live_widen),
                                  "widen": [max(w_, live_widen)
@@ -810,12 +900,23 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         q90_now = q90.predict(Xnow)
         # Per-card widening under CQR (each card gets its price stratum's
         # widening); the classic scalar otherwise. Debias shifts point + band.
-        widen = (fcal.bucket_widen_for(base, calib) if (use_cqr and calib is not None)
-                 else conf_widen)
+        if wcal is not None:
+            widen = fcal.width_widen_for(q10_now, q90_now, base, wcal)
+        elif use_cqr and calib is not None:
+            widen = fcal.bucket_widen_for(base, calib)
+        else:
+            widen = conf_widen
+        # Publish-time shrink on the (debiased) point; bands stay anchored on
+        # the scenario quantiles. Raw values ride along to the archive so the
+        # live refit never compounds a shrink on an already-shrunk number.
+        b_ = bias if use_debias else 0.0
+        pred_pub = fcal.apply_shrink(pred_now - b_, shrink) + b_
+        raw_ret_now = np.clip(pred_now - b_, -RET_CLIP, RET_CLIP)
+        raw_width_now = q90_now - q10_now
         # quantile crossings happen at the tails — emit_bands enforces
         # lo <= ret <= hi and applies the conformal adjustment measured above.
-        ret, lo_ret, hi_ret = fcal.emit_bands(pred_now, q10_now, q90_now, widen,
-                                              bias if use_debias else 0.0, RET_CLIP)
+        ret, lo_ret, hi_ret = fcal.emit_bands(pred_pub, q10_now, q90_now, widen,
+                                              b_, RET_CLIP)
         width = hi_ret - lo_ret   # 80% interval width in log-return
         conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
         if unreliable:
@@ -897,6 +998,8 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
                 reason += (" This is an extreme swing the model itself has low confidence"
                            " in — such calls have historically been unreliable.")
+            RAW_EXTRA[(game, int(pid), pr, target, hname)] = (
+                float(raw_ret_now[i]), float(raw_width_now[i]))
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
                          str(conf[i]), version, now, real_dates.get((int(pid), pr), a),
@@ -950,9 +1053,17 @@ def archive(conn, rows):
     # scan of a multi-GB table (minutes on the t3.small serving copy).
     conn.execute("CREATE INDEX IF NOT EXISTS idx_archive_horizon_asof "
                  "ON forecast_archive(horizon, as_of)")
+    # v4.5 (2026-10-10): the raw (pre-shrink) point and raw band width ride
+    # along so the live calibration refits on what the model said, not on
+    # what was published. Additive columns; older rows read NULL.
+    have = {r[1] for r in conn.execute("PRAGMA table_info(forecast_archive)")}
+    for col in ("raw_ret", "raw_width"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE forecast_archive ADD COLUMN {col} REAL")
     payload = []
     for r in rows:   # drops r[10] (bulky reason) and r[14] (anchor_date)
         rec = list(r[:10] + r[11:14] + (r[15],))
+        rec += list(RAW_EXTRA.get((r[0], r[1], r[15], r[2], r[3]), (None, None)))
         if r[3] == "1m":
             # Nightly cohort: key on the ISSUE date. r[13] is the run's `now`
             # ISO timestamp; backtest rows keep their month key (their `now`
@@ -964,8 +1075,10 @@ def archive(conn, rows):
     added = conn.executemany(
         "INSERT OR IGNORE INTO forecast_archive "
         "(game, product_id, target, horizon, as_of, base_price, forecast_price,"
-        " low, high, ret, confidence, model_version, scored_at, printing)"
-        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload).rowcount
+        " low, high, ret, confidence, model_version, scored_at, printing,"
+        " raw_ret, raw_width)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", payload).rowcount
+    RAW_EXTRA.clear()
     print(f"archived {added} forecast(s) for later grading")
 
 
@@ -1006,6 +1119,22 @@ def main():
     if subset:
         print(f"[forecast] horizon-limited run: {sorted(horizons)} only "
               f"(other horizons' standing forecasts untouched)", flush=True)
+
+    # Make sure the archive carries the v4.5 raw columns BEFORE any segment
+    # trains: the live width/shrink refits read them, and archive() only
+    # adds them at the end of the run — without this the first calibrated
+    # run would find no raw columns and skip the live refresh everywhere.
+    try:
+        c0 = sqlite3.connect(args.db or OUT_DB, timeout=60)
+        have = {r[1] for r in c0.execute("PRAGMA table_info(forecast_archive)")}
+        if have:
+            for col in ("raw_ret", "raw_width"):
+                if col not in have:
+                    c0.execute(f"ALTER TABLE forecast_archive ADD COLUMN {col} REAL")
+            c0.commit()
+        c0.close()
+    except sqlite3.Error as e:
+        print(f"[forecast] archive column check skipped: {e}", flush=True)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
     total_seg = len(games) * len(TARGETS)

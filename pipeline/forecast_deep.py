@@ -367,7 +367,13 @@ def run(game, grade, static, model_new):
 
 
 def model_new():
+    # absolute_error (2026-10-10 review): the published "typical miss" is a
+    # median statistic, and 20-43% of 28-day card returns are exactly zero —
+    # squared error chased the heavy-tailed mean and lost to persistence
+    # (11.07% vs 10.24%). Median regression targets the number the
+    # scorecard rewards; direction/magnitude tails live in the quantiles.
     return HistGradientBoostingRegressor(
+        loss="absolute_error",
         max_iter=400, learning_rate=0.05, max_leaf_nodes=63,
         categorical_features="from_dtype", random_state=42)
 

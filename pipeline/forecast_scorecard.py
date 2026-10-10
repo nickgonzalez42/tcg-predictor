@@ -233,6 +233,15 @@ def ensure_weekly_coverage(conn):
             dir_hits INTEGER NOT NULL
         )
         """)
+    # 2026-10-10 review: bank the persistence baseline (|realized|) and a
+    # $10+ slice alongside — the report shows "vs flat" and splits the
+    # penny-card noise out of the headline. Additive, defaults 0.
+    have = {r[1] for r in conn.execute("PRAGMA table_info(forecast_coverage_weekly)")}
+    for col, typ in (("abs_real_sum", "REAL"), ("n10", "INTEGER"), ("band_hits10", "INTEGER"),
+                     ("abs_err10", "REAL"), ("abs_real10", "REAL"), ("dir_n10", "INTEGER"),
+                     ("dir_hits10", "INTEGER")):
+        if col not in have:
+            conn.execute(f"ALTER TABLE forecast_coverage_weekly ADD COLUMN {col} {typ} NOT NULL DEFAULT 0")
 
 
 # SQLite %w: Sunday=0 … Friday=5. (w+2)%7 days back = the week's Friday.
@@ -319,14 +328,22 @@ def compact_1m(conn, now_iso):
         # Bank the weekly tallies of the rows about to be DELETED (survivors
         # keep reporting through the live query; deleted + live = full cohort).
         ensure_weekly_coverage(conn)
-        for wk, n_, hits, errs, dn, dh in conn.execute(
+        DEC = "ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01"
+        HIT = "(COALESCE(ret, 0) > 0) = (realized_ret > 0)"
+        for (wk, n_, hits, errs, dn, dh, reals,
+             n10, hits10, errs10, reals10, dn10, dh10) in conn.execute(
                 f"SELECT {WEEK_FRI}, COUNT(*), "
                 "  SUM(CASE WHEN realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
                 "  SUM(ABS(COALESCE(ret, 0) - realized_ret)), "
-                "  SUM(CASE WHEN ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01 "
-                "      THEN 1 ELSE 0 END), "
-                "  SUM(CASE WHEN ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01 "
-                "      AND (COALESCE(ret, 0) > 0) = (realized_ret > 0) THEN 1 ELSE 0 END) "
+                f" SUM(CASE WHEN {DEC} THEN 1 ELSE 0 END), "
+                f" SUM(CASE WHEN {DEC} AND {HIT} THEN 1 ELSE 0 END), "
+                "  SUM(ABS(realized_ret)), "
+                "  SUM(CASE WHEN base_price >= 10 THEN 1 ELSE 0 END), "
+                "  SUM(CASE WHEN base_price >= 10 AND realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
+                "  SUM(CASE WHEN base_price >= 10 THEN ABS(COALESCE(ret, 0) - realized_ret) ELSE 0 END), "
+                "  SUM(CASE WHEN base_price >= 10 THEN ABS(realized_ret) ELSE 0 END), "
+                f" SUM(CASE WHEN base_price >= 10 AND {DEC} THEN 1 ELSE 0 END), "
+                f" SUM(CASE WHEN base_price >= 10 AND {DEC} AND {HIT} THEN 1 ELSE 0 END) "
                 "FROM forecast_archive "
                 "WHERE horizon='1m' AND substr(as_of, 1, 7)=? AND realized_ret IS NOT NULL "
                 "  AND substr(model_version, 1, 2) != '__' AND target='ungraded' "
@@ -334,12 +351,19 @@ def compact_1m(conn, now_iso):
                 "  AND rowid NOT IN (SELECT rowid FROM temp.keep_1m) "
                 "GROUP BY 1", (m,)):
             conn.execute(
-                "INSERT INTO forecast_coverage_weekly VALUES (?,?,?,?,?,?) "
+                "INSERT INTO forecast_coverage_weekly (week, n, band_hits, abs_err_sum, dir_n, dir_hits, "
+                "  abs_real_sum, n10, band_hits10, abs_err10, abs_real10, dir_n10, dir_hits10) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) "
                 "ON CONFLICT(week) DO UPDATE SET n = n + excluded.n, "
                 "  band_hits = band_hits + excluded.band_hits, "
                 "  abs_err_sum = abs_err_sum + excluded.abs_err_sum, "
-                "  dir_n = dir_n + excluded.dir_n, dir_hits = dir_hits + excluded.dir_hits",
-                (wk, n_, hits or 0, errs or 0.0, dn or 0, dh or 0))
+                "  dir_n = dir_n + excluded.dir_n, dir_hits = dir_hits + excluded.dir_hits, "
+                "  abs_real_sum = abs_real_sum + excluded.abs_real_sum, "
+                "  n10 = n10 + excluded.n10, band_hits10 = band_hits10 + excluded.band_hits10, "
+                "  abs_err10 = abs_err10 + excluded.abs_err10, abs_real10 = abs_real10 + excluded.abs_real10, "
+                "  dir_n10 = dir_n10 + excluded.dir_n10, dir_hits10 = dir_hits10 + excluded.dir_hits10",
+                (wk, n_, hits or 0, errs or 0.0, dn or 0, dh or 0, reals or 0.0,
+                 n10 or 0, hits10 or 0, errs10 or 0.0, reals10 or 0.0, dn10 or 0, dh10 or 0))
         n = conn.execute(
             "DELETE FROM forecast_archive "
             "WHERE horizon='1m' AND substr(as_of, 1, 7)=? "

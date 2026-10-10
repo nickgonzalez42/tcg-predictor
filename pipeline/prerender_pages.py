@@ -221,7 +221,7 @@ def main():
 # ---- prose (mirrors the SPA pages; update together when those change) ------
 PROSE["about"] = """
 <h1>How the forecasts work</h1>
-<p class="muted">Updated August 2026 · model version forecast-deep-v4.4 · retrained on every data refresh</p>
+<p class="muted">Updated October 2026 · model version forecast-deep-v4.5 · retrained on every data refresh</p>
 <p>CardStock treats trading cards like a market you can actually study. Every card gets a price
 forecast for 1 month, 6 months, and 1 year ahead, for the raw card and each graded tier, next to
 real graded price history. Weekly market reports round up the biggest movers and a public
@@ -241,7 +241,9 @@ per game, tier, and horizon, trained on historical outcomes with held-out valida
 <h2>How we keep it honest</h2>
 <p>Every published forecast is saved, and once its date arrives it is graded against what the
 price actually did — misses stay on display on each card's chart. The weekly report publishes
-accuracy, bias, and how often prices landed inside the model's ranges, whether flattering or not.</p>
+accuracy, bias, and how often prices landed inside the model's ranges, whether flattering or not. Since October 2026 the published number is also held to a flat-price baseline: the point
+forecast is scaled to what recently graded calls support, and the ranges are widened per
+volatility stratum until they cover 80% of outcomes in practice.</p>
 <p>New cards carry no forecast until they have at least two months of clean price history — we
 tested launch-window prediction and the honest answer was: not well enough to publish.</p>
 """

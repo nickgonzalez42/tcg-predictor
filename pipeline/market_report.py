@@ -536,11 +536,12 @@ ACCURACY_SELECT = (
     "AVG(CASE WHEN realized_price BETWEEN low AND high THEN 1.0 ELSE 0.0 END), "
     f"SUM(CASE WHEN {DECISIVE} THEN 1 ELSE 0 END), "
     f"AVG(CASE WHEN {DECISIVE} THEN "
-    "(CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END) "
+    "(CASE WHEN (ret > 0) = (realized_ret > 0) THEN 1.0 ELSE 0.0 END) END), "
+    "AVG(ABS(realized_ret)) "   # persistence ("flat") baseline miss
     "FROM forecast_archive WHERE realized_ret IS NOT NULL AND ")
 
 
-def live_accuracy(pred, horizon, days, by_game=False):
+def live_accuracy(pred, horizon, days, by_game=False, min_price=None):
     """Graded LIVE forecasts of a horizon whose window has genuinely elapsed
     since issue (scored_at + horizon <= today). Stale-anchored archive rows
     grade instantly against old history — real cohorts take wall-clock time,
@@ -549,6 +550,9 @@ def live_accuracy(pred, horizon, days, by_game=False):
     where = ("printing='' AND substr(model_version,1,2) != '__' AND horizon = ? "
              "AND date(substr(scored_at,1,10)) <= date('now', ?)")
     args = (horizon, f"-{days} days")
+    if min_price:   # 2026-10-10: the $10+ slice the report shows alongside all cards
+        where += " AND base_price >= ?"
+        args += (float(min_price),)
     if by_game:
         return pred.execute(ACCURACY_SELECT.format(cols="game,") + where +
                             " GROUP BY game HAVING COUNT(*) >= " + str(MIN_GRADED),
@@ -889,8 +893,14 @@ def build_report(force=False, as_of=None):
 
     game_order = sorted(per_game, key=lambda g: -abs(drift.get(g, 0.0)))
     picks = forecast_corner(pred, games_live)
-    live = [(label, *row) for h, label, days in REPORT_HORIZONS
-            for row in [live_accuracy(pred, h, days)] if row]
+    live = []
+    for h, label, days in REPORT_HORIZONS:
+        row = live_accuracy(pred, h, days)
+        if row:
+            live.append((label, *row))
+            row10 = live_accuracy(pred, h, days, min_price=10)
+            if row10:
+                live.append((f"{label} · $10+ cards", *row10))
     wow = [r for r in weekly_coverage(pred)
            if (today - date.fromisoformat(r[0])).days >= 7]
 
@@ -934,9 +944,10 @@ def build_report(force=False, as_of=None):
         facts["model"]["live_record"] = [
             {"horizon": label, "graded": n_g,
              "typical_miss_pct": r1((exp(mae) - 1) * 100),
+             "flat_baseline_miss_pct": r1((exp(flat) - 1) * 100),
              "bias_pct": r1((exp(bias) - 1) * 100), "band80_pct": r1(hit * 100),
              "direction_pct": r1(da * 100) if da is not None else None}
-            for label, n_g, mae, bias, hit, dn, da in live]
+            for label, n_g, mae, bias, hit, dn, da, flat in live]
     if wow:
         facts["model"]["band_coverage_by_week"] = [
             {"week_of": wk, "graded": n_wk, "band80_pct": r1(hit * 100)}
@@ -1050,6 +1061,10 @@ def build_report(force=False, as_of=None):
                 "goal — much higher means the ranges are roomier than they "
                 "need to be, much lower means the model is more confident "
                 "than it should be.</li>"
+                "<li><strong>Flat baseline</strong> — the miss you'd get by "
+                "simply assuming every price stays where it is. It's the bar "
+                "the model has to clear: a typical miss below this number "
+                "means the forecasts are adding real information.</li>"
                 "<li><strong>Direction</strong> — when the model said a card "
                 "was headed up or down by at least 1% and the price really "
                 "did move, how often it picked the right side. 50% would be "
@@ -1062,12 +1077,17 @@ def build_report(force=False, as_of=None):
     if live:
         body.append("<table class='report-table'>"
                     "<thead><tr><th>Horizon</th><th>Graded</th><th>Typical miss</th>"
+                    "<th>Flat baseline</th>"
                     "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
-        for label, n_graded, mae, bias, hit, dir_n, dir_acc in live:
-            body.append(f"<tr><td>{label}</td><td>{n_graded:,}</td>"
+        for label, n_graded, mae, bias, hit, dir_n, dir_acc, flat in live:
+            body.append(f"<tr><td>{esc(label)}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                        f"<td>{(exp(flat) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
+        body.append("<p class='report-note'>The $10+ rows exclude the penny cards "
+                    "whose day-to-day market price is mostly noise — most of the "
+                    "catalog by count, a sliver of it by value.</p>")
         body.append("</tbody></table>")
         if prose.get("model_note"):
             body.append(f"<p>{esc(prose['model_note'])}</p>")
@@ -1132,21 +1152,23 @@ def build_report(force=False, as_of=None):
         tag = "" if live else " (backtest)"
         body.append("<table class='report-table'>"
                     f"<thead><tr><th>Game</th><th>Graded{tag}</th><th>Typical miss</th>"
+                    "<th>Flat baseline</th>"
                     "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
-        for g, n_graded, mae, bias, hit, dir_n, dir_acc in by_game:
+        for g, n_graded, mae, bias, hit, dir_n, dir_acc, flat in by_game:
             body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
+                        f"<td>{(exp(flat) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("</tbody></table>")
         acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
-                    for g, _n, mae, _bias, hit, _dn, _da in sorted(by_game, key=lambda r: r[2])]
+                    for g, _n, mae, _bias, hit, _dn, _da, _fl in sorted(by_game, key=lambda r: r[2])]
         body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
                               title=f"Typical 1-month forecast miss by game{tag} — shorter is better"))
         # Direction as its own chart, diverging around the coin-flip line:
         # bars right of zero beat chance, bars left of it did worse.
         dir_rows = [(GAMES[g]["label"], dir_acc * 100 - 50, f"{dir_acc * 100:.0f}% right of {dir_n:,}")
-                    for g, _n, _mae, _bias, _hit, dir_n, dir_acc in by_game
+                    for g, _n, _mae, _bias, _hit, dir_n, dir_acc, _fl in by_game
                     if dir_acc is not None and dir_n >= MIN_GRADED]
         dir_rows.sort(key=lambda r: -r[1])
         if dir_rows:

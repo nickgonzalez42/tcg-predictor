@@ -10,7 +10,7 @@ export default function AboutPage() {
       <header className="article__head">
         <h1 className="article__title">How the forecasts work</h1>
         <div className="mono article__meta">
-          Updated August 2026 · model version forecast-deep-v4.4 · retrained daily
+          Updated October 2026 · model version forecast-deep-v4.5 · retrained on every refresh
         </div>
         <p className="article__lede">
           CardStock treats trading cards like a market you can actually study. Every card gets a
@@ -150,7 +150,10 @@ export default function AboutPage() {
           the model said next to what happened, so a miss is on display rather than quietly
           forgotten. Behind the scenes, the model is never allowed to peek at the answer while it
           learns: it trains on the past and is tested on the most recent stretch of history it has
-          not seen, and every graded outcome feeds back into the next day's retrain.
+          not seen, and every graded outcome feeds back into the next day's retrain. Since October
+          2026 the published number is also held to a flat-price baseline: the point forecast is
+          scaled to what recently graded calls support, and the ranges are widened per volatility
+          stratum until they cover 80% of outcomes in practice.
         </p>
         <p>
           The weekly <Link to="/reports">market report</Link> takes that accountability further
