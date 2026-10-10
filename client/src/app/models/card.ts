@@ -51,6 +51,7 @@ export type OwnedCopy = {
     note?: string
     addedAt: string
     source: 'pack' | 'paid'  // opened in a pack (default) vs bought individually
+    printing?: string        // '' = base printing
 }
 
 export type Forecast = {

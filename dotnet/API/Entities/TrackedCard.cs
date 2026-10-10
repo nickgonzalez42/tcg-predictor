@@ -45,9 +45,18 @@ public class TrackedCard
     // hand-set acquired date) displays as its own unit and is never
     // auto-deleted by quantity changes; untouched pack pulls stack.
     // (Get-only => unmapped.)
-    public bool HasDetail => Source == AcquireSource.Paid || !AutoPrice
+    // (2026-10-10: `!AutoPrice` no longer counts — pack pulls are stored with
+    // auto-price off, so it made every pack pull "detailed" and unstackable.)
+    public bool HasDetail => Source == AcquireSource.Paid
         || !string.IsNullOrWhiteSpace(Note)
         || (AcquiredAt != null && AcquiredAt.Value.Date != AddedAt.Date);
+
+    // Everything a copy can differ by. Copies with equal signatures stack
+    // into one position row (quantity N); any difference — printing,
+    // condition, source, price, auto-price, acquired date, note — unstacks.
+    public (int, string, string, string, double, bool, DateTime, string) StackKey =>
+        (ProductId, Printing, Grade ?? "", Source, Math.Round(PurchasePrice ?? 0, 2),
+         AutoPrice, (AcquiredAt ?? AddedAt).Date, Note?.Trim() ?? "");
 }
 
 public static class AcquireSource

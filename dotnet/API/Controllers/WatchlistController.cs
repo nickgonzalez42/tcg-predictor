@@ -57,6 +57,16 @@ public class WatchlistController(
 
         var now = DateTime.UtcNow;
         var ownedGrade = kind == TrackKind.Owned ? grade : null;
+        // Owned copies default to PACK PULLS (2026-10-01); a stacked row's "+"
+        // passes the stack's signature (2026-10-10) so the clone stacks too.
+        var src = kind == TrackKind.Owned ? AcquireSource.Normalize(dto.Source) : AcquireSource.Pack;
+        var paid = kind == TrackKind.Owned && src == AcquireSource.Paid;
+        var acquired = kind == TrackKind.Owned ? (dto.AcquiredAt ?? now) : (DateTime?)null;
+        var auto = paid && (dto.AutoPrice ?? dto.PurchasePrice == null);
+        double? price = kind != TrackKind.Owned ? null
+            : !paid ? 0
+            : auto ? await AutoPriceOf(dto.Game, dto.ProductId, grade, acquired!.Value)
+            : Math.Max(0, dto.PurchasePrice ?? 0);
         context.TrackedCards.Add(new TrackedCard
         {
             UserName = user,
@@ -72,12 +82,11 @@ public class WatchlistController(
                                   : await PrintingPrice(dto.Game, dto.ProductId, printing))
                 : null,
             AddedAt = now,
-            // Owned copies default to PACK PULLS (2026-10-01): no individual
-            // cost basis until the user marks the copy as paid.
-            AcquiredAt = kind == TrackKind.Owned ? now : null,
-            AutoPrice = false,
-            PurchasePrice = kind == TrackKind.Owned ? 0 : null,
-            Source = AcquireSource.Pack,
+            AcquiredAt = acquired,
+            AutoPrice = auto,
+            PurchasePrice = price,
+            Source = src,
+            Note = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Note) ? dto.Note.Trim() : null,
         });
         await context.SaveChangesAsync();
 

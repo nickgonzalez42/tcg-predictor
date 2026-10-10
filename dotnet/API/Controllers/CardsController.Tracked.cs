@@ -190,30 +190,25 @@ public partial class CardsController
         }
 
         // Group copies into display units, dropping cards filtered out above.
-        // Blank copies (no purchase detail) stack into one unit per (card, condition)
-        // with a quantity; every copy with detail (paid/date/note) is its own unit.
+        // Copies identical in EVERY way (TrackedCard.StackKey: printing,
+        // condition, source, price, auto-price, acquired date, note) stack into
+        // one unit with a quantity; any difference makes its own unit
+        // (2026-10-10 — previously only untouched pack pulls stacked, and a
+        // pack pull's auto-price-off shape counted as "detail", so identical
+        // pack pulls never stacked).
         var units = copies
             .Where(x => cardById.ContainsKey(x.ProductId))
-            .GroupBy(x => new { x.ProductId, Grade = x.Grade ?? "" })
-            .SelectMany(g =>
+            .GroupBy(x => x.StackKey)
+            .Select(g =>
             {
-                var detailedUnits = g.Where(x => x.HasDetail).Select(x => new
+                var cs = g.OrderBy(x => x.AddedAt).ThenBy(x => x.Id).ToList();
+                return new
                 {
-                    g.Key.ProductId,
-                    g.Key.Grade,
-                    Copies = new List<TrackedCard> { x },
-                    LastAdded = x.AddedAt,
-                });
-                var blanks = g.Where(x => !x.HasDetail).OrderBy(x => x.AddedAt).ToList();
-                return blanks.Count == 0
-                    ? detailedUnits
-                    : detailedUnits.Append(new
-                    {
-                        g.Key.ProductId,
-                        g.Key.Grade,
-                        Copies = blanks,
-                        LastAdded = blanks.Max(x => x.AddedAt),
-                    });
+                    ProductId = g.Key.Item1,
+                    Grade = g.Key.Item3,
+                    Copies = cs,
+                    LastAdded = cs.Max(x => x.AddedAt),
+                };
             })
             .ToList();
 
@@ -320,6 +315,7 @@ public partial class CardsController
                     Note = x.Note,
                     AddedAt = x.AddedAt,
                     Source = x.Source,
+                    Printing = x.Printing,
                 }).ToList();
                 if (forecastSort is { } sort && UnitChange(u.ProductId, u.Grade) is { } ch)
                     CardMarketData.ApplyExpected(dto, ch, sort);

@@ -168,7 +168,13 @@ export const watchlistApi = createApi({
         }),
         // For owned, each call adds a new copy (at the given condition); for wishlist
         // it's an idempotent toggle-on.
-        addToWatchlist: builder.mutation<void, { game: string; productId: number; kind: TrackKind; grade?: string; printing?: string }>({
+        // Owned adds may carry a full copy signature (source/price/auto/date/
+        // note) so a stacked position's "+" clones into the same row.
+        addToWatchlist: builder.mutation<void, {
+            game: string; productId: number; kind: TrackKind; grade?: string; printing?: string;
+            source?: 'pack' | 'paid'; purchasePrice?: number; autoPrice?: boolean;
+            acquiredAt?: string; note?: string;
+        }>({
             query: (body) => ({ url: 'watchlist', method: 'POST', body }),
             invalidatesTags: (_res, _err, arg) =>
                 arg.kind === 'owned' ? ['Owned', 'Summary'] : ['Wishlist'],

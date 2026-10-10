@@ -7,6 +7,13 @@ public class TrackedCardDto
     public string? Kind { get; set; }   // owned | wishlist (defaults to wishlist)
     public string? Grade { get; set; }  // owned only: the copy's condition (copy-grade vocab)
     public string? Printing { get; set; } // specific printing ('' / null = base)
+    // Owned only, all optional (2026-10-10): a stacked position's "+" clones
+    // the stack's signature so the new copy lands in the same row.
+    public string? Source { get; set; }        // pack (default) | paid
+    public double? PurchasePrice { get; set; } // paid + manual price
+    public bool? AutoPrice { get; set; }       // paid + null -> auto
+    public DateTime? AcquiredAt { get; set; }
+    public string? Note { get; set; }
 }
 
 // One owned physical copy, returned with an owned card (CardDto.OwnedCopies).
@@ -20,6 +27,7 @@ public class OwnedCopyDto
     public string? Note { get; set; }
     public DateTime AddedAt { get; set; }
     public string Source { get; set; } = "pack";   // pack | paid
+    public string Printing { get; set; } = "";     // '' = base printing
 }
 
 // Set how many copies of a card the user owns at one condition

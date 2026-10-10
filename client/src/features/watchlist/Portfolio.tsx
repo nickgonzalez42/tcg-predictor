@@ -171,8 +171,8 @@ export default function Portfolio() {
                                 <tbody>
                                     {data.items.map(card => (
                                         <PositionRow card={card} hasYear={hasYear} key={
-                                            `${card.id}:${card.ownedGrade ?? ''}:` +
-                                            (card.ownedCopies?.length === 1 ? card.ownedCopies[0].id : 'stack')
+                                            // a stack is identified by its oldest copy (stable while it exists)
+                                            `${card.id}:${card.ownedGrade ?? ''}:${card.ownedCopies?.[0]?.id ?? 'x'}`
                                         } />
                                     ))}
                                 </tbody>

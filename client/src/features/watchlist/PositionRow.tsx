@@ -33,11 +33,20 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
     const packPulls = copies.length - paidCopies.length;
     const packCost = packPulls * packPrice(gameKey(card.game));
 
-    const addOne = () => addCopy({ game: gameKey(card.game), productId: card.id, kind: 'owned', grade });
+    // Rows are stacks of IDENTICAL copies (2026-10-10): "+" clones the stack's
+    // signature so the new copy lands in this row, "−" drops the newest copy.
+    const proto = copies[0];
+    const addOne = () => addCopy({
+        game: gameKey(card.game), productId: card.id, kind: 'owned', grade,
+        printing: proto?.printing ?? '',
+        source: proto?.source ?? 'pack',
+        autoPrice: proto?.autoPrice,
+        purchasePrice: proto && proto.source === 'paid' && !proto.autoPrice ? proto.purchasePrice : undefined,
+        acquiredAt: proto?.acquiredAt,
+        note: proto?.note,
+    });
     const removeOne = () => {
-        // Prefer deleting an untouched pack pull over a personalized copy.
-        const blank = [...copies].reverse().find(c => (c.source ?? 'pack') !== 'paid' && !c.note);
-        const target = blank ?? copies[copies.length - 1];
+        const target = copies[copies.length - 1];
         if (target) removeCopy({ id: target.id });
     };
     // Removing the LAST copy deletes the whole position — confirm that one.
@@ -110,7 +119,8 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                 <Modal title={`${card.name} · ${tierLabel(card.ownedGrade)}`}
                     onClose={() => setExpanded(false)}>
                     <p className="est-note" style={{ marginTop: 0 }}>
-                        A copy with a paid price, date or note becomes its own position row.
+                        Identical copies stack into one row. Edit any copy here — a copy that
+                        differs in any way (condition, paid price, date, note) gets its own row.
                     </p>
                     <div className="owned-copies owned-copies--modal">
                         {copies.map(copy => (
