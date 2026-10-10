@@ -236,8 +236,11 @@ def take_exact_suggestions(game):
         return {}
     with open(SUGGEST_CSV, newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    take = {int(r["product_id"]): int(r["pc_id"]) for r in rows
-            if r["game"] == game and r.get("source") == "page-embedded tcg-id"}
+    # value = (pc_id, console slug or None): the console is known when the
+    # suggestion came from a discovered console page (2026-10-10), and is
+    # stored so the sweep enumerates that new set from then on.
+    take = {int(r["product_id"]): (int(r["pc_id"]), (r.get("console") or "").strip() or None)
+            for r in rows if r["game"] == game and r.get("source") == "page-embedded tcg-id"}
     if take:
         keep = [r for r in rows
                 if not (r["game"] == game and r.get("source") == "page-embedded tcg-id")]
@@ -275,7 +278,9 @@ def apply_confirmed_links(conn):
     auto_reviewed = []
     for game, (card_db, _csv) in SOURCES.items():
         overrides = load_overrides(game)                 # product_id -> pc_id
-        exact = take_exact_suggestions(game)             # auto-links (no review)
+        exact_full = take_exact_suggestions(game)        # auto-links (no review)
+        exact = {pid: pc for pid, (pc, _) in exact_full.items()}
+        consoles = {pid: con for pid, (_, con) in exact_full.items() if con}
         merged = {**exact, **overrides}                  # a human override wins
         linked = {pid for (pid,) in conn.execute(
             "SELECT product_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,))}
@@ -310,12 +315,15 @@ def apply_confirmed_links(conn):
         for pid, pc in new_links:
             if conn.execute("SELECT 1 FROM pricecharting WHERE game=? AND product_id=?",
                             (game, pid)).fetchone():
-                conn.execute("UPDATE pricecharting SET pc_id=?, updated_at=? "
-                             "WHERE game=? AND product_id=?", (pc, now, game, pid))
+                conn.execute("UPDATE pricecharting SET pc_id=?, "
+                             "pc_console=COALESCE(?, pc_console), updated_at=? "
+                             "WHERE game=? AND product_id=?",
+                             (pc, consoles.get(pid), now, game, pid))
             else:
                 conn.execute(
-                    "INSERT INTO pricecharting (game, product_id, pc_id, pc_name, updated_at) "
-                    "VALUES (?,?,?,?,?)", (game, pid, pc, names.get(pid), now))
+                    "INSERT INTO pricecharting (game, product_id, pc_id, pc_name, pc_console, "
+                    "updated_at) VALUES (?,?,?,?,?,?)",
+                    (game, pid, pc, names.get(pid), consoles.get(pid), now))
             added += 1
     if added:
         conn.commit()

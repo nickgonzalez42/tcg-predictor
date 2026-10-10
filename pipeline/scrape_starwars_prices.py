@@ -182,6 +182,18 @@ def main():
              for r in con.execute(
                  "SELECT product_id, name, card_number, set_name FROM cards")]
     con.close()
+    # Sets that joined the catalog after the hand-kept list above (every set
+    # from 2026-07 on) get the same slug convention automatically, scoped to
+    # themselves — a new SWU set needs no edit here. Promo-style sets stay
+    # with the guessed promo consoles.
+    covered = {s for sets in CANDIDATES.values() for s in sets}
+    for s in sorted({c["set_name"] for c in cards if c["set_name"]}):
+        if s in covered or re.search(r"promo|exclusive|championship|gift box|weekly play|intro battle", s, re.I):
+            continue
+        CANDIDATES.setdefault(f"star-wars-unlimited-{slugify(s)}", [s])
+        stripped = re.sub(r"^(?:a|an|the)\s+", "", s, flags=re.I)
+        if stripped != s:
+            CANDIDATES.setdefault(f"star-wars-unlimited-{slugify(stripped)}", [s])
     # (set_name, number) -> cards; numbers are unique per set today, but a
     # future collision degrades to the review file rather than a guess.
     by_set_num = {}

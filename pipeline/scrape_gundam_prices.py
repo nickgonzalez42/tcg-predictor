@@ -242,6 +242,19 @@ def main():
              for r in con.execute(
                  "SELECT product_id, name, card_number, set_name FROM cards")]
     con.close()
+    # Sets newer than the hand-kept lists above get PriceCharting's slug
+    # conventions automatically (both forms for starter decks), so a new
+    # Gundam set or deck needs no edit here. Promo/token sets stay as listed.
+    covered = {s for sets in CANDIDATES.values() for s in sets}
+    for s in sorted({c["set_name"] for c in cards if c["set_name"]}):
+        if s in covered or re.search(r"promo|token", s, re.I):
+            continue
+        m = re.match(r"^Starter Deck (\d+):\s*(.+)$", s)
+        if m:
+            CANDIDATES.setdefault(f"gundam-starter-deck-{m.group(1)}-{slugify(m.group(2))}", [s])
+            CANDIDATES.setdefault(f"gundam-{slugify(m.group(2))}", [s])
+        else:
+            CANDIDATES.setdefault(f"gundam-{slugify(s)}", [s])
     by_number = {}
     for c in cards:
         by_number.setdefault(c["card_number"], []).append(c)
