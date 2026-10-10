@@ -244,3 +244,61 @@
     grid-column: 1 / -1;
   }
 }
+
+/* Quick-add mode (2026-10-10): no reveal, no rotator — an always-visible
+   strip under the price row. Compact controls so the tile stays one tile. */
+.card__quick {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-10);
+  margin-bottom: var(--space-10);
+}
+
+.card__quick-tier {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.quick-add {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.quick-add .btn {
+  height: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-10);
+  font-size: 13px;
+  line-height: 1;
+}
+
+.quick-add__minus,
+.quick-add__star {
+  width: var(--control-h-sm);
+  padding: 0 !important;
+  justify-content: center;
+}
+
+.quick-add__plus {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.quick-add__count {
+  min-width: 22px;
+  text-align: center;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.quick-add__count--some {
+  color: var(--up);
+  font-weight: 700;
+}

@@ -3,6 +3,7 @@ import type { Card } from "../../app/models/card"
 import { Link } from "react-router-dom"
 import { gameKey } from "../../lib/util"
 import TrackButton from "../watchlist/TrackButton"
+import QuickAdd from "../watchlist/QuickAdd"
 import { tierLabel } from "../watchlist/grades"
 import ChangePill from "../../app/shared/components/ChangePill"
 import Sparkline from "../../app/shared/components/Sparkline"
@@ -13,9 +14,10 @@ import { useUserInfoQuery } from "../account/accountApi";
 type Props = {
     card: Card
     ownGrade?: string   // condition the quick "Own" add defaults to
+    quick?: boolean     // quick-add mode: one-click +1 strip, no reveal/rotator
 }
 
-export default function CardItem({ card, ownGrade }: Props) {
+export default function CardItem({ card, ownGrade, quick }: Props) {
     const { data: user } = useUserInfoQuery()
     const [active, setActive] = useState(false)
     const mediaRef = useRef<HTMLDivElement>(null)
@@ -36,10 +38,10 @@ export default function CardItem({ card, ownGrade }: Props) {
         const ro = new ResizeObserver(sync)
         ro.observe(media)
         return () => ro.disconnect()
-    }, [user])
+    }, [user, quick])   // quick mode unmounts the rotator; re-sync when it returns
 
     return (
-        <div className="card">
+        <div className={`card${quick ? ' card--quick' : ''}`}>
             <div className="media__container" ref={mediaRef}>
                 <Link to={detailPath} style={{ display: 'block' }}>
                     <img
@@ -50,8 +52,10 @@ export default function CardItem({ card, ownGrade }: Props) {
                         onError={e => fallbackToCardBack(e, card.game, card.cardType)}
                     />
                 </Link>
-                {/* The add/watchlist reveal is a signed-in feature — no user, no overlay. */}
-                {user && (
+                {/* The add/watchlist reveal is a signed-in feature — no user, no overlay.
+                    Quick-add mode (2026-10-10) replaces it with an always-visible strip
+                    in the body: nothing to reveal, no spinning card. */}
+                {user && !quick && (
                     <div className={`card__rotator${active ? ' active' : ''}`}>
                         <div className="rotator" ref={rotatorRef}>
                             <div className="rotator__condition">{tierLabel(ownGrade)}</div>
@@ -97,13 +101,19 @@ export default function CardItem({ card, ownGrade }: Props) {
                             />
                         </div>
                     </div>
-                    {user && (
+                    {user && !quick && (
                         <button className="btn btn--outline card__add" onClick={() => setActive(a => !a)}
                             aria-pressed={active} title="Show / hide actions">
                             ＋
                         </button>
                     )}
                 </div>
+                {user && quick && (
+                    <div className="card__quick">
+                        <span className="card__quick-tier">{tierLabel(ownGrade)}</span>
+                        <QuickAdd game={gameKey(card.game)} productId={card.id} grade={ownGrade} />
+                    </div>
+                )}
                 {/* Past-movement pill + sparkline share one line. */}
                 <div className="card__footer">
                     {(card.trendPct != null || (card.sparkline?.length ?? 0) >= 2) && (

@@ -7,6 +7,7 @@ export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
     localStorage.getItem('catalogView') === 'rows' ? 'rows' : 'cards';
+const getInitialQuickAdd = (): boolean => localStorage.getItem('catalogQuickAdd') === '1';
 
 const initialState: CardParams = {
     // Pre-decision placeholder; the real default is decided once per session:
@@ -32,7 +33,8 @@ const initialState: CardParams = {
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
     // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
     trend: trendForSort(DEFAULT_ORDER) ?? '1y',
-    view: getInitialView()
+    view: getInitialView(),
+    quickAdd: getInitialQuickAdd()
 }
 
 export const catalogSlice = createSlice({
@@ -113,13 +115,19 @@ export const catalogSlice = createSlice({
             state.view = action.payload === 'rows' ? 'rows' : 'cards';
             localStorage.setItem('catalogView', state.view!);
         },
+        // Quick-add mode (2026-10-10): presentation state like `view` —
+        // remembered across sessions, never sent to the API.
+        setQuickAdd(state, action) {
+            state.quickAdd = !!action.payload;
+            localStorage.setItem('catalogQuickAdd', state.quickAdd ? '1' : '0');
+        },
         setTrend(state, action) {
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
         },
         resetParams(state) {
             // Reset filters only — the cards/rows view choice is presentation,
             // not a filter, and the game default stays decided.
-            return { ...initialState, game: state.game, view: state.view, gameInitialized: state.gameInitialized };
+            return { ...initialState, game: state.game, view: state.view, quickAdd: state.quickAdd, gameInitialized: state.gameInitialized };
         },
         // Fresh navigation to /catalog with NO url params (a nav-link click, not
         // the back button): wipe filters AND the per-session game decision, so
@@ -127,7 +135,7 @@ export const catalogSlice = createSlice({
         // carries ?params and hydrates via setParams instead. View is
         // presentation state (persisted in localStorage), so it's preserved.
         resetToDefaults(state) {
-            return { ...initialState, view: state.view };
+            return { ...initialState, view: state.view, quickAdd: state.quickAdd };
         },
         setParams(state, action) {
             return { ...state, ...action.payload };
@@ -135,4 +143,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

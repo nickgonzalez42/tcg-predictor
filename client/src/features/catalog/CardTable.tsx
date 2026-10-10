@@ -5,18 +5,20 @@ import { TREND_FCST } from "./sortOptions";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import TrackButton from "../watchlist/TrackButton";
+import QuickAdd from "../watchlist/QuickAdd";
 import { tierLabel } from "../watchlist/grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 
 type Props = {
     cards: Card[]
     ownGrade?: string   // selected price tier ('' = ungraded); quick "Own" adds at this tier
+    quick?: boolean     // quick-add mode: one-click +1 strip
     trend?: string      // selected 1w|1m|6m|1y window (drives both change columns)
 }
 
 // Screener-style rows view of the catalog. Row click opens the card; the
 // action buttons live in their own cell and don't bubble.
-export default function CardTable({ cards, ownGrade, trend }: Props) {
+export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
     const navigate = useNavigate();
     const period = (trend ?? '1m').toLowerCase();
     const fcstLabel = TREND_FCST[period] ?? '1Y';
@@ -73,7 +75,9 @@ export default function CardTable({ cards, ownGrade, trend }: Props) {
                                 </td>
                                 <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
                                 <td className="screener__actions" onClick={e => e.stopPropagation()}>
-                                    <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />
+                                    {quick
+                                        ? <QuickAdd game={gameKey(card.game)} productId={card.id} grade={ownGrade} />
+                                        : <TrackButton game={gameKey(card.game)} productId={card.id} ownGrade={ownGrade} compact />}
                                 </td>
                             </tr>
                         );

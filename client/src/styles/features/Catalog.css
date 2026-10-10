@@ -388,3 +388,12 @@ body.filters-open {
   padding-top: 16px;
 }
 }
+
+/* Quick-add toggle sits with the trend tabs / view toggle in the results head. */
+.quick-toggle {
+  height: var(--control-h-sm);
+  min-height: var(--control-h-sm);
+  padding: 0 var(--space-10);
+  font-size: 13px;
+  white-space: nowrap;
+}

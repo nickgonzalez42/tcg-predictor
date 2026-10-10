@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView } from "./catalogSlice";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
 import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
@@ -117,6 +117,7 @@ export default function Catalog() {
   if (isLoading || !data || filtersLoading || !filtersData) return <CardLoader game={cardParams.game} />
 
   const view = isMobile ? 'cards' : (cardParams.view ?? 'cards');
+  const quick = !!user && !!cardParams.quickAdd;
   const totalCount = data.pagination?.totalCount;
 
   return (
@@ -141,6 +142,18 @@ export default function Catalog() {
               </button>
             ))}
           </div>
+          {user && (
+            <button
+              className={`btn btn--outline quick-toggle${quick ? ' btn--active' : ''}`}
+              onClick={() => dispatch(setQuickAdd(!quick))}
+              aria-pressed={quick}
+              title={quick
+                ? 'Quick add is on: one click adds a copy (pack pull) at the selected condition'
+                : 'Quick add: show an Add button on every card, no reveal'}
+            >
+              ⚡ Quick add
+            </button>
+          )}
           {!isMobile && (
             <div className="view-toggle" role="group" aria-label="Results view">
               <button
@@ -163,9 +176,9 @@ export default function Catalog() {
         {data.items && data.items.length > 0 ? (
           <>
             {view === 'rows' ? (
-              <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} trend={cardParams.trend} />
+              <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} trend={cardParams.trend} quick={quick} />
             ) : (
-              <CardList cards={data.items} ownGrade={cardParams.grade ?? ''} />
+              <CardList cards={data.items} ownGrade={cardParams.grade ?? ''} quick={quick} />
             )}
             <AppPagination
               metadata={data.pagination}
