@@ -1223,10 +1223,34 @@ def store_validation(out, game, today, v, version=MODEL_VERSION):
          min(b[0] for b in v["band"][1]), max(b[1] for b in v["band"][1]), version))
 
 
+LATE_WINDOW_DAYS = 28
+
+
+def late_price(points, rel, today):
+    """A card whose launch window closed with no sales still gets graded the
+    day it finally trades (2026-10-11, user decision): the estimate never
+    counts against the model while the card has no price, but it must the
+    moment one exists. Realized = median of the first four weeks of prices
+    from the card's first recorded point, once that stretch has had time to
+    fill. Returns (price, realized_at) or None."""
+    start = (rel + timedelta(days=LABEL_HI_DAYS)).isoformat()
+    after = [(d, p) for d, p in points if d > start]
+    if not after:
+        return None
+    first = parse_date(after[0][0])
+    if first is None or today < first + timedelta(days=LATE_WINDOW_DAYS):
+        return None          # let the first month of trading accumulate
+    hi = (first + timedelta(days=LATE_WINDOW_DAYS)).isoformat()
+    vals = [p for d, p in after if d <= hi]
+    return float(np.median(vals)), hi
+
+
 def grade_archive(out, pc, today):
     """Fill realized_price on archived estimates whose card has now traded:
     same label definition (median price 1-10 weeks after release), once at
-    least 45 days have passed so the window is reasonably populated."""
+    least 45 days have passed so the window is reasonably populated. Cards
+    that only start trading after that window closes grade late instead
+    (late_price) — ungraded never means forgotten, only not-yet-traded."""
     pending = out.execute(
         "SELECT game, product_id, release_date FROM prerelease_archive "
         "WHERE realized_price IS NULL AND release_date IS NOT NULL").fetchall()
@@ -1239,6 +1263,7 @@ def grade_archive(out, pc, today):
     by_game = collections.defaultdict(list)
     for g, pid, rd in due:
         by_game[g].append((pid, rd))
+    n_late = 0
     for g, items in by_game.items():
         pts, _ = load_points(pc, g)
         for pid, rd in items:
@@ -1246,6 +1271,14 @@ def grade_archive(out, pc, today):
             if lp:
                 hi = min(rd + timedelta(days=LABEL_HI_DAYS), today)
                 updates.append((round(lp, 2), hi.isoformat(), now_iso, g, pid))
+            elif today > rd + timedelta(days=LABEL_HI_DAYS):
+                res = late_price(pts.get(pid, []), rd, today)
+                if res:
+                    updates.append((round(res[0], 2), res[1], now_iso, g, pid))
+                    n_late += 1
+    if n_late:
+        print(f"prerelease: {n_late} late grade(s) — cards whose first sale came "
+              f"after the launch window")
     out.executemany(
         "UPDATE prerelease_archive SET realized_price=?, realized_at=?, graded_at=? "
         "WHERE game=? AND product_id=? AND printing=''", updates)
