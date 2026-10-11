@@ -131,13 +131,10 @@ export default function Catalog() {
           <span className="mono">
             {totalCount != null ? `${totalCount.toLocaleString('en-US')} CARDS` : ' '}
           </span>
-          {pre ? (
-            /* No history to window in pre-release mode: say what the numbers are instead. */
-            <span className="mono results-note"
-              title="Model estimates from each card's traits — rarity, set, character history, art — validated on the game's past launches. No sales yet.">
-              PREDICTED LAUNCH PRICES · NO SALES YET
-            </span>
-          ) : (
+          {/* Pre-release mode has no history to window, so the trend chips are
+              hidden. Nothing stands in their place: every tile already carries
+              the PREDICTED tag and the filter rail explains the mode. */}
+          {!pre && (
             <div className="range-tabs" role="group" aria-label="Trend period"
               title="Window for the trend line and price movement (price data updates monthly)">
               {(['1m', '6m', '1y'] as const).map(t => (
