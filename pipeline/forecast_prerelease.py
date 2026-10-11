@@ -67,7 +67,16 @@ ML = os.path.join(BASE, "ml_data")
 MODEL_VERSION = "prerelease-v1"
 LABEL_LO_DAYS, LABEL_HI_DAYS = 7, 75    # launch-price window after release
 COVERAGE_LEAD_DAYS = 30                 # release must postdate price coverage by this
-CANDIDATE_LOOKBACK_DAYS = 45            # unpriced + released within this = still "pre-release"
+# Lifespan rules (2026-10-11, user decision). A released card gets TWO months
+# for its first recorded sale; still unpriced after that, it comes off the
+# site. And no card carries a pre-release estimate for more than THREE months
+# from the day its first estimate was published — the safety net for releases
+# that slip or never happen. "Comes off the site" is automatic: pre-release
+# mode only lists unpriced cards with a CURRENT estimate, and estimates are
+# rebuilt from scratch each run, so not re-issuing one removes the card
+# (direct links fall back to the no-sales-info page).
+CANDIDATE_LOOKBACK_DAYS = 60            # unpriced + released within this = still "pre-release"
+MAX_LIFESPAN_DAYS = 90                  # hard cap from the card's FIRST archived estimate
 MIN_LABELED = 400                       # below this a game gets no estimates at all
 MIN_TRAIN_FOR_VALIDATION = 300
 HOLDOUT_MIN_CARDS, HOLDOUT_MIN_SETS, HOLDOUT_MAX_SETS = 200, 2, 4
@@ -79,6 +88,17 @@ INNER_SPLIT_Q = 0.8                     # newest 20% of training releases calibr
 MAX_CAT = 200                           # HGB max_bins is 255; cap vocabularies
 MIN_HALF_WIDTH = 0.25                   # log-space floor on each side of the band
 RNG = 42
+# Self-correction (2026-10-11, user request): every run reads its own graded
+# record (prerelease_archive rows where the card has since traded) and learns
+# from it — a shrunk median shift per game, a smaller one per rarity on top,
+# and, once the record is deep enough, live bands replacing the holdout ones.
+# Same philosophy as the main model's rolling recalibration: corrections only
+# ever come from graded outcomes, shrunk toward zero while evidence is thin.
+LIVE_MIN_N = 40                         # graded rows before the game shift is trusted
+LIVE_RARITY_MIN = 15                    # graded rows a rarity needs for its own shift
+LIVE_K = 60                             # shrink weight: median * n/(n+K)
+LIVE_BAND_MIN = 120                     # graded rows before live bands replace holdout bands
+LIVE_WINDOW_DAYS = 365                  # trailing window of graded calls considered
 # Cross-game fallback for a game with too little launch history of its own
 # (a brand-new game): one model over every game's launches, on features that
 # mean the same thing in any game. Validated by holding out whole games.
@@ -836,14 +856,16 @@ def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
     p_g = prep[game]
     cand, n_lab = p_g["cand"], int(p_g["df"]["y"].notna().sum())
     if cand.empty:
+        purge_estimates(out, game, dry_run)
         return 0
     if n_lab < POOLED_CALIB_MIN:
         print(f"[{game}] only {n_lab} priced launches of its own — fewer than the {POOLED_CALIB_MIN} "
               f"needed to set the cross-game model's price level; no estimates yet")
+        purge_estimates(out, game, dry_run)
         return 0
     pool, pE = pooled_rows(prep, exclude=game)
     if pool is None:
-        return 0
+        return 0   # transient pool failure: keep yesterday's rows rather than blank the game
     model = fit_pooled(pool, pE)
     own = p_g["df"][p_g["df"]["y"].notna()]
     qo, oko = query_matrix(own, p_g["emb"], p_g["index"])
@@ -885,6 +907,70 @@ def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
     write_rows(out, game, rows)
     print(f"[{game}] {len(rows)} cross-game pre-release estimates written (own launch history: {n_lab})")
     return len(rows)
+
+
+def apply_lifespan(out, game, cand, today):
+    """Enforce the MAX_LIFESPAN_DAYS cap: drop candidates whose first archived
+    estimate is older than the cap. (The two-months-after-release rule is the
+    CANDIDATE_LOOKBACK_DAYS filter in prepare_game.) The archive keeps each
+    card's FIRST estimate, so its as_of is the day the card went up."""
+    if cand.empty:
+        return cand
+    try:
+        first = dict(out.execute(
+            "SELECT product_id, MIN(substr(as_of, 1, 10)) FROM prerelease_archive "
+            "WHERE game=? AND printing='' GROUP BY product_id", (game,)))
+    except sqlite3.Error:
+        return cand   # fresh/dry-run db without the archive yet: nothing to cap
+    cutoff = (today - timedelta(days=MAX_LIFESPAN_DAYS)).isoformat()
+    expired = [int(pid) for pid in cand["pid"] if (first.get(int(pid)) or "9999") < cutoff]
+    if expired:
+        print(f"[{game}] {len(expired)} candidate(s) past the {MAX_LIFESPAN_DAYS}-day estimate "
+              f"lifespan — removed from the site")
+        return cand[~cand["pid"].isin(expired)].copy()
+    return cand
+
+
+def live_corrections(out, game, rarity_of):
+    """What the model's own graded record says about its errors: residual
+    r = ln(realized / predicted) over the trailing year. Returns None until
+    LIVE_MIN_N calls have graded; after that a shrunk median shift for the
+    game, per-rarity shifts on the remainder, and (deep record) live bands."""
+    try:
+        rows = out.execute(
+            "SELECT product_id, predicted, realized_price FROM prerelease_archive "
+            "WHERE game=? AND printing='' AND realized_price IS NOT NULL AND predicted > 0 "
+            "AND realized_price > 0 AND graded_at >= date('now', ?)",
+            (game, f"-{LIVE_WINDOW_DAYS} day")).fetchall()
+    except sqlite3.Error:
+        return None
+    if len(rows) < LIVE_MIN_N:
+        return None
+    r = np.array([math.log(real / pred) for _, pred, real in rows])
+    n = len(r)
+    shift = float(np.median(r)) * n / (n + LIVE_K)
+    by_rar = {}
+    for (pid, pred, real), ri in zip(rows, r):
+        rar = rarity_of.get(int(pid))
+        if rar:
+            by_rar.setdefault(rar, []).append(ri - shift)
+    rar_shift = {rar: float(np.median(v)) * len(v) / (len(v) + LIVE_K)
+                 for rar, v in by_rar.items() if len(v) >= LIVE_RARITY_MIN}
+    band = None
+    if n >= LIVE_BAND_MIN:
+        p_log = np.array([math.log(pred) for _, pred, _ in rows]) + shift
+        band = band_strata(p_log, r - shift)
+    return {"n": n, "shift": shift, "rar": rar_shift, "band": band}
+
+
+def purge_estimates(out, game, dry_run):
+    """Clear a game's standing estimate rows when this run issues none, so
+    expired/priced cards actually leave the site (write_rows normally does
+    this as the first half of its rebuild)."""
+    if dry_run:
+        return
+    out.execute("DELETE FROM prerelease_estimates WHERE game=?", (game,))
+    out.commit()
 
 
 def write_rows(out, game, rows):
@@ -964,6 +1050,10 @@ def run_game(game, prep, pc, today, out, dry_run=False):
         print(f"[{game}] not enough history for a held-out set validation yet")
 
     if cand.empty:
+        # No candidates left (all priced, or expired by the lifespan rules):
+        # the standing rows must still be cleared, or removed cards would
+        # keep showing — write_rows normally does this as part of the rebuild.
+        purge_estimates(out, game, dry_run)
         if val and not dry_run:
             store_validation(out, game, today, val)
         return 0
@@ -975,7 +1065,21 @@ def run_game(game, prep, pc, today, out, dry_run=False):
     Xc = Xc.reindex(columns=Xall.columns)
     yall = lab["y"].to_numpy()
     p = Ensemble(Xall, yall, price_weight(yall)).predict(Xc)
-    edges, bands = val["band"] if val else inner_band(lab, attrs, emb, index, pcs)
+
+    # Self-correction: the graded record's verdict on past estimates, applied
+    # before the bands. adj is per-candidate (game shift + its rarity's).
+    live = live_corrections(out, game, dict(zip(df["pid"].astype(int), df["rarity"])))
+    adj = np.zeros(len(p))
+    if live:
+        adj = live["shift"] + np.array([live["rar"].get(r, 0.0) for r in cand["rarity"]])
+        p = p + adj
+        rar_txt = ", ".join(f"{r} {s:+.2f}" for r, s in sorted(live["rar"].items())) or "none deep enough"
+        print(f"[{game}] self-correction from {live['n']} graded estimate(s): game shift "
+              f"{live['shift']:+.2f} log · rarity shifts: {rar_txt}"
+              + (" · live bands in use" if live["band"] else ""))
+
+    edges, bands = (live["band"] if live and live["band"] else None) \
+        or (val["band"] if val else inner_band(lab, attrs, emb, index, pcs))
     lo, hi = band_for(p, edges, bands)
 
     miss_pct = round(100 * (math.exp(val["med_log"]) - 1)) if val else None
@@ -990,7 +1094,8 @@ def run_game(game, prep, pc, today, out, dry_run=False):
         high = max(pred, math.exp(hi[i]))
         rows.append((game, int(c["pid"]), "", _iso(c["rel"]), today.isoformat(),
                      round(pred, 2), round(low, 2), round(high, 2), conf,
-                     reason_text(c, Xc.iloc[i], label, len(lab), val, miss_pct, within),
+                     reason_text(c, Xc.iloc[i], label, len(lab), val, miss_pct, within,
+                                 adj=float(adj[i]), n_graded=live["n"] if live else 0),
                      MODEL_VERSION, int(len(lab)), len(val["sets"]) if val else 0,
                      miss_pct, within, now_iso))
     if dry_run:
@@ -1009,7 +1114,7 @@ def run_game(game, prep, pc, today, out, dry_run=False):
     return len(rows)
 
 
-def reason_text(c, x, label, n_train, val, miss_pct, within):
+def reason_text(c, x, label, n_train, val, miss_pct, within, adj=0.0, n_graded=0):
     bits = [f"{c['rarity']} in a {int(c['set_size'])}-card set"]
     rn = x.get("root_prior_n")
     if rn is not None and np.isfinite(rn) and rn >= 3 and np.isfinite(x.get("root_prior_med", np.nan)):
@@ -1031,6 +1136,13 @@ def reason_text(c, x, label, n_train, val, miss_pct, within):
                 f"was about {miss_pct}%, with {within}% of cards landing within ±50%. ")
     else:
         txt += "This game's history is still too short to validate the method against past launches. "
+    # Material self-correction (>= ~8% move): say so — the "learning from its
+    # own misses" is part of the estimate's honesty, not a hidden fudge.
+    if n_graded and abs(adj) >= 0.08:
+        txt += (f"Its own graded record ({n_graded} earlier {label} estimates checked against real "
+                f"launches) has been running {'low' if adj > 0 else 'high'} on cards like this, so "
+                f"this figure is adjusted {'up' if adj > 0 else 'down'} about "
+                f"{abs(round(100 * (math.exp(adj) - 1)))}%. ")
     txt += "It updates nightly and hands off to the regular forecast once the card starts trading."
     return txt
 
@@ -1143,6 +1255,7 @@ def main():
                 prep[g] = None
                 continue
             df, attrs, cand, pts = p
+            cand = apply_lifespan(out, g, cand, today)
             emb, index = load_embeddings(g)
             prep[g] = {"df": df, "attrs": attrs, "cand": cand, "emb": emb, "index": index}
         except Exception as e:                      # noqa: BLE001
@@ -1172,6 +1285,7 @@ def main():
         for g in needs_pool:
             print(f"[{g}] no estimates yet: needs {MIN_LABELED} priced launches of its own "
                   f"(cross-game model is off — held-out games missed by ~250%)")
+            purge_estimates(out, g, args.dry_run)
         needs_pool = []
     if needs_pool or args.validate_pooled:
         try:

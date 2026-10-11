@@ -20,7 +20,7 @@ import sqlite3
 import statistics
 import sys
 from datetime import date, datetime, timedelta, timezone
-from math import exp, log2
+from math import exp, log, log2
 from urllib.parse import quote
 
 from _paths import DATA_DIR as BASE
@@ -598,6 +598,112 @@ def direction_split(pred, live):
     else:
         where = "model_version LIKE '__bt-%' AND length(model_version) = 12 AND horizon = '1m'"
     return pred.execute(DIRECTION_SPLIT_SELECT + where).fetchone()
+
+
+def prerelease_report(pred):
+    """Report-card addendum (2026-10-11, user request): the pre-release
+    estimates' own public record. Until the first cohort grades (release +
+    ~45 days) the holdout validation — each game's newest sets predicted
+    from older ones — carries the section; once live grades exist they lead,
+    and these are exactly the rows the model self-corrects from each night."""
+    out = []
+    try:
+        live_counts = dict(pred.execute(
+            "SELECT game, COUNT(*) FROM prerelease_estimates GROUP BY game"))
+    except sqlite3.Error:
+        return out                     # predictions.db predates the feature
+    graded, pending_from = [], None
+    try:
+        graded = pred.execute(
+            "SELECT game, predicted, low, high, realized_price FROM prerelease_archive "
+            "WHERE realized_price IS NOT NULL AND predicted > 0 AND realized_price > 0").fetchall()
+        pending_from = pred.execute(
+            "SELECT MIN(date(release_date, '+45 day')) FROM prerelease_archive "
+            "WHERE realized_price IS NULL AND release_date IS NOT NULL").fetchone()[0]
+    except sqlite3.Error:
+        pass
+    if not live_counts and not graded:
+        return out
+
+    out.append("<h3>Pre-release estimates</h3>")
+    out.append("<p>Cards that haven't started trading yet — presale sets and "
+               "brand-new releases — carry a predicted launch price built only "
+               "from what the card is. Those predictions are held to the same "
+               "standard as everything else on this page: each one is archived "
+               "the day it's published and graded against the card's first two "
+               "months of real trading, and the model adjusts its next "
+               "estimates by how its past ones graded.</p>")
+
+    if graded:
+        by_game = {}
+        for g, p, lo, hi, real in graded:
+            by_game.setdefault(g, []).append((log(real / p), lo, hi, real))
+        def stats(rs):
+            errs = sorted(abs(r) for r, *_ in rs)
+            med = errs[len(errs) // 2]
+            within = sum(1 for r, *_ in rs if abs(r) <= log(1.5)) / len(rs)
+            band = sum(1 for _, lo, hi, real in rs
+                       if lo is not None and hi is not None and lo <= real <= hi) / len(rs)
+            bias = statistics.median(r for r, *_ in rs)
+            return med, within, band, bias
+        out.append("<table class='report-table'>"
+                   "<thead><tr><th>Game</th><th>Graded</th><th>Typical miss</th>"
+                   "<th>Within ±50%</th><th>80% band</th><th>Bias</th></tr></thead><tbody>")
+        for g in sorted(by_game, key=lambda g: -len(by_game[g])):
+            if g not in GAMES:
+                continue
+            med, within, band, bias = stats(by_game[g])
+            out.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{len(by_game[g]):,}</td>"
+                       f"<td>{(exp(med) - 1) * 100:.0f}%</td><td>{within * 100:.0f}%</td>"
+                       f"<td>{band * 100:.0f}%</td><td>{pct((exp(bias) - 1) * 100)}</td></tr>")
+        med, within, band, bias = stats([x for rs in by_game.values() for x in rs])
+        n_all = sum(len(rs) for rs in by_game.values())
+        out.append(f"<tr><td><strong>All games</strong></td><td>{n_all:,}</td>"
+                   f"<td>{(exp(med) - 1) * 100:.0f}%</td><td>{within * 100:.0f}%</td>"
+                   f"<td>{band * 100:.0f}%</td><td>{pct((exp(bias) - 1) * 100)}</td></tr>")
+        out.append("</tbody></table>")
+        out.append("<p class='report-note'>Expect bigger misses here than in the "
+                   "tables above — these calls are made before a single sale "
+                   "exists. They're meant to rank a set's chase cards, not to "
+                   "nail prices.</p>")
+        return out
+
+    # Nothing graded yet: live counts + the dress-rehearsal numbers.
+    total_live = sum(live_counts.values())
+    per_game = ", ".join(f"{esc(GAMES[g]['label'])} {n:,}"
+                         for g, n in sorted(live_counts.items(), key=lambda kv: -kv[1])
+                         if g in GAMES)
+    due = (f" The earliest come due around {esc(pending_from)}, and this section "
+           f"fills in with their real grades from then on.") if pending_from else ""
+    out.append(f"<p>{total_live:,} predicted launch prices are live right now "
+               f"({per_game}). None has been out long enough to grade yet.{due} "
+               f"Until then, the honest yardstick is the dress rehearsal below: "
+               f"each game's newest sets, predicted as if they were still "
+               f"unreleased, from older sets only.</p>")
+    try:
+        val = pred.execute(
+            "SELECT game, n_test, med_log, within50, spearman FROM prerelease_validation v "
+            "WHERE as_of = (SELECT MAX(as_of) FROM prerelease_validation WHERE game = v.game) "
+            "AND game IN (%s) ORDER BY n_test DESC" % ",".join("?" * len(GAMES)),
+            list(GAMES)).fetchall()
+    except sqlite3.Error:
+        val = []
+    if val:
+        out.append("<table class='report-table'>"
+                   "<thead><tr><th>Game</th><th>Launches tested</th><th>Typical miss</th>"
+                   "<th>Within ±50%</th><th>Rank quality</th></tr></thead><tbody>")
+        for g, n_test, med_log, within50, spear in val:
+            out.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_test:,}</td>"
+                       f"<td>{(exp(med_log) - 1) * 100:.0f}%</td>"
+                       f"<td>{within50 * 100:.0f}%</td>"
+                       f"<td>{spear:.2f}</td></tr>")
+        out.append("</tbody></table>")
+        out.append("<p class='report-note'>Rank quality is a correlation: 1.00 "
+                   "would mean the model put the set's cards in exactly the right "
+                   "price order; 0 would mean no idea. These calls are made before "
+                   "a single sale exists — they're meant to rank a set's chase "
+                   "cards, not to nail prices.</p>")
+    return out
 
 
 def weekly_coverage(pred, weeks=8):
@@ -1194,6 +1300,9 @@ def build_report(force=False, as_of=None):
         body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
                               decimals=2,
                               title=f"Direction accuracy: up vs down calls{split_tag} — 50% is a coin flip"))
+
+    # Pre-release estimates' own record closes the report card.
+    body.extend(prerelease_report(pred))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
