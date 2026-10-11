@@ -77,6 +77,13 @@ COVERAGE_LEAD_DAYS = 30                 # release must postdate price coverage b
 # (direct links fall back to the no-sales-info page).
 CANDIDATE_LOOKBACK_DAYS = 60            # unpriced + released within this = still "pre-release"
 MAX_LIFESPAN_DAYS = 90                  # hard cap from the card's FIRST archived estimate
+# Set liveness (2026-10-11, user case: Monkey.D.Luffy EB04-061 SP — the one
+# unpriced card in a 99%-priced set). A set counts as released-and-trading
+# once this share of its cards (and at least 3) carry market prices. An
+# unpriced card in an ALIVE set is a real product the market just hasn't
+# sold yet — its estimate stays up until the first sale posts, exempt from
+# both cutoffs above, which exist to clear products that never released.
+SET_ALIVE_SHARE = 0.25
 MIN_LABELED = 400                       # below this a game gets no estimates at all
 MIN_TRAIN_FOR_VALIDATION = 300
 HOLDOUT_MIN_CARDS, HOLDOUT_MIN_SETS, HOLDOUT_MAX_SETS = 200, 2, 4
@@ -681,9 +688,14 @@ def prepare_game(game, pc, today):
         ys.append(math.log(lp) if lp and lp > 0 else np.nan)
     df["y"] = ys
 
-    # candidates: art, no market price, upcoming or just released
+    # Set liveness: how much of each set actually trades (see SET_ALIVE_SHARE).
+    priced_n = df.groupby("set_name")["nm"].transform(lambda s: s.notna().sum())
+    df["set_alive"] = (priced_n >= 3) & (priced_n / df["set_size"].clip(lower=1) >= SET_ALIVE_SHARE)
+
+    # candidates: art, no market price, and (upcoming / just released, or an
+    # unsold straggler in a set that trades — apply_lifespan arbitrates those)
     look = today - timedelta(days=CANDIDATE_LOOKBACK_DAYS)
-    cand = df[(df["nm"].isna()) & (df["rel"] >= look)].copy()
+    cand = df[(df["nm"].isna()) & ((df["rel"] >= look) | df["set_alive"])].copy()
     # a card that already has ANY recent unified price belongs to the regular/launch models
     recent = (today - timedelta(days=60)).isoformat()
     cand = cand[[not any(d >= recent for d, _ in pts.get(pid, [])) for pid in cand["pid"]]]
@@ -910,25 +922,50 @@ def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
 
 
 def apply_lifespan(out, game, cand, today):
-    """Enforce the MAX_LIFESPAN_DAYS cap: drop candidates whose first archived
-    estimate is older than the cap. (The two-months-after-release rule is the
-    CANDIDATE_LOOKBACK_DAYS filter in prepare_game.) The archive keeps each
-    card's FIRST estimate, so its as_of is the day the card went up."""
+    """The lifespan rules in one place (2026-10-11, user decisions):
+      * inside the entry window (upcoming, or released under two months ago):
+        kept — except a not-yet-released card in a DEAD set whose first
+        estimate is past MAX_LIFESPAN_DAYS (the vaporware guard for release
+        dates that keep slipping);
+      * past the window, set ALIVE: kept while the card entered the archive
+        the normal way and has never actually traded — the illiquid chase
+        card (one unsold SP in a 99%-priced set) stays up until its first
+        sale posts;
+      * past the window, set NOT alive: dropped — the product never really
+        released. The archive keeps each card's FIRST estimate, so its
+        earliest as_of is the day the card went up."""
     if cand.empty:
         return cand
     try:
-        first = dict(out.execute(
-            "SELECT product_id, MIN(substr(as_of, 1, 10)) FROM prerelease_archive "
-            "WHERE game=? AND printing='' GROUP BY product_id", (game,)))
+        rows = out.execute(
+            "SELECT product_id, MIN(substr(as_of, 1, 10)), MAX(realized_price IS NOT NULL) "
+            "FROM prerelease_archive WHERE game=? AND printing='' GROUP BY product_id",
+            (game,)).fetchall()
     except sqlite3.Error:
-        return cand   # fresh/dry-run db without the archive yet: nothing to cap
+        rows = []   # fresh/dry-run db without the archive yet
+    first = {int(pid): d for pid, d, _ in rows}
+    traded = {int(pid) for pid, _, t in rows if t}
+    look = today - timedelta(days=CANDIDATE_LOOKBACK_DAYS)
     cutoff = (today - timedelta(days=MAX_LIFESPAN_DAYS)).isoformat()
-    expired = [int(pid) for pid in cand["pid"] if (first.get(int(pid)) or "9999") < cutoff]
-    if expired:
-        print(f"[{game}] {len(expired)} candidate(s) past the {MAX_LIFESPAN_DAYS}-day estimate "
-              f"lifespan — removed from the site")
-        return cand[~cand["pid"].isin(expired)].copy()
-    return cand
+    keep, stragglers, dead, capped = [], 0, 0, 0
+    for pid, rel, alive in zip(cand["pid"].astype(int), cand["rel"], cand["set_alive"]):
+        if rel >= look:
+            if not alive and (first.get(pid) or "9999") < cutoff:
+                keep.append(False); capped += 1
+            else:
+                keep.append(True)
+        elif alive and pid in first and pid not in traded:
+            keep.append(True); stragglers += 1
+        else:
+            keep.append(False); dead += 1
+    if stragglers or dead or capped:
+        print(f"[{game}] lifespan: {stragglers} unsold card(s) in trading sets kept past the "
+              f"{CANDIDATE_LOOKBACK_DAYS}-day window · {dead} cleared (never released, or "
+              f"unpriced for reasons other than a fresh launch) · "
+              f"{capped} cleared ({MAX_LIFESPAN_DAYS}-day cap)")
+    if all(keep):
+        return cand
+    return cand[pd.Series(keep, index=cand.index)].copy()
 
 
 def live_corrections(out, game, rarity_of):
