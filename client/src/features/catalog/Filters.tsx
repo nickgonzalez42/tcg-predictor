@@ -4,7 +4,7 @@ import Search from "./Search";
 import RadioButtonGroup from "../../app/shared/components/RadioButtonGroup";
 
 import { useAppDispatch, useAppSelector } from "../../app/store/store";
-import { resetParams, setConfidence, setGame, setGrade, setMaxPrice, setMinPrice, setOrderBy, setPrerelease, setRarities, setPrintings, setSets } from "./catalogSlice";
+import { resetParams, setConfidence, setGame, setGrade, setMarket, setMaxPrice, setMinPrice, setOrderBy, setRarities, setPrintings, setSets } from "./catalogSlice";
 import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
@@ -27,12 +27,13 @@ const CONFIDENCE_OPTIONS = [
 ];
 
 
-// Which half of the catalog to list (2026-10-10): the priced cards, or the
-// pre-release/just-released cards that have no market price yet and show a
-// predicted launch price instead. Offered only while the game has some.
+// Which cards to list (2026-10-11, user decision): priced cards (default),
+// predicted-price cards only, or both at once. Offered only while the game
+// has predicted-price cards.
 const MARKET_OPTIONS = [
     { value: '', label: 'With market price' },
-    { value: 'pre', label: 'Pre-release' },
+    { value: 'without', label: 'Without market price' },
+    { value: 'all', label: 'Both' },
 ];
 
 type Props = {
@@ -40,8 +41,9 @@ type Props = {
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view, prerelease } = useAppSelector(state => state.catalog);
-    const pre = !!prerelease;
+    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view, market } = useAppSelector(state => state.catalog);
+    const mode = market ?? '';
+    const pre = mode === 'without';
     const dispatch = useAppDispatch();
 
     // Dropdown mode: the panels collapse behind a full-width toggle — on
@@ -207,18 +209,20 @@ export default function Filters({ filtersData: data }: Props) {
                             {/* Last panel in the rail (2026-10-11, user request): switching
                                 to pre-release swaps the whole list, so it reads as a mode
                                 at the end rather than another filter among the others. */}
-                            {(pre || (data.prereleaseCount ?? 0) > 0) && (
+                            {(mode !== '' || (data.prereleaseCount ?? 0) > 0) && (
                                 <div className="panel">
                                     <span className="field-label">Cards shown</span>
                                     <RadioButtonGroup
-                                        selectedValue={pre ? 'pre' : ''}
+                                        selectedValue={mode}
                                         options={MARKET_OPTIONS}
-                                        onChange={e => dispatch(setPrerelease(e.target.value === 'pre'))}
+                                        onChange={e => dispatch(setMarket(e.target.value))}
                                     />
                                     <p className="est-note filters__note">
                                         {pre
                                             ? 'Upcoming and just-released cards with no sales yet, shown with a predicted launch price.'
-                                            : `${(data.prereleaseCount ?? 0).toLocaleString('en-US')} pre-release cards have a predicted price.`}
+                                            : mode === 'all'
+                                                ? 'Priced cards and predicted-price cards together; predictions rank at their predicted value.'
+                                                : `${(data.prereleaseCount ?? 0).toLocaleString('en-US')} cards without a market price have a predicted one.`}
                                     </p>
                                 </div>
                             )}

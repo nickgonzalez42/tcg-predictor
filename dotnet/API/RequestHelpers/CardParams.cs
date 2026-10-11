@@ -18,6 +18,11 @@ public class CardParams : PaginationParams
     // Pre-release mode (2026-10-10): list the game's cards that have NO
     // market price yet but carry a launch-price estimate, instead of the
     // priced catalog. Price range + price sorts then key on the estimate;
-    // grade/confidence/forecast sorts don't apply.
+    // grade/confidence/forecast sorts don't apply. Superseded by Market
+    // ("without") on 2026-10-11; kept so shared links don't break.
     public bool Prerelease { get; set; }
+    // Market mode (2026-10-11): "" / "with" (default) = priced cards only;
+    // "without" = estimate-only cards; "all" = both, interleaved on the
+    // shown value for the general sorts.
+    public string? Market { get; set; }
 }

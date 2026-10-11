@@ -24,10 +24,35 @@ public partial class CardsController(
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
     {
         var game = GameRegistry.KeyOrDefault(cardParams.Game);
-        // Pre-release mode lists the OTHER half of the catalog: cards with no
-        // market price yet, shown with a launch-price estimate (2026-10-10).
-        if (cardParams.Prerelease) return await PagePrerelease(cardParams, game);
+        // Market mode (2026-10-11, user decision): "with" market price (the
+        // default), "without" (estimate-only cards), or "all" (both at once).
+        var mode = MarketMode(cardParams);
+        if (mode == "without") return await PagePrerelease(cardParams, game);
+        if (mode == "all")
+        {
+            // Union: priced cards + the unpriced ones carrying an estimate
+            // (never the art-pending/unpriced leftovers with neither). The
+            // estimate id set is a few hundred per game at most, so it
+            // composes into SQL safely.
+            var estimates = await market.PrereleaseEstimates(game);
+            var estIds = estimates.Keys.ToList();
+            var src = sources.Cards(game).WithArt()
+                .Where(c => c.NearMintPrice != null || estIds.Contains(c.Id));
+            var cards = await Page(src, cardParams, game, estimates);
+            CardMarketData.ApplyPrerelease(cards, estimates);
+            return cards;
+        }
         return await Page(sources.Cards(game).VisibleInCatalog(), cardParams, game);
+    }
+
+    // "with" (default) | "without" | "all". The launch boolean (prerelease=
+    // true, 2026-10-10) keeps working for shared links and maps to "without".
+    private static string MarketMode(CardParams p)
+    {
+        var m = (p.Market ?? "").ToLowerInvariant();
+        if (m is "without" or "none" or "unpriced") return "without";
+        if (m is "all" or "both") return "all";
+        return p.Prerelease ? "without" : "with";
     }
 
     [HttpGet("{game}/{id:int}")]
@@ -138,9 +163,11 @@ public partial class CardsController(
 
     [HttpGet("filters")]
     public async Task<IActionResult> GetFilters([FromQuery] string? game,
-        [FromQuery] bool prerelease = false)
+        [FromQuery] bool prerelease = false,
+        [FromQuery(Name = "market")] string? marketMode = null)
     {
         var key = GameRegistry.KeyOrDefault(game);
+        var mode = MarketMode(new CardParams { Prerelease = prerelease, Market = marketMode });
 
         // Pre-release facets come from the unpriced-with-estimate population
         // (so the Sets list offers the upcoming set, not the priced ones).
@@ -152,7 +179,7 @@ public partial class CardsController(
                 .Select(c => new { c.Id, c.SetName, c.Rarity })
                 .ToListAsync())
             .Where(r => estimates.ContainsKey(r.Id)).ToList();
-        if (prerelease)
+        if (mode == "without")
         {
             return Ok(new
             {
@@ -168,6 +195,15 @@ public partial class CardsController(
         var prereleaseCount = unpriced.Count;
 
         var (sets, rarities) = await Facets(sources.Cards(key).VisibleInCatalog());
+        // "All" mode: the facet lists cover both populations, so an upcoming
+        // set is pickable alongside the priced ones.
+        if (mode == "all" && unpriced.Count > 0)
+        {
+            sets = sets.Union(unpriced.Where(r => r.SetName != null).Select(r => r.SetName!))
+                .Distinct().OrderBy(s => s).ToList();
+            rarities = rarities.Union(unpriced.Where(r => r.Rarity != null).Select(r => r.Rarity!))
+                .Distinct().OrderBy(s => s).ToList();
+        }
 
         // 1Y views only make sense once the game has year-deep data: a 12m
         // forecast horizon, or 12+ months of price history. Young games
@@ -566,16 +602,24 @@ public partial class CardsController(
     // filtered cards into memory and use PageSlice instead.
 
     private async Task<List<CardDto>> Page(
-        IQueryable<CardBase> source, CardParams cardParams, string folder)
+        IQueryable<CardBase> source, CardParams cardParams, string folder,
+        Dictionary<int, PrereleaseEstimate>? estimates = null)
     {
         var filtered = source
             .Search(cardParams.SearchTerm)
             .Filter(cardParams.Sets, cardParams.Rarities);
 
+        // "All" mode with a general sort ranks on the SHOWN value in memory
+        // below (real price where one exists, predicted launch price where
+        // not) — the SQL range would wrongly drop every unpriced card first.
+        var generalSort = cardParams.OrderBy is null or "" or "name"
+                          || CardSorts.IsPriceSort(cardParams.OrderBy);
+        var unionSort = estimates != null && generalSort && string.IsNullOrEmpty(cardParams.Grade);
+
         // Min/max on the SHOWN price. With no tier selected that's the Near Mint
         // column (filterable in SQL); a selected tier's price lives in another
         // DbContext, so those paths filter in memory below.
-        if (string.IsNullOrEmpty(cardParams.Grade))
+        if (string.IsNullOrEmpty(cardParams.Grade) && !unionSort)
             filtered = filtered.PriceRange(cardParams.MinPrice, cardParams.MaxPrice);
 
         // Cross-DB id filters. Two filters key on data in other DbContexts:
@@ -618,6 +662,37 @@ public partial class CardsController(
                             && wantPrintings.Any(p => r.Printings.Contains($"\"{p}\"")))
                 .Select(r => r.Id).ToHashSet();
             idFilter = idFilter == null ? prIds : idFilter.Intersect(prIds).ToHashSet();
+        }
+
+        // "All" mode, general sorts: one slim union ranked on the shown value,
+        // so a $2,000 predicted chase card sits beside the $2,000 priced ones
+        // instead of hiding behind a separate filter (2026-10-11).
+        if (unionSort)
+        {
+            var slimAll = (await filtered
+                    .Select(c => new { c.Id, c.Name, c.NearMintPrice })
+                    .ToListAsync())
+                .Where(r => idFilter == null || idFilter.Contains(r.Id))
+                .Select(r => new
+                {
+                    r.Id, r.Name,
+                    Shown = r.NearMintPrice
+                            ?? (estimates!.TryGetValue(r.Id, out var e) ? e.Predicted : (double?)null),
+                })
+                .Where(r => !HasPriceRange(cardParams)
+                            || (r.Shown is { } v && InPriceRange(v, cardParams)))
+                .ToList();
+            var rankedAll = (cardParams.OrderBy switch
+            {
+                "price" => slimAll.OrderBy(r => r.Shown ?? double.MaxValue).ThenBy(r => r.Name),
+                "priceDesc" => slimAll.OrderByDescending(r => r.Shown ?? double.MinValue).ThenBy(r => r.Name),
+                _ => slimAll.OrderBy(r => r.Name),
+            }).ToList();
+            var unionIds = PageSlice(rankedAll, cardParams).Select(r => r.Id).ToList();
+            var unionPage = await PageEntities(filtered, unionIds, folder);
+            await market.ApplyGradePrice(unionPage, folder, cardParams.Grade);
+            await market.ApplyMarket(unionPage, folder, cardParams.Grade, cardParams.Trend);
+            return unionPage;
         }
 
         if (CardSorts.History(cardParams.OrderBy) is { } historySort)

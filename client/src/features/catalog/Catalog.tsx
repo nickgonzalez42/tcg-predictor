@@ -20,8 +20,9 @@ export default function Catalog() {
     usePageMeta("Card Prices and Predictions",
         "Browse and screen Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards by price prediction, trend, and graded tier.");
   const cardParams = useAppSelector(state => state.catalog);
-  const pre = !!cardParams.prerelease;
-  const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, prerelease: pre });
+  const marketMode = cardParams.market ?? '';
+  const pre = marketMode === 'without';
+  const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, market: marketMode || undefined });
   const { data, isLoading } = useFetchCardsQuery(cardParams);
   const dispatch = useAppDispatch();
   // Games without year-deep data (no 12m forecasts, <12mo history) lose the
@@ -65,7 +66,9 @@ export default function Catalog() {
     if (get('pageNumber')) p.pageNumber = +get('pageNumber')!;
     if (get('pageSize')) p.pageSize = +get('pageSize')!;
     if (get('trend')) p.trend = get('trend')!;
-    if (get('prerelease')) p.prerelease = get('prerelease') === '1';
+    if (get('market')) p.market = ['without', 'all'].includes(get('market')!) ? get('market')! : '';
+    // Legacy pre-release links (2026-10-10's boolean) map onto the new mode.
+    if (get('prerelease') === '1') p.market = 'without';
     if (get('view')) p.view = get('view') === 'rows' ? 'rows' : 'cards';
     if (Object.keys(p).length) {
       dispatch(resetToDefaults());
@@ -107,7 +110,7 @@ export default function Catalog() {
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);
     if (cardParams.trend && cardParams.trend !== '1y') sp.trend = cardParams.trend;
-    if (cardParams.prerelease) sp.prerelease = '1';
+    if (cardParams.market) sp.market = cardParams.market;
     if (cardParams.view === 'rows') sp.view = 'rows';
     setSearchParams(sp, { replace: true });
   }, [cardParams, setSearchParams]);

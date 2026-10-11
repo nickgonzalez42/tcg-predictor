@@ -33,7 +33,7 @@ const initialState: CardParams = {
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
     // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
     trend: trendForSort(DEFAULT_ORDER) ?? '1y',
-    prerelease: false,
+    market: '',
     view: getInitialView(),
     quickAdd: getInitialQuickAdd()
 }
@@ -125,19 +125,21 @@ export const catalogSlice = createSlice({
         setTrend(state, action) {
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
         },
-        // Pre-release mode (2026-10-10): the unpriced half of the catalog,
-        // shown with predicted launch prices. Game-agnostic. The two modes
-        // have different set/rarity vocabularies, so those clear on a switch;
-        // entering moves the sort onto one the estimate can serve and drops
-        // the tier/confidence filters, which have nothing to key on there.
-        setPrerelease(state, action) {
-            const on = !!action.payload;
-            if (on === !!state.prerelease) return;
-            state.prerelease = on;
+        // Cards shown (2026-10-11): '' = with market price (default),
+        // 'without' = predicted-price cards only, 'all' = both at once.
+        // Game-agnostic. The modes have different set/rarity vocabularies,
+        // so those clear on a switch; 'without' has only the estimate to
+        // sort/filter on, so the sort snaps onto one it can serve and the
+        // tier/confidence filters drop.
+        setMarket(state, action) {
+            const mode = action.payload === 'without' || action.payload === 'all'
+                ? action.payload : '';
+            if (mode === (state.market ?? '')) return;
+            state.market = mode;
             state.sets = [];
             state.rarities = [];
             state.pageNumber = 1;
-            if (on) {
+            if (mode === 'without') {
                 if (!PRERELEASE_SORTS.includes(state.orderBy)) state.orderBy = 'priceDesc';
                 state.grade = '';
                 state.confidence = [];
@@ -162,4 +164,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setPrerelease, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setMarket, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
