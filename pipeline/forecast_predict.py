@@ -45,7 +45,15 @@ MODEL_VERSION = "forecast-deep-v4.5"  # v4.5 (2026-10-10 review): absolute-error
                                       # conformal bands, sqrt-t 1w bands, no img PCA
                                       # v4.2: cross-game market features
                                       # v4.1: confidence, set/age/drawdown, reasons
-HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
+# 3m added 2026-10-11 (user decision): the 1-month horizon is mostly event
+# noise the model can't call (its calibration shrinks most up-signal to
+# zero), while 6m/12m won't have graded cohorts until 2027. Three months is
+# the shortest horizon where trend beats noise AND the first cohort grades
+# fast (~mid-January). It ships SILENTLY: the site renders only 1m/6m/12m,
+# so 3m accrues a graded record first — same earn-before-display rollout as
+# the launch tier. Trains on full-rebuild nights only (TCG_FC_HORIZONS=1m
+# on the other nights, set in local_model_run.sh).
+HORIZONS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12}
 # (WEEK_FRACTION / the pro-rated 1w horizon removed 2026-08-14 — a true weekly
 # model arrives once the daily NM data matures, ~Oct 2026.)
 # bgs10/cgc10/sgc10 dropped 2026-08-01: their only source was the retired paid
