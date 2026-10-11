@@ -253,8 +253,10 @@ on each game's most recent sets as if they were unreleased, the typical miss fro
 (often 50–100% — these are ballpark, ranking-grade calls) is printed beside every estimate, and
 each estimate is archived and graded against the card's first two months of real trading. That
 graded record is published in the weekly report and feeds back into the next night's estimates.
-A card still unpriced two months after its release comes off the site; no estimate stays up
-longer than three months.</p>
+A card still unpriced two months after its release comes off the site (no estimate stays up
+longer than three months) — unless the rest of its set is actively trading: one unsold chase
+card in an otherwise priced set keeps its estimate until its first sale posts. The cutoffs
+exist to clear products that never actually released.</p>
 """
 PROSE["privacy"] = """
 <h1>Privacy Policy</h1>

@@ -66,10 +66,13 @@ export default function AboutPage() {
           card's first two months of real trading, so the pre-release calls carry a public track
           record of their own, published in the weekly report — and the model learns from it:
           each night's new estimates are adjusted by how its past calls graded, game by game and
-          rarity by rarity. The estimates are also deliberately short-lived. A card that still
-          has no market price two months after its release comes off the site, and no estimate
-          stays up longer than three months. Find them under the catalog's{" "}
-          <strong>Pre-release</strong> filter.
+          rarity by rarity. The estimates are also deliberately short-lived, with one exception.
+          A card that still has no market price two months after its release comes off the site,
+          and no estimate stays up longer than three months — unless the rest of the card's set
+          is actively trading. One unsold chase card in an otherwise fully priced set is a real
+          card the market just hasn't sold yet, so its estimate stays up until the first sale
+          posts; the cutoffs exist to clear products that never actually released. Find them
+          under the catalog's <strong>Pre-release</strong> filter.
         </p>
       </section>
 
