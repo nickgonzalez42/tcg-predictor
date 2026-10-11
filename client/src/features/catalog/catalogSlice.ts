@@ -2,7 +2,12 @@ import { createSlice } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
-export const DEFAULT_ORDER = 'chgUsd1mDesc';   // 1M $ growth: desc (2026-08-16)
+// 1Y $ growth: desc + the 1Y trend view (2026-10-11, user decision — the v4.5
+// calibration publishes most 1-month calls at ~0%, so a 1M default opened on
+// a wall of zeros; the year horizon is where the model actually calls growth).
+// Was 1M $ growth since 2026-08-16. Young games without year-deep data snap
+// to the 6M equivalent via the hasYear effect in Catalog.tsx.
+export const DEFAULT_ORDER = 'chgUsd12Desc';
 export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
