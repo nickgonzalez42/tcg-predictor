@@ -251,7 +251,10 @@ how its rarity has priced in the game's recent sets, what earlier cards of the s
 fetched at launch, the set's structure, its printed stats, and its artwork. The method is tested
 on each game's most recent sets as if they were unreleased, the typical miss from that test
 (often 50–100% — these are ballpark, ranking-grade calls) is printed beside every estimate, and
-each estimate is archived and graded against the card's first two months of real trading.</p>
+each estimate is archived and graded against the card's first two months of real trading. That
+graded record is published in the weekly report and feeds back into the next night's estimates.
+A card still unpriced two months after its release comes off the site; no estimate stays up
+longer than three months.</p>
 """
 PROSE["privacy"] = """
 <h1>Privacy Policy</h1>

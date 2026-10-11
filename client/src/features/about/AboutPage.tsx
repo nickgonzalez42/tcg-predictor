@@ -64,8 +64,12 @@ export default function AboutPage() {
           which is why they show a likely range and are framed in violet, never in the yellow of
           a market price. Every estimate is archived the day it is issued and graded against the
           card's first two months of real trading, so the pre-release calls carry a public track
-          record of their own. Find them under the catalog's <strong>Pre-release</strong>{" "}
-          filter.
+          record of their own, published in the weekly report — and the model learns from it:
+          each night's new estimates are adjusted by how its past calls graded, game by game and
+          rarity by rarity. The estimates are also deliberately short-lived. A card that still
+          has no market price two months after its release comes off the site, and no estimate
+          stays up longer than three months. Find them under the catalog's{" "}
+          <strong>Pre-release</strong> filter.
         </p>
       </section>
 
