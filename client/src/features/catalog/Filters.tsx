@@ -152,21 +152,6 @@ export default function Filters({ filtersData: data }: Props) {
                                     onChange={e => dispatch(setGame(e.target.value))}
                                 />
                             </div>
-                            {(pre || (data.prereleaseCount ?? 0) > 0) && (
-                                <div className="panel">
-                                    <span className="field-label">Cards shown</span>
-                                    <RadioButtonGroup
-                                        selectedValue={pre ? 'pre' : ''}
-                                        options={MARKET_OPTIONS}
-                                        onChange={e => dispatch(setPrerelease(e.target.value === 'pre'))}
-                                    />
-                                    <p className="est-note filters__note">
-                                        {pre
-                                            ? 'Upcoming and just-released cards with no sales yet, shown with a predicted launch price.'
-                                            : `${(data.prereleaseCount ?? 0).toLocaleString('en-US')} pre-release cards have a predicted price.`}
-                                    </p>
-                                </div>
-                            )}
                             <div className="panel">
                                 <MultiSelectDropdown
                                     label="Sets"
@@ -217,6 +202,24 @@ export default function Filters({ filtersData: data }: Props) {
                                         checked={printings}
                                         onChange={(items: string[]) => dispatch(setPrintings(items))}
                                     />
+                                </div>
+                            )}
+                            {/* Last panel in the rail (2026-10-11, user request): switching
+                                to pre-release swaps the whole list, so it reads as a mode
+                                at the end rather than another filter among the others. */}
+                            {(pre || (data.prereleaseCount ?? 0) > 0) && (
+                                <div className="panel">
+                                    <span className="field-label">Cards shown</span>
+                                    <RadioButtonGroup
+                                        selectedValue={pre ? 'pre' : ''}
+                                        options={MARKET_OPTIONS}
+                                        onChange={e => dispatch(setPrerelease(e.target.value === 'pre'))}
+                                    />
+                                    <p className="est-note filters__note">
+                                        {pre
+                                            ? 'Upcoming and just-released cards with no sales yet, shown with a predicted launch price.'
+                                            : `${(data.prereleaseCount ?? 0).toLocaleString('en-US')} pre-release cards have a predicted price.`}
+                                    </p>
                                 </div>
                             )}
                         </div>
