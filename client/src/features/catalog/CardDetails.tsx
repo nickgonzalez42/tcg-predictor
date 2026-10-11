@@ -18,7 +18,7 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 import { sanitizeHtml } from "../../lib/sanitizeHtml";
 import CardLoader from "../../app/shared/components/CardLoader";
 import Modal from "../../app/shared/components/Modal";
-import { releaseLabel } from "../../app/shared/components/PredictedPrice";
+import { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice";
 
 const HORIZONS = ['1m', '6m', '12m'];
 const HORIZON_LABEL: Record<string, string> = {
@@ -411,7 +411,11 @@ export default function CardDetails() {
                     <section className="panel detail-panel detail-prerelease">
                         <div className="detail-prerelease__head">
                             <span className="mono predicted__tag">Predicted</span>
-                            <h4 className="mono detail-panel__title">Pre-release · no market price yet</h4>
+                            <h4 className="mono detail-panel__title">
+                                {isUpcoming(card.releaseDate)
+                                    ? 'Pre-release · no market price yet'
+                                    : 'Released · awaiting first sales'}
+                            </h4>
                         </div>
                         <div className="detail-prerelease__pricerow">
                             <span className="detail-prerelease__price">{currencyFormat(card.predictedPrice)}</span>

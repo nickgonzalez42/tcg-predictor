@@ -35,6 +35,20 @@ export default function PredictedPrice({ price, low, high, compact, releaseDate 
     );
 }
 
+// True while the card's set hasn't released yet — the real "pre-release"
+// state. False once the date passes (or is missing): released, just without
+// a recorded sale yet (e.g. an unsold chase card), which labels differently.
+export function isUpcoming(iso?: string): boolean {
+    if (!iso) return false;
+    const d = new Date(iso.slice(0, 10) + 'T00:00:00');
+    if (isNaN(d.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Release day counts as upcoming: the label beside it says "Releases
+    // today", and first sales won't have posted yet anyway.
+    return d.getTime() >= today.getTime();
+}
+
 // "Releases Oct 16 · in 6 days" / "Released Oct 9 · no market price yet".
 export function releaseLabel(iso?: string, short = false): string {
     if (!iso) return '';

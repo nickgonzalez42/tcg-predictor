@@ -1132,7 +1132,8 @@ def run_game(game, prep, pc, today, out, dry_run=False):
         rows.append((game, int(c["pid"]), "", _iso(c["rel"]), today.isoformat(),
                      round(pred, 2), round(low, 2), round(high, 2), conf,
                      reason_text(c, Xc.iloc[i], label, len(lab), val, miss_pct, within,
-                                 adj=float(adj[i]), n_graded=live["n"] if live else 0),
+                                 adj=float(adj[i]), n_graded=live["n"] if live else 0,
+                                 released=c["rel"] <= today),
                      MODEL_VERSION, int(len(lab)), len(val["sets"]) if val else 0,
                      miss_pct, within, now_iso))
     if dry_run:
@@ -1151,7 +1152,8 @@ def run_game(game, prep, pc, today, out, dry_run=False):
     return len(rows)
 
 
-def reason_text(c, x, label, n_train, val, miss_pct, within, adj=0.0, n_graded=0):
+def reason_text(c, x, label, n_train, val, miss_pct, within, adj=0.0, n_graded=0,
+                released=False):
     bits = [f"{c['rarity']} in a {int(c['set_size'])}-card set"]
     rn = x.get("root_prior_n")
     if rn is not None and np.isfinite(rn) and rn >= 3 and np.isfinite(x.get("root_prior_med", np.nan)):
@@ -1167,7 +1169,12 @@ def reason_text(c, x, label, n_train, val, miss_pct, within, adj=0.0, n_graded=0
         how = ("" if not np.isfinite(gap) or abs(gap) < 0.1
                else f", {abs(gap) * 100:.0f}% {'above' if gap > 0 else 'below'} the game's recent sets")
         bits.append(f"the set's booster box trades around ${math.exp(x['box_log']):,.0f}{how}")
-    txt = ("Pre-release estimate from the card itself (no sales yet): " + "; ".join(bits) + ". ")
+    # Two states, one model (2026-10-11, user request): an upcoming set is a
+    # pre-release call; a released card with no recorded sale yet (an unsold
+    # chase card) says so instead of pretending the set hasn't landed.
+    lead = ("Pre-release estimate from the card itself (no sales yet): " if not released else
+            "This card is out but hasn't recorded a sale yet — estimated from what the card is: ")
+    txt = lead + "; ".join(bits) + ". "
     if val:
         txt += (f"Tested on the last {len(val['sets'])} {label} sets, this method's typical miss "
                 f"was about {miss_pct}%, with {within}% of cards landing within ±50%. ")

@@ -8,7 +8,7 @@ import { tierLabel } from "../watchlist/grades"
 import ChangePill from "../../app/shared/components/ChangePill"
 import Sparkline from "../../app/shared/components/Sparkline"
 import PricePair from "../../app/shared/components/PricePair"
-import PredictedPrice, { releaseLabel } from "../../app/shared/components/PredictedPrice"
+import PredictedPrice, { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice"
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { useUserInfoQuery } from "../account/accountApi";
 
@@ -43,13 +43,22 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
 
     // Pre-release (2026-10-10): no market price yet — a distinct tile (violet
     // dashed frame + ribbon) carrying the predicted launch price and release
-    // date where the price, trend and sparkline would be.
+    // date where the price, trend and sparkline would be. Two states share
+    // the treatment but label differently (2026-10-11, user request): a set
+    // that hasn't released yet is "Pre-release"; a released card the market
+    // just hasn't sold yet (an unsold chase card) is "Awaiting sales".
     const pre = !!card.isPrerelease;
+    const upcoming = pre && isUpcoming(card.releaseDate);
 
     return (
         <div className={`card${quick ? ' card--quick' : ''}${pre ? ' card--prerelease' : ''}`}>
             <div className="media__container" ref={mediaRef}>
-                {pre && <span className="card__ribbon mono" aria-label="Pre-release card">Pre-release</span>}
+                {pre && (
+                    <span className={`card__ribbon mono${upcoming ? '' : ' card__ribbon--waiting'}`}
+                        aria-label={upcoming ? 'Pre-release card' : 'Released card awaiting its first sales'}>
+                        {upcoming ? 'Pre-release' : 'Awaiting sales'}
+                    </span>
+                )}
                 <Link to={detailPath} style={{ display: 'block' }}>
                     <img
                         className="card__media"

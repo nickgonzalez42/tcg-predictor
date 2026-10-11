@@ -8,7 +8,7 @@ import TrackButton from "../watchlist/TrackButton";
 import QuickAdd from "../watchlist/QuickAdd";
 import { tierLabel } from "../watchlist/grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
-import PredictedPrice, { releaseLabel } from "../../app/shared/components/PredictedPrice";
+import PredictedPrice, { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice";
 
 type Props = {
     cards: Card[]
@@ -78,7 +78,9 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                 </td>
                                 <td className="screener__mid">
                                     {card.isPrerelease
-                                        ? <span className="mono screener__muted" title="No forecast until the card has a market price">pre-release</span>
+                                        ? <span className="mono screener__muted" title="No forecast until the card has a market price">
+                                            {isUpcoming(card.releaseDate) ? 'pre-release' : 'awaiting sales'}
+                                          </span>
                                         : <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />}
                                 </td>
                                 <td className="screener__mid">
