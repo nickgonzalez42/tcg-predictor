@@ -24,6 +24,16 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
+        // Belt and braces: NOTHING a cache warmer does may stop the host.
+        try { await WarmAsync(ct); }
+        catch (Exception e) when (!ct.IsCancellationRequested)
+        {
+            logger.LogWarning("warmup aborted: {Err}", e.Message);
+        }
+    }
+
+    private async Task WarmAsync(CancellationToken ct)
+    {
         // ApplicationStarted is a CancellationToken: Register fires
         // immediately if the app is already up, so this never deadlocks.
         var started = new TaskCompletionSource();
@@ -39,7 +49,9 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
         var baseUrl = address.Replace("[::]", "127.0.0.1")
                              .Replace("0.0.0.0", "127.0.0.1")
                              .Replace("+", "127.0.0.1");
-        using var http = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(3) };
+        // 10 min: a warmup that outlives this is slow, not broken — and a
+        // warmup timeout must NEVER become a host stop (see catch below).
+        using var http = new HttpClient { BaseAddress = new Uri(baseUrl), Timeout = TimeSpan.FromMinutes(10) };
         foreach (var p in Paths)
         {
             if (ct.IsCancellationRequested) return;
@@ -50,7 +62,14 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
                 logger.LogInformation("warmup {Path}: {Status} in {Secs:F1}s",
                                       p, (int)r.StatusCode, (DateTime.UtcNow - t0).TotalSeconds);
             }
-            catch (Exception e) when (e is not OperationCanceledException)
+            // 2026-10-11 outage: HttpClient's TIMEOUT throws TaskCanceled-
+            // Exception — an OperationCanceledException — so the old filter
+            // (`is not OperationCanceledException`, meant for host shutdown)
+            // let it escape, and BackgroundServiceExceptionBehavior=StopHost
+            // killed the API: a slow movers recompute became a crash loop
+            // (boot → warmup times out → host stops → colder boot → slower
+            // recompute → ...). Only a genuine shutdown may pass through.
+            catch (Exception e) when (!ct.IsCancellationRequested)
             {
                 logger.LogWarning("warmup {Path} failed: {Err}", p, e.Message);
             }
