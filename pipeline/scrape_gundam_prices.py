@@ -334,6 +334,16 @@ def main():
             matched_ids.add(hit["product_id"])
             matched_rows.append((prod, hit, slug))
 
+    # Nothing scraped at all = the HOST is unreachable (the 2026-10-11 403
+    # block), not "this game has no prices". Writing the header-only CSV
+    # that would follow destroys the last good scrape, so leave the file
+    # alone and let the next run refresh it.
+    if not found_consoles:
+        print(f"[gundam] no console page returned products "
+              f"({'host blocked' if blocked() else 'all slugs missing'}) — "
+              f"leaving {os.path.basename(OUT_CSV)} untouched", file=sys.stderr)
+        return
+
     # Emit the bulk-format CSV (atomically), tcg-id = our matched product_id.
     tmp = OUT_CSV + ".tmp"
     with open(tmp, "w", newline="") as f:

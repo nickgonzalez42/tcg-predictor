@@ -21,6 +21,7 @@ import os
 import re
 import sqlite3
 import ssl
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -63,7 +64,34 @@ def rows_from_chart(game, product_id, chart):
     return out
 
 
+# Circuit breaker (2026-10-12): PriceCharting answers 403 to everything when
+# it blocks us. A 403 already returns without retrying, but the crawl would
+# still walk its whole 12,000-page rotation one polite second at a time — an
+# hour of guaranteed failures that delays the data push. After this many
+# consecutive hard blocks the remaining targets are skipped; they stay
+# uncrawled, so the next run picks them up unchanged. Any success resets it.
+BLOCK_CODES = (403, 429)
+BLOCK_LIMIT = 25
+_block_streak = 0
+_block_lock = threading.Lock()
+
+
+def _note_block(code):
+    """Returns True once the host looks blocked (call with None on success)."""
+    global _block_streak
+    with _block_lock:
+        _block_streak = _block_streak + 1 if code in BLOCK_CODES else 0
+        return _block_streak >= BLOCK_LIMIT
+
+
+def host_blocked():
+    with _block_lock:
+        return _block_streak >= BLOCK_LIMIT
+
+
 def fetch_one(game, product_id, pc_id, delay):
+    if host_blocked():
+        return product_id, None, "host blocked"
     if delay:
         time.sleep(delay)
     patient = bool(os.environ.get("TCG_PATIENT"))
@@ -72,13 +100,15 @@ def fetch_one(game, product_id, pc_id, delay):
         attempt += 1
         try:
             chart = fetch_chart(pc_id)
+            _note_block(None)          # a real response clears the streak
             if not chart:
                 return product_id, None, "no chart_data"
             return product_id, rows_from_chart(game, product_id, chart), None
         except urllib.error.HTTPError as e:
-            if e.code == 429:          # rate limited: back off and retry
-                time.sleep(20 * attempt)
+            if e.code == 429 and not _note_block(e.code):
+                time.sleep(20 * attempt)   # rate limited: back off and retry
                 continue
+            _note_block(e.code)
             return product_id, None, f"HTTP {e.code}"
         except Exception as e:
             # No response at all = network trouble. In patient mode (multi-day
@@ -149,6 +179,7 @@ def gather_targets(game, conn, resume, limit, refresh_days):
 
 def scrape_targets(conn, targets, workers, delay):
     ok = fail = total_rows = 0
+    announced = False
     per_game = {}
     err_samples = {}
     t0 = time.time()
@@ -184,6 +215,11 @@ def scrape_targets(conn, targets, workers, delay):
                 eta = (len(targets) - i) / rate / 3600 if rate else 0
                 print(f"  {i}/{len(targets)} ok={ok} fail={fail} rows={total_rows} "
                       f"| {rate:.1f}/s ETA {eta:.1f}h", flush=True)
+            if host_blocked() and not announced:
+                announced = True
+                print(f"  PriceCharting blocked us ({BLOCK_LIMIT} refusals in a row) — "
+                      f"skipping the remaining {len(targets) - i:,} page(s); they stay "
+                      f"uncrawled for the next run.", flush=True)
     conn.commit()
     for game, g in sorted(per_game.items()):
         print(f"[{game}] done: ok={g['ok']} fail={g['fail']} rows={g['rows']}", flush=True)
