@@ -21,6 +21,7 @@ import html as htmllib
 import os
 import re
 import ssl
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -84,20 +85,61 @@ CANDIDATES["gundam-starter-deck-03-zeon-s-rush"] = ["Starter Deck 03: Zeon's Rus
 CANDIDATES["gundam-zeon-s-rush"] = ["Starter Deck 03: Zeon's Rush"]
 
 
+# Circuit breaker (2026-10-11/12): when PriceCharting blocks us outright it
+# answers 403 to EVERY request, and the retry ladder below turns that into
+# ~10s of sleeps per URL — the 2026-10-11 nightly spent 4.5h fetching 0 of
+# 20,147 drain pages, and the 2026-10-12 sweep spent 235 min scraping 0 of
+# 1,218 consoles. After BLOCK_LIMIT consecutive hard blocks every later
+# fetch in the process returns immediately, so a blocked night costs
+# seconds and the steps that depend on PriceCharting simply no-op. Any
+# success resets it. Callers need no change: they already treat a non-200
+# as "no data" and carry their work over to the next run.
+BLOCK_CODES = (403, 429)
+BLOCK_LIMIT = 25
+_blocked_streak = 0
+_blocked_announced = False
+
+
+def blocked():
+    """True once the host has hard-blocked BLOCK_LIMIT requests in a row."""
+    return _blocked_streak >= BLOCK_LIMIT
+
+
+def _note(code):
+    """Track consecutive hard blocks; any other outcome clears the streak."""
+    global _blocked_streak, _blocked_announced
+    if code in BLOCK_CODES:
+        _blocked_streak += 1
+        if _blocked_streak == BLOCK_LIMIT and not _blocked_announced:
+            _blocked_announced = True
+            print(f"PriceCharting has returned {code} to {BLOCK_LIMIT} requests in a row — "
+                  f"treating the host as blocked and skipping the rest of this step "
+                  f"(work carries over to the next run).", file=sys.stderr, flush=True)
+    else:
+        _blocked_streak = 0
+
+
 def fetch(url, tries=4):
     """GET with a polite delay. Retry transient failures (429, 5xx, connection
     resets, timeouts) with backoff so a blip isn't mistaken for the end of a
-    console's pages. 404 returns immediately (genuinely no such page)."""
+    console's pages. 404 returns immediately (genuinely no such page), and a
+    sustained block short-circuits every later call (see the breaker above)."""
+    if blocked():
+        return 403, ""
     for attempt in range(tries):
         time.sleep(DELAY * (attempt + 1))          # 1s, then back off: 2s, 3s, 4s
         req = urllib.request.Request(url, headers={"User-Agent": UA})
         try:
             with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as r:
+                _note(r.status)
                 return r.status, r.read().decode("utf-8", errors="ignore")
         except urllib.error.HTTPError as e:
-            if e.code == 404 or attempt == tries - 1:
+            # A hard block is not transient: stop retrying this URL at once,
+            # and let the streak decide whether the whole step gives up.
+            if e.code == 404 or e.code in BLOCK_CODES or attempt == tries - 1:
+                _note(e.code)
                 return e.code, ""
-            # 429 / 5xx: transient — fall through and retry
+            # 5xx: transient — fall through and retry
         except (urllib.error.URLError, TimeoutError, OSError):
             if attempt == tries - 1:
                 return 0, ""                        # network error: signal non-200
