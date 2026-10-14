@@ -180,9 +180,15 @@ STEPS = [
     # Thursday run crawls never-crawled pages only (no --refresh-days), so
     # new cards still get their first graded series within the week. The
     # per-game floor on the --total-limit cut lives in the scraper itself.
+    # Workers 3 -> 2 on the full night (2026-10-13): Cloudflare rate-blocked
+    # the crawl for ~2 days after the 10-11 one-off extras (sealed boxes,
+    # console discovery/sweep, link-drain backlog) stacked onto the 3-worker
+    # rotation. ~2 req/s sustained instead of ~3 costs the Sunday run an hour
+    # but keeps the steady state well inside what months of crawling showed
+    # PC tolerates. The circuit breaker caps the damage if a block recurs.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
                        "--delay", "1.0"]
-                      + (["--refresh-days", "30", "--workers", "3",
+                      + (["--refresh-days", "30", "--workers", "2",
                           "--limit", "4000", "--total-limit", "12000"]
                          if datetime.now(timezone.utc).weekday() in (0, 1)
                          else ["--workers", "1", "--total-limit", "1500"])),
