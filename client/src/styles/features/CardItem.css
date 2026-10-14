@@ -341,3 +341,50 @@
   color: var(--up);
   font-weight: 700;
 }
+
+/* Foil sweep (2026-10-14, user request): a one-shot holographic sheen that
+   crosses the art once, quickly, on hover. Pure CSS: the band exists only
+   while the animation runs (opacity 0 at rest), movement is transform-only,
+   and it never captures the pointer. A fresh hover replays it. Scoped to the
+   image link so the ribbon and the signed-in reveal rotator are untouched. */
+.card__media-link {
+    position: relative;
+    display: block;
+    overflow: hidden;
+}
+.card__media-link::after {
+    content: "";
+    position: absolute;
+    top: -25%;
+    left: 0;
+    width: 55%;
+    height: 150%;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(-130%) rotate(14deg);
+    background: linear-gradient(105deg,
+        transparent 10%,
+        rgba(255, 119, 115, 0.35) 28%,
+        rgba(255, 237, 95, 0.35) 40%,
+        rgba(168, 255, 95, 0.33) 50%,
+        rgba(131, 255, 247, 0.33) 60%,
+        rgba(120, 148, 255, 0.35) 72%,
+        transparent 90%);
+    mix-blend-mode: color-dodge;
+}
+.media__container:hover .card__media-link::after {
+    animation: foil-sweep 0.65s ease-out 1 both;
+}
+@keyframes foil-sweep {
+    0%   { opacity: 0; transform: translateX(-130%) rotate(14deg); }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { opacity: 0; transform: translateX(330%) rotate(14deg); }
+}
+/* Touch has no real hover; reduced motion means no sweep at all. */
+@media (hover: none) and (pointer: coarse) {
+    .media__container:hover .card__media-link::after { animation: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .media__container:hover .card__media-link::after { animation: none; }
+}

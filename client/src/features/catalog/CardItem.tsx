@@ -59,7 +59,7 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
                         {upcoming ? 'Pre-release' : 'Awaiting sales'}
                     </span>
                 )}
-                <Link to={detailPath} style={{ display: 'block' }}>
+                <Link to={detailPath} className="card__media-link">
                     <img
                         className="card__media"
                         style={{ width: '100%', objectFit: 'contain' }}
