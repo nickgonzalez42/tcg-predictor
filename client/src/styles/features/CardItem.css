@@ -342,49 +342,51 @@
   font-weight: 700;
 }
 
-/* Foil sweep (2026-10-14, user request): a one-shot holographic sheen that
-   crosses the art once, quickly, on hover. Pure CSS: the band exists only
-   while the animation runs (opacity 0 at rest), movement is transform-only,
-   and it never captures the pointer. A fresh hover replays it. Scoped to the
-   image link so the ribbon and the signed-in reveal rotator are untouched. */
+/* Foil sweep (2026-10-14, user request): a one-shot holographic glare that
+   crosses the art once, quickly, when the tile is hovered. Catalog page only
+   for now (scoped under .catalog-items). Plain gradient, no blend mode: the
+   first cut used color-dodge at low alpha, which is invisible over dark art.
+   The band exists only while the animation runs (opacity 0 at rest), moves by
+   transform only, never captures the pointer, and replays on a fresh hover.
+   Scoped to the image link so the ribbon and reveal rotator are untouched. */
 .card__media-link {
     position: relative;
     display: block;
     overflow: hidden;
+    border-radius: var(--radius);   /* clip the sweep to the art's corners */
 }
-.card__media-link::after {
+.catalog-items .card__media-link::after {
     content: "";
     position: absolute;
-    top: -25%;
+    top: -30%;
     left: 0;
-    width: 55%;
-    height: 150%;
+    width: 70%;
+    height: 160%;
     opacity: 0;
     pointer-events: none;
-    transform: translateX(-130%) rotate(14deg);
+    transform: translateX(-120%) rotate(16deg);
     background: linear-gradient(105deg,
-        transparent 10%,
-        rgba(255, 119, 115, 0.35) 28%,
-        rgba(255, 237, 95, 0.35) 40%,
-        rgba(168, 255, 95, 0.33) 50%,
-        rgba(131, 255, 247, 0.33) 60%,
-        rgba(120, 148, 255, 0.35) 72%,
-        transparent 90%);
-    mix-blend-mode: color-dodge;
+        transparent 8%,
+        rgba(255, 110, 110, 0.30) 25%,
+        rgba(255, 233, 120, 0.34) 38%,
+        rgba(255, 255, 255, 0.42) 50%,
+        rgba(120, 255, 200, 0.32) 62%,
+        rgba(130, 160, 255, 0.30) 78%,
+        transparent 92%);
 }
-.media__container:hover .card__media-link::after {
-    animation: foil-sweep 0.65s ease-out 1 both;
+.catalog-items .card:hover .card__media-link::after {
+    animation: foil-sweep 0.7s ease-in-out 1 both;
 }
 @keyframes foil-sweep {
-    0%   { opacity: 0; transform: translateX(-130%) rotate(14deg); }
-    20%  { opacity: 1; }
-    80%  { opacity: 1; }
-    100% { opacity: 0; transform: translateX(330%) rotate(14deg); }
+    0%   { opacity: 0; transform: translateX(-120%) rotate(16deg); }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { opacity: 0; transform: translateX(290%) rotate(16deg); }
 }
 /* Touch has no real hover; reduced motion means no sweep at all. */
 @media (hover: none) and (pointer: coarse) {
-    .media__container:hover .card__media-link::after { animation: none; }
+    .catalog-items .card:hover .card__media-link::after { animation: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-    .media__container:hover .card__media-link::after { animation: none; }
+    .catalog-items .card:hover .card__media-link::after { animation: none; }
 }
