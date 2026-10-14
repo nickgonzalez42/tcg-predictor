@@ -626,13 +626,12 @@ def prerelease_report(pred):
         return out
 
     out.append("<h3>Pre-release estimates</h3>")
-    out.append("<p>Cards that haven't started trading yet — presale sets and "
-               "brand-new releases — carry a predicted launch price built only "
-               "from what the card is. Those predictions are held to the same "
-               "standard as everything else on this page: each one is archived "
-               "the day it's published and graded against the card's first two "
-               "months of real trading, and the model adjusts its next "
-               "estimates by how its past ones graded.</p>")
+    out.append("<p>No sales yet, no problem: presale and just-released cards "
+               "carry a predicted launch price built from nothing but what the "
+               "card is. Those predictions live by the same rules as everything "
+               "else on this page — each one is archived the day it's published, "
+               "graded against the card's first two months of real trading, and "
+               "fed back into the next batch of estimates.</p>")
 
     if graded:
         by_game = {}
@@ -969,14 +968,16 @@ def build_report(force=False, as_of=None):
     ups, downs = len(gains), len(losses)
     avg_gain = statistics.mean(gains) if gains else 0.0
     avg_loss = statistics.mean(losses) if losses else 0.0
-    breadth = "more gainers than losers" if ups > downs else \
-              "more losers than gainers" if downs > ups else "an even split"
+    breadth = "a gainers' week" if ups > downs else \
+              "a losers' week" if downs > ups else "a dead-even week"
 
     title = f"Weekly Market Report — {today.strftime('%B %-d, %Y')}"
     slug = f"weekly-market-report-{today.isoformat()}"
-    summary = (f"The card market showed {breadth} this week: of {n:,} cards priced "
-               f"at both ends of the window, {ups:,} rose an average of {avg_gain:.1f}% "
-               f"and {downs:,} fell an average of {abs(avg_loss):.1f}%.")
+    # Fallback lede when the editorial call fails (docs/VOICE.md: cold-open
+    # with the numbers, prices in motion). Doubles as the meta description.
+    summary = (f"{ups:,} cards climbed, {downs:,} slipped — {breadth} across the "
+               f"{n:,} cards priced at both ends of the window. The climbers "
+               f"averaged +{avg_gain:.1f}%; the fallers gave back {abs(avg_loss):.1f}%.")
 
     # Trends are computed per game and each game is discussed exactly ONCE.
     # Individual cards never get their own table — they appear only as linked
@@ -1094,9 +1095,9 @@ def build_report(force=False, as_of=None):
         # and trendlines carry the exact counts); templated otherwise.
         game_para = prose.get("games", {}).get(game)
         if not game_para:
-            game_para = (f"{gups:,} of {len(moves):,} tracked cards rose this week "
-                         f"(up an average of {gavg_gain:.1f}%); {gdowns:,} fell "
-                         f"(down an average of {abs(gavg_loss):.1f}%).")
+            game_para = (f"{gups:,} of {len(moves):,} tracked cards climbed this "
+                         f"week, averaging +{gavg_gain:.1f}%; {gdowns:,} slipped, "
+                         f"giving back {abs(gavg_loss):.1f}% on average.")
         body.append(
             "<details class='report-game-sec'>"
             f"<summary><strong>{esc(GAMES[game]['label'])}</strong>"
@@ -1119,8 +1120,8 @@ def build_report(force=False, as_of=None):
         else:
             bt = max(moves, key=lambda m: m[4])
             wt = min(moves, key=lambda m: m[4])
-            body.append("<p>No group-wide trend stood out this week — movement was "
-                        f"scattered. The outliers: {card_link(game, bt[0], bt[1], bt[5] if len(bt) > 5 else '')} "
+            body.append("<p>No group moved as one this week — the action was "
+                        f"scattered. The outliers tell the story: {card_link(game, bt[0], bt[1], bt[5] if len(bt) > 5 else '')} "
                         f"({pct(bt[4])}) and {card_link(game, wt[0], wt[1], wt[5] if len(wt) > 5 else '')} ({pct(wt[4])}).</p>")
         body.append("</details>")
 
@@ -1132,7 +1133,7 @@ def build_report(force=False, as_of=None):
         # harmlessly.
         body.append("<div class='report-model-corner'>"
                     "<h2>Model corner</h2>"
-                    "<p>The cards our 1-month model is most optimistic about right now:</p>"
+                    "<p>The climbs the model is most confident in this month:</p>"
                     "<table class='report-table'>"
                     "<thead><tr><th>Card</th><th>Current</th><th>1M forecast</th><th>Implied</th></tr></thead><tbody>")
         for game, pid, name, base, fcst, printing in picks:
