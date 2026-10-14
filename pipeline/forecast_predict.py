@@ -1148,71 +1148,133 @@ def main():
     total_seg = len(games) * len(TARGETS)
     done_seg = 0
     print(f"[forecast] plan: {len(games)} games x {len(TARGETS)} tiers = {total_seg} segments", flush=True)
-    all_rows = []
+    # Per-game compute -> gate -> write (2026-10-13): the old flow collected
+    # every game's rows in one list and wrote once at the end — ~2M tuples
+    # (~1.4GB of Python objects) once the 3m horizon landed, which pushed the
+    # 8GB build machine into swap thrash (the 2026-10-12 weekly spent 18h in
+    # this step at 22% CPU, 15 segments in 14h). Each game now publishes and
+    # releases its rows before the next game trains: peak memory is one game,
+    # not the whole run, and each game commits in its own transaction, so a
+    # crash mid-run keeps every finished game and rolls back the partial one.
+    out_db = args.db or OUT_DB
+    conn = sqlite3.connect(out_db, timeout=60)
+
+    # Previous per-(game,target) row counts, read BEFORE any write: every
+    # game's publish gate compares against the table as the run found it.
+    # Horizon-limited runs compare like for like: a 1m-only night produces a
+    # quarter of a full run's rows, which would trip the collapse ratio
+    # against an all-horizons baseline.
+    h_where, h_args = "", ()
+    if subset:
+        h_where = f" WHERE horizon IN ({','.join('?' * len(horizons))})"
+        h_args = tuple(horizons)
+    prev = {}
+    if not args.as_of:
+        try:
+            prev = dict(((g, t), n) for g, t, n in conn.execute(
+                f"SELECT game, target, COUNT(*) FROM forecasts{h_where} "
+                "GROUP BY game, target", h_args))
+        except sqlite3.OperationalError:
+            prev = {}   # first run against this DB: nothing to protect
+
+    wrote = archived = 0
+    gated = []
     for game in games:
+        rows = []
         for target in TARGETS:
             done_seg += 1
             try:
-                all_rows += forecast_game_target(game, target, now, args.as_of, horizons)
+                rows += forecast_game_target(game, target, now, args.as_of, horizons)
             except Exception as e:
                 print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}", flush=True)
             # Parseable progress for the dashboard (counts every segment, so it
             # reaches N/N even when a young-game tier is skipped without rows).
             print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)
 
-    out_db = args.db or OUT_DB
-    conn = sqlite3.connect(out_db, timeout=60)
+        if args.as_of:
+            # Backtest: archive-only. The live forecasts table keeps serving
+            # the real current forecasts; only the append-only history grows.
+            archive(conn, rows)
+            conn.commit()
+            archived += len(rows)
+            continue
+
+        # Publish gate, per game: segment failures are swallowed above
+        # (SKIPPED) so one bad tier can't kill the run — but a systemic
+        # failure (missing cards CSV, corrupt embedding file) would surface
+        # as segments skipping, and rebuilding from the survivors would
+        # silently wipe tiers off the site with exit 0. Per (game, target),
+        # not per game: 2026-08-02 a single crashed segment (magic/ungraded —
+        # the game's headline tier and the movers' input) shipped because
+        # magic still had graded rows. If a tier that had a real presence now
+        # has none, or the game's total collapsed, THIS game keeps its old
+        # rows; other games still publish, and the run exits nonzero at the
+        # end so the night is flagged (a flagged night never pushes to prod).
+        checked = {k: n for k, n in prev.items()
+                   if k[0] == game and (args.game or k[1] in TARGETS)}
+        if checked:
+            new_counts = {}
+            for r in rows:
+                k = (r[0], r[2])
+                new_counts[k] = new_counts.get(k, 0) + 1
+            gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
+            total_prev = sum(checked.values())
+            total_new = sum(new_counts.get(k, 0) for k in checked)
+            if gone or total_new < total_prev * 0.5:
+                print(f"[forecast] PUBLISH GATE [{game}]: refusing to replace — "
+                      f"tiers with no rows: {[t for _, t in gone] or 'none'}; "
+                      f"rows {total_new} vs {total_prev} previous. This game's "
+                      f"existing forecasts left untouched.", flush=True)
+                gated.append(game)
+                continue
+
+        write_game(conn, game, rows, subset, horizons)
+        wrote += len(rows)
+        print(f"[forecast] [{game}] published {len(rows)} rows", flush=True)
+
     if args.as_of:
-        # Backtest: archive-only. The live forecasts table keeps serving the
-        # real current forecasts; only the append-only history gains rows.
-        archive(conn, all_rows)
-        conn.commit()
         conn.close()
-        print(f"\nbacktest {args.as_of}: {len(all_rows)} theoretical forecast(s) "
+        print(f"\nbacktest {args.as_of}: {archived} theoretical forecast(s) "
               f"archived -> {os.path.normpath(out_db)}")
         return
-    # Publish gate: segment failures are swallowed above (SKIPPED) so one bad
-    # game can't kill the whole run — but a systemic failure (missing cards
-    # CSV, corrupt embedding file) would surface as most segments skipping,
-    # and rebuilding from the survivors would silently wipe games off the
-    # site with exit 0. Refuse to publish if a game that had forecasts now
-    # has none, or the total collapsed; the old table keeps serving.
-    # Horizon-limited runs compare like for like: a 1m-only night produces a
-    # third of a full run's rows, which would trip the collapse ratio against
-    # an all-horizons baseline.
-    h_where, h_args = "", ()
-    if subset:
-        h_where = f" WHERE horizon IN ({','.join('?' * len(horizons))})"
-        h_args = tuple(horizons)
-    try:
-        prev = dict(((g, t), n) for g, t, n in conn.execute(
-            f"SELECT game, target, COUNT(*) FROM forecasts{h_where} "
-            "GROUP BY game, target", h_args))
-    except sqlite3.OperationalError:
-        prev = {}   # first run against this DB: nothing to protect
-    checked = ({k: n for k, n in prev.items() if k[0] in games} if args.game
-               else {k: n for k, n in prev.items() if k[1] in TARGETS})
-    if checked:
-        new_counts = {}
-        for r in all_rows:
-            k = (r[0], r[2])
-            new_counts[k] = new_counts.get(k, 0) + 1
-        # Per (game, target), not per game: 2026-08-02 a single crashed segment
-        # (magic/ungraded — the game's headline tier and the movers' input)
-        # shipped because magic still had graded rows. Any segment that had a
-        # real presence and now returns nothing blocks the publish.
-        gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
-        total_prev = sum(checked.values())
-        total_new = sum(new_counts.get(k, 0) for k in checked)
-        if gone or total_new < total_prev * 0.5:
-            print(f"[forecast] PUBLISH GATE: refusing to rebuild — segments with "
-                  f"no rows: {[f'{g}/{t}' for g, t in gone] or 'none'}; rows "
-                  f"{total_new} vs {total_prev} previous. Existing forecasts "
-                  f"left untouched.", flush=True)
-            conn.close()
-            raise SystemExit(1)
 
-    schema = """
+    if not args.game:
+        # The old full-run DROP also cleared games retired from priced_games();
+        # per-game deletes don't, so sweep them — scoped to the run's horizons
+        # on a limited night (other horizons' standing rows must survive).
+        ph = ",".join("?" * len(games))
+        if subset:
+            hp = ",".join("?" * len(horizons))
+            cur = conn.execute(f"DELETE FROM forecasts WHERE horizon IN ({hp}) "
+                               f"AND game NOT IN ({ph})",
+                               tuple(horizons) + tuple(games))
+        else:
+            cur = conn.execute(f"DELETE FROM forecasts WHERE game NOT IN ({ph})",
+                               tuple(games))
+        if cur.rowcount > 0:
+            print(f"[forecast] swept {cur.rowcount} rows from retired games", flush=True)
+        conn.commit()
+    conn.close()
+    print(f"\nwrote {wrote} rows -> {os.path.normpath(out_db)} (forecasts)")
+    if gated:
+        raise SystemExit(f"publish gate tripped for: {', '.join(gated)}")
+
+
+def write_game(conn, game, rows, subset, horizons):
+    """Replace one game's forecast rows in a single transaction."""
+    conn.executescript(SCHEMA)
+    if subset:
+        conn.executemany("DELETE FROM forecasts WHERE game = ? AND horizon = ?",
+                         [(game, h) for h in horizons])
+    else:
+        conn.execute("DELETE FROM forecasts WHERE game = ?", (game,))
+    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES "
+                     "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    archive(conn, rows)
+    conn.commit()
+
+
+SCHEMA = """
         CREATE TABLE IF NOT EXISTS forecasts (
             game TEXT NOT NULL, product_id INTEGER NOT NULL,
             target TEXT NOT NULL, horizon TEXT NOT NULL,
@@ -1225,29 +1287,6 @@ def main():
             PRIMARY KEY (game, product_id, printing, target, horizon)
         );
         """
-    if args.game:
-        # Partial rerun: replace only the requested games' rows (and only the
-        # run's horizons when limited).
-        conn.executescript(schema)
-        if subset:
-            conn.executemany("DELETE FROM forecasts WHERE game = ? AND horizon = ?",
-                             [(g, h) for g in games for h in horizons])
-        else:
-            conn.executemany("DELETE FROM forecasts WHERE game = ?", [(g,) for g in games])
-    elif subset:
-        # Horizon-limited full run: replace those horizons' rows only. The
-        # standing 6m/12m (and launch1m) forecasts must survive a 1m-only
-        # Thursday or the site would lose them until Sunday.
-        conn.executescript(schema)
-        conn.executemany("DELETE FROM forecasts WHERE horizon = ?",
-                         [(h,) for h in horizons])
-    else:
-        conn.executescript("DROP TABLE IF EXISTS forecasts;" + schema)
-    conn.executemany("INSERT OR REPLACE INTO forecasts VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", all_rows)
-    archive(conn, all_rows)
-    conn.commit()
-    conn.close()
-    print(f"\nwrote {len(all_rows)} rows -> {os.path.normpath(out_db)} (forecasts)")
 
 
 if __name__ == "__main__":
