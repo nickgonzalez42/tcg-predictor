@@ -441,6 +441,25 @@ def append_snapshot_history(conn, snapshot_rows):
     conn.executemany("INSERT OR REPLACE INTO graded_price_history "
                      "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)", points)
     print(f"appended {len(points)} snapshot points ({today}) to graded_price_history")
+    # Sales volume rides the same snapshot (2026-10-14, user request): the
+    # pricecharting table has always carried each card's current PC sales
+    # volume (row index 12) and thrown yesterday's away on rebuild. Keep it
+    # as a dated series instead; weekly S3 pc_crawl dumps backfill to Aug 06.
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS pc_volume_history (
+            game         TEXT    NOT NULL,
+            product_id   INTEGER NOT NULL,
+            date         TEXT    NOT NULL,
+            sales_volume INTEGER,
+            PRIMARY KEY (game, product_id, date)
+        );
+        """
+    )
+    vol = [(row[0], row[1], today, row[12])
+           for row in snapshot_rows if row[12] is not None]
+    conn.executemany("INSERT OR REPLACE INTO pc_volume_history VALUES (?,?,?,?)", vol)
+    print(f"appended {len(vol)} sales-volume points ({today}) to pc_volume_history")
 
 
 if __name__ == "__main__":

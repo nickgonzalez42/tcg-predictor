@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+"""
+Record TCGplayer sales volume for the WHOLE catalog (2026-10-14, user request).
+
+TCGplayer's product-page chart shows "items sold" per bucket; the detailed
+price-history endpoint behind it returns ~a year of buckets per card, with
+quantitySold/transactionCount per variant and condition. The nm_only cohort
+already captures this via backfill_tcg_nm_history (record_sales); this script
+is the rotation that walks every OTHER card, value-first, on a nightly budget.
+The first touch of a card lands its ~year of history, so the rotation IS the
+backfill; after the first full pass each card gets re-touched once its last
+fetch is older than --refresh-days, keeping the series current.
+
+Same polite transport as every TCGplayer crawl here (shared RateLimiter and
+retrying session), plus the house circuit breaker: hard refusals in a row
+stop the run instead of burning the night.
+
+Run:  .venv/bin/python backfill_sales_volume.py --game all --rpm 40 \
+          --refresh-days 30 --total-limit 4000
+"""
+
+import argparse
+import os
+import sqlite3
+import sys
+from datetime import datetime, timedelta, timezone
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _paths import DATA_DIR as BASE
+from games import db_path, priced_games
+import tcg_pokemon_scraper as tp
+from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
+
+PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
+                     "pricecharting.db")
+BLOCK_LIMIT = 25     # consecutive empty/failed fetches before giving up the night
+
+
+def gather(game, conn, refresh_days, limit):
+    """(game, product_id, nm_price) due for a fetch — value-first.
+
+    Value comes from tcg_nm_history (uniform across games) rather than the
+    cards DBs, whose price columns differ by game. SQLite's bare-column rule
+    makes MAX(date) pick each card's newest price row."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=refresh_days)).isoformat()
+    done = set(r[0] for r in conn.execute(
+        "SELECT product_id FROM tcg_sales_scan WHERE game=? AND fetched_at > ?",
+        (game, cutoff)))
+    price = {pid: p for pid, p, _d in conn.execute(
+        "SELECT product_id, price, MAX(date) FROM tcg_nm_history "
+        "WHERE game=? GROUP BY product_id", (game,))}
+    cards = sqlite3.connect(db_path(game))
+    pids = [r[0] for r in cards.execute("SELECT product_id FROM cards")]
+    cards.close()
+    targets = [(game, pid, price.get(pid) or 0.0)
+               for pid in pids if pid not in done]
+    targets.sort(key=lambda t: -t[2])
+    if limit:
+        targets = targets[:limit]
+    print(f"[{game}] {len(targets)} due | {len(done)} fresh", flush=True)
+    return targets
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--game", default="all")
+    ap.add_argument("--rpm", type=float, default=40.0)
+    ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--refresh-days", type=float, default=30.0)
+    ap.add_argument("--limit", type=int, default=None, help="cap per game")
+    ap.add_argument("--total-limit", type=int, default=None,
+                    help="cap the whole run; games compete value-first above "
+                         "a per-game floor so cheap games keep rotating")
+    args = ap.parse_args()
+
+    games = priced_games() if args.game == "all" else [args.game]
+    conn = sqlite3.connect(PC_DB, timeout=60)
+    conn.executescript(SALES_SCHEMA)
+
+    targets = []
+    for game in games:
+        targets.extend(gather(game, conn, args.refresh_days, args.limit))
+    if args.total_limit and len(targets) > args.total_limit:
+        # Same per-game floor as the graded rotation (2026-09-29 lesson):
+        # pure global value ranking starves the cheap games entirely.
+        floor = max(1, args.total_limit // (4 * max(1, len(games))))
+        by_game = {}
+        for t in targets:
+            by_game.setdefault(t[0], []).append(t)
+        keep, rest = [], []
+        for ts in by_game.values():
+            keep.extend(ts[:floor])
+            rest.extend(ts[floor:])
+        rest.sort(key=lambda t: -t[2])
+        print(f"total budget: {args.total_limit} of {len(targets)} due "
+              f"(per-game floor {floor}, remainder by price)", flush=True)
+        targets = keep + rest[:max(0, args.total_limit - len(keep))]
+
+    tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
+    session = tp.make_session()
+    ok = empty = fail = rows_total = 0
+    streak = 0
+    for i, (game, pid, _mp) in enumerate(targets, 1):
+        try:
+            h = tp.fetch_price_history(session, pid, args.delay)
+        except Exception as e:
+            fail += 1
+            streak += 1
+            if streak >= BLOCK_LIMIT:
+                print(f"{BLOCK_LIMIT} consecutive failures ({type(e).__name__}) — "
+                      f"stopping; {len(targets) - i:,} stay due for the next run.",
+                      flush=True)
+                break
+            continue
+        streak = 0
+        n = record_sales(conn, game, pid, h)
+        rows_total += n
+        ok += 1
+        if n == 0:
+            empty += 1          # scanned + marked; no sales buckets to keep
+        if ok % 50 == 0:
+            conn.commit()
+        if i % 500 == 0:
+            print(f"  {i}/{len(targets)} ok={ok} empty={empty} fail={fail} "
+                  f"rows={rows_total}", flush=True)
+    conn.commit()
+    conn.close()
+    print(f"DONE: ok={ok} (empty={empty}) fail={fail} bucket rows={rows_total}",
+          flush=True)
+
+
+if __name__ == "__main__":
+    main()

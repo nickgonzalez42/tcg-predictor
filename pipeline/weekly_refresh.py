@@ -137,6 +137,14 @@ STEPS = [
     # ungraded was wrong): the search crawl skips them, so this keeps their
     # ungraded series fresh + sales-based. Cheap (~a dozen cards); exits 0.
     ("tcg-nm-backfill", ["backfill_tcg_nm_history.py", "--refresh-existing", "--rpm", "40"]),
+    # Sales volume rotation (2026-10-14, user request): walk the catalog
+    # value-first recording each card's "items sold" buckets from the same
+    # detailed endpoint tcg-nm-backfill uses; a card's first touch lands ~a
+    # year of history, so the rotation IS the backfill (~250k cards at
+    # 4,000/night = first full pass in about two months, expensive cards
+    # first and monthly re-touches thereafter). ~100 min at 40 rpm.
+    ("tcg-sales", ["backfill_sales_volume.py", "--game", "all", "--rpm", "40",
+                   "--refresh-days", "30", "--total-limit", "4000"]),
     # Second pass for cards the search crawl couldn't price tonight: if the
     # product page's sales chart still carries a recent NM series, adopt it
     # (tcg_nm_only) so the card keeps a live price instead of going stale.

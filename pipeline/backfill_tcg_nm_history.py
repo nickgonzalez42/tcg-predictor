@@ -46,11 +46,13 @@ def _f(x):
 
 
 def nm_series(session, pid, delay):
-    """The best Near Mint weekly series for a product: [(YYYY-MM-DD, price)].
+    """The best Near Mint weekly series for a product: ([(date, price)], raw).
 
     A product can carry several printings (variants); we take the NM variant with
     the most non-zero weekly points (the printing TCGplayer actually has a market
-    for), tie-broken by the most recent price."""
+    for), tie-broken by the most recent price. The raw response rides along so
+    callers can also record the sales-volume buckets (record_sales) without a
+    second request."""
     h = tp.fetch_price_history(session, pid, delay)
     best, best_key = [], (-1, -1.0)
     for s in (h.get("result") or h.get("results") or []) if h else []:
@@ -67,7 +69,59 @@ def nm_series(session, pid, delay):
         key = (len(pts), pts[0][1])           # most points, then newest price
         if key > best_key:
             best, best_key = pts, key
-    return best
+    return best, h
+
+
+SALES_SCHEMA = """
+    CREATE TABLE IF NOT EXISTS tcg_sales_history (
+        game              TEXT    NOT NULL,
+        product_id        INTEGER NOT NULL,
+        variant           TEXT    NOT NULL DEFAULT 'Normal',
+        condition         TEXT    NOT NULL DEFAULT 'Near Mint',
+        bucket_date       TEXT    NOT NULL,   -- bucket start, YYYY-MM-DD
+        quantity_sold     REAL,               -- the chart's "items sold"
+        transaction_count REAL,
+        low_sale          REAL,
+        high_sale         REAL,
+        market_price      REAL,
+        PRIMARY KEY (game, product_id, variant, condition, bucket_date)
+    );
+    CREATE INDEX IF NOT EXISTS idx_tcgsales_game_pid
+        ON tcg_sales_history(game, product_id);
+    -- One row per product per fetch: drives the value-first rotation in
+    -- backfill_sales_volume.py (re-touch once older than its refresh window).
+    CREATE TABLE IF NOT EXISTS tcg_sales_scan (
+        game       TEXT    NOT NULL,
+        product_id INTEGER NOT NULL,
+        fetched_at TEXT,
+        PRIMARY KEY (game, product_id)
+    );
+"""
+
+
+def record_sales(conn, game, pid, h):
+    """Store every variant/condition bucket's sold counts from a price-history
+    response (2026-10-14, user request: record TCGplayer sales volume). The
+    endpoint hands back ~a year of buckets, so the first touch of a card IS
+    its backfill. Zero-sold weeks are kept: no-sales is signal, not noise."""
+    rows = []
+    for s in (h.get("result") or h.get("results") or []) if h else []:
+        variant = s.get("variant") or s.get("printingType") or "Normal"
+        condition = s.get("condition") or "Unknown"
+        for b in s.get("buckets", []):
+            d = b.get("bucketStartDate") or b.get("date")
+            qty, txn = _f(b.get("quantitySold")), _f(b.get("transactionCount"))
+            if not d or (qty is None and txn is None):
+                continue
+            rows.append((game, pid, variant, condition, d[:10], qty, txn,
+                         _f(b.get("lowSalePrice")), _f(b.get("highSalePrice")),
+                         _f(b.get("marketPrice"))))
+    if rows:
+        conn.executemany(
+            "INSERT OR REPLACE INTO tcg_sales_history VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.execute("INSERT OR REPLACE INTO tcg_sales_scan VALUES (?,?,?)",
+                 (game, pid, datetime.now(timezone.utc).isoformat()))
+    return len(rows)
 
 
 def freshen_current_week(pts):
@@ -179,10 +233,12 @@ def main():
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
     session = tp.make_session()
     conn = sqlite3.connect(PC_DB, timeout=60)
+    conn.executescript(SALES_SCHEMA)
 
     total = 0
     for game, pid in targets:
-        pts = nm_series(session, pid, args.delay)
+        pts, hist = nm_series(session, pid, args.delay)
+        record_sales(conn, game, pid, hist)   # sold counts ride the same fetch
         if not pts:
             print(f"[{game}:{pid}] no Near Mint series on TCGplayer — skipped",
                   file=sys.stderr)

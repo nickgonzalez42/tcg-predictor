@@ -155,6 +155,24 @@ def init_db(conn):
         CREATE INDEX IF NOT EXISTS idx_tcgnm_game_pid
             ON tcg_nm_history(game, product_id);
 
+        -- Market depth (2026-10-14, user request): the same search response
+        -- also carries each card's supply picture, previously dropped on the
+        -- floor. Recorded nightly at zero added traffic; listing-count deltas
+        -- over days read as net absorption, the closest thing to a sales-
+        -- volume signal TCGplayer's search API exposes. Backfilled weekly to
+        -- 2026-08-06 from the S3 catalog dumps (backfill_depth_history.py).
+        CREATE TABLE IF NOT EXISTS tcg_depth_history (
+            game            TEXT    NOT NULL,
+            product_id      INTEGER NOT NULL,
+            date            TEXT    NOT NULL,   -- YYYY-MM-DD, the scrape day
+            total_listings  INTEGER,            -- live listings on TCGplayer
+            max_fulfillable INTEGER,            -- Direct inventory depth
+            lowest_price    REAL,               -- cheapest ask (vs market = spread)
+            PRIMARY KEY (game, product_id, date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_tcgdepth_game_pid
+            ON tcg_depth_history(game, product_id);
+
         -- Per-set completion marker for the day (mirrors set_counts' role in the
         -- catalog scrape): a set is recorded only after every page arrived, so a
         -- run killed mid-set leaves it unmarked and --resume re-scans exactly the
@@ -243,14 +261,25 @@ def scrape_game(game, sets, session, conn, today, delay, resume):
             raw = list(_iter_set_pages(session, line, delay, set_name=set_name))
         complete = len(raw) >= count
         rows = []
+        depth = []
         for p in raw:
             if not tp.is_single_card(p):
                 continue
             pid = p.get("productId")
+            if pid is None:
+                continue
+            # Depth is recorded for EVERY card, even unpriced ones — a card
+            # with listings and no market price is still supply information,
+            # and nm_only cards' listings are as real as anyone's.
+            tl, mf = p.get("totalListings"), p.get("maxFulfillableQuantity")
+            depth.append((game, int(pid), today,
+                          int(tl) if tl is not None else None,
+                          int(mf) if mf is not None else None,
+                          tp._to_float(p.get("lowestPrice"))))
             mp = tp._to_float(p.get("marketPrice"))
             # A null marketPrice means TCGplayer has no NM value (no recent
             # sales/listings) — record nothing rather than a fake 0.
-            if pid is None or mp is None:
+            if mp is None:
                 continue
             if int(pid) in nm_only:   # detailed-history refresh owns these
                 continue
@@ -259,6 +288,9 @@ def scrape_game(game, sets, session, conn, today, delay, resume):
             conn.executemany(
                 "INSERT OR REPLACE INTO tcg_nm_history (game, product_id, date, price) "
                 "VALUES (?,?,?,?)", rows)
+        if depth:
+            conn.executemany(
+                "INSERT OR REPLACE INTO tcg_depth_history VALUES (?,?,?,?,?,?)", depth)
         # Only mark the set done if every page arrived — a partial set must be
         # retried next run, not sealed with a hole.
         if complete:
