@@ -479,7 +479,7 @@ public class WatchlistController(
     private static string? NormalizeGame(string game) => GameRegistry.Normalize(game);
 
     private static string UnknownGame(string? game) =>
-        $"Unknown game '{game}' — expected one of: {string.Join(", ", GameRegistry.Keys)}.";
+        $"Unknown game '{game}'; expected one of: {string.Join(", ", GameRegistry.Keys)}.";
 
     // Copy-grade vocabulary, shared by every path that stores a grade (add,
     // quantity, per-copy edit, CSV import): blank or "ungraded" is a raw copy
@@ -492,7 +492,7 @@ public class WatchlistController(
     }
 
     private static string UnknownGrade(string? grade) =>
-        $"Unknown condition '{grade}' — expected ungraded (or blank) or one of: {string.Join(", ", GradeTiers.Graded)}.";
+        $"Unknown condition '{grade}'; expected ungraded (or blank) or one of: {string.Join(", ", GradeTiers.Graded)}.";
 
     // One CSV field: always quoted with inner quotes doubled, plus a leading
     // apostrophe when the value starts with = + - or @ — Excel and Sheets

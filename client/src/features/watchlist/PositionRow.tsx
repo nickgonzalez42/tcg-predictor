@@ -87,20 +87,20 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                 <td><span className="owned-condition">{tierLabel(card.ownedGrade)}</span></td>
                 <td className="screener__num">{qty}</td>
                 <td className="screener__num">
-                    {paid != null ? currencyFormat(paid) : packCost <= 0 ? '—' : null}
+                    {paid != null ? currencyFormat(paid) : packCost <= 0 ? 'n/a' : null}
                     {packCost > 0 && (
                         <div className="pack-paid mono"
-                            title={`${packPulls} pack pull${packPulls === 1 ? '' : 's'} listed at booster price — not counted in P/L`}>
+                            title={`${packPulls} pack pull${packPulls === 1 ? '' : 's'} listed at booster price; not counted in P/L`}>
                             {paid != null ? '+' : ''}{currencyFormat(packCost)} pack
                         </div>
                     )}
                 </td>
                 <td className="screener__num screener__price">
-                    {mktValue != null ? currencyFormat(mktValue) : '—'}
+                    {mktValue != null ? currencyFormat(mktValue) : 'n/a'}
                     {card.priceAsOf && <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>}
                 </td>
                 <td className="screener__num">
-                    {pl != null ? <ChangePill value={pl} unit="usd" title="vs recorded cost" /> : <span className="mono">—</span>}
+                    {pl != null ? <ChangePill value={pl} unit="usd" title="vs recorded cost" /> : <span className="mono">n/a</span>}
                 </td>
                 <td className="screener__num">
                     <ChangePill value={hasYear ? card.fcst12Pct : card.fcst6Pct}
@@ -119,7 +119,7 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                 <Modal title={`${card.name} · ${tierLabel(card.ownedGrade)}`}
                     onClose={() => setExpanded(false)}>
                     <p className="est-note" style={{ marginTop: 0 }}>
-                        Identical copies stack into one row. Edit any copy here — a copy that
+                        Identical copies stack into one row. Edit any copy here; a copy that
                         differs in any way (condition, paid price, date, note) gets its own row.
                     </p>
                     <div className="owned-copies owned-copies--modal">

@@ -79,7 +79,7 @@ def page(path, title, desc, body, og_image=None):
 
 
 def money(v):
-    return f"${v:,.2f}" if v is not None else "—"
+    return f"${v:,.2f}" if v is not None else "n/a"
 
 
 GRADE_COLS = [("ungraded", "Ungraded"), ("grade7", "Grade 7"), ("grade8", "Grade 8"),
@@ -240,7 +240,7 @@ trailing forecast errors per card and per set. Under the hood: gradient-boosted 
 per game, tier, and horizon, trained on historical outcomes with held-out validation.</p>
 <h2>How we keep it honest</h2>
 <p>Every published forecast is saved, and once its date arrives it is graded against what the
-price actually did — misses stay on display on each card's chart. The weekly report publishes
+price actually did. Misses stay on display on each card's chart. The weekly report publishes
 accuracy, bias, and how often prices landed inside the model's ranges, whether flattering or not. Since October 2026 the published number is also held to a flat-price baseline: the point
 forecast is scaled to what recently graded calls support, and the ranges are widened per
 volatility stratum until they cover 80% of outcomes in practice.</p>

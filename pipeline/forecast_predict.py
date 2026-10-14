@@ -350,7 +350,7 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
     cand.sort(key=lambda sc: -sc[0])
     top = [c for _, c in cand[:3]]
     if not top:
-        return f"Projects {proj:+.0f}% over {horizon}. Few distinguishing signals — the trajectory is flat."
+        return f"Projects {proj:+.0f}% over {horizon}. Few distinguishing signals; the trajectory is flat."
     lead = ("Key drivers", "Behind it", "What moves it", "Signals")[pid % 4]
     return f"Projects {proj:+.0f}% over {horizon}. {lead}: {'; '.join(top)}."
 
@@ -1002,10 +1002,10 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             # Honesty caveats replace the old suppression gates: flagged, not hidden.
             if unreliable:
                 reason += (" Caution: the model's recent out-of-sample accuracy for this"
-                           " game and horizon is poor — treat this forecast as speculative.")
+                           " game and horizon is poor; treat this forecast as speculative.")
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
                 reason += (" This is an extreme swing the model itself has low confidence"
-                           " in — such calls have historically been unreliable.")
+                           " in; such calls have historically been unreliable.")
             RAW_EXTRA[(game, int(pid), pr, target, hname)] = (
                 float(raw_ret_now[i]), float(raw_width_now[i]))
             rows.append((game, int(pid), target, hname, a, round(float(b), 2),

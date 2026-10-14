@@ -901,10 +901,10 @@ def run_pooled_game(game, prep, pooled, out, today, dry_run=False):
         if np.isfinite(x["art_knn_sim"]) and x["art_knn_sim"] >= 0.7:
             bits.append(f"the cards its art most resembles, across games, launched near ${math.exp(x['art_knn_price']):,.2f}")
         txt = (f"Cross-game estimate: {label} has only {n_lab} priced launches of its own, so this "
-               f"comes from {len(pool):,} launches across {n_games} other games — " + "; ".join(bits) + ". ")
+               f"comes from {len(pool):,} launches across {n_games} other games: " + "; ".join(bits) + ". ")
         if val:
             txt += (f"Tested by holding out whole games, the method's typical miss was about {miss}%, "
-                    f"with {within}% of cards within ±50% — a rough first read. ")
+                    f"with {within}% of cards within ±50%, a rough first read. ")
         txt += "It updates nightly and hands off to this game's own model once it has enough launches."
         pred = max(0.10, math.exp(p[i]))
         rows.append((game, int(c["pid"]), "", _iso(c["rel"]), today.isoformat(), round(pred, 2),
@@ -1173,7 +1173,7 @@ def reason_text(c, x, label, n_train, val, miss_pct, within, adj=0.0, n_graded=0
     # pre-release call; a released card with no recorded sale yet (an unsold
     # chase card) says so instead of pretending the set hasn't landed.
     lead = ("Pre-release estimate from the card itself (no sales yet): " if not released else
-            "This card is out but hasn't recorded a sale yet — estimated from what the card is: ")
+            "This card is out but hasn't recorded a sale yet; estimated from what the card is: ")
     txt = lead + "; ".join(bits) + ". "
     if val:
         txt += (f"Tested on the last {len(val['sets'])} {label} sets, this method's typical miss "

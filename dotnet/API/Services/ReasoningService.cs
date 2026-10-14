@@ -17,9 +17,10 @@ public class ReasoningService(
     private const string System =
         "You explain a trading-card price forecast to a casual collector. You are given a " +
         "model's computed facts for ONE card. Write 2-3 short, plain sentences summarizing the " +
-        "outlook and why. Rules: use ONLY the facts provided — never invent numbers, causes, or " +
+        "outlook and why. Rules: use ONLY the facts provided; never invent numbers, causes, or " +
         "claims, and don't hedge with information you weren't given. This is a model estimate, not " +
-        "financial or investment advice; don't tell the reader to buy, sell, or hold. No preamble — " +
+        "financial or investment advice; don't tell the reader to buy, sell, or hold. Never use an " +
+        "em dash or en dash; use a period, comma, colon, or semicolon instead. No preamble; " +
         "start with the outlook. Refer to the card by name when given.";
 
     public async Task<string?> GetAsync(string game, int productId, string? name, string? set)
@@ -111,8 +112,12 @@ public class ReasoningService(
             Messages = [new() { Role = Role.User, Content = userText }],
         });
 
+        // No em/en dashes on the page (2026-10-14, user decision). The prompt
+        // forbids them; this guarantees it even when the model slips.
         return response.Content
             .Select(b => b.Value).OfType<TextBlock>()
-            .Select(t => t.Text).FirstOrDefault();
+            .Select(t => t.Text).FirstOrDefault()
+            ?.Replace(" — ", ", ").Replace(" – ", ", ")
+            .Replace("—", "-").Replace("–", "-");
     }
 }

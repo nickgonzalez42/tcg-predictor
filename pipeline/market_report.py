@@ -176,7 +176,7 @@ def game_moves(synth, game, baseline, latest, names, young=frozenset()):
             continue
         old, new = b[0], l[0]
         if old >= MIN_BASE and old > 0 and 1 / MAX_WEEK_RATIO <= new / old <= MAX_WEEK_RATIO:
-            name = names[pid] + (f" — {printing}" if printing else "")
+            name = names[pid] + (f" · {printing}" if printing else "")
             moves.append((pid, name, old, new, (new / old - 1) * 100, printing))
     return moves
 
@@ -501,8 +501,8 @@ def trend_phrase(t):
     # BOTH cards missing a price on either end of the week AND sub-$5 cards
     # (whose % moves are noise) — one word can't carry that, the legend does.
     return (f"{group_link(t)} ({label}): {t['same']} of "
-            f"{t['n']} tracked cards {direction}, median {pct(t['median'])} "
-            f"— e.g. {links}.")
+            f"{t['n']} tracked cards {direction}, median {pct(t['median'])}"
+            f"; e.g. {links}.")
 
 
 def forecast_corner(pred, games_live):
@@ -514,7 +514,7 @@ def forecast_corner(pred, games_live):
     picks = []
     for game, pid, printing, base, fcst in rows:
         if game in games_live and pid in games_live[game]:
-            name = games_live[game][pid] + (f" — {printing}" if printing else "")
+            name = games_live[game][pid] + (f" · {printing}" if printing else "")
             picks.append((game, pid, name, base, fcst, printing))
         if len(picks) == OVERALL_N:
             break
@@ -629,7 +629,7 @@ def prerelease_report(pred):
     out.append("<p>No sales yet, no problem: presale and just-released cards "
                "carry a predicted launch price built from nothing but what the "
                "card is. Those predictions live by the same rules as everything "
-               "else on this page — each one is archived the day it's published, "
+               "else on this page: each one is archived the day it's published, "
                "graded against the card's first two months of real trading, and "
                "fed back into the next batch of estimates.</p>")
 
@@ -662,7 +662,7 @@ def prerelease_report(pred):
                    f"<td>{band * 100:.0f}%</td><td>{pct((exp(bias) - 1) * 100)}</td></tr>")
         out.append("</tbody></table>")
         out.append("<p class='report-note'>Expect bigger misses here than in the "
-                   "tables above — these calls are made before a single sale "
+                   "tables above: these calls are made before a single sale "
                    "exists. They're meant to rank a set's chase cards, not to "
                    "nail prices.</p>")
         return out
@@ -700,7 +700,7 @@ def prerelease_report(pred):
         out.append("<p class='report-note'>Rank quality is a correlation: 1.00 "
                    "would mean the model put the set's cards in exactly the right "
                    "price order; 0 would mean no idea. These calls are made before "
-                   "a single sale exists — they're meant to rank a set's chase "
+                   "a single sale exists; they're meant to rank a set's chase "
                    "cards, not to nail prices.</p>")
     return out
 
@@ -971,11 +971,11 @@ def build_report(force=False, as_of=None):
     breadth = "a gainers' week" if ups > downs else \
               "a losers' week" if downs > ups else "a dead-even week"
 
-    title = f"Weekly Market Report — {today.strftime('%B %-d, %Y')}"
+    title = f"Weekly Market Report: {today.strftime('%B %-d, %Y')}"
     slug = f"weekly-market-report-{today.isoformat()}"
     # Fallback lede when the editorial call fails (docs/VOICE.md: cold-open
     # with the numbers, prices in motion). Doubles as the meta description.
-    summary = (f"{ups:,} cards climbed, {downs:,} slipped — {breadth} across the "
+    summary = (f"{ups:,} cards climbed, {downs:,} slipped: {breadth} across the "
                f"{n:,} cards priced at both ends of the window. The climbers "
                f"averaged +{avg_gain:.1f}%; the fallers gave back {abs(avg_loss):.1f}%.")
 
@@ -1069,8 +1069,8 @@ def build_report(force=False, as_of=None):
             # arbitrary): the count is smaller than the full set on purpose,
             # and the reader deserves to know both reasons once, up front.
             "<p class='report-note'>“Tracked” cards are those with a market price "
-            "on both ends of the week <em>and</em> worth at least $5 at the start "
-            "— cheaper cards are left out because a few cents of movement "
+            "on both ends of the week <em>and</em> worth at least $5 at the start. "
+            "Cheaper cards are left out because a few cents of movement "
             "reads as a large, meaningless percentage. A group like “12 of 15 "
             "tracked” may belong to a bigger set; the rest simply "
             "couldn’t be measured honestly this week.</p>"]
@@ -1116,11 +1116,11 @@ def build_report(force=False, as_of=None):
             rows = [(t["value"], t["median"], f"{t['same']}/{t['n']} cards")
                     for t in sorted(gts, key=lambda t: -t["median"])]
             body.append(bar_chart(rows, signed=True,
-                                  title=f"{GAMES[game]['label']}: group moves this week — median %"))
+                                  title=f"{GAMES[game]['label']}: group moves this week (median %)"))
         else:
             bt = max(moves, key=lambda m: m[4])
             wt = min(moves, key=lambda m: m[4])
-            body.append("<p>No group moved as one this week — the action was "
+            body.append("<p>No group moved as one this week; the action was "
                         f"scattered. The outliers tell the story: {card_link(game, bt[0], bt[1], bt[5] if len(bt) > 5 else '')} "
                         f"({pct(bt[4])}) and {card_link(game, wt[0], wt[1], wt[5] if len(wt) > 5 else '')} ({pct(wt[4])}).</p>")
         body.append("</details>")
@@ -1151,35 +1151,35 @@ def build_report(force=False, as_of=None):
     body.append("<h2>Model report card</h2>"
                 "<p>We keep every forecast the model has ever published, and "
                 "when its target date arrives we check it against what the "
-                "price actually did — the misses count too. Four numbers tell "
+                "price actually did. The misses count too. Four numbers tell "
                 "you how it's doing:</p><ul>"
-                "<li><strong>Typical miss</strong> — how far off the price "
+                "<li><strong>Typical miss</strong>: how far off the price "
                 "calls land, on average. A 5% typical miss on a $100 card "
                 "means the model's calls usually came within about $5 of the "
                 "real price.</li>"
-                "<li><strong>Bias</strong> — whether the model leans high or "
+                "<li><strong>Bias</strong>: whether the model leans high or "
                 "low overall. A plus number means its forecasts ran hot; a "
                 "minus number means it guessed low. Closer to zero is "
                 "better.</li>"
-                "<li><strong>80% band</strong> — every forecast comes with a "
+                "<li><strong>80% band</strong>: every forecast comes with a "
                 "&ldquo;the price should land between here and here&rdquo; "
                 "range, built to catch the real price 80% of the time. This "
                 "column shows how often it actually did. Right at 80% is the "
-                "goal — much higher means the ranges are roomier than they "
+                "goal: much higher means the ranges are roomier than they "
                 "need to be, much lower means the model is more confident "
                 "than it should be.</li>"
-                "<li><strong>Flat baseline</strong> — the miss you'd get by "
+                "<li><strong>Flat baseline</strong>: the miss you'd get by "
                 "simply assuming every price stays where it is. It's the bar "
                 "the model has to clear: a typical miss below this number "
                 "means the forecasts are adding real information.</li>"
-                "<li><strong>Direction</strong> — when the model said a card "
+                "<li><strong>Direction</strong>: when the model said a card "
                 "was headed up or down by at least 1% and the price really "
                 "did move, how often it picked the right side. 50% would be "
                 "a coin flip. If the price barely moved, the call doesn't "
                 "count either way.</li></ul>")
 
     def dir_cell(dir_acc):
-        return f"{dir_acc * 100:.0f}%" if dir_acc is not None else "—"
+        return f"{dir_acc * 100:.0f}%" if dir_acc is not None else "n/a"
 
     if live:
         body.append("<table class='report-table'>"
@@ -1193,7 +1193,7 @@ def build_report(force=False, as_of=None):
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
         body.append("<p class='report-note'>The $10+ rows exclude the penny cards "
-                    "whose day-to-day market price is mostly noise — most of the "
+                    "whose day-to-day market price is mostly noise: most of the "
                     "catalog by count, a sliver of it by value.</p>")
         body.append("</tbody></table>")
         if prose.get("model_note"):
@@ -1234,14 +1234,14 @@ def build_report(force=False, as_of=None):
                 [(wk_label(wk), hit * 100, f"of {n_wk:,}")
                  for wk, n_wk, hit, _mae, _dn, _da in wow],
                 signed=False, color="var(--primary, #3d7dca)",
-                title="80% band coverage by week — 80% is perfect calibration"))
+                title="80% band coverage by week (80% is perfect calibration)"))
 
         by_game = [r for r in live_accuracy(pred, "1m", 28, by_game=True) if r[0] in GAMES]
     else:
         bt = backtest_accuracy(pred)
         by_game = [r for r in backtest_accuracy(pred, by_game=True) if r[0] in GAMES]
         if bt and bt[0]:
-            body.append(f"<p>No live forecast has been out long enough to grade yet — "
+            body.append(f"<p>No live forecast has been out long enough to grade yet: "
                         "the first 1-month cohort matures in August 2026, 6-month in "
                         "January 2027, 12-month in July 2027; live grades take over "
                         "here as they land. Until then, the record below comes from "
@@ -1271,7 +1271,7 @@ def build_report(force=False, as_of=None):
         acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
                     for g, _n, mae, _bias, hit, _dn, _da, _fl in sorted(by_game, key=lambda r: r[2])]
         body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
-                              title=f"Typical 1-month forecast miss by game{tag} — shorter is better"))
+                              title=f"Typical 1-month forecast miss by game{tag} (shorter is better)"))
         # Direction as its own chart, diverging around the coin-flip line:
         # bars right of zero beat chance, bars left of it did worse.
         dir_rows = [(GAMES[g]["label"], dir_acc * 100 - 50, f"{dir_acc * 100:.0f}% right of {dir_n:,}")
@@ -1300,7 +1300,7 @@ def build_report(force=False, as_of=None):
         # copy-paste bug (all three showed "53.7%").
         body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
                               decimals=2,
-                              title=f"Direction accuracy: up vs down calls{split_tag} — 50% is a coin flip"))
+                              title=f"Direction accuracy: up vs down calls{split_tag} (50% is a coin flip)"))
 
     # Pre-release estimates' own record closes the report card.
     body.extend(prerelease_report(pred))

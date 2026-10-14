@@ -90,7 +90,7 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
                 </label>
                 <label className="owned-copy__note">Note
                     <input className="input" type="text" maxLength={200}
-                        placeholder="—" value={note} onChange={e => setNote(e.target.value)} />
+                        placeholder="" value={note} onChange={e => setNote(e.target.value)} />
                 </label>
             </div>
             <div className="owned-copy__actions">

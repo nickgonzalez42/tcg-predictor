@@ -177,7 +177,7 @@ function ForecastSection({ forecasts, game, id }: {
                                         ?? (h === '1m'
                                             ? tierForecasts.find(x => x.horizon === 'launch1m')
                                             : undefined);
-                                    if (!f) return <td key={h}>—</td>;
+                                    if (!f) return <td key={h}>n/a</td>;
                                     const early = f.horizon === 'launch1m';
                                     const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                     return (
@@ -185,7 +185,7 @@ function ForecastSection({ forecasts, game, id }: {
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             {early && (
                                                 <span className="early-badge"
-                                                    title="Early estimate: this card is too new for the standard model. This comes from the launch model — its set's cohort behavior blended with the card's short history — and is graded on the same public scorecard.">
+                                                    title="Early estimate: this card is too new for the standard model. This comes from the launch model (its set's cohort behavior blended with the card's short history) and is graded on the same public scorecard.">
                                                     EARLY
                                                 </span>
                                             )}
@@ -347,7 +347,7 @@ export default function CardDetails() {
                             Buy on TCGplayer ↗
                         </a>
                         <div className="buy-tcg__disclosure mono">
-                            Affiliate link — CardStock may earn a commission.
+                            Affiliate link; CardStock may earn a commission.
                         </div>
                     </div>
                 )}
@@ -433,7 +433,7 @@ export default function CardDetails() {
                         {card.predictedReason && <p className="detail-prerelease__why">{card.predictedReason}</p>}
                         <p className="est-note">
                             This is a model estimate of where the card will trade over its first
-                            couple of months, built only from what the card is — its rarity, set,
+                            couple of months, built only from what the card is: its rarity, set,
                             printed stats, the history of earlier cards with the same character, and
                             its artwork. There are no sales behind it yet. Once the card starts
                             trading, its real market price and the regular forecast take over here,
@@ -446,7 +446,7 @@ export default function CardDetails() {
                         <p className="est-note detail-nosales__body">
                             There are no recorded sales for this card yet, so there's no
                             market price, price history, or forecast to show. This is common for
-                            brand-new promos and event cards — check back once it starts trading.
+                            brand-new promos and event cards. Check back once it starts trading.
                         </p>
                     </section>
                 ) : (
@@ -485,7 +485,7 @@ export default function CardDetails() {
                             return (
                                 <p className="est-note price-liquidity">
                                     {days > 45
-                                        ? `This price hasn't moved in ${days} days — it may reflect asking prices rather than recent sales.`
+                                        ? `This price hasn't moved in ${days} days; it may reflect asking prices rather than recent sales.`
                                         : `Price last moved ${days} days ago.`}
                                 </p>
                             );
@@ -498,7 +498,7 @@ export default function CardDetails() {
                             <section className="panel detail-panel">
                                 <h4 className="mono detail-panel__title">Forecast</h4>
                                 <p className="price-caption">
-                                    No forecast for the {printing} printing yet — forecasts
+                                    No forecast for the {printing} printing yet; forecasts
                                     currently cover the {card.basePrinting ?? 'base'} printing.
                                 </p>
                             </section>

@@ -15,8 +15,8 @@ export default function SourceToggle({ value, onChange, disabled }: {
     );
     return (
         <div className="src-toggle" role="group" aria-label="How it was acquired">
-            {chip('pack', 'Pack pull', 'Opened in a sealed pack — no individual price paid')}
-            {chip('paid', 'Paid', 'Bought individually — tracks price paid and P/L')}
+            {chip('pack', 'Pack pull', 'Opened in a sealed pack; no individual price paid')}
+            {chip('paid', 'Paid', 'Bought individually; tracks price paid and P/L')}
         </div>
     );
 }

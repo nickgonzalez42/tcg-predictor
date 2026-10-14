@@ -71,7 +71,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                     {card.isPrerelease ? (
                                         <PredictedPrice compact price={card.predictedPrice}
                                             low={card.predictedLow} high={card.predictedHigh} />
-                                    ) : card.price != null ? currencyFormat(card.price) : '—'}
+                                    ) : card.price != null ? currencyFormat(card.price) : 'n/a'}
                                     {!card.isPrerelease && card.priceAsOf && (
                                         <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>
                                     )}
@@ -85,7 +85,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                 </td>
                                 <td className="screener__mid">
                                     {card.isPrerelease
-                                        ? <span className="mono screener__muted">{releaseLabel(card.releaseDate, true) || '—'}</span>
+                                        ? <span className="mono screener__muted">{releaseLabel(card.releaseDate, true) || 'n/a'}</span>
                                         : <Sparkline points={card.sparkline} />}
                                 </td>
                                 <td className="screener__actions" onClick={e => e.stopPropagation()}>

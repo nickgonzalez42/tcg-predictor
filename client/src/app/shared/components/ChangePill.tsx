@@ -10,7 +10,7 @@ type Props = {
 }
 
 export default function ChangePill({ value, unit = 'percent', digits = 1, title, suffix }: Props) {
-    if (value == null || !isFinite(value)) return <span className="mono">—</span>;
+    if (value == null || !isFinite(value)) return <span className="mono">n/a</span>;
     const up = value >= 0;
     const text = unit === 'usd'
         ? `${up ? '+' : '−'}${currencyFormat(Math.abs(value))}`

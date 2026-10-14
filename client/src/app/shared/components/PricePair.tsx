@@ -12,7 +12,7 @@ type Props = {
 }
 
 export default function PricePair({ price, forecast, horizon = '12M', asOf }: Props) {
-    if (price == null) return <>—</>;
+    if (price == null) return <>n/a</>;
     // The 12-month horizon reads as "1Y" in the UI (its own trend window label).
     const label = horizon === '12M' ? '1Y' : horizon;
     const pct = forecast != null && price > 0 ? Math.round((forecast / price - 1) * 100) : null;

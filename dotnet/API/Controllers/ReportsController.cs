@@ -34,7 +34,7 @@ public class ReportsController(StoreContext store, NotificationService notifier)
             return BadRequest("That email address doesn't look right.");
 
         if (TooMany(ClientIp()))
-            return BadRequest("Thanks — you've sent a few reports recently. Please try again later.");
+            return BadRequest("Thanks, you've sent a few reports recently. Please try again later.");
 
         var report = new ProblemReport
         {

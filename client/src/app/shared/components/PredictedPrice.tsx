@@ -12,12 +12,12 @@ type Props = {
 }
 
 export default function PredictedPrice({ price, low, high, compact, releaseDate }: Props) {
-    if (price == null) return <>—</>;
+    if (price == null) return <>n/a</>;
     return (
         <span className={`predicted${compact ? ' predicted--compact' : ''}`}>
             <span className="predicted__row">
                 <span className="predicted__price"
-                    title="Predicted launch price: a model estimate from the card's traits — there are no sales yet">
+                    title="Predicted launch price: a model estimate from the card's traits; there are no sales yet">
                     {currencyFormat(price)}
                 </span>
                 <span className="mono predicted__tag">PREDICTED</span>

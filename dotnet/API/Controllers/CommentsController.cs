@@ -80,7 +80,7 @@ public class CommentsController(StoreContext store, ModerationService mod, Notif
         // Rate limit: 5 comments/minute.
         var floor = DateTime.UtcNow.AddMinutes(-1);
         if (await store.Comments.CountAsync(c => c.UserName == user && c.CreatedAt > floor) >= 5)
-            return BadRequest("You're commenting too fast — try again in a minute.");
+            return BadRequest("You're commenting too fast. Try again in a minute.");
 
         if (dto.ParentId is { } parentId)
         {

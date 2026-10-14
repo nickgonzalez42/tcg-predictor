@@ -57,7 +57,7 @@ export default function NotificationsPage() {
                 <p className="est-note">
                     Nothing has triggered. When a price alert hits its target, it shows up here
                     {armed.length === 0 && (
-                        <> — set alerts from the 🔔 button on your <Link to="/watchlist">watchlist</Link></>
+                        <>; set alerts from the 🔔 button on your <Link to="/watchlist">watchlist</Link></>
                     )}.
                 </p>
             )}

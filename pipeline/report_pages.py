@@ -246,8 +246,8 @@ JS = """
                              website: form.website.value }),
     }).then(function (r) {
       form.outerHTML = r.ok
-        ? "<p class='newsletter-done'>You're on the list — the next report lands Friday morning.</p>"
-        : "<p>Something went wrong — try again later.</p>";
+        ? "<p class='newsletter-done'>You're on the list. The next report lands Friday morning.</p>"
+        : "<p>Something went wrong. Try again later.</p>";
     }).catch(function () {
       form.querySelector('button').disabled = false;
     });
@@ -288,7 +288,7 @@ def page(slug, title, published_at, summary, body_html):
 </article>
 <form class="newsletter" id="nl">
   <div class="newsletter-copy"><strong>Get the weekly report by email</strong>
-  <span>One email every Friday — the market story, the movers and the model's
+  <span>One email every Friday: the market story, the movers and the model's
   record. Nothing else.</span></div>
   <div class="newsletter-row">
     <input type="email" name="email" required placeholder="you@example.com"

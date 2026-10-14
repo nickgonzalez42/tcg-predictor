@@ -25,7 +25,7 @@ export default function NewsletterSignup({ source }: { source: string }) {
     if (state === "done") {
         return (
             <p className="newsletter newsletter--done">
-                You're on the list — the next report lands Friday morning.
+                You're on the list. The next report lands Friday morning.
             </p>
         );
     }
@@ -33,7 +33,7 @@ export default function NewsletterSignup({ source }: { source: string }) {
         <form className="newsletter" onSubmit={submit}>
             <div className="newsletter__copy">
                 <strong>Get the weekly report by email</strong>
-                <span>One email every Friday — the market story, the movers and the
+                <span>One email every Friday: the market story, the movers and the
                     model's record. Nothing else.</span>
             </div>
             <div className="newsletter__row">
@@ -45,7 +45,7 @@ export default function NewsletterSignup({ source }: { source: string }) {
                 </button>
             </div>
             {state === "error" &&
-                <span className="newsletter__err">Something went wrong — try again.</span>}
+                <span className="newsletter__err">Something went wrong. Try again.</span>}
         </form>
     );
 }

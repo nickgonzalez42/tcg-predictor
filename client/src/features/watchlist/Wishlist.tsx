@@ -39,7 +39,7 @@ function AlertChip({ card, ownGrade }: { card: Card; ownGrade: string }) {
             {mine.length > 0 ? (
                 <button className={`alert-chip${anyHit ? ' alert-chip--hit' : ''}`}
                     onClick={() => setOpen(true)}
-                    title={anyHit ? 'An alert has hit — manage alerts' : 'Manage alerts'}>
+                    title={anyHit ? 'An alert has hit: manage alerts' : 'Manage alerts'}>
                     🔔 {mine.length}{anyHit ? ' · hit!' : ''}
                 </button>
             ) : (
@@ -86,15 +86,15 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
             </td>
             <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
             <td className="screener__mid">
-                <span className="mono">{card.watchedSince ? shortDate(card.watchedSince) : '—'}</span>
+                <span className="mono">{card.watchedSince ? shortDate(card.watchedSince) : 'n/a'}</span>
             </td>
-            <td className="screener__num">{card.watchedAtPrice != null ? currencyFormat(card.watchedAtPrice) : '—'}</td>
+            <td className="screener__num">{card.watchedAtPrice != null ? currencyFormat(card.watchedAtPrice) : 'n/a'}</td>
             <td className="screener__num screener__price">
-                {card.price != null ? currencyFormat(card.price) : '—'}
+                {card.price != null ? currencyFormat(card.price) : 'n/a'}
                 {card.priceAsOf && <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>}
             </td>
             <td className="screener__mid">
-                {sincePct != null ? <ChangePill value={sincePct} title="Change since added" /> : <span className="mono">—</span>}
+                {sincePct != null ? <ChangePill value={sincePct} title="Change since added" /> : <span className="mono">n/a</span>}
             </td>
             <td className="screener__mid"><ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} /></td>
             <td className="screener__mid"><Sparkline points={card.sparkline} /></td>

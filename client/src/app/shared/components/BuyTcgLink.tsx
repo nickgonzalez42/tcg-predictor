@@ -14,7 +14,7 @@ export default function BuyTcgLink({ productId, compact }: {
         href: url,
         target: "_blank",
         rel: "sponsored noopener",
-        title: "Buy on TCGplayer (affiliate link — CardStock may earn a commission)",
+        title: "Buy on TCGplayer (affiliate link; CardStock may earn a commission)",
         onClick: (e: React.MouseEvent) => e.stopPropagation(),
     } as const;
     return compact

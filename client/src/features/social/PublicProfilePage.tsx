@@ -86,7 +86,7 @@ function CardsSection({ handle, list, title, showQty }: {
                                         <td className="screener__mid"><span className="owned-condition">{tierLabel(r.grade === 'ungraded' ? undefined : r.grade)}</span></td>
                                         {showQty && <td className="screener__mid">{r.quantity}</td>}
                                         <td className="screener__num screener__price">
-                                            {r.price != null ? currencyFormat(r.price * r.quantity) : '—'}
+                                            {r.price != null ? currencyFormat(r.price * r.quantity) : 'n/a'}
                                         </td>
                                         <td className="screener__mid">
                                             <BuyTcgLink productId={r.productId} compact />

@@ -23,8 +23,8 @@ public class NotificationService(IConfiguration config, ILogger<NotificationServ
         var body =
             $"New problem report on CardStock\n\n" +
             $"{report.Message}\n\n" +
-            $"— Page:  {report.PageUrl ?? "-"}\n" +
-            $"— From:  {report.Email ?? report.UserName ?? "anonymous"}\n" +
+            $"- Page:  {report.PageUrl ?? "-"}\n" +
+            $"- From:  {report.Email ?? report.UserName ?? "anonymous"}\n" +
             $"— When:  {report.CreatedAt:u}\n" +
             $"— Id:    #{report.Id}";
         await Publish("CardStock — problem report", body, $"problem report #{report.Id}");

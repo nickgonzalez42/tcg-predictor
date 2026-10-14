@@ -84,7 +84,7 @@ export default function Portfolio() {
             <div className="pf-hero">
                 <span className="mono">Portfolio value</span>
                 <div className="pf-hero__value">
-                    {summary ? currencyFormat(summary.totalValue) : '—'}
+                    {summary ? currencyFormat(summary.totalValue) : 'n/a'}
                 </div>
                 <div className="pf-hero__pills">
                     {summary?.monthChangeUsd != null && (

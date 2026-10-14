@@ -40,7 +40,7 @@ export default function ImageSearchModal({ onClose }: { onClose: () => void }) {
                 {preview && <img className="imgsearch__preview" src={preview} alt="Your photo" />}
                 {isLoading && <p className="est-note">Searching…</p>}
                 {hits && hits.length === 0 && (
-                    <p className="est-note">No close matches — try a straighter, brighter shot.</p>
+                    <p className="est-note">No close matches. Try a straighter, brighter shot.</p>
                 )}
                 {hits && hits.length > 0 && (
                     <div className="imgsearch__results">

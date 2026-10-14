@@ -43,22 +43,24 @@ PROMPT = """You are the editor of CardStock's weekly trading-card market \
 report, read by collectors. Below is this week's complete, machine-computed \
 facts pack (JSON). Write the editorial prose around those numbers.
 
-Voice (see docs/VOICE.md — "a sharp collector talking to another collector, \
+Voice (see docs/VOICE.md, "a sharp collector talking to another collector, \
 with receipts"):
 - Cold-open the lede with the week's most striking number or move, as a \
 short punchy sentence, then explain it.
 - Write price moves as journeys, never points: from, to, over what span, \
 using the week-over-week percentages given.
-- Kinetic verbs — climbed, leapt, slid, popped back, on a tear, bucked the \
-trend — at most ONE metaphor per sentence, and none when listing numbers.
+- Kinetic verbs (climbed, leapt, slid, popped back, on a tear, bucked the \
+trend), at most ONE metaphor per sentence, and none when listing numbers.
 - "We" means the hobby ("the strongest week we've tracked"); "the model" \
 means the math. Confident verdicts where the data is in; plain statements \
 of weakness where it isn't.
 - No hype, no buy/sell advice, no exclamation points, no urgency.
+- NEVER use an em dash or en dash anywhere. Use a period, comma, colon, \
+semicolon, or parentheses instead.
 
 Hard rules:
 - Use ONLY numbers present in the facts pack, rounded exactly as given. \
-Never invent a figure, a cause, a news event, or a reason for a move — you \
+Never invent a figure, a cause, a news event, or a reason for a move; you \
 may describe WHAT moved and set facts from the pack side by side, but never \
 assert an outside explanation.
 - Plain text only: no HTML, no markdown, no links. Name cards and groups in \
@@ -66,13 +68,13 @@ ordinary words.
 - Percent moves in the facts are week-over-week unless labeled otherwise.
 
 Return ONLY a JSON object (no code fences, no commentary) with:
-- "lede": 2-3 sentences opening the report — the week's headline story \
+- "lede": 2-3 sentences opening the report, the week's headline story \
 (max {lede} words).
 - "overview": one paragraph after the lede telling the cross-game story: \
 where the week's strength and weakness concentrated, notable rotations, \
 what the drift chart will show (max {overview} words).
 - "games": object mapping each game key (exactly the keys under "games" in \
-the facts) to 1-2 sentences on that game's week — its trends and standout \
+the facts) to 1-2 sentences on that game's week, its trends and standout \
 cards, grounded in its numbers (max {game} words each). Every game key \
 must be present.
 - "model_note": one sentence on the forecast model's live record given the \
@@ -99,6 +101,10 @@ def _clean(text, cap):
     if not isinstance(text, str):
         return None
     text = re.sub(r"<[^>]*>", "", text)
+    # No em/en dashes on the page (2026-10-14, user decision). The prompt
+    # forbids them; this guarantees it even when the model slips.
+    text = text.replace(" — ", ", ").replace(" – ", ", ")
+    text = text.replace("—", "-").replace("–", "-")
     text = re.sub(r"\s+", " ", text).strip()
     if not text or len(text.split()) > cap:
         return None

@@ -18,7 +18,7 @@ export default function AboutPage() {
           each graded tier, next to real graded price history and a portfolio that tracks your
           gains. Every Friday, a <Link to="/reports">market report</Link> rounds up the week's
           biggest movers, how each game is trending, and a public scorecard of how the model's own
-          predictions have performed. This page explains where those forecasts come from, in plain language, with the
+          calls have landed, the misses included. This page explains where those forecasts come from, in plain language, with the
           technical details alongside for anyone who wants to look under the hood. None of it is
           financial advice.
         </p>
@@ -59,16 +59,16 @@ export default function AboutPage() {
           artwork (via the same CLIP embedding, including the launch prices of the cards it most
           resembles). Before anything is published, the method is tested on the game's most
           recent sets as if they were still unreleased, and the typical miss from that test is
-          printed beside every estimate. Expect that miss to be large, often 50–100%: these are
+          printed beside every estimate. Expect that miss to be large, often 50-100%: these are
           ballpark calls, much better at ranking a set's chase cards than at nailing a price,
           which is why they show a likely range and are framed in violet, never in the yellow of
           a market price. Every estimate is archived the day it is issued and graded against the
           card's first two months of real trading, so the pre-release calls carry a public track
-          record of their own, published in the weekly report — and the model learns from it:
+          record of their own, published in the weekly report, and the model learns from it:
           each night's new estimates are adjusted by how its past calls graded, game by game and
           rarity by rarity. The estimates are also deliberately short-lived, with one exception.
           A card that still has no market price two months after its release comes off the site,
-          and no estimate stays up longer than three months — unless the rest of the card's set
+          and no estimate stays up longer than three months, unless the rest of the card's set
           is actively trading. One unsold chase card in an otherwise fully priced set is a real
           card the market just hasn't sold yet, so its estimate stays up until the first sale
           posts; the cutoffs exist to clear products that never actually released. Find them
@@ -91,12 +91,12 @@ export default function AboutPage() {
         </p>
         <p>
           Prices also police each other. A market price is only trusted while real sales stand
-          behind it — a listing nobody buys can sit frozen at any number, high or low. Every
+          behind it; a listing nobody buys can sit frozen at any number, high or low. Every
           night the two sources are compared in both directions, and a card whose TCGplayer
           price has stopped moving while sales elsewhere disagree with it is flagged and
           reviewed; if the listing turns out to be fiction, the card's raw price switches to the
           sales-backed source instead. When neither source has defensible data, the card shows
-          no price at all — we would rather show you nothing than a made-up number.
+          no price at all. We would rather show you nothing than a made-up number.
         </p>
       </section>
 
@@ -135,8 +135,8 @@ export default function AboutPage() {
           Artwork is a special case worth calling out. Every card image is embedded with a CLIP
           vision model. Those embeddings power the "visually similar cards" comparisons in a
           forecast's reasoning, and as of v4.4 a compressed form of the same embedding is one of
-          the model's inputs, so it can pick up on the kind of art-driven appeal — alt-art
-          styles, fan-favorite characters — that never shows up in a stat line. In our own July
+          the model's inputs, so it can pick up on the kind of art-driven appeal (alt-art
+          styles, fan-favorite characters) that never shows up in a stat line. In our own July
           2026 test the art signal moved accuracy only a little on its own; it stays in because
           art is a real part of what a card is worth, and the weekly report card will show
           whether it earns its keep. One consequence: a card with no artwork on file is not
@@ -182,7 +182,7 @@ export default function AboutPage() {
           The weekly <Link to="/reports">market report</Link> takes that accountability further
           with the model's report card: how far off a typical call was, whether it has been
           leaning optimistic or pessimistic, how often prices actually landed inside its
-          low-to-high ranges, and how often it called the direction of a move correctly — overall
+          low-to-high ranges, and how often it called the direction of a move correctly, overall
           and game by game. Those numbers are published every Friday whether they are flattering
           or not.
         </p>
