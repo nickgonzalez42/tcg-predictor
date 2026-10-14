@@ -10,6 +10,7 @@ import Sparkline from "../../app/shared/components/Sparkline"
 import PricePair from "../../app/shared/components/PricePair"
 import PredictedPrice, { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice"
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
+import { isHolo, holoMove, holoLeave } from "../../lib/holo";
 import { useUserInfoQuery } from "../account/accountApi";
 
 type Props = {
@@ -49,10 +50,15 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
     // just hasn't sold yet (an unsold chase card) is "Awaiting sales".
     const pre = !!card.isPrerelease;
     const upcoming = pre && isUpcoming(card.releaseDate);
+    // Holographic hover (2026-10-14, user request): only cards that are foil
+    // in real life get the shine — per-game rules live in lib/holo.ts.
+    const holo = isHolo(card);
 
     return (
-        <div className={`card${quick ? ' card--quick' : ''}${pre ? ' card--prerelease' : ''}`}>
-            <div className="media__container" ref={mediaRef}>
+        <div className={`card${quick ? ' card--quick' : ''}${pre ? ' card--prerelease' : ''}${holo ? ' card--holo' : ''}`}>
+            <div className="media__container" ref={mediaRef}
+                onPointerMove={holo ? holoMove : undefined}
+                onPointerLeave={holo ? holoLeave : undefined}>
                 {pre && (
                     <span className={`card__ribbon mono${upcoming ? '' : ' card__ribbon--waiting'}`}
                         aria-label={upcoming ? 'Pre-release card' : 'Released card awaiting its first sales'}>

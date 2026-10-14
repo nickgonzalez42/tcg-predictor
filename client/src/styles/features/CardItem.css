@@ -342,51 +342,81 @@
   font-weight: 700;
 }
 
-/* Foil sweep (2026-10-14, user request): a one-shot holographic glare that
-   crosses the art once, quickly, when the tile is hovered. Catalog page only
-   for now (scoped under .catalog-items). Plain gradient, no blend mode: the
-   first cut used color-dodge at low alpha, which is invisible over dark art.
-   The band exists only while the animation runs (opacity 0 at rest), moves by
-   transform only, never captures the pointer, and replays on a fresh hover.
-   Scoped to the image link so the ribbon and reveal rotator are untouched. */
+/* Holographic hover (2026-10-14, user request): the css-tricks.com
+   "holographic trading card" technique (Simon Goellner), simplified. The
+   pointer's position inside the tile arrives as CSS variables (--px/--py in
+   %, --rx/--ry in deg, set by lib/holo.ts on .media__container); the card
+   tilts toward the cursor while a rainbow shine and a glare track it.
+   Catalog only (.catalog-items) and holo-finish cards only (.card--holo,
+   per-game rules in lib/holo.ts). Everything idles at zero cost: without
+   the variables the transform is 0 and both layers sit at opacity 0.
+   The shine uses color-dodge AND a white glare with no blend mode, so
+   something always reads, on dark art and bright art alike. */
 .card__media-link {
     position: relative;
     display: block;
     overflow: hidden;
-    border-radius: var(--radius);   /* clip the sweep to the art's corners */
+    border-radius: var(--radius);
 }
-.catalog-items .card__media-link::after {
+.catalog-items .card--holo .card__media-link {
+    transform: perspective(600px)
+        rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg));
+    transition: transform 0.4s ease-out;   /* smooth settle on leave */
+    will-change: transform;
+}
+.catalog-items .card--holo .media__container:hover .card__media-link {
+    transition: transform 0.05s linear;    /* glued to the cursor while on it */
+}
+/* Rainbow shine: a wide gradient whose position is the pointer's. */
+.catalog-items .card--holo .card__media-link::before {
     content: "";
     position: absolute;
-    top: -30%;
-    left: 0;
-    width: 70%;
-    height: 160%;
-    opacity: 0;
+    inset: 0;
     pointer-events: none;
-    transform: translateX(-120%) rotate(16deg);
-    background: linear-gradient(105deg,
-        transparent 8%,
-        rgba(255, 110, 110, 0.30) 25%,
-        rgba(255, 233, 120, 0.34) 38%,
-        rgba(255, 255, 255, 0.42) 50%,
-        rgba(120, 255, 200, 0.32) 62%,
-        rgba(130, 160, 255, 0.30) 78%,
-        transparent 92%);
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+    background: linear-gradient(115deg,
+        transparent 20%,
+        rgba(255, 90, 120, 0.55) 36%,
+        rgba(255, 221, 100, 0.55) 44%,
+        rgba(110, 255, 180, 0.55) 52%,
+        rgba(110, 180, 255, 0.55) 60%,
+        rgba(220, 120, 255, 0.55) 68%,
+        transparent 84%);
+    background-size: 260% 260%;
+    background-position: var(--px, 50%) var(--py, 50%);
+    mix-blend-mode: color-dodge;
+    filter: saturate(1.3);
 }
-.catalog-items .card:hover .card__media-link::after {
-    animation: foil-sweep 0.7s ease-in-out 1 both;
+/* Glare: a soft white spot under the cursor, no blend mode, reads anywhere. */
+.catalog-items .card--holo .card__media-link::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s ease-out;
+    background: radial-gradient(circle at var(--px, 50%) var(--py, 50%),
+        rgba(255, 255, 255, 0.35) 0%,
+        rgba(255, 255, 255, 0.12) 25%,
+        transparent 55%);
 }
-@keyframes foil-sweep {
-    0%   { opacity: 0; transform: translateX(-120%) rotate(16deg); }
-    12%  { opacity: 1; }
-    88%  { opacity: 1; }
-    100% { opacity: 0; transform: translateX(290%) rotate(16deg); }
+.catalog-items .card--holo .media__container:hover .card__media-link::before {
+    opacity: 0.8;
 }
-/* Touch has no real hover; reduced motion means no sweep at all. */
-@media (hover: none) and (pointer: coarse) {
-    .catalog-items .card:hover .card__media-link::after { animation: none; }
+.catalog-items .card--holo .media__container:hover .card__media-link::after {
+    opacity: 1;
 }
-@media (prefers-reduced-motion: reduce) {
-    .catalog-items .card:hover .card__media-link::after { animation: none; }
+/* Touch has no real hover; reduced motion gets a flat, still card. The JS
+   side also refuses to set the variables under either condition. */
+@media (hover: none) and (pointer: coarse), (prefers-reduced-motion: reduce) {
+    .catalog-items .card--holo .card__media-link,
+    .catalog-items .card--holo .media__container:hover .card__media-link {
+        transform: none;
+        transition: none;
+    }
+    .catalog-items .card--holo .media__container:hover .card__media-link::before,
+    .catalog-items .card--holo .media__container:hover .card__media-link::after {
+        opacity: 0;
+    }
 }
