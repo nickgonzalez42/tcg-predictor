@@ -13,8 +13,13 @@ KEY=~/.ssh/tcg-predictor.pem
 # GNU rsync (brew) when present: macOS's bundled openrsync corrupted the
 # 4.4GB pricecharting.db delta on 2026-08-05 ("failed verification -- update
 # discarded", exit 23) — big-file delta transfer is exactly its weak spot.
+# --partial-dir, never bare --partial (2026-10-13): when the server's disk
+# filled mid-push, --partial renamed the truncated temp file OVER the live
+# pricecharting.db, corrupting prod. --partial-dir keeps the resumable piece
+# in a side directory instead, so the destination only ever changes via the
+# atomic rename of a COMPLETED transfer.
 RSYNC=$([ -x /opt/homebrew/bin/rsync ] && echo /opt/homebrew/bin/rsync || echo rsync)
-RS="$RSYNC -az --partial --stats -e"
+RS="$RSYNC -az --partial-dir=.rsync-partial --stats -e"
 SSH_CMD="ssh -i $KEY"
 DATA=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece
 API_DATA=/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/dotnet/API/Data/cards
@@ -29,6 +34,22 @@ for f in $DATA/*_cards.db-wal(N) $DATA/*_cards.db-journal(N) \
          $API_DATA/*.db-wal(N) $API_DATA/*.db-journal(N); do
   [ -e "$f" ] && { echo "ABORT: $f exists (active writer)"; exit 1; }
 done
+
+# Free-space preflight (2026-10-13): pushing onto a 97%-full disk hit ENOSPC
+# mid-transfer and truncated pricecharting.db on prod. The running API holds
+# every replaced DB's old inode open until the restart at the end, so during
+# a push each shipped file briefly exists twice — demand room for all of them
+# plus a 1GB margin before sending a byte. (Delta nights need less, but a
+# failed delta falls back to the full push, so require full-push room always.)
+need_kb=$(du -ck $DATA/*_cards.db "$API_DATA/pricecharting.db" | tail -1 | cut -f1)
+need_kb=$(( need_kb + 1048576 ))
+free_kb=$(${=SSH_CMD} ubuntu@$IP "df -Pk / | awk 'NR==2 {print \$4}'")
+if [ "$free_kb" -lt "$need_kb" ]; then
+  echo "ABORT: prod has $(( free_kb / 1048576 ))GB free; need $(( need_kb / 1048576 ))GB" \
+       "(each pushed DB exists twice until the restart frees the API's old handles)"
+  exit 1
+fi
+echo "preflight: prod free $(( free_kb / 1048576 ))GB >= needed $(( need_kb / 1048576 ))GB"
 
 echo "== card DBs =="
 ${=RS} "$SSH_CMD" $DATA/*_cards.db ubuntu@$IP:/srv/tcg/data/
