@@ -22,7 +22,9 @@ Run:  .venv/bin/python backfill_sales_volume.py --game all --rpm 40 \
 import argparse
 import os
 import sqlite3
+import subprocess
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,7 +35,19 @@ from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                      "pricecharting.db")
-BLOCK_LIMIT = 25     # consecutive empty/failed fetches before giving up the night
+BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
+COOL_OFF_S = 1800    # breaker trip: rest, then resume (transient outages heal)
+MAX_TRIPS = 4        # consecutive cool-offs with no success between: give up
+
+
+def refresh_live():
+    """True while the nightly refresh is running. Long unattended runs pause
+    then: the refresh crawls TCGplayer at the same politeness budget, and two
+    crawls at once would double it — the exact mistake that got the
+    PriceCharting IP blocked for two days (2026-10-12)."""
+    r = subprocess.run(["pgrep", "-f", "run_daily_refresh.sh|weekly_refresh.py"],
+                       capture_output=True)
+    return r.returncode == 0
 
 
 def gather(game, conn, refresh_days, limit):
@@ -99,20 +113,44 @@ def main():
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
     session = tp.make_session()
     ok = empty = fail = rows_total = 0
-    streak = 0
+    streak = trips = 0
+    skip = set()
     for i, (game, pid, _mp) in enumerate(targets, 1):
+        if (game, pid) in skip:
+            continue
+        # Yield to the nightly refresh (~once a minute at 40rpm). After a
+        # pause, drop targets the refresh's own tcg-sales step fetched.
+        if i % 40 == 0 and refresh_live():
+            print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)",
+                  flush=True)
+            conn.commit()
+            while refresh_live():
+                time.sleep(600)
+            cutoff = (datetime.now(timezone.utc)
+                      - timedelta(days=args.refresh_days)).isoformat()
+            skip = set((g, p) for g, p in conn.execute(
+                "SELECT game, product_id FROM tcg_sales_scan WHERE fetched_at > ?",
+                (cutoff,)))
+            print(f"  refresh finished — resuming ({len(skip):,} now fresh)", flush=True)
         try:
             h = tp.fetch_price_history(session, pid, args.delay)
         except Exception as e:
             fail += 1
             streak += 1
             if streak >= BLOCK_LIMIT:
+                trips += 1
+                if trips >= MAX_TRIPS:
+                    print(f"{MAX_TRIPS} cool-offs with no success between — giving up; "
+                          f"{len(targets) - i:,} stay due for the next run.", flush=True)
+                    break
                 print(f"{BLOCK_LIMIT} consecutive failures ({type(e).__name__}) — "
-                      f"stopping; {len(targets) - i:,} stay due for the next run.",
-                      flush=True)
-                break
+                      f"cooling off {COOL_OFF_S // 60} min "
+                      f"(trip {trips}/{MAX_TRIPS})", flush=True)
+                conn.commit()
+                time.sleep(COOL_OFF_S)
+                streak = 0
             continue
-        streak = 0
+        streak = trips = 0
         n = record_sales(conn, game, pid, h)
         rows_total += n
         ok += 1
@@ -122,7 +160,8 @@ def main():
             conn.commit()
         if i % 500 == 0:
             print(f"  {i}/{len(targets)} ok={ok} empty={empty} fail={fail} "
-                  f"rows={rows_total}", flush=True)
+                  f"rows={rows_total} ({datetime.now(timezone.utc):%m-%d %H:%M} UTC)",
+                  flush=True)
     conn.commit()
     conn.close()
     print(f"DONE: ok={ok} (empty={empty}) fail={fail} bucket rows={rows_total}",
