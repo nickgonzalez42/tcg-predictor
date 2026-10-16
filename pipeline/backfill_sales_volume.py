@@ -85,6 +85,12 @@ def main():
     ap.add_argument("--total-limit", type=int, default=None,
                     help="cap the whole run; games compete value-first above "
                          "a per-game floor so cheap games keep rotating")
+    ap.add_argument("--no-yield", action="store_true",
+                    help="skip the yield-to-refresh pause. REQUIRED when this "
+                         "script runs AS a refresh step: the guard pgreps for "
+                         "weekly_refresh and would find its own parent and "
+                         "sleep forever (2026-10-16: the first in-refresh run "
+                         "deadlocked exactly this way for 5 hours)")
     args = ap.parse_args()
 
     games = priced_games() if args.game == "all" else [args.game]
@@ -120,7 +126,7 @@ def main():
             continue
         # Yield to the nightly refresh (~once a minute at 40rpm). After a
         # pause, drop targets the refresh's own tcg-sales step fetched.
-        if i % 40 == 0 and refresh_live():
+        if not args.no_yield and i % 40 == 0 and refresh_live():
             print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)",
                   flush=True)
             conn.commit()

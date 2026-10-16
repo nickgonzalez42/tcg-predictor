@@ -143,8 +143,10 @@ STEPS = [
     # year of history, so the rotation IS the backfill (~250k cards at
     # 4,000/night = first full pass in about two months, expensive cards
     # first and monthly re-touches thereafter). ~100 min at 40 rpm.
+    # --no-yield is load-bearing (2026-10-16): as a refresh step this script's
+    # yield-to-refresh guard would find its own parent and sleep forever.
     ("tcg-sales", ["backfill_sales_volume.py", "--game", "all", "--rpm", "40",
-                   "--refresh-days", "30", "--total-limit", "4000"]),
+                   "--refresh-days", "30", "--total-limit", "4000", "--no-yield"]),
     # Second pass for cards the search crawl couldn't price tonight: if the
     # product page's sales chart still carries a recent NM series, adopt it
     # (tcg_nm_only) so the card keeps a live price instead of going stale.
