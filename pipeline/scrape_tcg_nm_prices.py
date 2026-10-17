@@ -204,7 +204,23 @@ def init_db(conn):
     cols = [r[1] for r in conn.execute("PRAGMA table_info(tcg_nm_scan)")]
     if "scanned_at" not in cols:
         conn.execute("ALTER TABLE tcg_nm_scan ADD COLUMN scanned_at TEXT")
+    # The search's product-level marketPrice rides along with depth
+    # (2026-10-17): on CSV nights the price series comes from the Seller
+    # Portal export (import_tcg_csv.py), so this column is where the
+    # search price lives for the weekly search-vs-CSV cross-check.
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(tcg_depth_history)")]
+    if "market_price" not in cols:
+        conn.execute("ALTER TABLE tcg_depth_history ADD COLUMN market_price REAL")
     conn.commit()
+
+
+def csv_imported_games(conn, today):
+    """Games whose Seller Portal CSV was imported for `today` (UTC)."""
+    try:
+        return {g for (g,) in conn.execute(
+            "SELECT game FROM tcg_csv_imports WHERE date=?", (today,))}
+    except sqlite3.OperationalError:
+        return set()
 
 
 def plan_all(games, session, conn, today, delay):
@@ -227,7 +243,10 @@ def plan_all(games, session, conn, today, delay):
     return game_sets
 
 
-def scrape_game(game, sets, session, conn, today, delay, resume):
+def scrape_game(game, sets, session, conn, today, delay, resume, write_prices=True):
+    """write_prices=False (CSV night cross-check): record depth + the search
+    market price for every card but write NO tcg_nm_history rows — the
+    import owns the price series that night."""
     line = GAMES[game]["tcg_line"]
     if not sets:
         print(f"[{game}] could not read the set aggregation — nothing scraped.",
@@ -272,16 +291,18 @@ def scrape_game(game, sets, session, conn, today, delay, resume):
             # with listings and no market price is still supply information,
             # and nm_only cards' listings are as real as anyone's.
             tl, mf = p.get("totalListings"), p.get("maxFulfillableQuantity")
+            mp = tp._to_float(p.get("marketPrice"))
             depth.append((game, int(pid), today,
                           int(tl) if tl is not None else None,
                           int(mf) if mf is not None else None,
-                          tp._to_float(p.get("lowestPrice"))))
-            mp = tp._to_float(p.get("marketPrice"))
+                          tp._to_float(p.get("lowestPrice")), mp))
             # A null marketPrice means TCGplayer has no NM value (no recent
             # sales/listings) — record nothing rather than a fake 0.
             if mp is None:
                 continue
             if int(pid) in nm_only:   # detailed-history refresh owns these
+                continue
+            if not write_prices:      # CSV night: the import owns the series
                 continue
             rows.append((game, int(pid), today, mp))
         if rows:
@@ -290,12 +311,14 @@ def scrape_game(game, sets, session, conn, today, delay, resume):
                 "VALUES (?,?,?,?)", rows)
         if depth:
             conn.executemany(
-                "INSERT OR REPLACE INTO tcg_depth_history VALUES (?,?,?,?,?,?)", depth)
+                "INSERT OR REPLACE INTO tcg_depth_history (game, product_id, date, "
+                "total_listings, max_fulfillable, lowest_price, market_price) "
+                "VALUES (?,?,?,?,?,?,?)", depth)
         # Only mark the set done if every page arrived — a partial set must be
         # retried next run, not sealed with a hole.
         if complete:
             conn.execute("INSERT OR REPLACE INTO tcg_nm_scan VALUES (?,?,?,?,?)",
-                         (game, set_name, today, len(rows),
+                         (game, set_name, today, len(rows) if write_prices else len(depth),
                           datetime.now(timezone.utc).isoformat()))
         else:
             print(f"  [{game}] set '{set_name}': {len(raw)}/{count} products "
@@ -322,6 +345,12 @@ def main():
                     help="hard ceiling on requests per rolling minute")
     ap.add_argument("--resume", action="store_true",
                     help="skip sets already fully scanned today (restart a long run)")
+    ap.add_argument("--csv-games", choices=["price", "skip", "depth-only"], default="price",
+                    help="games whose Seller Portal CSV was imported today: 'price' = "
+                         "crawl + write prices as always; 'skip' = don't crawl them "
+                         "(CSV nights); 'depth-only' = crawl for depth + the search "
+                         "market price but write no price rows (the weekly crawl "
+                         "night's cross-check). Games WITHOUT a CSV are always priced.")
     args = ap.parse_args()
 
     if args.games:
@@ -345,12 +374,25 @@ def main():
     conn = sqlite3.connect(PC_DB, timeout=60)
     init_db(conn)
 
+    csv_games = csv_imported_games(conn, today) if args.csv_games != "price" else set()
+    if args.csv_games == "skip" and csv_games:
+        skipped = [g for g in games if g in csv_games]
+        games = [g for g in games if g not in csv_games]
+        print(f"CSV imported today for {', '.join(skipped)} — not crawled "
+              f"({'nothing left to crawl' if not games else 'crawling ' + ', '.join(games)})")
+    if not games:
+        conn.close()
+        print(f"\nDone. 0 Near Mint prices for {today} (every game priced by CSV)")
+        return
     game_sets = plan_all(games, session, conn, today, args.delay)
 
     total_priced = 0
     for game in games:
+        write_prices = not (args.csv_games == "depth-only" and game in csv_games)
+        if not write_prices:
+            print(f"[{game}] CSV priced tonight — depth + search price only, no price rows")
         priced, _ = scrape_game(game, game_sets.get(game, []), session, conn,
-                                today, args.delay, args.resume)
+                                today, args.delay, args.resume, write_prices)
         total_priced += priced
 
     conn.close()

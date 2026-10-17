@@ -19,10 +19,15 @@ Steps (in order):
   tcg-pokemon    Same for Pokémon.
   pc-download    Fresh PriceCharting CSVs (still needed: the tcg-id -> pc_id
                  linkage that the graded crawl depends on).
-  tcg-nm-prices  TCGplayer Near Mint prices for the WHOLE catalog — the ungraded
-                 price source (graded stays PriceCharting). Search API, ~50
-                 cards/request, into tcg_nm_history. Runs nightly; --resume makes
-                 it restart-safe. Watch it live in refresh_status.py.
+  tcg-csv-export Seller Portal pricing CSV per game (Playwright, signed in as
+                 the user; export_tcg_csv.py --login once). Non-fatal.
+  tcg-csv-import The CSVs -> tcg_nm_history (base + labeled printings) and
+                 one-piece/tcg_csv.db (every condition). The ungraded price
+                 source since 2026-10-17. Non-fatal.
+  tcg-nm-prices  TCGplayer search crawl: fallback for games without a CSV, and
+                 on the weekly crawl night (Saturday local) the market-depth +
+                 search-vs-CSV pass for every game. --resume makes it
+                 restart-safe. Watch it live in refresh_status.py.
   pc-match       Rebuild the current graded-price snapshot (matches new cards by
                  tcg-id) and APPEND today's snapshot into graded_price_history.
   pc-graded-new  Chart-page crawl for cards with no graded history yet (i.e. new
@@ -57,6 +62,13 @@ from games import GAMES
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))    # the scripts (this repo)
 PY = os.path.join(DATA_DIR, ".venv", "bin", "python")      # the venv (sibling one-piece/)
 LOCK = os.path.join(DATA_DIR, ".weekly_refresh.lock")      # one refresh at a time
+
+# The weekly CRAWL + full-rebuild night (2026-10-17 schedule): Saturday 8 PM
+# local, which is already Sunday in UTC (weekday 6) — the UTC day is the
+# pipeline's batch-label basis. Every other night is a CSV night: Seller
+# Portal export -> import, no search crawl. run_daily_refresh.sh and
+# local_model_run.sh key the same night off `date -u +%u` = 7.
+CRAWL_NIGHT = datetime.now(timezone.utc).weekday() == 6
 
 
 def acquire_lock():
@@ -115,14 +127,31 @@ STEPS = [
     # pc-download (paid PriceCharting bulk CSV) retired 2026-07-31 when the
     # subscription ended. Graded now comes from the public product-page crawl
     # (pc-graded-new, on a rotation) and ungraded from TCGplayer.
-    # Ungraded/Near Mint prices now come from TCGplayer (graded stays PC). Walks
-    # every game's sets via the search API (~50 cards/request), writing each
-    # card's NM market price into tcg_nm_history for the unify step. --resume
-    # skips sets already done today so a resumed nightly (--from tcg-nm-prices)
-    # doesn't re-crawl. rpm 30 is deliberately gentle; raise it once we've seen
-    # how TCGplayer handles the sustained nightly load.
+    # Near Mint prices come from the SELLER PORTAL CSV export (2026-10-17):
+    # export_tcg_csv.py drives a signed-in Chrome through "Export Filtered
+    # CSV" for every game (~5 min), import_tcg_csv.py turns the files into
+    # tcg_nm_history base + labeled-printing rows (+ per-condition history in
+    # one-piece/tcg_csv.db). Both are non-fatal: a dead session (run
+    # export_tcg_csv.py --login) or a refused file leaves that game to the
+    # crawl step below, so no night loses its prices.
+    ("tcg-csv-export", ["export_tcg_csv.py", "--game", "all", "--non-fatal"]),
+    ("tcg-csv-import", ["import_tcg_csv.py", "--non-fatal"]),
+    # Catalog cards the CSV couldn't match by name (products TCGplayer
+    # renamed since the catalog crawl): fetch their SKU ids from the
+    # detailed endpoint so TOMORROW's import matches them by SKU. ~300
+    # cards/night at 40 rpm ≈ 8 min; the backlog (~12k) drains in weeks.
+    ("tcg-sku-resolve", ["import_tcg_csv.py", "--resolve", "300", "--rpm", "40",
+                         "--non-fatal"]),
+    # The TCGplayer search crawl (~50 cards/request, ~3 h for the catalog) is
+    # now the FALLBACK + the weekly depth pass: on CSV nights it crawls only
+    # games whose CSV didn't land (--csv-games skip); on the crawl night it
+    # walks every game for market depth and the search price (tcg_depth_
+    # history.market_price, the search-vs-CSV cross-check) but writes price
+    # rows only for CSV-less games (--csv-games depth-only). --resume skips
+    # sets already done today so a resumed night doesn't re-crawl.
     ("tcg-nm-prices", ["scrape_tcg_nm_prices.py", "--game", "all",
-                       "--resume", "--delay", "1.0", "--rpm", "30"]),
+                       "--resume", "--delay", "1.0", "--rpm", "30",
+                       "--csv-games", "depth-only" if CRAWL_NIGHT else "skip"]),
     # Cross-check the high-value cards' search marketPrice against the detailed
     # endpoint's Near Mint market and flag disagreements into tcg_nm_review for
     # manual page inspection. TCGplayer's search marketPrice drifts to an asking
@@ -196,11 +225,13 @@ STEPS = [
     # rotation. ~2 req/s sustained instead of ~3 costs the Sunday run an hour
     # but keeps the steady state well inside what months of crawling showed
     # PC tolerates. The circuit breaker caps the damage if a block recurs.
+    # Crawl night (CRAWL_NIGHT, Saturday local) carries the consolidated
+    # 12k-page rotation; every other night crawls never-crawled pages only.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
                        "--delay", "1.0"]
                       + (["--refresh-days", "30", "--workers", "2",
                           "--limit", "4000", "--total-limit", "12000"]
-                         if datetime.now(timezone.utc).weekday() in (0, 1)
+                         if CRAWL_NIGHT
                          else ["--workers", "1", "--total-limit", "1500"])),
     # Price-integrity sweep: TCGplayer NM vs PC sales divergences -> review
     # CSV (no auto-action; the two failure classes need human judgment).

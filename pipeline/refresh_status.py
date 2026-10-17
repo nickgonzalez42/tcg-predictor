@@ -117,7 +117,24 @@ def parse():
         pct = round(100 * (done_n + frac_in_step) / total)
     return {"state": state, "steps": steps, "total": total, "done": done_n,
             "pct": pct, "started": started, "log": os.path.basename(path),
-            "nm": nm_prog, "tail": lines[-TAIL_LINES:]}
+            "nm": nm_prog, "csv": _csv_imports_today(), "tail": lines[-TAIL_LINES:]}
+
+
+def _csv_imports_today():
+    """Tonight's Seller Portal CSV imports (the price source on CSV nights,
+    2026-10-17): [{game, base_rows, at}] from import_tcg_csv.py's ledger, or
+    [] when none landed yet / the table isn't there."""
+    today = datetime.now(timezone.utc).date().isoformat()
+    try:
+        con = sqlite3.connect(f"file:{os.path.abspath(PC_DB)}?mode=ro",
+                              uri=True, timeout=2)
+        rows = con.execute(
+            "SELECT game, base_rows, imported_at FROM tcg_csv_imports WHERE date=? "
+            "ORDER BY imported_at", (today,)).fetchall()
+        con.close()
+    except sqlite3.OperationalError:
+        return []
+    return [{"game": g, "base_rows": n or 0, "at": (at or "")[11:16]} for g, n, at in rows]
 
 
 def _tcgnm_progress():
@@ -247,6 +264,7 @@ pre{background:#070a12;border:1px solid #151b28;border-radius:8px;padding:12px 1
 <h1>Daily refresh <span id=badge class=badge></span></h1>
 <div class=sub id=sub></div>
 <div class=bar><i id=fill style=width:0></i></div>
+<div class=sub id=csvline></div>
 <div class=nm id=nmcard>
   <h2>TCGplayer Near Mint crawl <span id=nmlive></span></h2>
   <div class=big id=nmpct>0%</div>
@@ -268,6 +286,12 @@ async function tick(){
    (d.log?d.log+' · ':'')+(d.started?'started '+d.started+' · ':'')+
    (d.total?(d.done+' of '+d.total+' steps done'):(d.done+' steps done'));
  document.getElementById('fill').style.width = (d.pct!=null?d.pct:0)+'%';
+ // Tonight's Seller Portal CSV imports — the price source on CSV nights; a
+ // game missing from this line is the crawl's to price tonight.
+ const cl=document.getElementById('csvline');
+ cl.textContent = (d.csv && d.csv.length)
+   ? 'CSV prices tonight: '+d.csv.map(c=>c.game+' '+c.base_rows.toLocaleString()+(c.at?' @'+c.at+'Z':'')).join(' · ')
+   : '';
  // Dedicated live panel for the TCGplayer NM crawl (shown whenever a crawl is
  // in progress today, standalone or as a refresh step).
  const nc=document.getElementById('nmcard'), p=d.nm;

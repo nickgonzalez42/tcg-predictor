@@ -30,11 +30,12 @@ export TCG_FC_PRERELEASE=1
 # 6m/12m retrain on the FULL-REBUILD night only (2026-10-09, user decision):
 # they stay unvalidated until their first cohorts mature in 2027 and barely
 # move between runs; a 1m-only night cuts the model block roughly in half.
-# Sunday local = Mon UTC (1); the legacy Monday kick = Tue UTC (2). Other
-# nights keep serving Sunday's standing 6m/12m rows (horizon-scoped delete
-# in forecast_predict.py).
+# The full-rebuild night is SATURDAY local = Sunday UTC (7) since 2026-10-17
+# (CSV-night schedule; see run_daily_refresh.sh). Other nights keep serving
+# Saturday's standing 6m/12m rows (horizon-scoped delete in
+# forecast_predict.py).
 u=$(date -u +%u)
-if [ "$u" != "1" ] && [ "$u" != "2" ]; then
+if [ "$u" != "7" ]; then
   export TCG_FC_HORIZONS=1m
 fi
 

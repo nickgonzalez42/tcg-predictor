@@ -33,6 +33,11 @@ echo "=== backup_to_s3 $D $(date '+%T') ==="
 tar -czf "$TMP/ml_csvs-$D.tar.gz" -C "$ONEPIECE/ml_data" \
   $(cd "$ONEPIECE/ml_data" && ls *.csv 2>/dev/null | tr '\n' ' ')
 $AWS s3 cp "$TMP/ml_csvs-$D.tar.gz" "$DEST/nightly/" --only-show-errors || exit 1
+# Seller Portal price exports (CSV nights, 2026-10-17): the night's archived
+# gz files — the raw price source, ~22 MB a night, same 30-day lifecycle.
+for f in $(find "$ONEPIECE/tcg_exports/archive" -name '*.csv.gz' -mtime -1 2>/dev/null); do
+  $AWS s3 cp "$f" "$DEST/nightly/csv/" --only-show-errors || echo "(csv archive upload failed: $f)"
+done
 
 # -v-12H: the run's nominal day (10 PM start crosses midnight)
 # Friday UTC = the Thursday-evening run (2026-09-20 twice-weekly cadence).
@@ -43,6 +48,9 @@ if [ "$(date -u +%u)" = "5" ] || [ "${1:-}" = "--weekly" ]; then
     CREATE TABLE b.graded_price_history AS SELECT * FROM graded_price_history;
     CREATE TABLE b.tcg_nm_history       AS SELECT * FROM tcg_nm_history;
     CREATE TABLE b.pricecharting        AS SELECT * FROM pricecharting;
+    CREATE TABLE b.tcg_sku_map          AS SELECT * FROM tcg_sku_map;
+    CREATE TABLE b.tcg_csv_base         AS SELECT * FROM tcg_csv_base;
+    CREATE TABLE b.tcg_csv_imports      AS SELECT * FROM tcg_csv_imports;
     DETACH b;" || exit 1
   gzip "$TMP/pc_crawl-$D.db"
   $AWS s3 cp "$TMP/pc_crawl-$D.db.gz" "$DEST/weekly/" --only-show-errors || exit 1

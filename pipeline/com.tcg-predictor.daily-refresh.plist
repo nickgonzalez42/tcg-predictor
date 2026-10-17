@@ -2,29 +2,80 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>Label</key>
-    <string>com.tcg-predictor.daily-refresh</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/zsh</string>
-        <string>/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/pipeline/run_daily_refresh.sh</string>
-    </array>
-    <key>StartCalendarInterval</key>
-    <dict>
-        <key>Hour</key>
-        <integer>1</integer>
-        <key>Minute</key>
-        <integer>0</integer>
-    </dict>
-    <key>StandardOutPath</key>
-    <string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
-    <key>StandardErrorPath</key>
-    <string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
-    <key>RunAtLoad</key>
-    <false/>
-    <!-- Let the match-review GUI the script backgrounds outlive the job;
-         without this launchd reaps the whole process group on exit. -->
-    <key>AbandonProcessGroup</key>
-    <true/>
+	<key>AbandonProcessGroup</key>
+	<true/>
+	<key>Label</key>
+	<string>com.tcg-predictor.daily-refresh</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/zsh</string>
+		<string>/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/pipeline/run_daily_refresh.sh</string>
+	</array>
+	<key>RunAtLoad</key>
+	<false/>
+	<key>StandardErrorPath</key>
+	<string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
+	<key>StandardOutPath</key>
+	<string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
+	<!-- Six nights a week (2026-10-17, Seller Portal CSV as the price
+	     source): Monday through Saturday, 8 PM local. Weekday 1 = Monday,
+	     6 = Saturday. The SATURDAY run's UTC day is Sunday, which gates the
+	     full rebuild (search crawl for depth, PC sweeps, graded rotation,
+	     6m/12m retrain, ~31 h — it owns Sunday, so Sunday has no run of its
+	     own). The THURSDAY run's UTC day is Friday, which gates the weekly
+	     report and the S3 dumps. Install a copy of this file at
+	     ~/Library/LaunchAgents/ and reload it ONLY while no refresh is
+	     running (launchctl bootout kills a live run mid-phase). -->
+	<key>StartCalendarInterval</key>
+	<array>
+		<dict>
+			<key>Weekday</key>
+			<integer>1</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>2</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>3</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>4</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>5</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Weekday</key>
+			<integer>6</integer>
+			<key>Hour</key>
+			<integer>20</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
 </dict>
 </plist>

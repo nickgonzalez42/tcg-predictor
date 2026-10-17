@@ -126,21 +126,22 @@ find "$LOG_DIR" -name "refresh-*.log" -mtime +30 -delete 2>/dev/null
 # UTC day basis (2026-08-14): an evening start crosses midnight UTC, so the
 # run's UTC date — the log name, the weekly gates, and every batch label the
 # python side writes — is the NEXT calendar day, matching the morning the
-# data goes live. Twice-weekly cadence (2026-09-28, Sun/Thu 8 PM local):
-# the SUNDAY run's UTC day is Monday (=1) and carries the full rebuild +
-# market watch (Tuesday =2 also accepted, covering the final Monday-local
-# run of the old cadence and any manual Monday-evening kick); the THURSDAY
-# run's UTC day is Friday, which still gates the weekly report, and Friday
-# (=5) gates the S3 backup.
+# data goes live. Six-nights-a-week cadence (2026-10-17, Mon-Sat 8 PM local,
+# Seller Portal CSV as the price source): the SATURDAY run's UTC day is
+# Sunday (=7) and carries the full rebuild — search crawl for depth, PC
+# console sweep, graded rotation, market watch, 6m/12m retrain (~31 h, so it
+# owns Sunday and finishes Monday morning; there is no Sunday run). The
+# THURSDAY run's UTC day is Friday, which gates the weekly report and (=5)
+# the S3 dumps.
 LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
 
 {
   # Phase A (Mac): crawls + price build + ml prep, through art-comps.
-  if [ "$(date -u +%u)" = "1" ] || [ "$(date -u +%u)" = "2" ]; then
-    echo "=== WEEKLY full refresh — $(date '+%F %T') ==="
+  if [ "$(date -u +%u)" = "7" ]; then
+    echo "=== WEEKLY full refresh (crawl night) — $(date '+%F %T') ==="
     "$PY" weekly_refresh.py --to art-comps
   else
-    echo "=== daily refresh — $(date '+%F %T') ==="
+    echo "=== daily refresh (CSV night) — $(date '+%F %T') ==="
     # Catalog crawl on the daily night too (2026-10-10): --new-only makes it
     # a single request per game on a quiet night, and it is what gets a set
     # TCGplayer lists mid-week (presale) onto the site with pre-release
@@ -148,7 +149,9 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
     # crawl hiccup must not cost the price pipeline its night.
     "$PY" weekly_refresh.py --to catalog \
       || echo "(daily catalog crawl failed — continuing with prices)"
-    "$PY" weekly_refresh.py --from tcg-nm-prices --to art-comps
+    # Prices: Seller Portal CSV export + import (the search crawl runs only
+    # for a game whose CSV didn't land), then the rest of the night.
+    "$PY" weekly_refresh.py --from tcg-csv-export --to art-comps
   fi
   phaseA=$?
   if [ $phaseA -ne 0 ]; then
