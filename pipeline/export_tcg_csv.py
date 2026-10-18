@@ -89,6 +89,16 @@ PORTAL_LINES = {
     "digimon":  ["Digimon Card Game"],
     "gundam":   ["Gundam Card Game"],
     "starwars": ["Star Wars Unlimited"],
+    # Added 2026-10-18. Labels copied from the dialog's own Category list —
+    # note the Seller Portal writes "Flesh & Blood TCG" with an ampersand
+    # while the search API calls the same line "Flesh and Blood TCG".
+    "fleshandblood": ["Flesh & Blood TCG"],
+    # "Pokemon Japan" is a SEPARATE line from "Pokemon"; pick_option matches
+    # exactly first, and NOT_OURS keeps the plain-Pokemon entry from ever
+    # prefix-matching this one (or vice versa).
+    "pokemonjp": ["Pokemon Japan"],
+    "riftbound": ["Riftbound League of Legends Trading Card Game"],
+    "cyberpunk": ["Cyberpunk TCG"],
 }
 # Product lines that share a prefix with ours but are NOT ours (the loose
 # matcher refuses any option carrying one of these words).

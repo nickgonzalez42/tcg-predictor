@@ -6,7 +6,8 @@ namespace API.RequestHelpers;
 public static class GameRegistry
 {
     public static readonly string[] Keys =
-        ["onepiece", "pokemon", "yugioh", "magic", "lorcana", "digimon", "gundam", "starwars"];
+        ["onepiece", "pokemon", "yugioh", "magic", "lorcana", "digimon", "gundam", "starwars",
+         "fleshandblood", "pokemonjp", "riftbound", "cyberpunk"];
 
     private static readonly Dictionary<string, string> Labels = new()
     {
@@ -18,6 +19,12 @@ public static class GameRegistry
         ["digimon"] = "Digimon",
         ["gundam"] = "Gundam",
         ["starwars"] = "Star Wars Unlimited",
+        // Added 2026-10-18. "pokemonjp" is Pokémon's Japanese line — a
+        // SEPARATE catalog from "pokemon", never a variant of it.
+        ["fleshandblood"] = "Flesh and Blood",
+        ["pokemonjp"] = "Pokémon Japan",
+        ["riftbound"] = "Riftbound",
+        ["cyberpunk"] = "Cyberpunk",
     };
 
     public static string Label(string key) => Labels.GetValueOrDefault(key, key);

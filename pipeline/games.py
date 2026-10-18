@@ -94,6 +94,60 @@ GAMES = {
         "pc_min_rows": 500,
         "scraper": ["tcg_scraper.py", "--game", "gundam"],
     },
+    # --- added 2026-10-18 -------------------------------------------------
+    # Four new lines. Unlike every earlier game, these onboard WITHOUT a
+    # PriceCharting source: ungraded prices come from the Seller Portal CSV
+    # (export_tcg_csv.py / import_tcg_csv.py), which covers any product line
+    # TCGplayer sells from the first night. pc_csv=None therefore means
+    # "no graded ladder yet", not "no prices" — but priced_games() still
+    # keys off pc_csv, so until that filter is made CSV-aware these four are
+    # catalog-only: crawled, exported and imported, but not yet in the
+    # unified history, the model, or the site. tcg_line values are the
+    # productLineUrlName, each VERIFIED against the search API's own
+    # productLineName card counts (a wrong slug silently returns the WHOLE
+    # catalog instead of 404ing — see scrape_tcg_nm_prices._load_slug_map).
+    "fleshandblood": {
+        "label": "Flesh and Blood",
+        "tcg_line": "flesh-and-blood-tcg",       # verified: 107 sets / 10,683 cards
+        "db": "fleshandblood_cards.db",
+        "images": "images_fleshandblood",
+        "pc_category": None,
+        "pc_csv": None,
+        "pc_min_rows": 5_000,
+        "scraper": ["tcg_scraper.py", "--game", "fleshandblood"],
+    },
+    "pokemonjp": {
+        "label": "Pokémon Japan",
+        "tcg_line": "pokemon-japan",             # verified: 455 sets / 30,406 cards
+        "db": "pokemonjp_cards.db",
+        "images": "images_pokemonjp",
+        "pc_category": None,
+        "pc_csv": None,
+        "pc_min_rows": 10_000,
+        "scraper": ["tcg_scraper.py", "--game", "pokemonjp"],
+    },
+    "riftbound": {
+        "label": "Riftbound",
+        # verified: 12 sets / 1,747 cards. NOTE the full slug — "riftbound"
+        # and "riftbound-tcg" both fall through to the entire catalog.
+        "tcg_line": "riftbound-league-of-legends-trading-card-game",
+        "db": "riftbound_cards.db",
+        "images": "images_riftbound",
+        "pc_category": None,
+        "pc_csv": None,
+        "pc_min_rows": 500,
+        "scraper": ["tcg_scraper.py", "--game", "riftbound"],
+    },
+    "cyberpunk": {
+        "label": "Cyberpunk",
+        "tcg_line": "cyberpunk-tcg",             # verified: 12 sets / 459 cards
+        "db": "cyberpunk_cards.db",
+        "images": "images_cyberpunk",
+        "pc_category": None,
+        "pc_csv": None,
+        "pc_min_rows": 200,
+        "scraper": ["tcg_scraper.py", "--game", "cyberpunk"],
+    },
     "starwars": {
         "label": "Star Wars Unlimited",
         "tcg_line": "star-wars-unlimited",

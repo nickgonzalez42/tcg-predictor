@@ -86,6 +86,10 @@ public class LorcanaContext(DbContextOptions<LorcanaContext> options) : GenericC
 public class DigimonContext(DbContextOptions<DigimonContext> options) : GenericCardContext(options);
 public class GundamContext(DbContextOptions<GundamContext> options) : GenericCardContext(options);
 public class StarwarsContext(DbContextOptions<StarwarsContext> options) : GenericCardContext(options);
+public class FleshAndBloodContext(DbContextOptions<FleshAndBloodContext> options) : GenericCardContext(options);
+public class PokemonJpContext(DbContextOptions<PokemonJpContext> options) : GenericCardContext(options);
+public class RiftboundContext(DbContextOptions<RiftboundContext> options) : GenericCardContext(options);
+public class CyberpunkContext(DbContextOptions<CyberpunkContext> options) : GenericCardContext(options);
 
 internal static class CardMapping
 {

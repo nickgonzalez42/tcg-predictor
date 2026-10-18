@@ -33,6 +33,10 @@ AddReadOnlySqlite<LorcanaContext>("LorcanaConnection");
 AddReadOnlySqlite<DigimonContext>("DigimonConnection");
 AddReadOnlySqlite<GundamContext>("GundamConnection");
 AddReadOnlySqlite<StarwarsContext>("StarwarsConnection");
+AddReadOnlySqlite<FleshAndBloodContext>("FleshAndBloodConnection");
+AddReadOnlySqlite<PokemonJpContext>("PokemonJpConnection");
+AddReadOnlySqlite<RiftboundContext>("RiftboundConnection");
+AddReadOnlySqlite<CyberpunkContext>("CyberpunkConnection");
 builder.Services.AddScoped<CardSources>();
 // Cross-database market context + the movers ranking built on it.
 builder.Services.AddScoped<CardMarketData>();
