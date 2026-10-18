@@ -783,6 +783,24 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             print(f"  [{game}/{target}/{hname}] dropped degenerate feature(s): "
                   f"{', '.join(degenerate)}", flush=True)
 
+        # Backtest donor capture (2026-10-17, cross-game transfer test): a
+        # game whose samples feed a POOLED model but which isn't itself
+        # scored needs only its training frame — skip the six model fits
+        # below (a ~1M-row big-game segment is the whole cost of a pooled
+        # backtest). frames_cap subsamples the kept frame so a 9 GB Mac
+        # holds several donors at once. Never set on live runs.
+        if debug is not None and debug.get("frames_only"):
+            cap = debug.get("frames_cap")
+            if cap and len(y) > cap:
+                idx = np.random.default_rng(7).choice(len(y), cap, replace=False)
+                X, y, test, w, base_t = (X.iloc[idx].reset_index(drop=True), y[idx],
+                                         test[idx], w[idx], base_t[idx])
+            debug[hname] = {"X": X, "y": y, "test": test, "w": w, "base_t": base_t,
+                            "frames_only": True}
+            print(f"  [{game}/{target}/{hname}] donor frame captured: {len(y)} rows "
+                  f"(train {(~test).sum()}, test {test.sum()})", flush=True)
+            continue
+
         # confidence band from out-of-sample error, if the split is large enough
         # (HGB's binning needs a healthy sample count, so require a real train set).
         # Gate on the WEIGHTED error — "can the model call value-relevant cards?" —
@@ -805,13 +823,35 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             # that minimizes weighted OOS MAE. Bootstraps the live archive
             # fit below, which takes over once this version has graded rows.
             shrink = fcal.fit_shrink(pred_oos - applied_bias, y[test], w[test])
+            # Hard floor (2026-10-18): a segment whose out-of-sample error is
+            # no better than persistence publishes persistence (shrink 0 on
+            # both directions) and says so. The shrink grid already contains
+            # 0, but it was fooled when the OOS window carried the
+            # PriceCharting break — small games' 6m segments shipped at full
+            # strength while a clean backtest had flat ahead by 15-22%. The
+            # live-archive shrink (graded real calls) may still restore
+            # skill below; this floor speaks only for the OOS evidence.
+            flat_band = float(mean_absolute_error(y[test], np.zeros(int(test.sum())),
+                                                  sample_weight=w[test]))
+            model_band = float(mean_absolute_error(y[test], pred_oos - applied_bias,
+                                                   sample_weight=w[test]))
+            if model_band >= flat_band:
+                shrink = {"up": 0.0, "down": 0.0}
+                print(f"  [{game}/{target}/{hname}] model OOS MAE {model_band:.3f} >= "
+                      f"persistence {flat_band:.3f} — publishing persistence (shrink 0)",
+                      flush=True)
             print(f"  [{game}/{target}/{hname}] OOS shrink up x{shrink['up']:g} "
                   f"down x{shrink['down']:g}", flush=True)
             band = float(mean_absolute_error(y[test], pred_oos - applied_bias,
                                              sample_weight=w[test]))
             raw = float(mean_absolute_error(y[test], pred_oos - applied_bias))
+            # Persistence on the same window (flat_band, computed with the
+            # shrink above) — the yardstick every model decision is judged
+            # against (2026-10-10 review), logged nightly so the comparison
+            # never again has to be done by hand.
             print(f"  [{game}/{target}/{hname}] OOS retMAE {band:.3f} weighted "
-                  f"(raw {raw:.3f}; train {(~test).sum()}, test {test.sum()})", flush=True)
+                  f"(raw {raw:.3f}; train {(~test).sum()}, test {test.sum()}; "
+                  f"persistence {flat_band:.3f})", flush=True)
             print(f"  [{game}/{target}/{hname}] OOS bias {bias:+.3f}"
                   + (" (applied)" if use_debias else " (measured only)"), flush=True)
 

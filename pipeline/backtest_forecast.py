@@ -45,6 +45,19 @@ OUT_DB = os.environ.get("TCG_BT_OUT",
 
 HK = {"1m": 1, "6m": 6, "12m": 12}
 POOL_GAMES = ["onepiece", "lorcana", "digimon", "gundam", "starwars"]
+# Cross-game transfer test (2026-10-17): can the BIG games' history inform the
+# small games' models? --donors names games whose training frames join the
+# pool without being evaluated (frames-only capture: no model fits for them,
+# rows capped by --pool-cap so a 9 GB Mac stays out of swap). Three pooled
+# readings per evaluated cell:
+#   pool       pooled model + per-game debias/CQR calibration (the 2026-08 variant)
+#   pool_base  pooled model + the BASELINE's scalar conformal, no debias — the
+#              like-for-like comparison against `baseline`
+#   blend      segment point blended toward the pooled point by n/(n+K), n =
+#              the segment's own train rows (the launch tier's shrinkage shape)
+# plus `flat` (persistence: zero return) as the yardstick the 2026-10-10 review
+# set for every model decision.
+BLEND_K = 20_000
 
 
 def ensure_out(conn):
@@ -120,18 +133,34 @@ def realized_for(em, k, idx_full, dates_full, P_full, n_trunc):
     return out
 
 
+POOL_VARIANTS = ("pool", "pool_base", "blend")   # scored by run_pool, not here
+
+
 def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
-             capture_frames=False):
+             capture_frames=False, donor=False, frames_cap=None, need_frames=False):
+    """need_frames: a pooled fit for this (target, origin) is still pending,
+    so re-run the segment for its frames even when every scored variant is
+    already in the results (a pooled failure must not strand the cell)."""
+    hmap = {h: HK[h] for h in horizons}
+    if donor:
+        # Frames only: the game's samples feed the pooled fit, nothing of its
+        # own is scored (its six model fits are the whole cost of a big game).
+        debug = {"capture_frames": True, "frames_only": True, "frames_cap": frames_cap}
+        fp.forecast_game_target(game, target, now=f"bt-{origin}", as_of=origin,
+                                horizons=hmap, debug=debug)
+        got = [h for h in horizons if h in debug and "X" in debug[h]]
+        print(f"[donor {game}/{target}@{origin}] frames for {', '.join(got) or 'nothing'}"
+              + (f" ({len(debug[got[0]]['y'])} rows)" if got else ""), flush=True)
+        return debug
     done = set(conn.execute(
         "SELECT variant, horizon FROM results WHERE run=? AND game=? AND target=? AND origin=?",
         (run_tag, game, target, origin)).fetchall())
     todo = [v for v in variants
             if any((v, h) not in done for h in horizons)]
-    if not todo:
+    if not todo and not need_frames:
         print(f"[skip] {game}/{target}@{origin} already done", flush=True)
         return None
     debug = {"capture_frames": capture_frames} if capture_frames else {}
-    hmap = {h: HK[h] for h in horizons}
     fp.forecast_game_target(game, target, now=f"bt-{origin}", as_of=origin,
                             horizons=hmap, debug=debug)
     idx_full, dates_full, P_full = full_matrix(cache, game, target)
@@ -148,9 +177,16 @@ def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
                   flush=True)
             continue
         for v in todo:
-            if v == "pool" or (v, h) in done:
+            if v in POOL_VARIANTS or (v, h) in done:
                 continue   # pooled runs handled by run_pool()
-            ret, lo, hi, bias, seg_widen = variant_bands(d, v)
+            if v == "flat":
+                # Persistence: zero return, bands = the baseline's bands
+                # re-centred on zero (same width, so coverage is comparable).
+                ret_b, lo_b, hi_b, bias, seg_widen = variant_bands(d, "baseline")
+                ret = np.zeros_like(ret_b)
+                lo, hi = lo_b - ret_b, hi_b - ret_b
+            else:
+                ret, lo, hi, bias, seg_widen = variant_bands(d, v)
             m = score(ret[ok], lo[ok], hi[ok], realized[ok], d["emit"]["base"][ok])
             conn.execute(
                 "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -165,16 +201,30 @@ def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
     return debug
 
 
-def run_pool(conn, run_tag, target, origin, horizons, cache, debugs):
-    """Pooled variant: one model over the small games' captured frames, game as
-    a categorical, per-game debias+cqr from the pooled OOS predictions."""
+def _cap_frame(d, cap, seed=42):
+    """Uniform row subsample of a captured frame (keeps train/test mix)."""
+    n = len(d["y"])
+    if not cap or n <= cap:
+        return d
+    idx = np.random.default_rng(seed).choice(n, cap, replace=False)
+    out = dict(d)
+    out.update({"X": d["X"].iloc[idx].reset_index(drop=True), "y": d["y"][idx],
+                "test": d["test"][idx], "w": d["w"][idx], "base_t": d["base_t"][idx]})
+    return out
+
+
+def run_pool(conn, run_tag, target, origin, horizons, cache, debugs,
+             evaluate=None, pool_cap=0):
+    """Pooled variants: one model over every captured frame (evaluated games
+    + donors), game as a categorical; scored per EVALUATED game three ways
+    (pool / pool_base / blend, see the header)."""
     for h in horizons:
-        frames, metas = [], []
+        frames = []
         for game, dbg in debugs.items():
             d = dbg.get(h)
-            if not d or "X" not in d or "emit" not in d:
+            if not d or "X" not in d:
                 continue
-            frames.append((game, d))
+            frames.append((game, _cap_frame(d, pool_cap)))
         if len(frames) < 2:
             print(f"[pool/{target}/{h}@{origin}] <2 games with frames — skipped", flush=True)
             continue
@@ -182,6 +232,23 @@ def run_pool(conn, run_tag, target, origin, horizons, cache, debugs):
         for c in Xp.columns:   # halve memory; HGB bins to float32 anyway
             if Xp[c].dtype == np.float64:
                 Xp[c] = Xp[c].astype(np.float32)
+        # HGB caps a categorical at 255 levels; pooling Magic's 447 sets in
+        # blows set_name past it (597-744 on 2026-10-17). Keep each game's
+        # most frequent levels and fold the long tail into one bucket — set
+        # identity doesn't transfer across games anyway; the set-level
+        # numeric features (setret3/12, set size/age) carry what does.
+        CAT_MAX = 254
+        cat_remap = {}
+        for c in Xp.columns:
+            if not isinstance(Xp[c].dtype, pd.CategoricalDtype) or Xp[c].nunique() <= CAT_MAX:
+                continue
+            keep = Xp[c].value_counts().index[:CAT_MAX].tolist()
+            cats = keep + ["__other__"]
+            Xp[c] = pd.Categorical(np.where(Xp[c].isin(keep), Xp[c].astype(object), "__other__"),
+                                   categories=cats)
+            cat_remap[c] = (set(keep), cats)
+            print(f"[pool/{target}/{h}@{origin}] {c}: folded to {CAT_MAX} levels + __other__",
+                  flush=True)
         yp = np.concatenate([d["y"] for _, d in frames])
         tp = np.concatenate([d["test"] for _, d in frames])
         wp = np.concatenate([d["w"] for _, d in frames])
@@ -205,23 +272,22 @@ def run_pool(conn, run_tag, target, origin, horizons, cache, debugs):
                   flush=True)
         gcol = Xp["game"].to_numpy()
         print(f"[pool/{target}/{h}@{origin}] {len(yp)} rows from "
-              f"{'/'.join(g for g, _ in frames)}", flush=True)
+              + ", ".join(f"{g} {len(d['y'])}" for g, d in frames), flush=True)
         m_oos = model_new().fit(Xp[~tp], yp[~tp], sample_weight=wp[~tp])
         q10t = model_quantile(0.10).fit(Xp[~tp], yp[~tp], sample_weight=wp[~tp])
         q90t = model_quantile(0.90).fit(Xp[~tp], yp[~tp], sample_weight=wp[~tp])
         mF = model_new().fit(Xp, yp, sample_weight=wp)
         q10F = model_quantile(0.10).fit(Xp, yp, sample_weight=wp)
         q90F = model_quantile(0.90).fit(Xp, yp, sample_weight=wp)
-        idx_all = np.arange(len(yp))
         for game, d in frames:
+            if "emit" not in d or (evaluate and game not in evaluate):
+                continue   # donor: contributed rows, nothing to score
             gt = tp & (gcol == game)
             if gt.sum() < 50:
                 continue
             po = m_oos.predict(Xp[gt])
             yt, wt, bt = yp[gt], wp[gt], bp[gt]
-            bias = fcal.fit_debias(po, yt, wt)
-            E = fcal.nonconformity(q10t.predict(Xp[gt]), q90t.predict(Xp[gt]), yt, bias)
-            calib = fcal.fit_bucket_conformal(bt, E, fp.CONF_TARGET)
+            q10o, q90o = q10t.predict(Xp[gt]), q90t.predict(Xp[gt])
             em = d["emit"]
             Xn = fcal.add_game_col(em["Xnow"], game).reindex(columns=Xp.columns)
             # Recast every categorical to the POOLED categories: pandas codes
@@ -229,27 +295,54 @@ def run_pool(conn, run_tag, target, origin, horizons, cache, debugs):
             # silently misencode against the pooled fit.
             for c in Xp.columns:
                 if isinstance(Xp[c].dtype, pd.CategoricalDtype):
-                    Xn[c] = pd.Categorical(Xn[c], categories=Xp[c].cat.categories)
-            ret, lo, hi = fcal.emit_bands(
-                mF.predict(Xn), q10F.predict(Xn), q90F.predict(Xn),
-                fcal.bucket_widen_for(em["base"], calib), bias, fp.RET_CLIP)
+                    if c in cat_remap:
+                        keep, cats = cat_remap[c]
+                        Xn[c] = pd.Categorical(
+                            np.where(Xn[c].astype(object).isin(keep), Xn[c].astype(object), "__other__"),
+                            categories=cats)
+                    else:
+                        Xn[c] = pd.Categorical(Xn[c], categories=Xp[c].cat.categories)
+            p_now, q10n, q90n = mF.predict(Xn), q10F.predict(Xn), q90F.predict(Xn)
             idx_full, dates_full, P_full = full_matrix(cache, game, target)
             realized = realized_for(em, HK[h], idx_full, dates_full, P_full, 0)
             ok = np.isfinite(realized)
             if ok.sum() < 30:
                 continue
-            met = score(ret[ok], lo[ok], hi[ok], realized[ok], em["base"][ok])
-            conn.execute(
-                "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (run_tag, game, target, h, origin, "pool", met["n"], met["mae_w"],
-                 met["mae_raw"], met["med_ape"], met["dir_acc"], met["bias_mean"],
-                 met["bias_med"], met["coverage"], met["med_width"], bias,
-                 float(np.median(calib["widen"]))))
-            conn.commit()
-            print(f"[{game}/{target}/{h}@{origin}] pool     n={met['n']} "
-                  f"maeW={met['mae_w']:.3f} dir={met['dir_acc']:.2f} "
-                  f"bias={met['bias_med']:+.3f} cov={met['coverage']:.2f} "
-                  f"width={met['med_width']:.2f}", flush=True)
+            outs = []
+            # pool: debias + per-price-bucket conformal (the 2026-08 recipe)
+            bias = fcal.fit_debias(po, yt, wt)
+            E = fcal.nonconformity(q10o, q90o, yt, bias)
+            calib = fcal.fit_bucket_conformal(bt, E, fp.CONF_TARGET)
+            ret, lo, hi = fcal.emit_bands(p_now, q10n, q90n,
+                                          fcal.bucket_widen_for(em["base"], calib),
+                                          bias, fp.RET_CLIP)
+            outs.append(("pool", ret, lo, hi, bias, float(np.median(calib["widen"]))))
+            # pool_base: the baseline's own calibration (scalar conformal, no
+            # debias) on the pooled model — the like-for-like comparison.
+            E0 = fcal.nonconformity(q10o, q90o, yt, 0.0)
+            w0 = fcal.conformal_quantile(E0, fp.CONF_TARGET)
+            ret, lo, hi = fcal.emit_bands(p_now, q10n, q90n, w0, 0.0, fp.RET_CLIP)
+            outs.append(("pool_base", ret, lo, hi, 0.0, float(w0)))
+            # blend: the segment's own point pulled toward the pooled point by
+            # n/(n+K); bands = the segment's baseline bands re-centred.
+            n_seg = int((~d["test"]).sum())
+            wseg = n_seg / (n_seg + BLEND_K)
+            ret_b, lo_b, hi_b, _, seg_w = variant_bands(d, "baseline")
+            pb = np.clip(wseg * em["pred_now"] + (1 - wseg) * p_now, -fp.RET_CLIP, fp.RET_CLIP)
+            outs.append(("blend", pb, pb + (lo_b - ret_b), pb + (hi_b - ret_b), 0.0, seg_w))
+            for v, ret, lo, hi, b_, sw in outs:
+                met = score(ret[ok], lo[ok], hi[ok], realized[ok], em["base"][ok])
+                conn.execute(
+                    "INSERT OR REPLACE INTO results VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (run_tag, game, target, h, origin, v, met["n"], met["mae_w"],
+                     met["mae_raw"], met["med_ape"], met["dir_acc"], met["bias_mean"],
+                     met["bias_med"], met["coverage"], met["med_width"], b_, sw))
+                conn.commit()
+                print(f"[{game}/{target}/{h}@{origin}] {v:9s} n={met['n']} "
+                      f"maeW={met['mae_w']:.3f} dir={met['dir_acc']:.2f} "
+                      f"bias={met['bias_med']:+.3f} cov={met['coverage']:.2f} "
+                      f"width={met['med_width']:.2f}"
+                      + (f" (w_seg={wseg:.2f})" if v == "blend" else ""), flush=True)
 
 
 def main():
@@ -260,6 +353,13 @@ def main():
     ap.add_argument("--origins", default="2024-09,2024-12,2025-03,2025-06,2025-09,2025-12")
     ap.add_argument("--variants", default="baseline,debias,cqr,both")
     ap.add_argument("--run", default="bt1", help="results namespace")
+    ap.add_argument("--donors", default="",
+                    help="comma games whose frames join the pool but are not scored "
+                         "(frames-only capture, e.g. magic,pokemon,yugioh)")
+    ap.add_argument("--pool-games", default=",".join(POOL_GAMES),
+                    help="evaluated games whose frames enter the pool")
+    ap.add_argument("--pool-cap", type=int, default=0,
+                    help="max rows per game in the pooled fit (0 = no cap)")
     args = ap.parse_args()
 
     assert os.environ.get("TCG_FC_DEBIAS") != "1" and os.environ.get("TCG_FC_CQR") != "1", \
@@ -270,7 +370,9 @@ def main():
     horizons = args.horizons.split(",")
     origins = args.origins.split(",")
     variants = args.variants.split(",")
-    want_pool = "pool" in variants
+    donors = [g for g in args.donors.split(",") if g]
+    pool_games = set(args.pool_games.split(","))
+    want_pool = any(v in POOL_VARIANTS for v in variants)
 
     conn = sqlite3.connect(OUT_DB)
     ensure_out(conn)
@@ -278,26 +380,47 @@ def main():
     for origin in origins:
         for target in targets:
             debugs = {}
+            # Per HORIZON: a 1m run marking this origin done must not skip a
+            # later 6m run's pooled fit (2026-10-17: the clean 6m@2025-12
+            # cell got no pooled rows for exactly that reason).
+            hp = ",".join("?" * len(horizons))
+            pool_done = conn.execute(
+                f"SELECT COUNT(DISTINCT horizon) FROM results WHERE run=? AND target=? "
+                f"AND origin=? AND variant='pool' AND horizon IN ({hp})",
+                (args.run, target, origin, *horizons)).fetchone()[0]
+            pool_pending = want_pool and pool_done < len(horizons)
             for game in games:
                 try:
                     dbg = run_cell(conn, args.run, game, target, origin, horizons,
                                    variants, cache,
-                                   capture_frames=want_pool and game in POOL_GAMES)
+                                   capture_frames=want_pool and game in pool_games,
+                                   need_frames=pool_pending and game in pool_games)
                     if dbg:
                         debugs[game] = dbg
                 except Exception as e:
                     print(f"[{game}/{target}@{origin}] FAILED: {type(e).__name__}: {e}",
                           flush=True)
             if want_pool and debugs:
-                pool_done = conn.execute(
-                    "SELECT COUNT(*) FROM results WHERE run=? AND target=? AND origin=?"
-                    " AND variant='pool'", (args.run, target, origin)).fetchone()[0]
-                if not pool_done:
+                if pool_pending:
+                    # Donors last (their frames are the big ones) and only
+                    # when a pooled fit is actually pending for this cell.
+                    for game in donors:
+                        try:
+                            dbg = run_cell(conn, args.run, game, target, origin, horizons,
+                                           variants, cache, donor=True,
+                                           frames_cap=args.pool_cap or None)
+                            if dbg:
+                                debugs[game] = dbg
+                        except Exception as e:
+                            print(f"[donor {game}/{target}@{origin}] FAILED: "
+                                  f"{type(e).__name__}: {e}", flush=True)
                     try:
-                        run_pool(conn, args.run, target, origin, horizons, cache, debugs)
+                        run_pool(conn, args.run, target, origin, horizons, cache, debugs,
+                                 evaluate=set(games), pool_cap=args.pool_cap)
                     except Exception as e:
                         print(f"[pool/{target}@{origin}] FAILED: {type(e).__name__}: {e}",
                               flush=True)
+            debugs.clear()
     conn.close()
     print("backtest complete", flush=True)
 

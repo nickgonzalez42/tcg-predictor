@@ -49,6 +49,37 @@ DELTA_DB = os.path.join(BASE, "ml_data", "unified_delta.db")
 # keeps showing PC's stale daily snapshot as a lone, trend-breaking point.
 SWITCH_MONTH = "2026-07"
 
+# --- PriceCharting ungraded repairs (2026-10-18) ------------------------------
+# Two artifacts live in PC's "loose" series and, untreated, in every ungraded
+# label the model trains on and every history chart the site draws:
+#  1. A valuation change between 2025-10 and 2025-11 for CHEAP cards: sub-$3
+#     cards fell 70-89% in one month in every game (94% of sub-$3 Lorcana
+#     cards dropped >50%; cards over $10 and every graded tier: ~0; TCGplayer
+#     rows for the same month: ~0). Not a market move — PC re-based bulk
+#     values. Fix: a card whose PC value fell more than BREAK_DROP across
+#     that month has every PC month BEFORE it multiplied by the Nov/Oct
+#     ratio, so the history keeps its shape in post-break units.
+#  2. The PC -> TCGplayer seam at SWITCH_MONTH is unscaled since the 2026-08
+#     ungraded wipe removed the overlap the original design scaled on:
+#     paired step of -25% (lorcana) / -13% (pokemon) at 2026-06 -> 07. Fix:
+#     the whole PC era is multiplied by first-TCG-month / last-PC-month
+#     (winsorized), per card, so the two eras meet at one level.
+# Both are applied here, in the DERIVED table, from the untouched sources —
+# re-runnable and reversible by editing these constants. Factors land in
+# `unified_repairs` for audit. Returns are scale-free, so the model sees the
+# same relative moves; what changes is that the fake cliff and the seam
+# step are gone, and pre-switch dollar levels follow TCGplayer's.
+BREAK_FROM, BREAK_TO = "2025-10", "2025-11"
+BREAK_DROP = -0.35          # log change below this (-30%) is the artifact, not a move
+# Both ratios are measured on MEDIANS of up to SIDE_MONTHS months each side
+# of the boundary (not a single month pair), so one junk point can't set a
+# card's factor; with that robustness the seam bounds can be wide enough for
+# penny cards, whose PC floor sits 5-10x above their TCGplayer price.
+SIDE_MONTHS = 3
+SEAM_RATIO_MIN, SEAM_RATIO_MAX = 0.1, 10.0  # winsor bounds on the per-card seam ratio
+SEAM_MAX_GAP_MONTHS = 3     # last PC month to first TCG month; further apart = no bridge
+SEAM_IGNORE = 0.02          # |log ratio| under this: leave as is
+
 # The deep graded tiers (Beckett/CGC/SGC 10) were available ONLY from the paid
 # PriceCharting bulk CSV — no public page carries them — so with the subscription
 # gone they can't be refreshed. They were never in the forecast model (ungraded +
@@ -93,6 +124,73 @@ def load_corrections(game):
 GAMES = priced_games()
 
 
+def _month_index(m):
+    y, mo = int(m[:4]), int(m[5:7])
+    return y * 12 + mo
+
+
+def repair_pc_ungraded(months, nm_months):
+    """Apply the two PC ungraded repairs to one card's PC month dict
+    {YYYY-MM: (date, price)} IN PLACE, given its TCGplayer months (same
+    shape; may be empty). Returns (nov_factor, seam_factor) — 1.0 = no-op."""
+    import math
+    import statistics
+
+    def side_median(src, keys):
+        vals = [src[k][1] for k in keys if k in src and src[k][1] and src[k][1] > 0]
+        return statistics.median(vals) if vals else None
+
+    nov_f = seam_f = 1.0
+    if not months:
+        return nov_f, seam_f
+    # Up to SIDE_MONTHS months ending at BREAK_FROM vs starting at BREAK_TO.
+    before_keys = sorted(m for m in months if m <= BREAK_FROM)[-SIDE_MONTHS:]
+    after_keys = sorted(m for m in months if m >= BREAK_TO)[:SIDE_MONTHS]
+    if BREAK_FROM in months and BREAK_TO in months:
+        p_before, p_after = side_median(months, before_keys), side_median(months, after_keys)
+        if p_before and p_after and math.log(p_after / p_before) < BREAK_DROP:
+            nov_f = p_after / p_before
+            for m, (d, p) in list(months.items()):
+                if m < BREAK_TO and p is not None:
+                    months[m] = (d, p * nov_f)
+    if nm_months:
+        last_pc = max(months)
+        first_tcg = min(nm_months)
+        gap = _month_index(first_tcg) - _month_index(last_pc)
+        if 0 < gap <= SEAM_MAX_GAP_MONTHS:
+            p_pc = side_median(months, sorted(months)[-SIDE_MONTHS:])
+            p_tcg = side_median(nm_months, sorted(nm_months)[:SIDE_MONTHS])
+            if p_pc and p_tcg:
+                r = p_tcg / p_pc
+                if abs(math.log(r)) >= SEAM_IGNORE:
+                    seam_f = min(max(r, SEAM_RATIO_MIN), SEAM_RATIO_MAX)
+                    for m, (d, p) in list(months.items()):
+                        if p is not None:
+                            months[m] = (d, p * seam_f)
+    return nov_f, seam_f
+
+
+def boundary_report(game, rows):
+    """Paired median month-over-month log change of the ungraded base
+    series across the two repaired boundaries — the guard that says the
+    repairs took (both should read ~0 now; they read -2.0 / -0.25 for
+    Lorcana before). rows: (game, pid, grade, date, price, source)."""
+    import math, statistics
+    by = collections.defaultdict(dict)
+    for g, pid, grade, d, p, src in rows:
+        if grade == "ungraded" and p and p > 0:
+            by[d[:7]][pid] = p
+    prev_switch = f"{int(SWITCH_MONTH[:4]) - (SWITCH_MONTH[5:7] == '01')}-" \
+                  f"{(int(SWITCH_MONTH[5:7]) - 2) % 12 + 1:02d}"
+    out = []
+    for a, b in ((BREAK_FROM, BREAK_TO), (prev_switch, SWITCH_MONTH)):
+        pr = [math.log(by[b][pid] / by[a][pid]) for pid in by.get(b, {})
+              if pid in by.get(a, {}) and by[a][pid] > 0]
+        out.append(f"{a}->{b}: {statistics.median(pr):+.3f} (n={len(pr)})" if pr
+                   else f"{a}->{b}: n/a")
+    print(f"[{game}] boundary check (paired median log change, ungraded): " + "; ".join(out))
+
+
 def pc_history(game):
     """grade -> product_id -> {YYYY-MM: (real_date, price)} from the crawled history.
 
@@ -118,12 +216,18 @@ def tcg_nm_history(game):
     carries its real date), so the two sources splice seamlessly into one
     ungraded series."""
     try:
-        rows = sqlite3.connect(PC_DB, timeout=30).execute(
+        rows = sqlite3.connect(PC_DB, timeout=120).execute(
             "SELECT product_id, date, price FROM tcg_nm_history "
             "WHERE game=? AND printing='' "
             "ORDER BY date", (game,)).fetchall()
-    except sqlite3.OperationalError:
-        return {}    # table appears after the first NM crawl
+    except sqlite3.OperationalError as e:
+        if "no such table" in str(e):
+            return {}    # table appears after the first NM crawl
+        # Anything else (a locked database, most likely) must FAIL the build:
+        # an empty map here silently reverts every card to PriceCharting-only
+        # history with no current price (seen in a 2026-10-18 dry run while
+        # the graded crawl held the lock) — a loud failure is the safe one.
+        raise RuntimeError(f"[{game}] could not read tcg_nm_history: {e}") from e
     out = collections.defaultdict(dict)
     for pid, d, p in rows:
         out[pid][d[:7]] = (d[:10], p)
@@ -209,6 +313,21 @@ def build_game(game):
     # tcg_nm_only: a card in both must NOT get the tcg-only treatment
     # (2026-08-17: Umbreon H30's stale conflict re-served its bogus listing).
     tcg_only = load_tcg_nm_only(game) - nm_blocked
+    # PC ungraded repairs (see the constants): on the PC months only, BEFORE
+    # TCGplayer's months are merged in, so the seam ratio is measured between
+    # the two sources and the TCG era itself is never touched. TCGplayer-only
+    # cards have no PC era to repair.
+    n_nov = n_seam = 0
+    for pid, months in hist["ungraded"].items():
+        if pid in tcg_only:
+            continue
+        nov_f, seam_f = repair_pc_ungraded(months, nm.get(pid, {}))
+        if nov_f != 1.0 or seam_f != 1.0:
+            REPAIRS.append((game, pid, "", nov_f, seam_f))
+            n_nov += nov_f != 1.0
+            n_seam += seam_f != 1.0
+    print(f"[{game}] PC ungraded repairs: {n_nov} card(s) re-leveled across "
+          f"{BREAK_FROM}->{BREAK_TO}, {n_seam} scaled at the {SWITCH_MONTH} seam")
     nm_months = sum(len(m) for m in nm.values())
     for pid, months in nm.items():
         if pid not in tcg_only and pid not in nm_blocked:
@@ -268,6 +387,7 @@ def build_game(game):
         print(f"[{game}] {n_corrected} point(s) replaced by price_corrections.csv")
     print(f"[{game}] rows per tier: " +
           ", ".join(f"{g}={n}" for g, n in sorted(counts.items())))
+    boundary_report(game, rows)
     return rows
 
 
@@ -295,6 +415,12 @@ def build_game_labeled(game):
             "WHERE game=? AND printing != '' ORDER BY date", (game,)):
         nmv[(pid, printing)][d[:7]] = (d[:10], p)
     conn.close()
+    # Same PC repairs as the base series, per (card, printing), before merge.
+    for (pid, printing, grade), months in hist.items():
+        if grade == "ungraded" and months:
+            nov_f, seam_f = repair_pc_ungraded(months, nmv.get((pid, printing), {}))
+            if nov_f != 1.0 or seam_f != 1.0:
+                REPAIRS.append((game, pid, printing, nov_f, seam_f))
     for (pid, printing), months in nmv.items():
         hist[(pid, printing, "ungraded")].update(months)
     skip = suspects(game)
@@ -423,13 +549,52 @@ def sync_incremental(conn, all_rows, labeled_rows):
     return n_ins, n_del
 
 
+REPAIRS = []   # (game, product_id, printing, nov_factor, seam_factor) this build
+
+
+def write_repairs(conn):
+    """Audit trail of the PC ungraded repairs applied by this build (replaced
+    per game each run, so it always describes the table as it stands)."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS unified_repairs (
+            game        TEXT    NOT NULL,
+            product_id  INTEGER NOT NULL,
+            printing    TEXT    NOT NULL DEFAULT '',
+            nov_factor  REAL    NOT NULL,   -- applied to PC months < 2025-11 (1 = none)
+            seam_factor REAL    NOT NULL,   -- applied to every PC month (1 = none)
+            applied_at  TEXT    NOT NULL,
+            PRIMARY KEY (game, product_id, printing)
+        )""")
+    games = {r[0] for r in REPAIRS} | set(GAMES)
+    conn.executemany("DELETE FROM unified_repairs WHERE game=?", [(g,) for g in games])
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    conn.executemany("INSERT OR REPLACE INTO unified_repairs VALUES (?,?,?,?,?,?)",
+                     [(g, pid, pr, nf, sf, now) for g, pid, pr, nf, sf in REPAIRS])
+    conn.commit()
+    print(f"unified_repairs: {len(REPAIRS):,} (card, printing) factor row(s) recorded")
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build the unified price-history table.")
     ap.add_argument("--full", action="store_true",
                     help="drop + rebuild from scratch (automatic on Sundays or "
                          "when the table/index is missing); otherwise sync "
                          "incrementally and stage a delta for the prod push")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="build + print the per-game reports, write NOTHING")
+    ap.add_argument("--game", help="restrict to one game (with --dry-run)")
     args = ap.parse_args()
+    games = [args.game] if args.game else GAMES
+    if args.game and not args.dry_run:
+        ap.error("--game is for --dry-run only (a partial write would drop the other games)")
+
+    if args.dry_run:
+        for game in games:
+            rows = build_game(game)
+            lab = build_game_labeled(game)
+            print(f"[{game}] dry run: {len(rows):,} base + {len(lab):,} labeled rows; "
+                  f"{sum(1 for r in REPAIRS if r[0] == game):,} repair factor(s); nothing written")
+        return
 
     conn = sqlite3.connect(PC_DB, timeout=60)
     have = (conn.execute(
@@ -446,6 +611,7 @@ def main():
         labeled_rows += build_game_labeled(game)
     if labeled_rows:
         print(f"labeled (per-printing) rows: {len(labeled_rows):,}")
+    write_repairs(conn)
 
     if full:
         conn.executescript(
