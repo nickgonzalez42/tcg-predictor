@@ -49,8 +49,8 @@ def backfill(game):
 
 
 if __name__ == "__main__":
-    from games import priced_games
-    for g in priced_games():
+    from games import market_games
+    for g in market_games():   # any price source, incl. CSV-only games (2026-10-18)
         try:
             backfill(g)
         except sqlite3.OperationalError as e:

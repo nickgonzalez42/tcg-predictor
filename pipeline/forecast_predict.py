@@ -632,6 +632,20 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     # feedback signals never count them (its existing test-row convention).
     version = f"__bt-{as_of}" if as_of else MODEL_VERSION
     pids, prints, dates, P = load_matrix_all(game, target)
+    # Young-game guards (2026-10-19, the CSV-only games' first nights): a
+    # single month of history cannot form one return sample, and art_pids()
+    # below np.load()s the game's CLIP embeddings with no existence check —
+    # a game whose art hasn't been embedded yet would crash the whole model
+    # block. Skip the segment loudly; it joins once the data is there.
+    if len(dates) < 2:
+        print(f"[{game}/{target}] {len(dates)} month(s) of history — nothing to "
+              f"forecast yet, skipped", flush=True)
+        return []
+    _emb = os.path.join(BASE, "ml_data", f"{game}_img_emb.npz")
+    if not os.path.exists(_emb):
+        print(f"[{game}/{target}] no CLIP embeddings yet ({os.path.basename(_emb)}) — "
+              f"skipped until ml-embed has seen its art", flush=True)
+        return []
     # v4.4: artwork is a model input, and a card with no artwork on file is
     # not forecast at all (~0-2% of priced cards per game).
     arts = art_pids(game)
@@ -1132,7 +1146,7 @@ def archive(conn, rows):
 
 def main():
     import argparse
-    from games import priced_games
+    from games import market_games
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--game", action="append",
@@ -1148,7 +1162,7 @@ def main():
     if args.as_of and not (len(args.as_of) == 7 and args.as_of[4] == "-"
                            and args.as_of.replace("-", "").isdigit()):
         ap.error("--as-of must look like YYYY-MM")
-    games = args.game if args.game else priced_games()
+    games = args.game if args.game else market_games()   # any price source (2026-10-18)
     # --as-of backtests train 1m only. Otherwise TCG_FC_HORIZONS (e.g. "1m")
     # limits the run's horizons: Thursday nights run 1m only (2026-10-09,
     # user decision — 6m/12m stay unvalidated until their first cohorts

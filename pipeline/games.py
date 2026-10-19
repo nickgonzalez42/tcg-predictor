@@ -170,12 +170,35 @@ ALL_GAMES = list(GAMES)
 
 
 def priced_games():
-    """Games with a PriceCharting price source — the only ones the
-    unify/nm-price/ML steps can do anything with. Today that's all of them
-    (every entry has a pc_csv path; gundam/starwars fill theirs from the
-    console-page scraper rather than a bulk category), so the filter only
-    bites if a future game is added with pc_csv=None to mark it unpriced."""
+    """Games with a PRICECHARTING source (pc_csv set). Every PC-side step —
+    match table, graded crawl, console sweep, sealed prices — keys off this,
+    and several index cfg["pc_csv"] / cfg["pc_category"] directly, so a game
+    with pc_csv=None must never reach them. Since 2026-10-18 that is no
+    longer the same thing as "has prices": see market_games()."""
     return [g for g, cfg in GAMES.items() if cfg["pc_csv"]]
+
+
+def market_games():
+    """Games with ANY ungraded price source: a PriceCharting source, or a
+    Seller Portal CSV import on record (import_tcg_csv.py writes
+    tcg_csv_imports). This is what the series/headline/model steps iterate
+    — build_unified_history, backfill_nm_price, art_comps, forecast_* — so
+    a game onboarded on the CSV alone (fleshandblood, sorcery, riftbound,
+    cyberpunk, 2026-10-18) enters the unified history, the headline price
+    and the site the night its first import lands, with no PC coverage
+    needed. Order follows the registry. If pricecharting.db or the table
+    can't be read, falls back to priced_games() (never silently widens)."""
+    import sqlite3
+    pc_db = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data",
+                         "cards", "pricecharting.db")
+    try:
+        con = sqlite3.connect(f"file:{pc_db}?mode=ro", uri=True, timeout=60)
+        imported = {g for (g,) in con.execute("SELECT DISTINCT game FROM tcg_csv_imports")}
+        con.close()
+    except sqlite3.Error:
+        imported = set()
+    pc = set(priced_games())
+    return [g for g in GAMES if g in pc or g in imported]
 
 
 def db_path(game):

@@ -91,7 +91,7 @@ DROP_GRADES = {"bgs10", "cgc10", "sgc10"}
 # comes from TCGplayer, so it's excluded from the match-table current refresh).
 REFRESH_TIERS = ["grade7", "grade8", "grade9", "grade95", "psa10"]
 
-from games import priced_games
+from games import market_games
 
 
 def load_corrections(game):
@@ -121,7 +121,10 @@ def load_corrections(game):
                      float(r["price"]) if r["price"].strip() else None,
                      float(floor) if floor else None))
     return out
-GAMES = priced_games()
+# Any ungraded price source counts (PriceCharting OR a Seller Portal CSV
+# import) — a CSV-only game enters the unified history the night its first
+# import lands (2026-10-18).
+GAMES = market_games()
 
 
 def _month_index(m):

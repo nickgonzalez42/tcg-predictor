@@ -33,7 +33,7 @@ from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
-from games import priced_games, db_path
+from games import market_games, db_path
 
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                      "pricecharting.db")
@@ -70,7 +70,7 @@ def launch_seed_quantiles(conn):
         if p and p > 0:
             monthly[(g, pid)][m] = p
     sets = {}
-    for gdb in priced_games():
+    for gdb in market_games():
         c = sqlite3.connect(db_path(gdb), timeout=30)
         for pid, s in c.execute("SELECT product_id, set_name FROM cards"):
             sets[(gdb, pid)] = s or "?"
@@ -152,7 +152,7 @@ def main():
     pc.close()
 
     attrs = {}
-    for g in priced_games():
+    for g in market_games():
         c = sqlite3.connect(db_path(g), timeout=30)
         for pid, s, r, nm, img in c.execute(
                 "SELECT product_id, set_name, rarity, near_mint_price, image_path FROM cards"):

@@ -36,8 +36,8 @@ DATA = os.path.join(BASE, "ml_data")
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
 OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
 
-from games import priced_games
-GAMES = priced_games()
+from games import market_games
+GAMES = market_games()   # any price source, incl. CSV-only games (2026-10-18)
 
 MONTH_HORIZONS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12}   # 3m added 2026-10-11
 # For error normalization: a 12m miss of 0.24 and a 1m miss of 0.02 are the

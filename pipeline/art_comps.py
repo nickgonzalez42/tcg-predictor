@@ -92,8 +92,8 @@ def build_game(game):
 
 
 def main():
-    from games import priced_games
-    for game in priced_games():   # comps need price history, so priced games only
+    from games import market_games
+    for game in market_games():   # comps need price history: any source (2026-10-18)
         build_game(game)
 
 

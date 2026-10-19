@@ -56,7 +56,7 @@ import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE   # noqa: E402
-from games import GAMES, priced_games, db_path   # noqa: E402
+from games import GAMES, market_games, db_path   # noqa: E402
 
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                      "pricecharting.db")
@@ -1323,9 +1323,9 @@ def main():
 
     # Prepare every game first: a game with too little history of its own
     # borrows the others' launches (pooled model), so the pool needs them all.
-    games = args.game or priced_games()
+    games = args.game or market_games()   # any price source, incl. CSV-only games (2026-10-18)
     prep = {}
-    for g in set(games) | set(priced_games()):
+    for g in set(games) | set(market_games()):
         try:
             p = prepare_game(g, pc, today)
             if p is None:
