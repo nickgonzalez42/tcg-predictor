@@ -211,7 +211,14 @@ def init_db(conn):
             near_mint_price   REAL,     -- set by backfill_nm_price (PriceCharting)
             custom_attributes TEXT,     -- full JSON blob: the game-specific stat line
             raw_json          TEXT,
-            scraped_at        TEXT
+            scraped_at        TEXT,
+            -- Multi-printing cache stamped by printing_ingest / import_tcg_csv.
+            -- Created here too (2026-10-19) because the API's GenericCardContext
+            -- maps both columns: a brand-new game's catalog shipped WITHOUT
+            -- them and every request for it answered 500 until they were
+            -- added by hand (Sorcery, Cyberpunk, Riftbound, Flesh and Blood).
+            printings         TEXT,
+            base_printing     TEXT
         );
 
         -- Per-set product counts at the last COMPLETE scan (see --new-only).
@@ -222,6 +229,13 @@ def init_db(conn):
         );
         """
     )
+    # Catalogs created before 2026-10-19 lack the two printing columns the
+    # API maps (they were only ever added later by printing_ingest /
+    # import_tcg_csv); bring any such file up to the schema above.
+    have = {r[1] for r in conn.execute("PRAGMA table_info(cards)")}
+    for col in ("printings", "base_printing"):
+        if col not in have:
+            conn.execute(f"ALTER TABLE cards ADD COLUMN {col} TEXT")
     conn.commit()
 
 
