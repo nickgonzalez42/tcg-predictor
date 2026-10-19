@@ -87,7 +87,7 @@ DEADLINE = "" if CRAWL_NIGHT else os.environ.get("TCG_REFRESH_DEADLINE", "").str
 NOMINAL_MIN = {
     "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 11,
     "tcg-nm-prices": 2, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
-    "tcg-sales": 110, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
+    "tcg-sales": 15, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
     "printing-ingest": 63, "imageless-audit": 22, "pc-gundam": 2,
     "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 4, "unify": 20,
     "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
@@ -97,7 +97,7 @@ NOMINAL_MIN = {
 # value is scaled by the fraction of its nominal time that still fits.
 TRIMMABLE = {
     "tcg-sku-resolve": ("--resolve", 50),
-    "tcg-sales": ("--total-limit", 500),
+    "tcg-sales": ("--total-limit", 100),
     "printing-ingest": ("--limit", 300),
     "imageless-audit": ("--limit", 20),
     "pc-link-suggest": ("--drain", 200),
@@ -243,13 +243,22 @@ STEPS = [
     # Sales volume rotation (2026-10-14, user request): walk the catalog
     # value-first recording each card's "items sold" buckets from the same
     # detailed endpoint tcg-nm-backfill uses; a card's first touch lands ~a
-    # year of history, so the rotation IS the backfill (~250k cards at
-    # 4,000/night = first full pass in about two months, expensive cards
-    # first and monthly re-touches thereafter). ~100 min at 40 rpm.
+    # year of history, so the rotation IS the backfill.
     # --no-yield is load-bearing (2026-10-16): as a refresh step this script's
     # yield-to-refresh guard would find its own parent and sleep forever.
+    #
+    # PARKED 2026-10-18 (user decision): 4,000/night cost ~110 min a night,
+    # ~11 h a week, for data NOTHING currently reads — no code outside this
+    # script's own writers touches tcg_sales_history, and the liquidity /
+    # ladder features built on it (TCG_FC_FEAT_LIQ, TCG_FC_FEAT_LADDER) lost
+    # their A/B on 2026-10-10 and are set in no runner. Meanwhile the graded
+    # crawl is ~3x behind its 30-day target (120,808 of 154,793 cards
+    # overdue), and this is the only nightly budget big enough to fund it.
+    # Dropped to a token slice so the path stays exercised and the backfill
+    # still inches forward. TO RESTORE: put --total-limit back to 4000 (and
+    # NOMINAL_MIN["tcg-sales"] back to 110) once a feature reads this data.
     ("tcg-sales", ["backfill_sales_volume.py", "--game", "all", "--rpm", "40",
-                   "--refresh-days", "30", "--total-limit", "4000", "--no-yield"]),
+                   "--refresh-days", "30", "--total-limit", "500", "--no-yield"]),
     # Second pass for cards the search crawl couldn't price tonight: if the
     # product page's sales chart still carries a recent NM series, adopt it
     # (tcg_nm_only) so the card keeps a live price instead of going stale.
