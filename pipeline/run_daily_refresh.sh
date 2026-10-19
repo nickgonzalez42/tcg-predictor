@@ -123,21 +123,36 @@ launch_model_on_aws() {
 LOG_DIR="$HOME/Library/Logs/tcg-predictor"
 mkdir -p "$LOG_DIR"
 find "$LOG_DIR" -name "refresh-*.log" -mtime +30 -delete 2>/dev/null
-# UTC day basis (2026-08-14): an evening start crosses midnight UTC, so the
-# run's UTC date — the log name, the weekly gates, and every batch label the
-# python side writes — is the NEXT calendar day, matching the morning the
-# data goes live. Six-nights-a-week cadence (2026-10-17, Mon-Sat 8 PM local,
-# Seller Portal CSV as the price source): the SATURDAY run's UTC day is
-# Sunday (=7) and carries the full rebuild — search crawl for depth, PC
-# console sweep, graded rotation, market watch, 6m/12m retrain (~31 h, so it
-# owns Sunday and finishes Monday morning; there is no Sunday run). The
-# THURSDAY run's UTC day is Friday, which gates the weekly report and (=5)
-# the S3 dumps.
+# UTC day basis (2026-08-14): the run's UTC date names the log and labels
+# every batch the python side writes. Seven nights a week since 2026-10-18,
+# each starting when its measured workload lands at 06:00 Central (see the
+# launchd plist): Sun 20:25, Mon 19:05, Tue 18:55, Wed 19:55, Thu 20:10,
+# Fri 19:00, Sat 18:20. Which night it IS comes from the LOCAL weekday
+# (TCG_CRAWL_NIGHT below): Saturday is the crawl + full-rebuild night;
+# every other night is a CSV night. Two gates still key on UTC and still
+# hold under the new times: the THURSDAY run's UTC day is Friday, which
+# gates the weekly report and (=5) the S3 dumps.
 LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
+# Which night this is, from the LOCAL weekday (2026-10-18): Saturday is the
+# crawl + full-rebuild night. Exported for weekly_refresh.py (CRAWL_NIGHT),
+# build_unified_history.py (full rebuild) and local_model_run.sh (long
+# horizons). The old `date -u +%u` = 7 test only worked because 20:00
+# Central was always the next UTC day; with the per-night start times an
+# 18:20 Saturday start is still Saturday in UTC and would never match.
+if [ "$(date +%u)" = "6" ]; then
+  export TCG_CRAWL_NIGHT=1; NIGHT=crawl
+else
+  export TCG_CRAWL_NIGHT=0; NIGHT=csv
+fi
+# Run ledger (refresh_ledger.py -> ml_data/refresh_runs.csv): start, phase
+# boundaries, finish, and how the night landed against TCG_REFRESH_DEADLINE.
+# Never fatal — a ledger hiccup must not touch the refresh.
+ledger() { "$PY" refresh_ledger.py record "$@" || echo "(ledger record failed — non-fatal)"; }
 
 {
+  ledger --event started --kind "$NIGHT"
   # Phase A (Mac): crawls + price build + ml prep, through art-comps.
-  if [ "$(date -u +%u)" = "7" ]; then
+  if [ "$TCG_CRAWL_NIGHT" = "1" ]; then
     echo "=== WEEKLY full refresh (crawl night) — $(date '+%F %T') ==="
     "$PY" weekly_refresh.py --to art-comps
   else
@@ -156,21 +171,26 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
   phaseA=$?
   if [ $phaseA -ne 0 ]; then
     echo "=== FAILED (Phase A, exit $phaseA): resume weekly_refresh.py --from <step> --to art-comps — $(date '+%F %T') ==="
+    ledger --event finished --status failed --notes "Phase A exit $phaseA"
     notify_failure "$phaseA"
   else
+    ledger --event phase_a
     # Phase B (2026-09-20): model block runs LOCALLY — no trainer, no handoff.
     # launch_model_on_aws stays defined above as a dormant fallback.
     /bin/zsh local_model_run.sh
     launch_rc=$?
     if [ $launch_rc -ne 0 ]; then
       echo "=== FAILED (local model block, exit $launch_rc) — prod predictions.db unchanged — $(date '+%F %T') ==="
+      ledger --event finished --status failed --notes "model block exit $launch_rc"
       notify_failure "$launch_rc"
     else
+      ledger --event model
       # Phase C (Mac): s3 art + link suggest, then push the OTHER DBs + restart.
       # predictions.db already pushed by the local model block above.
       "$PY" weekly_refresh.py --from s3-upload && ../deploy/push_data.sh "$SERVER_IP"
       rc=$?
       if [ $rc -eq 0 ]; then
+        ledger --event deploy
         echo "=== refresh complete (local model) — $(date '+%F %T') ==="
         # Completion email (2026-09-20): the model ran locally and finished
         # BEFORE this point, so one email at true completion replaces the old
@@ -178,8 +198,9 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
         $AWS sns publish --region us-east-1 \
           --topic-arn "arn:aws:sns:us-east-1:522029196375:cardstock-refresh-reports" \
           --subject "cardstock refresh done ($(date -u +%F), local model)" \
-          --message "$(printf 'Full refresh finished %s — crawls, local model block, and prod push all complete.\n\nSteps:\n%s\n\nModel block:\n%s' \
+          --message "$(printf 'Full refresh finished %s — crawls, local model block, and prod push all complete.\n\nRecent nights (vs the 06:00 target):\n%s\n\nSteps:\n%s\n\nModel block:\n%s' \
               "$(date '+%F %T')" \
+              "$("$PY" refresh_ledger.py report --last 7 2>/dev/null)" \
               "$(grep -E '^  (ok|FAIL) |^Done\. [0-9]+ Near Mint|^total budget' "$LOG" | head -40)" \
               "$(grep -E '^--- (forecast_|market_report).* rc=|rows -> |Wrote report|forecast_launch: |forecast_prerelease: |predictions.db pushed' "$LOG" | tail -14)")" \
           >/dev/null 2>&1 || echo "(completion SNS failed — non-fatal)"
@@ -190,9 +211,11 @@ LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
         # (Phase 2 maintenance): bounded, labeled-namespace-only, and AFTER
         # everything that matters — a failure here cannot touch the refresh.
         "$PY" pc_printing_backfill.py --limit 600 || echo "(pc_printing_backfill failed — non-fatal)"
+        ledger --event finished --status ok
         "$PY" match_review.py --if-pending >> "$LOG_DIR/match_review.log" 2>&1 &
       else
         echo "=== FAILED (Phase C/push, exit $rc): weekly_refresh.py --from s3-upload, then deploy/push_data.sh $SERVER_IP — $(date '+%F %T') ==="
+        ledger --event finished --status failed --notes "Phase C/push exit $rc"
         notify_failure "$rc"
       fi
     fi

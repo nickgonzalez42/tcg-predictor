@@ -22,10 +22,23 @@ AWS = shutil.which("aws") or "/usr/local/bin/aws"
 
 
 def bucket_ids(game):
-    """Product ids with a non-empty {game}/{id}.jpg object in the bucket."""
-    out = subprocess.run(
+    """Product ids with a non-empty {game}/{id}.jpg object in the bucket.
+
+    `aws s3 ls` exits 1 for a prefix with NO objects — a freshly added game
+    whose art hasn't been uploaded yet. That is an empty set, not an error
+    (2026-10-18: Flesh and Blood's empty prefix failed the whole art-sync
+    step and with it the night's database push). Any other failure (255 =
+    network/credentials, as on 2026-10-14) still raises."""
+    res = subprocess.run(
         [AWS, "s3", "ls", f"s3://{IMAGES_BUCKET}/{game}/", "--recursive"],
-        capture_output=True, text=True, check=True).stdout
+        capture_output=True, text=True)
+    if res.returncode == 1 and not res.stdout.strip():
+        print(f"[{game}] no art in the bucket yet")
+        return set()
+    if res.returncode != 0:
+        raise subprocess.CalledProcessError(res.returncode, res.args,
+                                            output=res.stdout, stderr=res.stderr)
+    out = res.stdout
     ids = set()
     for line in out.splitlines():
         # "2026-07-16 21:04:11     48213 pokemon/106999.jpg"
