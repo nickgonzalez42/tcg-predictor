@@ -117,7 +117,29 @@ def parse():
         pct = round(100 * (done_n + frac_in_step) / total)
     return {"state": state, "steps": steps, "total": total, "done": done_n,
             "pct": pct, "started": started, "log": os.path.basename(path),
-            "nm": nm_prog, "csv": _csv_imports_today(), "tail": lines[-TAIL_LINES:]}
+            "nm": nm_prog, "csv": _csv_imports_today(), "runs": _recent_runs(),
+            "tail": lines[-TAIL_LINES:]}
+
+
+def _recent_runs(n=5):
+    """The last n rows of the run ledger (refresh_ledger.py): when each night
+    started, finished, and how it landed against the 06:00 target."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..",
+                        "one-piece", "ml_data", "refresh_runs.csv")
+    try:
+        import csv as _csv
+        with open(path, newline="", encoding="utf-8") as f:
+            rows = list(_csv.DictReader(f))
+    except OSError:
+        return []
+    out = []
+    for r in rows[-n:]:
+        vs = r.get("vs_deadline_min") or ""
+        out.append({"run": r["run"], "kind": r.get("kind", ""),
+                    "finished": (r.get("finished") or "")[5:], "hours": r.get("hours", ""),
+                    "vs": (("+" if int(vs) > 0 else "") + f"{int(vs) // 60}h{abs(int(vs)) % 60:02d}") if vs else "",
+                    "status": r.get("status", "")})
+    return out
 
 
 def _csv_imports_today():
@@ -265,6 +287,7 @@ pre{background:#070a12;border:1px solid #151b28;border-radius:8px;padding:12px 1
 <div class=sub id=sub></div>
 <div class=bar><i id=fill style=width:0></i></div>
 <div class=sub id=csvline></div>
+<div class=sub id=runsline></div>
 <div class=nm id=nmcard>
   <h2>TCGplayer Near Mint crawl <span id=nmlive></span></h2>
   <div class=big id=nmpct>0%</div>
@@ -291,6 +314,11 @@ async function tick(){
  const cl=document.getElementById('csvline');
  cl.textContent = (d.csv && d.csv.length)
    ? 'CSV prices tonight: '+d.csv.map(c=>c.game+' '+c.base_rows.toLocaleString()+(c.at?' @'+c.at+'Z':'')).join(' · ')
+   : '';
+ // Recent nights from the run ledger: finish time and how far from 06:00.
+ const rl=document.getElementById('runsline');
+ rl.textContent = (d.runs && d.runs.length)
+   ? 'Recent nights: '+d.runs.map(r=>r.run.slice(5)+' '+r.kind+(r.finished?' done '+r.finished+' ('+r.vs+')':' running')+(r.status&&r.status!=='ok'&&r.status!=='running'?' '+r.status:'')).join(' · ')
    : '';
  // Dedicated live panel for the TCGplayer NM crawl (shown whenever a crawl is
  // in progress today, standalone or as a refresh step).
