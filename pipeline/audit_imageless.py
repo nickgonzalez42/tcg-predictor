@@ -27,7 +27,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from games import priced_games, db_path, image_dir
+from games import market_games, db_path, image_dir
 import tcg_pokemon_scraper as tp
 
 DETAILS_URL = "https://mp-search-api.tcgplayer.com/v1/product/{pid}/details"
@@ -112,7 +112,9 @@ def main():
 
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
     session = tp.make_session()
-    for game in (args.games.split(",") if args.games else priced_games()):
+    # Any price source (2026-10-19): the CSV-only games' ~290 art-less cards
+    # (no TCGplayer CDN image at crawl time) need this weekly re-check too.
+    for game in (args.games.split(",") if args.games else market_games()):
         audit_game(game, session, args.delay, args.limit, args.refresh_days)
 
 
