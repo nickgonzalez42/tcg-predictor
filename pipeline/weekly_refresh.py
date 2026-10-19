@@ -54,7 +54,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from _paths import DATA_DIR
 from games import GAMES
@@ -69,6 +69,80 @@ LOCK = os.path.join(DATA_DIR, ".weekly_refresh.lock")      # one refresh at a ti
 # Portal export -> import, no search crawl. run_daily_refresh.sh and
 # local_model_run.sh key the same night off `date -u +%u` = 7.
 CRAWL_NIGHT = datetime.now(timezone.utc).weekday() == 6
+
+# --- finish-by deadline (2026-10-18, user: "have them done at 6AM") ---------
+# A CSV night is ~10.5 h of work, but the ROTATION steps are the variable
+# part: tcg-sales has run 110 min and once 1,299; tcg-nm-rescue 0.6 and 25.
+# A fixed start time cannot absorb that, so instead each rotation is trimmed
+# to what still fits before TCG_REFRESH_DEADLINE (local HH:MM, unset = no
+# deadline, which is also the behaviour for any hand-run resume). Every step
+# that produces the night's OUTPUT — the CSV import, unify, the price
+# column, the ML inputs — is protected and always runs in full; only
+# backlog rotations give up their budget, and never below a floor, so each
+# still makes progress. The CRAWL night is exempt: it is inherently ~40 h
+# and is scheduled as a two-day job instead.
+DEADLINE = "" if CRAWL_NIGHT else os.environ.get("TCG_REFRESH_DEADLINE", "").strip()
+# Measured wall-clock minutes per step (2026-10 logs), used only to decide
+# how much of a rotation fits. Steps absent here are treated as ~2 min.
+NOMINAL_MIN = {
+    "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 11,
+    "tcg-nm-prices": 2, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
+    "tcg-sales": 110, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
+    "printing-ingest": 63, "imageless-audit": 22, "pc-gundam": 2,
+    "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 4, "unify": 20,
+    "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
+    "pc-link-suggest": 48,
+}
+# Rotation steps whose budget may be cut: step -> (flag, floor). The flag's
+# value is scaled by the fraction of its nominal time that still fits.
+TRIMMABLE = {
+    "tcg-sku-resolve": ("--resolve", 50),
+    "tcg-sales": ("--total-limit", 500),
+    "printing-ingest": ("--limit", 300),
+    "imageless-audit": ("--limit", 20),
+    "pc-link-suggest": ("--drain", 200),
+}
+# Work that happens BETWEEN art-comps and s3-upload (the model block, run by
+# run_daily_refresh.sh) plus the prod push, reserved so the rotations don't
+# eat the time the forecasts and the deploy need.
+MODEL_BLOCK_MIN = 200
+PUSH_MIN = 25
+
+
+def deadline_at(now):
+    """The next occurrence of TCG_REFRESH_DEADLINE, as a datetime."""
+    hh, mm = (int(x) for x in DEADLINE.split(":"))
+    d = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+    return d if d > now else d + timedelta(days=1)
+
+
+def apply_deadline(todo, idx, now):
+    """Trim the budget of todo[idx] to what fits before the deadline.
+    Returns the (possibly rewritten) command."""
+    name, cmd = todo[idx]
+    if name not in TRIMMABLE:
+        return cmd
+    flag, floor = TRIMMABLE[name]
+    if flag not in cmd:
+        return cmd
+    end = deadline_at(now)
+    remaining = (end - now).total_seconds() / 60.0
+    # Everything after this step that we must still pay for.
+    rest = sum(NOMINAL_MIN.get(n, 2) for n, _ in todo[idx + 1:])
+    if any(n == "art-comps" for n, _ in todo[idx:]):
+        rest += MODEL_BLOCK_MIN + PUSH_MIN
+    available = remaining - rest
+    nominal = NOMINAL_MIN.get(name, 2)
+    if available >= nominal:
+        return cmd
+    cmd = list(cmd)
+    i = cmd.index(flag)
+    want = int(cmd[i + 1])
+    scaled = max(floor, int(want * max(available, 0) / nominal))
+    cmd[i + 1] = str(scaled)
+    print(f"    [deadline {DEADLINE}] {name}: {int(remaining)} min left, "
+          f"{int(rest)} min reserved -> {flag} {want} trimmed to {scaled}", flush=True)
+    return cmd
 
 
 def acquire_lock():
@@ -296,9 +370,13 @@ def main():
     hi = names.index(args.stop) + 1 if args.stop else len(STEPS)
     todo = [s for s in STEPS if s[0] == args.only] if args.only else STEPS[lo:hi]
 
-    print(f"weekly refresh — {datetime.now():%Y-%m-%d %H:%M} — {len(todo)} step(s)\n", flush=True)
+    print(f"weekly refresh — {datetime.now():%Y-%m-%d %H:%M} — {len(todo)} step(s)"
+          + (f" — finishing by {DEADLINE}" if DEADLINE else ""), flush=True)
+    print(flush=True)
     timings = []
-    for name, cmd in todo:
+    for i, (name, cmd) in enumerate(todo):
+        if DEADLINE:
+            cmd = apply_deadline(todo, i, datetime.now())
         print(f"=== {name}: {' '.join(cmd)} ===", flush=True)
         t0 = time.time()
         result = subprocess.run([PY, os.path.join(SCRIPT_DIR, cmd[0]), *cmd[1:]], cwd=DATA_DIR)

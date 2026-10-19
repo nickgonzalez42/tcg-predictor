@@ -13,6 +13,18 @@
 	</array>
 	<key>RunAtLoad</key>
 	<false/>
+	<!-- Finish-by target (2026-10-18). A CSV night is ~10.5 h of work in a
+	     10 h window, and its rotation steps are wildly variable (tcg-sales
+	     has run 110 min and once 1,299), so weekly_refresh.py trims those
+	     rotations — never the price build, the model or the push — to what
+	     still fits before this time. Ignored on the Saturday crawl night,
+	     which is a ~40 h two-day job by nature. Unset = no trimming, which
+	     is what a hand-run resume gets. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TCG_REFRESH_DEADLINE</key>
+		<string>06:00</string>
+	</dict>
 	<key>StandardErrorPath</key>
 	<string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/launchd.log</string>
 	<key>StandardOutPath</key>
