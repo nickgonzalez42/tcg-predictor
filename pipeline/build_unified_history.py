@@ -602,7 +602,13 @@ def main():
         "('price_history_unified', 'idx_history_tier')").fetchone()[0] == 2
         and "printing" in {r[1] for r in conn.execute(
             "PRAGMA table_info(price_history_unified)")})
-    full = args.full or nominal_day().weekday() == 6 or not have
+    # Full rebuild on the crawl night. run_daily_refresh.sh exports
+    # TCG_CRAWL_NIGHT from the LOCAL weekday (2026-10-18: a 6:20 PM Saturday
+    # start is still Saturday in UTC, so the UTC-Sunday rule below can no
+    # longer see it); that rule stays as the fallback for hand runs.
+    env_crawl = os.environ.get("TCG_CRAWL_NIGHT", "").strip()
+    crawl_night = (env_crawl == "1") if env_crawl in ("0", "1") else nominal_day().weekday() == 6
+    full = args.full or crawl_night or not have
 
     all_rows = []
     labeled_rows = []

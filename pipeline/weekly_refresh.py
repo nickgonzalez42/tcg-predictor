@@ -63,12 +63,48 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))    # the scripts (this r
 PY = os.path.join(DATA_DIR, ".venv", "bin", "python")      # the venv (sibling one-piece/)
 LOCK = os.path.join(DATA_DIR, ".weekly_refresh.lock")      # one refresh at a time
 
-# The weekly CRAWL + full-rebuild night (2026-10-17 schedule): Saturday 8 PM
-# local, which is already Sunday in UTC (weekday 6) — the UTC day is the
-# pipeline's batch-label basis. Every other night is a CSV night: Seller
-# Portal export -> import, no search crawl. run_daily_refresh.sh and
-# local_model_run.sh key the same night off `date -u +%u` = 7.
-CRAWL_NIGHT = datetime.now(timezone.utc).weekday() == 6
+# The weekly CRAWL + full-rebuild night is SATURDAY (local). Since the
+# 2026-10-18 per-night start times (Saturday 6:20 PM, which is still
+# Saturday in UTC) the UTC-weekday rule can no longer identify it, so
+# run_daily_refresh.sh decides from the LOCAL weekday and exports
+# TCG_CRAWL_NIGHT=1|0; the UTC rule (Sunday = 6) remains only as the
+# fallback for a hand-run resume that didn't set the flag.
+_env_crawl = os.environ.get("TCG_CRAWL_NIGHT", "").strip()
+CRAWL_NIGHT = (_env_crawl == "1") if _env_crawl in ("0", "1") \
+    else datetime.now(timezone.utc).weekday() == 6
+
+# --- the evened week (2026-10-18, user: "schedule the updates to be more
+# even" + per-night start times tuned to finish by 06:00) ------------------
+# Saturday used to carry every heavy rotation in one ~41 h burst. Now each
+# night carries one slice, keyed off the LOCAL weekday (Mon=0 .. Sun=6):
+#   graded crawl      EVERY night, 2,500 pages with a 30-day refresh (the
+#                     rotation was ~3x behind its target: 120,808 of 154,793
+#                     cards overdue on 2026-10-18)
+#   depth crawl       one or two games a night (full catalog on Saturday
+#                     took 193 min); Magic's 77 min sits on a backfill-free
+#                     night
+#   detailed backfill Tuesday + Friday (its series only has weekly points)
+#   console sweep, full price-table rebuild, full-file push: Saturday
+#   3m/6m/12m retrain first Saturday of the month (local_model_run.sh)
+LOCAL_WEEKDAY = datetime.now().weekday()
+DEPTH_SLICE = {
+    0: "magic",
+    1: "pokemon",
+    2: "yugioh",
+    3: "onepiece,lorcana",
+    4: "digimon,gundam,starwars",
+    5: "fleshandblood,sorcery,riftbound,cyberpunk",
+    6: "none",
+}
+BACKFILL_DAYS = (1, 4)   # Tuesday, Friday
+
+
+def night_plan(local_weekday):
+    """(depth games for the night, run the detailed backfill?)"""
+    return DEPTH_SLICE[local_weekday], local_weekday in BACKFILL_DAYS
+
+
+DEPTH_GAMES, BACKFILL_TONIGHT = night_plan(LOCAL_WEEKDAY)
 
 # --- finish-by deadline (2026-10-18, user: "have them done at 6AM") ---------
 # A CSV night is ~10.5 h of work, but the ROTATION steps are the variable
@@ -86,12 +122,13 @@ DEADLINE = "" if CRAWL_NIGHT else os.environ.get("TCG_REFRESH_DEADLINE", "").str
 # how much of a rotation fits. Steps absent here are treated as ~2 min.
 NOMINAL_MIN = {
     "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 11,
-    "tcg-nm-prices": 2, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
+    "tcg-nm-prices": 30, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
     "tcg-sales": 15, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
     "printing-ingest": 63, "imageless-audit": 22, "pc-gundam": 2,
-    "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 4, "unify": 20,
+    "pc-starwars": 3, "pc-graded-new": 120, "nm-pc-sweep": 4, "unify": 20,
     "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
-    "pc-link-suggest": 48,
+    "pc-link-suggest": 48, "pc-console-discover": 2, "pc-console-sweep": 91,
+    "nm-rescue-full": 2, "tcg-market-watch": 1,
 }
 # Rotation steps whose budget may be cut: step -> (flag, floor). The flag's
 # value is scaled by the fraction of its nominal time that still fits.
@@ -101,6 +138,7 @@ TRIMMABLE = {
     "printing-ingest": ("--limit", 300),
     "imageless-audit": ("--limit", 20),
     "pc-link-suggest": ("--drain", 200),
+    "pc-graded-new": ("--total-limit", 800),
 }
 # Work that happens BETWEEN art-comps and s3-upload (the model block, run by
 # run_daily_refresh.sh) plus the prod push, reserved so the rotations don't
@@ -216,16 +254,15 @@ STEPS = [
     # cards/night at 40 rpm ≈ 8 min; the backlog (~12k) drains in weeks.
     ("tcg-sku-resolve", ["import_tcg_csv.py", "--resolve", "300", "--rpm", "40",
                          "--non-fatal"]),
-    # The TCGplayer search crawl (~50 cards/request, ~3 h for the catalog) is
-    # now the FALLBACK + the weekly depth pass: on CSV nights it crawls only
-    # games whose CSV didn't land (--csv-games skip); on the crawl night it
-    # walks every game for market depth and the search price (tcg_depth_
-    # history.market_price, the search-vs-CSV cross-check) but writes price
-    # rows only for CSV-less games (--csv-games depth-only). --resume skips
-    # sets already done today so a resumed night doesn't re-crawl.
+    # The TCGplayer search crawl (~50 cards/request) is now the FALLBACK +
+    # the depth pass: any game whose CSV didn't land tonight is priced by it
+    # as before, and tonight's DEPTH_SLICE games are walked for market depth
+    # and the search price (tcg_depth_history.market_price, the
+    # search-vs-CSV cross-check) without writing price rows. Every other
+    # CSV-priced game is skipped. --resume skips sets already done today.
     ("tcg-nm-prices", ["scrape_tcg_nm_prices.py", "--game", "all",
                        "--resume", "--delay", "1.0", "--rpm", "30",
-                       "--csv-games", "depth-only" if CRAWL_NIGHT else "skip"]),
+                       "--csv-games", "depth-only", "--depth-games", DEPTH_GAMES]),
     # Cross-check the high-value cards' search marketPrice against the detailed
     # endpoint's Near Mint market and flag disagreements into tcg_nm_review for
     # manual page inspection. TCGplayer's search marketPrice drifts to an asking
@@ -238,8 +275,11 @@ STEPS = [
     ("tcg-nm-verify", ["verify_high_value_nm.py", "--min-price", "250", "--rpm", "60"]),
     # Re-pull the detailed NM history for cards flagged TCGplayer-only (PC's
     # ungraded was wrong): the search crawl skips them, so this keeps their
-    # ungraded series fresh + sales-based. Cheap (~a dozen cards); exits 0.
-    ("tcg-nm-backfill", ["backfill_tcg_nm_history.py", "--refresh-existing", "--rpm", "40"]),
+    # ungraded series fresh + sales-based. ~70 min for the ~2.5k-card cohort;
+    # the series it fetches only has WEEKLY points, so Tuesday + Friday is
+    # as fresh as nightly was (BACKFILL_DAYS). Exits 0.
+    *([("tcg-nm-backfill", ["backfill_tcg_nm_history.py", "--refresh-existing", "--rpm", "40"])]
+      if BACKFILL_TONIGHT else []),
     # Sales volume rotation (2026-10-14, user request): walk the catalog
     # value-first recording each card's "items sold" buckets from the same
     # detailed endpoint tcg-nm-backfill uses; a card's first touch lands ~a
@@ -308,14 +348,15 @@ STEPS = [
     # rotation. ~2 req/s sustained instead of ~3 costs the Sunday run an hour
     # but keeps the steady state well inside what months of crawling showed
     # PC tolerates. The circuit breaker caps the damage if a block recurs.
-    # Crawl night (CRAWL_NIGHT, Saturday local) carries the consolidated
-    # 12k-page rotation; every other night crawls never-crawled pages only.
+    # Graded is a NIGHTLY rotation since 2026-10-18: 2,500 pages a night
+    # (~2 h at the 2-worker rate Cloudflare has tolerated) on every night
+    # of the week, ~17.5k/week against the old 12k Saturday burst. Workers
+    # stay at 2 — 3 got the crawl blocked for two days on 2026-10-13. The
+    # per-game floor on --total-limit lives in the scraper; the finish-by
+    # deadline may trim this one (TRIMMABLE) on a night that runs long.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
-                       "--delay", "1.0"]
-                      + (["--refresh-days", "30", "--workers", "2",
-                          "--limit", "4000", "--total-limit", "12000"]
-                         if CRAWL_NIGHT
-                         else ["--workers", "1", "--total-limit", "1500"])),
+                       "--delay", "1.0", "--refresh-days", "30", "--workers", "2",
+                       "--limit", "4000", "--total-limit", "2500"]),
     # Price-integrity sweep: TCGplayer NM vs PC sales divergences -> review
     # CSV (no auto-action; the two failure classes need human judgment).
     ("nm-pc-sweep",   ["sweep_nm_vs_pc.py"]),

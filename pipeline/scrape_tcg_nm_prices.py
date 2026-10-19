@@ -32,7 +32,7 @@ import json
 import os
 import sqlite3
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
@@ -214,11 +214,23 @@ def init_db(conn):
     conn.commit()
 
 
-def csv_imported_games(conn, today):
-    """Games whose Seller Portal CSV was imported for `today` (UTC)."""
+CSV_WINDOW_HOURS = 20
+
+
+def csv_imported_games(conn, window_hours=CSV_WINDOW_HOURS):
+    """Games whose Seller Portal CSV was imported within the last
+    `window_hours` — i.e. by THIS run. Keyed on the import timestamp, not on
+    the UTC date (2026-10-18): with the per-night start times the Saturday
+    import lands at ~23:25 UTC and this step at ~00:30 UTC the next day, so
+    a same-UTC-date test would have called every game CSV-less and
+    re-priced the whole catalog from the search API — the source mixing the
+    CSV switch exists to prevent. 20 h is short enough that a game whose
+    export FAILED tonight (last import ~24 h ago) still falls back to being
+    priced here."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=window_hours)).isoformat()
     try:
         return {g for (g,) in conn.execute(
-            "SELECT game FROM tcg_csv_imports WHERE date=?", (today,))}
+            "SELECT game FROM tcg_csv_imports WHERE imported_at > ?", (cutoff,))}
     except sqlite3.OperationalError:
         return set()
 
@@ -351,6 +363,18 @@ def main():
                          "(CSV nights); 'depth-only' = crawl for depth + the search "
                          "market price but write no price rows (the weekly crawl "
                          "night's cross-check). Games WITHOUT a CSV are always priced.")
+    ap.add_argument("--csv-window-hours", type=float, default=CSV_WINDOW_HOURS,
+                    help="a game counts as CSV-priced if its import is newer than this "
+                         "(default 20 h — see csv_imported_games); widen for a resume "
+                         "run the following afternoon")
+    ap.add_argument("--depth-games", default=None,
+                    help="with --csv-games depth-only: comma list of the CSV-priced "
+                         "games to walk for depth TONIGHT ('none' = no depth pass); "
+                         "CSV-priced games not listed are skipped. Games without a "
+                         "CSV are still priced regardless (the fallback never "
+                         "narrows). Default: every CSV-priced game (the old Saturday "
+                         "full pass). Since 2026-10-18 the week is evened out one or "
+                         "two games a night — see weekly_refresh.DEPTH_SLICE.")
     args = ap.parse_args()
 
     if args.games:
@@ -374,12 +398,26 @@ def main():
     conn = sqlite3.connect(PC_DB, timeout=60)
     init_db(conn)
 
-    csv_games = csv_imported_games(conn, today) if args.csv_games != "price" else set()
+    csv_games = (csv_imported_games(conn, args.csv_window_hours)
+                 if args.csv_games != "price" else set())
     if args.csv_games == "skip" and csv_games:
         skipped = [g for g in games if g in csv_games]
         games = [g for g in games if g not in csv_games]
         print(f"CSV imported today for {', '.join(skipped)} — not crawled "
               f"({'nothing left to crawl' if not games else 'crawling ' + ', '.join(games)})")
+    elif args.csv_games == "depth-only" and csv_games and args.depth_games is not None:
+        # Tonight's depth slice: CSV-priced games outside it are skipped
+        # outright; CSV-less games stay in for pricing no matter what.
+        depth = set() if args.depth_games.strip().lower() == "none" else \
+            {g.strip() for g in args.depth_games.split(",") if g.strip()}
+        unknown = sorted(depth - set(GAMES))
+        if unknown:
+            ap.error(f"--depth-games names unknown game(s): {', '.join(unknown)}")
+        priced_tonight = [g for g in games if g not in csv_games]
+        games = [g for g in games if g not in csv_games or g in depth]
+        print(f"depth slice tonight: {', '.join(sorted(depth)) or 'none'}"
+              + (f"; pricing CSV-less {', '.join(priced_tonight)}" if priced_tonight else "")
+              + ("; nothing to crawl" if not games else ""))
     if not games:
         conn.close()
         print(f"\nDone. 0 Near Mint prices for {today} (every game priced by CSV)")
