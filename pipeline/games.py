@@ -116,15 +116,15 @@ GAMES = {
         "pc_min_rows": 5_000,
         "scraper": ["tcg_scraper.py", "--game", "fleshandblood"],
     },
-    "pokemonjp": {
-        "label": "Pokémon Japan",
-        "tcg_line": "pokemon-japan",             # verified: 455 sets / 30,406 cards
-        "db": "pokemonjp_cards.db",
-        "images": "images_pokemonjp",
+    "sorcery": {
+        "label": "Sorcery",
+        "tcg_line": "sorcery-contested-realm",   # verified: 8 sets / 3,170 cards
+        "db": "sorcery_cards.db",
+        "images": "images_sorcery",
         "pc_category": None,
         "pc_csv": None,
-        "pc_min_rows": 10_000,
-        "scraper": ["tcg_scraper.py", "--game", "pokemonjp"],
+        "pc_min_rows": 500,
+        "scraper": ["tcg_scraper.py", "--game", "sorcery"],
     },
     "riftbound": {
         "label": "Riftbound",

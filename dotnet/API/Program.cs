@@ -34,7 +34,7 @@ AddReadOnlySqlite<DigimonContext>("DigimonConnection");
 AddReadOnlySqlite<GundamContext>("GundamConnection");
 AddReadOnlySqlite<StarwarsContext>("StarwarsConnection");
 AddReadOnlySqlite<FleshAndBloodContext>("FleshAndBloodConnection");
-AddReadOnlySqlite<PokemonJpContext>("PokemonJpConnection");
+AddReadOnlySqlite<SorceryContext>("SorceryConnection");
 AddReadOnlySqlite<RiftboundContext>("RiftboundConnection");
 AddReadOnlySqlite<CyberpunkContext>("CyberpunkConnection");
 builder.Services.AddScoped<CardSources>();

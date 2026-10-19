@@ -12,7 +12,7 @@ public class CardSources(
     OnePieceContext onePiece, PokemonContext pokemon, YugiohContext yugioh,
     MagicContext magic, LorcanaContext lorcana, DigimonContext digimon,
     GundamContext gundam, StarwarsContext starwars,
-    FleshAndBloodContext fleshAndBlood, PokemonJpContext pokemonJp,
+    FleshAndBloodContext fleshAndBlood, SorceryContext sorcery,
     RiftboundContext riftbound, CyberpunkContext cyberpunk)
 {
     public IQueryable<CardBase> Cards(string game) => game switch
@@ -25,7 +25,7 @@ public class CardSources(
         "gundam" => gundam.Cards,
         "starwars" => starwars.Cards,
         "fleshandblood" => fleshAndBlood.Cards,
-        "pokemonjp" => pokemonJp.Cards,
+        "sorcery" => sorcery.Cards,
         "riftbound" => riftbound.Cards,
         "cyberpunk" => cyberpunk.Cards,
         _ => onePiece.Cards,

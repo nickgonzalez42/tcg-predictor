@@ -87,7 +87,7 @@ public class DigimonContext(DbContextOptions<DigimonContext> options) : GenericC
 public class GundamContext(DbContextOptions<GundamContext> options) : GenericCardContext(options);
 public class StarwarsContext(DbContextOptions<StarwarsContext> options) : GenericCardContext(options);
 public class FleshAndBloodContext(DbContextOptions<FleshAndBloodContext> options) : GenericCardContext(options);
-public class PokemonJpContext(DbContextOptions<PokemonJpContext> options) : GenericCardContext(options);
+public class SorceryContext(DbContextOptions<SorceryContext> options) : GenericCardContext(options);
 public class RiftboundContext(DbContextOptions<RiftboundContext> options) : GenericCardContext(options);
 public class CyberpunkContext(DbContextOptions<CyberpunkContext> options) : GenericCardContext(options);
 

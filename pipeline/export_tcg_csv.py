@@ -93,10 +93,9 @@ PORTAL_LINES = {
     # note the Seller Portal writes "Flesh & Blood TCG" with an ampersand
     # while the search API calls the same line "Flesh and Blood TCG".
     "fleshandblood": ["Flesh & Blood TCG"],
-    # "Pokemon Japan" is a SEPARATE line from "Pokemon"; pick_option matches
-    # exactly first, and NOT_OURS keeps the plain-Pokemon entry from ever
-    # prefix-matching this one (or vice versa).
-    "pokemonjp": ["Pokemon Japan"],
+    # The Seller Portal drops the colon the search API uses
+    # ("Sorcery: Contested Realm").
+    "sorcery": ["Sorcery Contested Realm"],
     "riftbound": ["Riftbound League of Legends Trading Card Game"],
     "cyberpunk": ["Cyberpunk TCG"],
 }
