@@ -285,7 +285,7 @@ function MoverTile({ mover }: { mover: Card }) {
 }
 
 const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across eight TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, Star Wars Unlimited), with ungraded and graded price tiers and full price history.' },
+    { n: '1', title: 'Browse', text: 'Every card across twelve TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, Star Wars Unlimited, Flesh and Blood, Sorcery, Riftbound, Cyberpunk), with ungraded and graded price tiers and full price history.' },
     { n: '2', title: 'Forecast', text: '1 month, 6 month, and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
     { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L that benchmarks your collection against the S&P 500.' },
     { n: '4', title: 'Stay ahead', text: 'Price and forecast alerts per card and condition, plus a market report every Friday.' },
@@ -303,7 +303,7 @@ export default function HomePage() {
     // 1-month ranking.
     const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 4 });
     const { data: user } = useUserInfoQuery();
-    // One tile per game — eight games, eight tiles: each game's strongest
+    // One tile per game — one tile for every game in GAMES: each game's strongest
     // mover in ranking order, topping up from the remainder only if fewer
     // than 8 games qualify (a game with no showable movers cedes its slot).
     const tiles = useMemo(() => {
@@ -329,7 +329,7 @@ export default function HomePage() {
                     <h1 className="hero__title">Know your cards' worth: yesterday, today, tomorrow.</h1>
                     <p className="hero__sub">
                         CardStock uses machine learning to predict what any card will be worth a month,
-                        six months, or a year from now. Eight TCGs, graded and ungraded
+                        six months, or a year from now. Twelve TCGs, graded and ungraded
                         values, full price history, and a tracker for your whole collection.
                     </p>
                     <div className="btn-group">

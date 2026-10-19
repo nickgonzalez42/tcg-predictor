@@ -193,7 +193,7 @@ def main():
         "AI price forecasts for Pokémon, One Piece, Magic, Yu-Gi-Oh!, Lorcana, Digimon, Gundam "
         "and Star Wars cards, with graded price history and a public accuracy record.",
         f"<h1>Trading card prices, with receipts</h1>"
-        f"<p>CardStock tracks {n_cards:,} cards across eight games, publishes model price "
+        f"<p>CardStock tracks {n_cards:,} cards across twelve games, publishes model price "
         f"forecasts for one month to a year ahead, and grades every forecast in public once "
         f"its date arrives. Weekly <a href='{SITE}/reports'>market reports</a> round up what "
         f"moved; the <a href='{SITE}/about'>About page</a> explains the model in plain "
