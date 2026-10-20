@@ -25,6 +25,7 @@ Run (trainer):
 """
 
 import argparse
+import collections
 import os
 import sqlite3
 import sys
@@ -69,6 +70,17 @@ def ensure_out(conn):
             bias_mean REAL, bias_med REAL, coverage REAL, med_width REAL,
             seg_bias REAL, seg_widen REAL,
             PRIMARY KEY (run, game, target, horizon, origin, variant)
+        )""")
+    # Young-card segment (--young): one row per (population, reading).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS results_young (
+            run TEXT NOT NULL, game TEXT NOT NULL, target TEXT NOT NULL,
+            horizon TEXT NOT NULL, origin TEXT NOT NULL,
+            pop TEXT NOT NULL, variant TEXT NOT NULL,
+            n INTEGER, n_sets INTEGER, spearman REAL, mae_w REAL, mae_raw REAL,
+            dir_acc REAL, top_dec_ret REAL, bot_dec_ret REAL, all_ret REAL,
+            prec10 REAL,
+            PRIMARY KEY (run, game, target, horizon, origin, pop, variant)
         )""")
     conn.commit()
 
@@ -133,11 +145,125 @@ def realized_for(em, k, idx_full, dates_full, P_full, n_trunc):
     return out
 
 
+# Young-card segment (2026-10-20): can the production model RANK cards that
+# have a single monthly bucket at the origin — the population the live
+# minimum-history gate suppresses and the launch tier covers with an honest
+# flat — or is flat the ceiling? Scored only on cards BORN in the origin
+# month, with the questions a new-set screener actually asks: rank
+# correlation, and whether the top decile by forecast outran the rest.
+# Three readings per cell:
+#   model  the baseline variant's point (unshrunk: ranks identical to what
+#          ships; its MAE is a touch optimistic vs the published number)
+#   flat   zero return — the launch tier's current output
+#   prior  the launch tier's shape: median first-month return of the card's
+#          rarity cohort over launches that matured BEFORE the origin
+# and two populations: every origin-born card ("young"), and only those in a
+# set that is itself new at the origin (>= SET_MIN base cards born that
+# month, "launch") — which keeps source-onboarding months (digimon 2025-10,
+# the 2026-07 PriceCharting->TCGplayer seam) from masquerading as launches.
+SET_MIN = 30
+PRIOR_MIN = 8
+
+
+def _spearman(a, b):
+    if len(a) < 3:
+        return float("nan")
+    return float(pd.Series(a).rank().corr(pd.Series(b).rank()))
+
+
+def _decile_stats(pred, realized):
+    """Mean realized log-return of the top / bottom decile by pred, of the
+    whole population, and precision@10% (share of the pred top decile that
+    is also in the realized top decile)."""
+    n = len(pred)
+    k = max(1, n // 10)
+    op, orr = np.argsort(pred), np.argsort(realized)
+    top_p, bot_p = op[-k:], op[:k]
+    top_r = set(orr[-k:].tolist())
+    return (float(realized[top_p].mean()), float(realized[bot_p].mean()),
+            float(realized.mean()), float(np.mean([i in top_r for i in top_p])))
+
+
+def score_young(conn, run_tag, game, target, h, origin, d, realized,
+                idx_full, dates_full, P_full, n_trunc):
+    em = d["emit"]
+    o_col = n_trunc - 1
+    rows = np.array([idx_full.get((int(p), str(pr)), -1)
+                     for p, pr in zip(em["pids"], em["prints"])])
+    fin = np.isfinite(P_full)
+    born = np.where(fin.any(axis=1), fin.argmax(axis=1), -1)
+    has = rows >= 0
+    young = np.isfinite(realized) & has
+    young[has] &= born[rows[has]] == o_col
+    if young.sum() < 20:
+        print(f"[{game}/{target}/{h}@{origin}] young: only {int(young.sum())} "
+              f"origin-born cards matured — skipped", flush=True)
+        return
+    traits = fp.card_traits(game)
+    inv = {i: k for k, i in idx_full.items()}
+
+    # Which sets are NEW at the origin: base cards born in the origin column.
+    set_births = collections.Counter()
+    for i in np.where(born == o_col)[0]:
+        pid, pr = inv[i]
+        if pr == "":
+            set_births[(traits.get(pid) or {}).get("set_name") or "?"] += 1
+    new_sets = {s for s, n in set_births.items() if n >= SET_MIN}
+
+    # Rarity-cohort prior from launches that matured strictly before the origin.
+    coh = collections.defaultdict(list)
+    for i in np.where((born >= 0) & (born + 1 < o_col))[0]:
+        pid, pr = inv[i]
+        if pr != "":
+            continue
+        p0, p1 = P_full[i, born[i]], P_full[i, born[i] + 1]
+        if np.isfinite(p0) and np.isfinite(p1) and p0 > 0 and p1 > 0:
+            r = float(np.clip(np.log(p1 / p0), -fp.RET_CLIP, fp.RET_CLIP))
+            coh[(traits.get(pid) or {}).get("rarity") or "?"].append(r)
+            coh["__all__"].append(r)
+    med = {k: float(np.median(v)) for k, v in coh.items() if len(v) >= PRIOR_MIN}
+
+    ret_model, _, _, _, _ = variant_bands(d, "baseline")
+    pid_y = em["pids"][young].astype(int)
+    rar = [(traits.get(int(p)) or {}).get("rarity") or "?" for p in pid_y]
+    sets = [(traits.get(int(p)) or {}).get("set_name") or "?" for p in pid_y]
+    pred = {"model": ret_model[young],
+            "flat": np.zeros(int(young.sum())),
+            "prior": np.array([med.get(r, med.get("__all__", 0.0)) for r in rar])}
+    real_y, base_y = realized[young], em["base"][young]
+    in_launch = np.array([s in new_sets for s in sets])
+    print(f"[{game}/{target}/{h}@{origin}] young: {int(young.sum())} origin-born cards, "
+          f"{int(in_launch.sum())} in {len(new_sets)} new set(s) "
+          f"{sorted(new_sets)[:4]}{'...' if len(new_sets) > 4 else ''}; "
+          f"{len(med) - ('__all__' in med)} rarity priors", flush=True)
+    for pop, mask in (("young", np.ones(len(real_y), bool)), ("launch", in_launch)):
+        if mask.sum() < 20:
+            continue
+        r_, b_ = real_y[mask], base_y[mask]
+        w = fp.price_weight(b_)
+        n_sets = len({s for s, m in zip(sets, mask) if m})
+        for v, p in pred.items():
+            p_ = p[mask]
+            err = p_ - r_
+            top, bot, allr, prec = _decile_stats(p_, r_)
+            row = (run_tag, game, target, h, origin, pop, v, int(mask.sum()), n_sets,
+                   _spearman(p_, r_), float(np.average(np.abs(err), weights=w)),
+                   float(np.mean(np.abs(err))),
+                   float(np.mean(np.sign(p_) == np.sign(r_))), top, bot, allr, prec)
+            conn.execute("INSERT OR REPLACE INTO results_young VALUES "
+                         "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+            print(f"    {pop:6s} {v:6s} n={row[7]:<5d} rho={row[9]:+.3f} "
+                  f"maeW={row[10]:.3f} top10={top:+.3f} bot10={bot:+.3f} "
+                  f"all={allr:+.3f} prec10={prec:.2f}", flush=True)
+        conn.commit()
+
+
 POOL_VARIANTS = ("pool", "pool_base", "blend")   # scored by run_pool, not here
 
 
 def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
-             capture_frames=False, donor=False, frames_cap=None, need_frames=False):
+             capture_frames=False, donor=False, frames_cap=None, need_frames=False,
+             young=False):
     """need_frames: a pooled fit for this (target, origin) is still pending,
     so re-run the segment for its frames even when every scored variant is
     already in the results (a pooled failure must not strand the cell)."""
@@ -198,6 +324,9 @@ def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
                   f"maeW={m['mae_w']:.3f} dir={m['dir_acc']:.2f} "
                   f"bias={m['bias_med']:+.3f} cov={m['coverage']:.2f} "
                   f"width={m['med_width']:.2f}", flush=True)
+        if young:
+            score_young(conn, run_tag, game, target, h, origin, d, realized,
+                        idx_full, dates_full, P_full, n_trunc)
     return debug
 
 
@@ -360,6 +489,9 @@ def main():
                     help="evaluated games whose frames enter the pool")
     ap.add_argument("--pool-cap", type=int, default=0,
                     help="max rows per game in the pooled fit (0 = no cap)")
+    ap.add_argument("--young", action="store_true",
+                    help="also score the origin-born (single-bucket) cards: rank "
+                         "correlation + decile outcomes vs flat and a rarity prior")
     args = ap.parse_args()
 
     assert os.environ.get("TCG_FC_DEBIAS") != "1" and os.environ.get("TCG_FC_CQR") != "1", \
@@ -394,7 +526,8 @@ def main():
                     dbg = run_cell(conn, args.run, game, target, origin, horizons,
                                    variants, cache,
                                    capture_frames=want_pool and game in pool_games,
-                                   need_frames=pool_pending and game in pool_games)
+                                   need_frames=pool_pending and game in pool_games,
+                                   young=args.young)
                     if dbg:
                         debugs[game] = dbg
                 except Exception as e:
