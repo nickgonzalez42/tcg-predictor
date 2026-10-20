@@ -176,9 +176,17 @@ def apply_deadline(todo, idx, now):
         rest += PUSH_MIN
     available = remaining - rest
     nominal = NOMINAL_MIN.get(name, 2)
+    cmd = list(cmd)
+    if name == "pc-link-suggest":
+        # This one takes a CLOCK, not just a count: the Monday after a
+        # console sweep it faces thousands of new pages before its drain
+        # (2026-10-20: 108 min, an hour past the deadline). Always hand it
+        # the minutes the night can spare, floor 5 so it still triages.
+        cmd += ["--max-minutes", str(max(int(available), 5))]
+        print(f"    [deadline {DEADLINE}] {name}: {int(remaining)} min left, "
+              f"{int(rest)} min reserved -> --max-minutes {max(int(available), 5)}", flush=True)
     if available >= nominal:
         return cmd
-    cmd = list(cmd)
     i = cmd.index(flag)
     want = int(cmd[i + 1])
     scaled = max(floor, int(want * max(available, 0) / nominal))

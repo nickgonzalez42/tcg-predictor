@@ -187,6 +187,21 @@ def linked_pc_ids(game):
     return ids
 
 
+# Wall-clock budget (2026-10-20): --max-minutes. The Monday after a console
+# sweep this step faces up to 500 NEW pc_ids per game (2,073 queued for
+# Magic alone) BEFORE the --drain backlog, ~1 page/s — the first scheduled
+# night under the 06:00 deadline spent 108 min here and finished an hour
+# late. Page counts can't express that; a clock can. Every fetch loop
+# checks it and stops cleanly, recording what it already triaged; the
+# untouched remainder simply carries over to the next run.
+STOP_AT = None
+
+
+def out_of_time():
+    import time
+    return STOP_AT is not None and time.monotonic() >= STOP_AT
+
+
 def run_drain(budget, seen):
     """Fetch up to `budget` baselined-but-still-unmatched pages, small games
     first, and queue link suggestions exactly like run_game (exact embedded
@@ -207,6 +222,10 @@ def run_drain(budget, seen):
         budget -= len(batch)
         new_drained, new_sugg = [], []
         for pc_id in batch:
+            if out_of_time():
+                print(f"[drain:{game}] time budget reached after {len(new_drained)} page(s) — "
+                      f"the rest carries over", flush=True)
+                break
             ids, title, status = page_ids_and_title(pc_id)
             if ids is None and status not in (404,):
                 continue                          # transient — retry on a later drain
@@ -259,6 +278,10 @@ def run_game(game, suffix, baseline, limit, seen):
         "SELECT product_id, name FROM cards"))
     new_seen, new_sugg = [], []
     for pc_id, pc_name, console in capped:
+        if out_of_time():
+            print(f"[{game}] time budget reached after {len(new_seen)} of {len(capped)} "
+                  f"new pc_ids — the rest carries over", flush=True)
+            break
         ids, status = page_tcg_ids(pc_id)
         if ids is None and status not in (404,):
             continue                              # transient — retry next run, stay unseen
@@ -297,14 +320,25 @@ def main():
     ap.add_argument("--drain", type=int, default=0,
                     help="also fetch up to N baselined-but-unmatched backlog "
                          "pages (small games first; each page fetched once ever)")
+    ap.add_argument("--max-minutes", type=float, default=None,
+                    help="stop fetching cleanly after this many minutes (the "
+                         "nightly's finish-by deadline passes the time it can spare)")
     args = ap.parse_args()
+    if args.max_minutes:
+        import time
+        global STOP_AT
+        STOP_AT = time.monotonic() + args.max_minutes * 60
+        print(f"time budget: {args.max_minutes:g} min", flush=True)
 
     games = args.games.split(",") if args.games else bulk_games()
     seen = load_seen()
     total = 0
     for game in games:
+        if out_of_time():
+            print(f"[{game}] skipped — time budget reached", flush=True)
+            continue
         total += run_game(game, args.suffix, args.baseline, args.limit, seen)
-    if args.drain and not args.baseline:
+    if args.drain and not args.baseline and not out_of_time():
         total += run_drain(args.drain, seen)
     if not args.baseline:
         print(f"\n{total} new suggestion(s) -> {SUGGEST_CSV}")
