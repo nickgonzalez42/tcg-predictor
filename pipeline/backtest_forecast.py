@@ -82,6 +82,17 @@ def ensure_out(conn):
             prec10 REAL,
             PRIMARY KEY (run, game, target, horizon, origin, pop, variant)
         )""")
+    # Per-card rows behind results_young, so a reading can be sliced by
+    # price band / rarity / set after the fact (is the ranking skill real at
+    # the expensive end, or a floor effect among penny cards?).
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS young_cards (
+            run TEXT NOT NULL, game TEXT NOT NULL, target TEXT NOT NULL,
+            horizon TEXT NOT NULL, origin TEXT NOT NULL, product_id INTEGER NOT NULL,
+            set_name TEXT, rarity TEXT, in_launch INTEGER, base REAL,
+            pred_model REAL, pred_prior REAL, realized REAL,
+            PRIMARY KEY (run, game, target, horizon, origin, product_id)
+        )""")
     conn.commit()
 
 
@@ -232,6 +243,12 @@ def score_young(conn, run_tag, game, target, h, origin, d, realized,
             "prior": np.array([med.get(r, med.get("__all__", 0.0)) for r in rar])}
     real_y, base_y = realized[young], em["base"][young]
     in_launch = np.array([s in new_sets for s in sets])
+    conn.executemany(
+        "INSERT OR REPLACE INTO young_cards VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        [(run_tag, game, target, h, origin, int(p), s_, r_, int(l), float(b),
+          float(pm), float(pp), float(rz))
+         for p, s_, r_, l, b, pm, pp, rz in zip(pid_y, sets, rar, in_launch, base_y,
+                                                 pred["model"], pred["prior"], real_y)])
     print(f"[{game}/{target}/{h}@{origin}] young: {int(young.sum())} origin-born cards, "
           f"{int(in_launch.sum())} in {len(new_sets)} new set(s) "
           f"{sorted(new_sets)[:4]}{'...' if len(new_sets) > 4 else ''}; "
