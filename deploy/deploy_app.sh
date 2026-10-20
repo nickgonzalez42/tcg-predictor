@@ -34,6 +34,12 @@ sync_dir() { $RSYNC -az --delete -e "ssh -i $KEY" "$1" "$2" || \
 trap '${=SSH} "sudo systemctl start tcg-api" || true' ERR
 ${=SSH} 'sudo systemctl stop tcg-api'
 sync_dir "$ROOT/dotnet/API/bin/deploy-linux/" ubuntu@$IP:/srv/tcg/api/
+# Normalize modes before shipping: rsync -a PRESERVES them, and Caddy runs as
+# its own user, so one owner-only file (an asset copied in from a 600 source
+# — riftbound-back.png, 2026-10-20) is unreadable to the server. The SPA
+# fallback then answers that URL with index.html: HTTP 200, text/html, a
+# silently broken image rather than a 404 anyone would notice.
+chmod -R a+rX "$ROOT/client/dist"
 sync_dir "$ROOT/client/dist/" ubuntu@$IP:/srv/tcg/client/
 # Static crawler-visible pages (reports backfill + guides). NO --delete: the
 # trainer drops each new Friday report into the same tree; the repo copy only
