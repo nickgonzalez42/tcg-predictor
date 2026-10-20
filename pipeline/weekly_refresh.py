@@ -127,7 +127,7 @@ NOMINAL_MIN = {
     "printing-ingest": 63, "imageless-audit": 22, "pc-gundam": 2,
     "pc-starwars": 3, "pc-graded-new": 120, "nm-pc-sweep": 4, "unify": 20,
     "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
-    "pc-link-suggest": 48, "pc-console-discover": 2, "pc-console-sweep": 91,
+    "pc-link-suggest": 70, "pc-console-discover": 2, "pc-console-sweep": 91,
     "nm-rescue-full": 2, "tcg-market-watch": 1,
 }
 # Rotation steps whose budget may be cut: step -> (flag, floor). The flag's
@@ -169,6 +169,11 @@ def apply_deadline(todo, idx, now):
     rest = sum(NOMINAL_MIN.get(n, 2) for n, _ in todo[idx + 1:])
     if any(n == "art-comps" for n, _ in todo[idx:]):
         rest += MODEL_BLOCK_MIN + PUSH_MIN
+    elif todo[-1][0] == "pc-link-suggest":
+        # The Phase C slice (--from s3-upload): push_data.sh follows it.
+        # First night (2026-10-20) the drain was trimmed with "0 min
+        # reserved" and the push itself ran past the deadline.
+        rest += PUSH_MIN
     available = remaining - rest
     nominal = NOMINAL_MIN.get(name, 2)
     if available >= nominal:
@@ -389,7 +394,10 @@ STEPS = [
     # grandfathered (~99k unmatched PC pages never read for tcg-ids; whole
     # sets were missing graded data). ~1 page/s, so 1500 adds ~25-45 min per
     # run night; small games drain first, magic is the months-long tail.
-    ("pc-link-suggest", ["pc_link_suggest.py", "--drain", "1500"]),
+    # 1,500 on the crawl night; a smaller slice on CSV nights (2026-10-20: a
+    # 1,083-page drain ran ~70 min, not the 48 the Saturday rate suggested,
+    # and pushed the first scheduled night an hour past 06:00).
+    ("pc-link-suggest", ["pc_link_suggest.py", "--drain", "1500" if CRAWL_NIGHT else "600"]),
 ]
 
 
