@@ -20,7 +20,13 @@ KEY=~/.ssh/tcg-predictor.pem
 # atomic rename of a COMPLETED transfer.
 RSYNC=$([ -x /opt/homebrew/bin/rsync ] && echo /opt/homebrew/bin/rsync || echo rsync)
 RS="$RSYNC -az --partial-dir=.rsync-partial --stats -e"
-SSH_CMD="ssh -i $KEY"
+# Keepalive (2026-10-20): the Monday run hung 9.5 h on the prerender ssh
+# AFTER the server side had finished — the Mac slept (caffeinate -i does
+# not survive a closed lid), the TCP session died silently, and with no
+# keepalive the client blocked on read forever; launchd would have skipped
+# Tuesday's run behind it. A dead peer is now detected within ~3 min.
+# (macOS ships no `timeout`, so this is the fix rather than a wrapper.)
+SSH_CMD="ssh -i $KEY -o ServerAliveInterval=30 -o ServerAliveCountMax=6"
 DATA=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece
 API_DATA=/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/dotnet/API/Data/cards
 
@@ -72,7 +78,7 @@ push_pc_full() {
 }
 if [ -f "$DELTA" ] && [ "$(sqlite3 "$DELTA" 'SELECT date FROM meta' 2>/dev/null)" = "$(date -u +%F)" ]; then
   echo "== pricecharting (delta, $(du -h "$DELTA" | cut -f1)) =="
-  scp -i $KEY "$DELTA" ubuntu@$IP:/tmp/unified_delta.db
+  scp -i $KEY -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$DELTA" ubuntu@$IP:/tmp/unified_delta.db
   if ${=SSH_CMD} ubuntu@$IP 'sqlite3 -bail /srv/tcg/data/cards/pricecharting.db' <<'SQL' | tail -1 | grep -qx 0
 ATTACH '/tmp/unified_delta.db' AS d;
 PRAGMA busy_timeout = 15000;
