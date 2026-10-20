@@ -1,0 +1,21 @@
+<!-- Placeholder back for Riftbound — an original design in the house style
+     (see generic-card-back.svg), NOT a reproduction of the publisher's card
+     back. Shown when a card has no scanned art and on the 3D flip. -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 420" role="img"
+     aria-label="Riftbound card back">
+  <defs>
+    <linearGradient id="rft-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d2a33"/>
+      <stop offset="1" stop-color="#05121a"/>
+    </linearGradient>
+  </defs>
+  <rect width="300" height="420" rx="16" fill="url(#rft-bg)"/>
+  <rect x="12" y="12" width="276" height="396" rx="10" fill="none" stroke="#1f5d6b" stroke-width="2"/>
+  <g fill="none" stroke="#4fd6c8" stroke-width="2.5">
+    <path d="M150 136 L204 166 L204 226 L150 256 L96 226 L96 166 Z"/>
+    <path d="M150 160 L184 180 L184 212 L150 232 L116 212 L116 180 Z" stroke-width="1.5"/>
+    <path d="M150 136 L150 256" stroke-width="1" stroke-dasharray="6 7"/>
+  </g>
+  <text x="150" y="312" text-anchor="middle" font-family="ui-monospace, Menlo, monospace"
+        font-size="16" letter-spacing="4" fill="#4fd6c8">RIFTBOUND</text>
+</svg>
