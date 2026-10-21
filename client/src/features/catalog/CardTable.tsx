@@ -22,7 +22,11 @@ type Props = {
 export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
     const navigate = useNavigate();
     const period = (trend ?? '1m').toLowerCase();
-    const fcstLabel = TREND_FCST[period] ?? '1Y';
+    // Header follows the rows: under a forecast sort the API returns that
+    // horizon's forecast (fcstHorizon), which need not be the trend window's.
+    const HZ_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y' };
+    const rowHz = cards.find(c => c.fcstHorizon)?.fcstHorizon;
+    const fcstLabel = (rowHz && HZ_LABEL[rowHz]) ?? TREND_FCST[period] ?? '1Y';
 
     return (
         <div className="screener-wrap full-span">

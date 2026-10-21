@@ -265,9 +265,16 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     // `printing` (2026-10-20) selects a labeled series instead of the base one;
     // ids in `baseIsSelected` are cards whose OWN base printing is the
     // selection, so their numbers live under '' — see SelectedPrinting.
+    // `shownBase` (2026-10-20) re-bases the metric on the price the catalog is
+    // DISPLAYING instead of the forecast's own anchor. They disagree for about
+    // a third of cards (magic 33,429 of 109,494) because the anchor is the
+    // price at model time and the column updates nightly — so a row could rank
+    // at +150% while plainly reading $0.03 -> $0.05 (+66.7%). Expected growth
+    // is only meaningful against what you would pay today.
     public async Task<Dictionary<int, ForecastChange>> ForecastChanges(
         string game, string target, string horizon, List<int> ids,
-        string? printing = null, HashSet<int>? baseIsSelected = null)
+        string? printing = null, HashSet<int>? baseIsSelected = null,
+        Dictionary<int, double>? shownBase = null)
     {
         if (ids.Count == 0) return [];
         var changes = new Dictionary<int, ForecastChange>();
@@ -280,7 +287,12 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         void Take(int pid, string pr, double b, double f)
         {
             var want = printing == null || (baseIsSelected?.Contains(pid) ?? false) ? "" : printing;
-            if (pr == want) Add(pid, b, f);
+            if (pr != want) return;
+            // Fall back to the forecast's own anchor when the card has no shown
+            // price (it then sorts on the same basis it always did).
+            var basis = shownBase != null && shownBase.TryGetValue(pid, out var sp) && sp > 0
+                ? sp : b;
+            Add(pid, basis, f);
         }
 
         // A whole-game id list (the catalog's unfiltered forecast sorts) is

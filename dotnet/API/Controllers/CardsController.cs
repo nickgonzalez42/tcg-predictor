@@ -814,6 +814,34 @@ public partial class CardsController(
         return ids;
     }
 
+    // The price each card is being SHOWN at — the basis an "expected growth"
+    // ranking has to use if the order is to match what the rows display.
+    // Mirrors the display path: a selected tier's price, else a selected
+    // printing's, else the Near Mint column.
+    private async Task<Dictionary<int, double>> ShownPrices(
+        IQueryable<CardBase> filtered, CardParams p, string folder, List<int> ids)
+    {
+        if (!string.IsNullOrEmpty(p.Grade))
+            return await market.LatestTierPrices(folder, p.Grade, ids);
+
+        var idSet = ids.ToHashSet();
+        var shown = (await filtered.Select(c => new { c.Id, c.NearMintPrice }).ToListAsync())
+            .Where(r => idSet.Contains(r.Id) && r.NearMintPrice is > 0)
+            .ToDictionary(r => r.Id, r => r.NearMintPrice!.Value);
+
+        if (_printing != null)
+        {
+            var labeled = await market.LatestPrintingPrices(folder, _printing, ids);
+            foreach (var id in ids)
+            {
+                if (_baseSel.Contains(id)) continue;      // '' series is its price
+                if (labeled.TryGetValue(id, out var v)) shown[id] = v;
+                else shown.Remove(id);
+            }
+        }
+        return shown;
+    }
+
     // Fetch one ranked page's entities and emit DTOs in the ranked order.
     private async Task<List<CardDto>> PageEntities(
         IQueryable<CardBase> filtered, List<int> pageIds, string folder)
@@ -830,7 +858,8 @@ public partial class CardsController(
     {
         var ids = await RankIds(filtered, p, folder, idFilter);
         var changes = await market.ForecastChanges(
-            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, ids, _printing, _baseSel);
+            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, ids, _printing, _baseSel,
+            await ShownPrices(filtered, p, folder, ids));
         double Key(int id) => sort.Metric == "pct" ? changes[id].Pct : changes[id].Usd;
 
         var withFc = ids.Where(changes.ContainsKey);
@@ -847,7 +876,14 @@ public partial class CardsController(
         await market.ApplyPrintingPrice(cards, folder, _printing);
         foreach (var card in cards)
             if (changes.TryGetValue(card.Id, out var ch)) CardMarketData.ApplyExpected(card, ch, sort);
-        await market.ApplyMarket(cards, folder, p.Grade, p.Trend, printing: _printing);
+        // The shown forecast must be the horizon the rows were RANKED on
+        // (2026-10-20). FcstTo otherwise follows the TREND window, so sorting
+        // by 1Y % growth with the default 1M window ordered the page by the
+        // 12m forecast while every row displayed its 1m one — the list looked
+        // unsorted, and on penny cards (1m "no change", 12m +150%) every row
+        // read 0.0%. PageByHistory already passes its own window this way.
+        await market.ApplyMarket(cards, folder, p.Grade, p.Trend,
+            fcstOverride: sort.Horizon, printing: _printing);
         return cards;
     }
 
