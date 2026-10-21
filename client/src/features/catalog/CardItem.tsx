@@ -25,7 +25,10 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
     const mediaRef = useRef<HTMLDivElement>(null)
     const rotatorRef = useRef<HTMLDivElement>(null)
 
+    // A row shown as a non-base printing carries it into the detail URL, so the
+    // card page opens on the same variant the catalog priced (2026-10-20).
     const detailPath = `/catalog/${gameKey(card.game)}/${card.id}`
+        + (card.selectedPrinting ? `?printing=${encodeURIComponent(card.selectedPrinting)}` : '')
 
     // The reveal animates .card__rotator's max-height, so the inner .rotator needs a
     // fixed pixel height equal to the media container (a % would collapse with the
@@ -109,7 +112,12 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
                     the bottom (card__main is pushed down). */}
                 <div className="card__head">
                     <Link className="card__title" to={detailPath} style={{ display: 'block' }}>{card.name}</Link>
-                    {card.setName && <div className="card__set">{card.setName}</div>}
+                    {card.setName && (
+                        <div className="card__set">
+                            {card.setName}
+                            {card.selectedPrinting && ` · ${card.selectedPrinting}`}
+                        </div>
+                    )}
                 </div>
                 <div className="card__main">
                 <div className="card__row">

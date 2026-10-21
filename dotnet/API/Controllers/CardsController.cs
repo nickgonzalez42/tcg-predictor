@@ -601,6 +601,15 @@ public partial class CardsController(
     // data in another database (tier prices, history, forecasts) pull the
     // filtered cards into memory and use PageSlice instead.
 
+    // The single printing selected for THIS request, and the ids whose own base
+    // printing IS that selection (their prices live under ''). Set once in
+    // Page() and read by the paging helpers, so the shown price, the forecast
+    // columns and the sorts all key on the same series — before 2026-10-20 the
+    // Printing filter only narrowed the card list and left base prices on it.
+    // Null whenever a grade tier is selected: labeled series are ungraded NM.
+    private string? _printing;
+    private HashSet<int> _baseSel = [];
+
     private async Task<List<CardDto>> Page(
         IQueryable<CardBase> source, CardParams cardParams, string folder,
         Dictionary<int, PrereleaseEstimate>? estimates = null)
@@ -614,12 +623,19 @@ public partial class CardsController(
         // not) — the SQL range would wrongly drop every unpriced card first.
         var generalSort = cardParams.OrderBy is null or "" or "name"
                           || CardSorts.IsPriceSort(cardParams.OrderBy);
-        var unionSort = estimates != null && generalSort && string.IsNullOrEmpty(cardParams.Grade);
+        _printing = string.IsNullOrEmpty(cardParams.Grade)
+            ? CardMarketData.SelectedPrinting(cardParams.Printings)
+            : null;
+        // A selected printing rules out the union: its ranking keys on the NM
+        // column, which is the wrong price for a labeled series, and the
+        // unpriced cards it exists to include carry no printings anyway.
+        var unionSort = estimates != null && generalSort
+                        && string.IsNullOrEmpty(cardParams.Grade) && _printing == null;
 
         // Min/max on the SHOWN price. With no tier selected that's the Near Mint
         // column (filterable in SQL); a selected tier's price lives in another
         // DbContext, so those paths filter in memory below.
-        if (string.IsNullOrEmpty(cardParams.Grade) && !unionSort)
+        if (string.IsNullOrEmpty(cardParams.Grade) && !unionSort && _printing == null)
             filtered = filtered.PriceRange(cardParams.MinPrice, cardParams.MaxPrice);
 
         // Cross-DB id filters. Two filters key on data in other DbContexts:
@@ -664,6 +680,17 @@ public partial class CardsController(
             idFilter = idFilter == null ? prIds : idFilter.Intersect(prIds).ToHashSet();
         }
 
+        // A selected printing lists only cards actually priced AT it — showing
+        // the rest at their base price is what made the filter look broken.
+        if (_printing != null)
+        {
+            _baseSel = (await filtered.Where(c => c.BasePrinting == _printing)
+                .Select(c => c.Id).ToListAsync()).ToHashSet();
+            var pricedPr = await market.PrintingPricedIds(folder, _printing);
+            pricedPr.UnionWith(_baseSel);
+            idFilter = idFilter == null ? pricedPr : idFilter.Intersect(pricedPr).ToHashSet();
+        }
+
         // "All" mode, general sorts: one slim union ranked on the shown value,
         // so a $2,000 predicted chase card sits beside the $2,000 priced ones
         // instead of hiding behind a separate filter (2026-10-11).
@@ -691,7 +718,9 @@ public partial class CardsController(
             var unionIds = PageSlice(rankedAll, cardParams).Select(r => r.Id).ToList();
             var unionPage = await PageEntities(filtered, unionIds, folder);
             await market.ApplyGradePrice(unionPage, folder, cardParams.Grade);
-            await market.ApplyMarket(unionPage, folder, cardParams.Grade, cardParams.Trend);
+            await market.ApplyPrintingPrice(unionPage, folder, _printing);
+            await market.ApplyMarket(unionPage, folder, cardParams.Grade, cardParams.Trend,
+                printing: _printing);
             return unionPage;
         }
 
@@ -717,9 +746,28 @@ public partial class CardsController(
         if (idFilter != null)
         {
             var slim = (await filtered
-                    .Select(c => new { c.Id, c.Name, c.NearMintPrice })
+                    .Select(c => new { c.Id, c.Name, c.NearMintPrice, c.BasePrinting })
                     .ToListAsync())
                 .Where(r => idFilter.Contains(r.Id)).ToList();
+            // With a printing selected the NM column is the wrong number to rank
+            // (and to range-filter) on — use that printing's own latest price.
+            if (_printing != null)
+            {
+                var prPrices = await market.LatestPrintingPrices(
+                    folder, _printing, slim.Select(r => r.Id).ToList());
+                slim = slim.Select(r => new
+                {
+                    r.Id,
+                    r.Name,
+                    NearMintPrice = r.BasePrinting == _printing
+                        ? r.NearMintPrice
+                        : prPrices.TryGetValue(r.Id, out var v) ? v : (double?)null,
+                    r.BasePrinting,
+                }).ToList();
+                if (HasPriceRange(cardParams))
+                    slim = slim.Where(r => r.NearMintPrice is { } v
+                                           && InPriceRange(v, cardParams)).ToList();
+            }
             var ranked = (cardParams.OrderBy switch
             {
                 "price" => slim.OrderBy(r => r.NearMintPrice),
@@ -729,7 +777,9 @@ public partial class CardsController(
             var pageIds = PageSlice(ranked, cardParams).Select(r => r.Id).ToList();
             var page = await PageEntities(filtered, pageIds, folder);
             await market.ApplyGradePrice(page, folder, cardParams.Grade);
-            await market.ApplyMarket(page, folder, cardParams.Grade, cardParams.Trend);
+            await market.ApplyPrintingPrice(page, folder, _printing);
+            await market.ApplyMarket(page, folder, cardParams.Grade, cardParams.Trend,
+                printing: _printing);
             return page;
         }
 
@@ -740,7 +790,9 @@ public partial class CardsController(
 
         var cards = ToDtos(paged, folder);
         await market.ApplyGradePrice(cards, folder, cardParams.Grade);
-        await market.ApplyMarket(cards, folder, cardParams.Grade, cardParams.Trend);
+        await market.ApplyPrintingPrice(cards, folder, _printing);
+        await market.ApplyMarket(cards, folder, cardParams.Grade, cardParams.Trend,
+            printing: _printing);
         return cards;
     }
 
@@ -778,7 +830,7 @@ public partial class CardsController(
     {
         var ids = await RankIds(filtered, p, folder, idFilter);
         var changes = await market.ForecastChanges(
-            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, ids);
+            folder, GradeTiers.ForecastTarget(p.Grade), sort.Horizon, ids, _printing, _baseSel);
         double Key(int id) => sort.Metric == "pct" ? changes[id].Pct : changes[id].Usd;
 
         var withFc = ids.Where(changes.ContainsKey);
@@ -792,9 +844,10 @@ public partial class CardsController(
         var cards = await PageEntities(filtered, PageSlice(sorted, p), folder);
 
         await market.ApplyGradePrice(cards, folder, p.Grade);
+        await market.ApplyPrintingPrice(cards, folder, _printing);
         foreach (var card in cards)
             if (changes.TryGetValue(card.Id, out var ch)) CardMarketData.ApplyExpected(card, ch, sort);
-        await market.ApplyMarket(cards, folder, p.Grade, p.Trend);
+        await market.ApplyMarket(cards, folder, p.Grade, p.Trend, printing: _printing);
         return cards;
     }
 
@@ -823,7 +876,9 @@ public partial class CardsController(
         var cards = await PageEntities(filtered, PageSlice(sorted, p), folder);
 
         await market.ApplyGradePrice(cards, folder, p.Grade);
-        await market.ApplyMarket(cards, folder, p.Grade, sort.Window);   // tiles trend over the sorted window
+        await market.ApplyPrintingPrice(cards, folder, _printing);
+        await market.ApplyMarket(cards, folder, p.Grade, sort.Window,   // tiles trend over the sorted window
+            printing: _printing);
         return cards;
     }
 

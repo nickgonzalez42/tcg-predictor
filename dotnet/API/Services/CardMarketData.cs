@@ -198,9 +198,76 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         return changes;
     }
 
+    // ----- selected printing (2026-10-20) ------------------------------------
+    // Every price/forecast context carries a global `Printing == ""` filter, so
+    // the catalog reads BASE prices no matter what the Printing filter says —
+    // selecting Lorcana's Cold Foil used to narrow the card list but leave
+    // Normal prices, forecasts and sorts in place. These helpers opt into one
+    // labeled series, with the same rule the card page uses: a card whose own
+    // base printing IS the selection keeps the '' series, because that is where
+    // its prices live (only 24 Lorcana cards carry an explicit "Normal" row;
+    // the other ~2,900 keep theirs under '').
+
+    // The single selected printing, or null when none / several are selected
+    // (several stays a plain filter — there is no one series to show).
+    public static string? SelectedPrinting(string? printings)
+    {
+        var parts = (printings ?? "").Split(
+            ',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts.Length == 1 ? parts[0] : null;
+    }
+
+    private IQueryable<Forecast> Fc(string? printing) =>
+        printing == null ? predictions.Forecasts : predictions.Forecasts.IgnoreQueryFilters();
+
+    // Cards with a dated NM price for this printing (the catalog hides the rest
+    // rather than showing them at a price that is not the one asked for).
+    public async Task<HashSet<int>> PrintingPricedIds(string game, string printing) =>
+        (await priceCharting.NmDaily.IgnoreQueryFilters()
+            .Where(p => p.Game == game && p.Printing == printing)
+            .Select(p => p.ProductId).Distinct().ToListAsync()).ToHashSet();
+
+    // Latest labeled price per product. Cards shown as their own base printing
+    // are absent here and keep the near_mint_price column.
+    public async Task<Dictionary<int, double>> LatestPrintingPrices(
+        string game, string printing, List<int> ids)
+    {
+        if (ids.Count == 0) return [];
+        var latest = new Dictionary<int, double>();
+        foreach (var batch in Batches(ids))
+        {
+            var rows = await priceCharting.NmDaily.IgnoreQueryFilters()
+                .Where(p => p.Game == game && p.Printing == printing
+                            && batch.Contains(p.ProductId))
+                .Select(p => new { p.ProductId, p.Date, p.Price })
+                .ToListAsync();
+            foreach (var g in rows.GroupBy(r => r.ProductId))
+                latest[g.Key] = g.OrderByDescending(r => r.Date).First().Price;
+        }
+        return latest;
+    }
+
+    // Swap the headline price onto the selected printing, for the page's cards.
+    public async Task ApplyPrintingPrice(List<CardDto> cards, string game, string? printing)
+    {
+        if (printing == null || cards.Count == 0) return;
+        var labeled = cards.Where(c => c.BasePrinting != printing).Select(c => c.Id).ToList();
+        var prices = await LatestPrintingPrices(game, printing, labeled);
+        foreach (var card in cards)
+        {
+            if (card.BasePrinting == printing) continue;   // '' series is already its price
+            card.Price = prices.TryGetValue(card.Id, out var p) ? p : null;
+            card.SelectedPrinting = printing;
+        }
+    }
+
     // Expected model change per product for one (target, horizon).
+    // `printing` (2026-10-20) selects a labeled series instead of the base one;
+    // ids in `baseIsSelected` are cards whose OWN base printing is the
+    // selection, so their numbers live under '' — see SelectedPrinting.
     public async Task<Dictionary<int, ForecastChange>> ForecastChanges(
-        string game, string target, string horizon, List<int> ids)
+        string game, string target, string horizon, List<int> ids,
+        string? printing = null, HashSet<int>? baseIsSelected = null)
     {
         if (ids.Count == 0) return [];
         var changes = new Dictionary<int, ForecastChange>();
@@ -209,6 +276,12 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             Usd: fcst - basePrice,
             From: basePrice,
             To: fcst);
+        // Keep only the row for the printing this card is being SHOWN as.
+        void Take(int pid, string pr, double b, double f)
+        {
+            var want = printing == null || (baseIsSelected?.Contains(pid) ?? false) ? "" : printing;
+            if (pr == want) Add(pid, b, f);
+        }
 
         // A whole-game id list (the catalog's unfiltered forecast sorts) is
         // served faster by one scan of the (game, target, horizon) slice plus
@@ -217,24 +290,26 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         if (ids.Count > IdBatch)
         {
             var idSet = ids.ToHashSet();
-            var rows = await predictions.Forecasts
+            var rows = await Fc(printing)
                 .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon
                             && f.BasePrice > 0)
-                .Select(f => new { f.ProductId, f.BasePrice, f.ForecastPrice })
+                .Select(f => new { f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
             foreach (var r in rows)
-                if (idSet.Contains(r.ProductId)) Add(r.ProductId, r.BasePrice, r.ForecastPrice);
+                if (idSet.Contains(r.ProductId))
+                    Take(r.ProductId, r.Printing, r.BasePrice, r.ForecastPrice);
             return changes;
         }
 
         foreach (var batch in Batches(ids))
         {
-            var rows = await predictions.Forecasts
+            var rows = await Fc(printing)
                 .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon
                             && f.BasePrice > 0 && batch.Contains(f.ProductId))
-                .Select(f => new { f.ProductId, f.BasePrice, f.ForecastPrice })
+                .Select(f => new { f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
-            foreach (var r in rows) Add(r.ProductId, r.BasePrice, r.ForecastPrice);
+            foreach (var r in rows)
+                Take(r.ProductId, r.Printing, r.BasePrice, r.ForecastPrice);
         }
         return changes;
     }
@@ -268,9 +343,13 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     // selected; conditions without their own forecast, like LP/MP, fall back to
     // the ungraded forecast). One history + one forecast query per page.
     public async Task ApplyMarket(
-        List<CardDto> cards, string game, string? grade = null, string? trend = null, string? fcstOverride = null)
+        List<CardDto> cards, string game, string? grade = null, string? trend = null,
+        string? fcstOverride = null, string? printing = null)
     {
         if (cards.Count == 0) return;
+        // Which series each card is being SHOWN as: the selected printing,
+        // except for cards whose own base printing IS that selection.
+        string Pr(CardDto c) => printing == null || c.BasePrinting == printing ? "" : printing;
         var ids = cards.Select(c => c.Id).Distinct().ToList();
         var tier = GradeTiers.PriceTier(grade ?? "");
         var target = GradeTiers.ForecastTarget(grade);
@@ -282,12 +361,15 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         var window = TrendWindows[period];
         var cutoff = WindowStart(period);
 
-        var hist = await priceCharting.History
+        var hist = await (printing == null
+                ? priceCharting.History
+                : priceCharting.History.IgnoreQueryFilters()
+                    .Where(h => h.Printing == "" || h.Printing == printing))
             .Where(h => h.Game == game && h.Grade == tier && ids.Contains(h.ProductId))
-            .Select(h => new { h.ProductId, h.Date, h.Price })
+            .Select(h => new { h.ProductId, h.Printing, h.Date, h.Price })
             .ToListAsync();
         var seriesById = hist
-            .GroupBy(h => h.ProductId)
+            .GroupBy(h => (h.ProductId, h.Printing))
             .ToDictionary(g => g.Key, g => g.OrderBy(r => r.Date).Select(r => (r.Date, r.Price)).ToList());
 
         // 6m/12m always load for the screener columns; the tile's headline
@@ -297,13 +379,17 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         var fcstHorizon = fcstOverride ?? window.FcstHorizon;
         var horizons = new[] { "6m", "12m", fcstHorizon }.Distinct().ToArray();
         var fc = tierHasForecast
-            ? await predictions.Forecasts
+            ? await (printing == null
+                    ? predictions.Forecasts
+                    : predictions.Forecasts.IgnoreQueryFilters()
+                        .Where(f => f.Printing == "" || f.Printing == printing))
                 .Where(f => f.Game == game && f.Target == target && horizons.Contains(f.Horizon)
                             && ids.Contains(f.ProductId))
-                .Select(f => new { f.ProductId, f.Horizon, f.BasePrice, f.ForecastPrice, f.Confidence })
+                .Select(f => new { f.ProductId, f.Printing, f.Horizon, f.BasePrice,
+                                   f.ForecastPrice, f.Confidence })
                 .ToListAsync()
             : [];
-        var fcById = fc.ToLookup(f => f.ProductId);
+        var fcById = fc.ToLookup(f => (f.ProductId, f.Printing));
 
         // Liquidity honesty (2026-09-13), details page only: when did the base
         // NM price last actually CHANGE? A price frozen for weeks is usually a
@@ -332,7 +418,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
 
         foreach (var card in cards)
         {
-            if (seriesById.TryGetValue(card.Id, out var series))
+            if (seriesById.TryGetValue((card.Id, Pr(card)), out var series))
             {
                 card.HistoryMonths = series.Count;   // full depth, for confidence
                 card.PriceAsOf = series[^1].Date;    // freshness of the shown price
@@ -354,7 +440,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                     card.TrendPeriod = period;
                 }
             }
-            foreach (var f in fcById[card.Id])
+            foreach (var f in fcById[(card.Id, Pr(card))])
             {
                 var pct = f.BasePrice > 0 ? (f.ForecastPrice / f.BasePrice - 1) * 100 : 0;
                 if (f.Horizon == "6m") card.Fcst6Pct = pct;

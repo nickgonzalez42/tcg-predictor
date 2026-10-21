@@ -51,7 +51,10 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                         // (fcstTo follows the selected 1M/6M/1Y window).
                         const fcstPct = card.fcstTo != null && card.price
                             ? (card.fcstTo / card.price - 1) * 100 : undefined;
-                        const detailPath = `/catalog/${gameKey(card.game)}/${card.id}`;
+                        // Carry a selected printing into the card page (2026-10-20).
+                        const detailPath = `/catalog/${gameKey(card.game)}/${card.id}`
+                            + (card.selectedPrinting
+                                ? `?printing=${encodeURIComponent(card.selectedPrinting)}` : '');
                         return (
                             <tr key={card.id} className="screener__row" onClick={() => navigate(detailPath)}>
                                 <CardThumbCell card={card} />
@@ -63,7 +66,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                         {card.name}
                                     </Link>
                                 </td>
-                                <td><span className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</span></td>
+                                <td><span className="mono">{[card.setName, card.rarity, card.selectedPrinting].filter(Boolean).join(' · ')}</span></td>
                                 {/* Pre-release rows (2026-10-10): the predicted launch price
                                     stands in for the market price; nothing to forecast or
                                     chart until the card trades. */}
