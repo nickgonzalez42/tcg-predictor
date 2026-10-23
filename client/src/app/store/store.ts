@@ -7,6 +7,7 @@ import { watchlistApi } from "../../features/watchlist/watchlistApi";
 import { socialApi } from "../../features/social/socialApi";
 import { reportApi } from "../../features/report/reportApi";
 import { reportsApi } from "../../features/reports/reportsApi";
+import { homeApi } from "../../features/home/homeApi";
 import { ownedParamsSlice, wishlistParamsSlice } from "../../features/watchlist/trackedParamsSlice";
 
 export const store = configureStore({
@@ -17,6 +18,7 @@ export const store = configureStore({
         [socialApi.reducerPath]: socialApi.reducer,
         [reportApi.reducerPath]: reportApi.reducer,
         [reportsApi.reducerPath]: reportsApi.reducer,
+        [homeApi.reducerPath]: homeApi.reducer,
         catalog: catalogSlice.reducer,
         ownedParams: ownedParamsSlice.reducer,
         wishlistParams: wishlistParamsSlice.reducer
@@ -27,6 +29,7 @@ export const store = configureStore({
             socialApi.middleware,
             reportApi.middleware,
             reportsApi.middleware,
+            homeApi.middleware,
             accountApi.middleware,
             watchlistApi.middleware)
 })

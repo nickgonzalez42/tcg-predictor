@@ -13,6 +13,8 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     // model run that includes forecast_prerelease.py; CardMarketData guards
     // every read so an older predictions.db simply serves none.
     public DbSet<PrereleaseEstimate> Prerelease => Set<PrereleaseEstimate>();
+    // The public scorecard (2026-10-23): keyless, one row per (game, tier, horizon).
+    public DbSet<ForecastAccuracy> Accuracy => Set<ForecastAccuracy>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -63,6 +65,19 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.RealizedPrice).HasColumnName("realized_price");
             f.Property(x => x.RealizedRet).HasColumnName("realized_ret");
             f.Property(x => x.RealizedAt).HasColumnName("realized_at");
+        });
+
+        builder.Entity<ForecastAccuracy>(a =>
+        {
+            a.ToTable("forecast_accuracy");
+            a.HasNoKey();
+            a.Property(x => x.Game).HasColumnName("game");
+            a.Property(x => x.Target).HasColumnName("target");
+            a.Property(x => x.Horizon).HasColumnName("horizon");
+            a.Property(x => x.N).HasColumnName("n");
+            a.Property(x => x.RetMae).HasColumnName("ret_mae");
+            a.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
+            a.Property(x => x.GradedThrough).HasColumnName("graded_through");
         });
 
         builder.Entity<MarketReport>(r =>

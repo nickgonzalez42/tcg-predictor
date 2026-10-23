@@ -20,6 +20,19 @@ export const GAMES = [
 export const GAME_LABEL: Record<string, string> = Object.fromEntries(
     GAMES.map(g => [g.value, g.label]));
 
+// One colour per game, keyed by canonical key (the seven AllocationDonut has
+// always used, plus one each for the games added since). Look up by key or
+// label via gameColor().
+export const GAME_COLOR: Record<string, string> = {
+    onepiece: '#3d7dca', pokemon: '#ffcb05', yugioh: '#c678dd', magic: '#ff9e64',
+    lorcana: '#4dd0e1', digimon: '#3fd98a', gundam: '#f06292', starwars: '#e8ecf4',
+    fleshandblood: '#e05c5c', sorcery: '#9ccc65', riftbound: '#5a9cf0', cyberpunk: '#f0b429',
+};
+
+export function gameColor(game: string): string {
+    return GAME_COLOR[gameKey(game)] ?? '#8b96ad';
+}
+
 // Canonical key from either a key or a display label ("Yu-Gi-Oh!" -> "yugioh").
 export function gameKey(game: string): string {
     const needle = game.trim().toLowerCase();

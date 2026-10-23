@@ -227,44 +227,6 @@
   font-weight: 700;
 }
 
-/* How it works: one callout with a thick brand rule down its left edge and
-   numbered steps in two columns, instead of four identical boxes. */
-.how {
-  grid-column: 1 / -1;
-  margin-bottom: var(--space-50);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--space-15) var(--space-40);
-  background: var(--surface);
-  border: 1px solid #3a4763;
-  border-left: 6px solid var(--brand);
-  border-radius: 10px;
-  padding: var(--space-20) var(--space-25);
-}
-
-.how__step {
-  display: flex;
-  gap: var(--space-15);
-  align-items: flex-start;
-  padding: var(--space-5) 0;
-}
-
-.how__title {
-  font-family: var(--display);
-  font-weight: 900;
-  font-size: 20px;
-  line-height: 1;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  margin-bottom: var(--space-5);
-}
-
-.how__text {
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 14.4px;
-  line-height: 1.5;
-}
 
 .hero__caption {
   position: absolute;
@@ -302,11 +264,6 @@
   .mover {
     grid-column: 1 / -1;
     padding: var(--space-10);
-  }
-
-  .how {
-    grid-template-columns: 1fr;
-    padding: var(--space-15) var(--space-15);
   }
 
   .movers {
@@ -355,4 +312,215 @@
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 700;
+}
+
+/* --- At a glance (2026-10-23): three animated infographics. Reveal runs off
+   data-in (set once the panel scrolls into view); reduced motion skips it. */
+.glance {
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-50);
+  row-gap: var(--space-25);
+}
+
+.glance__panel {
+  grid-column: span 4;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-15);
+  border-radius: 12px;
+  border-color: var(--panel-edge);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.35);
+  min-width: 0;
+}
+
+.glance__row {
+  display: flex;
+  gap: var(--space-15);
+  align-items: center;
+}
+
+.glance__col {
+  min-width: 0;
+  flex: 1;
+}
+
+.glance__stat {
+  flex: 1;
+  min-width: 0;
+}
+
+.glance__big {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 40px;
+  line-height: 0.95;
+  letter-spacing: 0.01em;
+  color: var(--price);
+  font-variant-numeric: tabular-nums;
+}
+
+.glance__big--up {
+  color: var(--up);
+}
+
+.glance__text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 13.6px;
+  line-height: 1.5;
+}
+
+.glance__pills {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  margin: var(--space-5) 0 var(--space-10);
+}
+
+.glance__legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.glance__legend--row {
+  flex-direction: row;
+  gap: var(--space-15);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.glance__dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: 0;
+}
+
+.glance__dot--up { background: var(--up); }
+
+.glance__dot--flat { background: #3a4763; }
+
+.glance__dot--down { background: var(--down); }
+
+/* Ring arcs draw in sequence: offset animates from the full circumference. */
+.glance__ring {
+  flex: none;
+}
+
+.glance__ring circle {
+  transition: stroke-dashoffset 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 120ms);
+}
+
+/* Bars grow from the left, one row after another. */
+.glance__bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.glance__barrow {
+  display: grid;
+  grid-template-columns: 92px 1fr 40px;
+  align-items: center;
+  gap: var(--space-10);
+  font-size: 12.5px;
+}
+
+.glance__barlabel {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.glance__barval {
+  text-align: right;
+  color: var(--text);
+}
+
+.glance__barval--up {
+  color: var(--up);
+}
+
+.glance__track,
+.glance__stack {
+  display: flex;
+  height: 10px;
+  background: #232c40;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.glance__fill {
+  display: block;
+  height: 100%;
+  width: calc(var(--w, 0) * 100%);
+  background: var(--c, var(--primary));
+  border-radius: 5px;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+
+.glance__seg {
+  display: block;
+  height: 100%;
+  flex: var(--f, 0) 0 0;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1);
+  transition-delay: calc(var(--i, 0) * 60ms);
+}
+
+.glance__seg--up { background: var(--up); }
+
+.glance__seg--flat { background: #3a4763; }
+
+.glance__seg--down { background: var(--down); }
+
+[data-in="1"] .glance__fill,
+[data-in="1"] .glance__seg {
+  transform: scaleX(1);
+}
+
+.glance__foot {
+  margin-top: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+@media (max-width: 1023px) {
+  .glance__panel {
+    grid-column: span 4;   /* two per row on the 8-col grid */
+  }
+}
+
+@media (max-width: 767px) {
+  .glance__panel {
+    grid-column: 1 / -1;
+  }
+
+  .glance__barrow {
+    grid-template-columns: 76px 1fr 36px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glance__ring circle,
+  .glance__fill,
+  .glance__seg {
+    transition: none;
+  }
 }

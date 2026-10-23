@@ -7,6 +7,7 @@ import type { Card } from "../../app/models/card";
 import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
+import Glance from "./Glance";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { usePageMeta } from "../../lib/usePageMeta";
 
@@ -289,13 +290,6 @@ function MoverTile({ mover, index = 0 }: { mover: Card; index?: number }) {
     );
 }
 
-const HOW_IT_WORKS = [
-    { n: '1', title: 'Browse', text: 'Every card across twelve TCGs (Magic, One Piece, Pokémon, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, Star Wars Unlimited, Flesh and Blood, Sorcery, Riftbound, Cyberpunk), with ungraded and graded price tiers and full price history.' },
-    { n: '2', title: 'Forecast', text: '1 month, 6 month, and 1 year ML price predictions with confidence bands and plain-English reasoning.' },
-    { n: '3', title: 'Track', text: 'A brokerage-style portfolio with P/L that benchmarks your collection against the S&P 500.' },
-    { n: '4', title: 'Stay ahead', text: 'Price and forecast alerts per card and condition, plus a market report every Friday.' },
-];
-
 export default function HomePage() {
     usePageMeta(undefined,
         "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, and Star Wars Unlimited cards will be worth in a month, six months, or a year.");
@@ -369,19 +363,8 @@ export default function HomePage() {
             )}
 
             <section className="full-span subgrid">
-                <span className="kicker home__kicker full-span">02 · Getting started</span>
-                <h2 className="home__heading full-span">How it works</h2>
-                <div className="how">
-                    {HOW_IT_WORKS.map(step => (
-                        <div className="how__step" key={step.n}>
-                            <span className="num">{step.n}</span>
-                            <div>
-                                <div className="how__title">{step.title}</div>
-                                <p className="how__text">{step.text}</p>
-                            </div>
-                        </div>
-                    ))}
-                </div>
+                <span className="kicker home__kicker full-span">02 · At a glance</span>
+                <Glance user={user} />
             </section>
         </>
     );
