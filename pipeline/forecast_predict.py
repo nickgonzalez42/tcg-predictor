@@ -82,6 +82,16 @@ MAX_TRAIN_SAMPLES = 1_200_000   # per (game, tier, horizon); see subsample below
 # low-confidence call beyond ~±200% log-return is dropped as decorated noise.
 MAX_SEGMENT_MAE = 0.60
 EXTREME_LOW_CONF_RET = 1.1
+# Bold minimum (2026-10-22, user: "a little more bold to get some predictions
+# through"): the smallest publish-time multiplier on the model's point. A
+# direction whose MAE-optimal multiplier is 0 — the point is no better than
+# "no change" there — used to publish a dead 0% for every card in the
+# segment (6,803/6,803 One Piece 1m rows). It now publishes this fraction of
+# the model's call instead: magnitudes stay damped to match the evidence,
+# but the ORDER the model puts cards in survives, which is what a 1-month
+# screen is for. Such rows are flagged low-confidence and say so. 0.25 is
+# the first step of the shrink grid; 0 restores the old hard floor.
+MIN_SHRINK = float(os.environ.get("TCG_FC_MIN_SHRINK", "0.25"))
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -823,6 +833,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         bias = 0.0
         calib = None
         shrink = {"up": 1.0, "down": 1.0}   # publish-time point multipliers
+        weak_point = False                  # raw point lost to persistence OOS
         wcal = None                          # width-stratified widening
         if test.sum() >= 50 and (~test).sum() >= 300:
             m = model_new().fit(X[~test], y[~test], sample_weight=w[~test])
@@ -849,10 +860,18 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                                                   sample_weight=w[test]))
             model_band = float(mean_absolute_error(y[test], pred_oos - applied_bias,
                                                    sample_weight=w[test]))
+            # Soft floor (2026-10-22): the RAW point losing to persistence no
+            # longer zeroes the segment — fit_shrink's grid already contains 0
+            # and only returns more when the DAMPED point beats flat, so its
+            # answer is kept. The segment is marked weak (low confidence +
+            # an explicit note on every row) and any 0 is raised to
+            # MIN_SHRINK at publish time below.
             if model_band >= flat_band:
-                shrink = {"up": 0.0, "down": 0.0}
+                weak_point = True
                 print(f"  [{game}/{target}/{hname}] model OOS MAE {model_band:.3f} >= "
-                      f"persistence {flat_band:.3f} — publishing persistence (shrink 0)",
+                      f"persistence {flat_band:.3f} — weak segment: keeping fitted "
+                      f"shrink up x{shrink['up']:g} down x{shrink['down']:g}, "
+                      f"bold minimum x{MIN_SHRINK:g}, flagged low confidence",
                       flush=True)
             print(f"  [{game}/{target}/{hname}] OOS shrink up x{shrink['up']:g} "
                   f"down x{shrink['down']:g}", flush=True)
@@ -972,6 +991,12 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         # the scenario quantiles. Raw values ride along to the archive so the
         # live refit never compounds a shrink on an already-shrunk number.
         b_ = bias if use_debias else 0.0
+        bolded = {k: (v if v > 0 else MIN_SHRINK) for k, v in shrink.items()}
+        if bolded != shrink:
+            print(f"  [{game}/{target}/{hname}] bold minimum: shrink "
+                  f"up x{shrink['up']:g}->x{bolded['up']:g} "
+                  f"down x{shrink['down']:g}->x{bolded['down']:g}", flush=True)
+            shrink = bolded
         pred_pub = fcal.apply_shrink(pred_now - b_, shrink) + b_
         raw_ret_now = np.clip(pred_now - b_, -RET_CLIP, RET_CLIP)
         raw_width_now = q90_now - q10_now
@@ -981,7 +1006,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                                               b_, RET_CLIP)
         width = hi_ret - lo_ret   # 80% interval width in log-return
         conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
-        if unreliable:
+        if unreliable or weak_point:
             conf = np.full(len(ret), "low", dtype=object)
 
         if debug is not None and hname in debug:
@@ -1057,6 +1082,10 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if unreliable:
                 reason += (" Caution: the model's recent out-of-sample accuracy for this"
                            " game and horizon is poor; treat this forecast as speculative.")
+            if weak_point:
+                reason += (f" Note: over {hname} the model has not beaten 'no change' for"
+                           " this game and tier out of sample, so the size of this call is"
+                           " damped; read it as a ranking signal, not a price target.")
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
                 reason += (" This is an extreme swing the model itself has low confidence"
                            " in; such calls have historically been unreliable.")

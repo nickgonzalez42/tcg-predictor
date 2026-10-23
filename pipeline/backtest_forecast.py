@@ -93,6 +93,16 @@ def ensure_out(conn):
             pred_model REAL, pred_prior REAL, realized REAL,
             PRIMARY KEY (run, game, target, horizon, origin, product_id)
         )""")
+    # Whole-population ranking (--rank): does the raw point ORDER cards even
+    # where its MAE loses to flat (the persistence floor's only yardstick)?
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS results_rank (
+            run TEXT NOT NULL, game TEXT NOT NULL, target TEXT NOT NULL,
+            horizon TEXT NOT NULL, origin TEXT NOT NULL,
+            pop TEXT NOT NULL, n INTEGER, spearman REAL, mae_w REAL, mae_flat_w REAL,
+            top_dec_ret REAL, bot_dec_ret REAL, all_ret REAL, prec10 REAL,
+            PRIMARY KEY (run, game, target, horizon, origin, pop)
+        )""")
     conn.commit()
 
 
@@ -275,12 +285,37 @@ def score_young(conn, run_tag, game, target, h, origin, d, realized,
         conn.commit()
 
 
+def score_rank(conn, run_tag, game, target, h, origin, d, realized):
+    """Rank skill of the baseline point over EVERY matured emitted card, and
+    over price floors ($1+/$5+/$20+) so penny-card floor effects cannot carry
+    the headline. mae_flat_w rides along so each cell shows the floor's own
+    verdict (model MAE >= flat MAE) next to the ranking it ignores."""
+    em = d["emit"]
+    ret_model, _, _, _, _ = variant_bands(d, "baseline")
+    ok = np.isfinite(realized)
+    base = em["base"]
+    for pop, floor in (("all", 0.0), ("$1+", 1.0), ("$5+", 5.0), ("$20+", 20.0)):
+        m = ok & (base >= floor)
+        if m.sum() < 30:
+            continue
+        p, r, w = ret_model[m], realized[m], fp.price_weight(base[m])
+        top, bot, allr, prec = _decile_stats(p, r)
+        row = (run_tag, game, target, h, origin, pop, int(m.sum()), _spearman(p, r),
+               float(np.average(np.abs(p - r), weights=w)),
+               float(np.average(np.abs(r), weights=w)), top, bot, allr, prec)
+        conn.execute("INSERT OR REPLACE INTO results_rank VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", row)
+        print(f"    rank {pop:5s} n={row[6]:<6d} rho={row[7]:+.3f} maeW model {row[8]:.3f} "
+              f"flat {row[9]:.3f} | top10 {top:+.3f} all {allr:+.3f} bot10 {bot:+.3f} prec10 {prec:.2f}",
+              flush=True)
+    conn.commit()
+
+
 POOL_VARIANTS = ("pool", "pool_base", "blend")   # scored by run_pool, not here
 
 
 def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
              capture_frames=False, donor=False, frames_cap=None, need_frames=False,
-             young=False):
+             young=False, rank=False):
     """need_frames: a pooled fit for this (target, origin) is still pending,
     so re-run the segment for its frames even when every scored variant is
     already in the results (a pooled failure must not strand the cell)."""
@@ -344,6 +379,8 @@ def run_cell(conn, run_tag, game, target, origin, horizons, variants, cache,
         if young:
             score_young(conn, run_tag, game, target, h, origin, d, realized,
                         idx_full, dates_full, P_full, n_trunc)
+        if rank:
+            score_rank(conn, run_tag, game, target, h, origin, d, realized)
     return debug
 
 
@@ -506,6 +543,9 @@ def main():
                     help="evaluated games whose frames enter the pool")
     ap.add_argument("--pool-cap", type=int, default=0,
                     help="max rows per game in the pooled fit (0 = no cap)")
+    ap.add_argument("--rank", action="store_true",
+                    help="score rank correlation / decile lift of the baseline point over "
+                         "the whole matured population and $1+/$5+/$20+ floors")
     ap.add_argument("--young", action="store_true",
                     help="also score the origin-born (single-bucket) cards: rank "
                          "correlation + decile outcomes vs flat and a rarity prior")
@@ -544,7 +584,7 @@ def main():
                                    variants, cache,
                                    capture_frames=want_pool and game in pool_games,
                                    need_frames=pool_pending and game in pool_games,
-                                   young=args.young)
+                                   young=args.young, rank=args.rank)
                     if dbg:
                         debugs[game] = dbg
                 except Exception as e:
