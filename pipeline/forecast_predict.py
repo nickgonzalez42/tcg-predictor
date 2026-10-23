@@ -1058,9 +1058,22 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if not as_of and real_dates.get((int(pid), pr), a) < stale_cut:
                 stale_pids.add((int(pid), pr))
                 continue
+            # EARLY tier (2026-10-23): a single-bucket card's 1m call is no
+            # longer dropped — it publishes under horizon 'launch1m' (the
+            # tier the card page already badges EARLY), forced low confidence,
+            # version '-early', with its own note. The 2026-10-23 backtest
+            # (notes/young_bt_2026-10-23.db) showed the model's top decile
+            # beating a new set by +18 log-pts at $5+ over PriceCharting-era
+            # launches and +33 over TCGplayer-era ones, where the launch
+            # tier's rarity prior sat at or below flat. Longer horizons still
+            # wait for a second bucket. forecast_launch.py skips cards that
+            # carry one of these rows.
+            early = False
             if not as_of and hist_k[i] < 2:
-                thin_pids.add((int(pid), pr))
-                continue
+                if hname != "1m":
+                    thin_pids.add((int(pid), pr))
+                    continue
+                early = True
             comp = comps.get(int(pid))
             # resolve up to two look-alike cards by name, skipping self-references
             examples = []
@@ -1082,6 +1095,10 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if unreliable:
                 reason += (" Caution: the model's recent out-of-sample accuracy for this"
                            " game and horizon is poor; treat this forecast as speculative.")
+            if early:
+                reason = ("Early estimate: this card has a single month of price history, so "
+                          "this is the model's first-month call from its traits, art and set "
+                          "— read it as a ranking signal, not a price target. " + reason)
             if weak_point:
                 reason += (f" Note: over {hname} the model has not beaten 'no change' for"
                            " this game and tier out of sample, so the size of this call is"
@@ -1089,11 +1106,14 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
                 reason += (" This is an extreme swing the model itself has low confidence"
                            " in; such calls have historically been unreliable.")
-            RAW_EXTRA[(game, int(pid), pr, target, hname)] = (
+            hz_pub = "launch1m" if early else hname
+            conf_pub = "low" if early else str(conf[i])
+            ver_pub = f"{version}-early" if early else version
+            RAW_EXTRA[(game, int(pid), pr, target, hz_pub)] = (
                 float(raw_ret_now[i]), float(raw_width_now[i]))
-            rows.append((game, int(pid), target, hname, a, round(float(b), 2),
+            rows.append((game, int(pid), target, hz_pub, a, round(float(b), 2),
                          float(f), float(lo), float(hi), round(float(r), 4), reason,
-                         str(conf[i]), version, now, real_dates.get((int(pid), pr), a),
+                         conf_pub, ver_pub, now, real_dates.get((int(pid), pr), a),
                          pr))
             # (1w rows removed 2026-08-14: they were the 1-month forecast
             # pro-rated to 7 days — synthetic, and retired ahead of the true
@@ -1349,6 +1369,11 @@ def write_game(conn, game, rows, subset, horizons):
     if subset:
         conn.executemany("DELETE FROM forecasts WHERE game = ? AND horizon = ?",
                          [(game, h) for h in horizons])
+        # The 1m segment also owns the model's EARLY rows: clear last night's so
+        # a card that gained its second bucket does not keep a stale early call.
+        if "1m" in horizons:
+            conn.execute("DELETE FROM forecasts WHERE game = ? AND horizon = 'launch1m' "
+                         "AND model_version LIKE '%-early'", (game,))
     else:
         conn.execute("DELETE FROM forecasts WHERE game = ?", (game,))
     conn.executemany("INSERT OR REPLACE INTO forecasts VALUES "

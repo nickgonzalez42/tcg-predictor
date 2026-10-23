@@ -131,7 +131,8 @@ export default function CardItem({ card, ownGrade, quick }: Props) {
                                 <PricePair
                                     price={card.price}
                                     forecast={card.fcstTo}
-                                    horizon={(card.fcstHorizon ?? '12m').toUpperCase()}
+                                    horizon={card.fcstHorizon === 'launch1m'
+                                        ? 'EARLY' : (card.fcstHorizon ?? '12m').toUpperCase()}
                                 />
                             )}
                         </div>

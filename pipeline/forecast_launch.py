@@ -163,10 +163,19 @@ def main():
     out = sqlite3.connect(OUT_DB, timeout=120)
     priors, demoted = graded_priors(out, attrs)
 
+    # Cards the main model already covered tonight (2026-10-23): forecast_predict
+    # publishes a single-bucket card's 1m call under this same horizon with
+    # model_version '-early'; this tier only fills what it left blank (no art,
+    # no CLIP row, a segment that could not train).
+    covered = {(g, pid) for g, pid in out.execute(
+        "SELECT game, product_id FROM forecasts WHERE horizon='launch1m' "
+        "AND printing='' AND model_version LIKE '%-early'")}
     rows = []
     for (g, pid), (s, rar) in attrs.items():
         if buckets.get(f"{g}:{pid}", 0) >= MIN_MONTHS:
             continue                      # real model's territory
+        if (g, pid) in covered:
+            continue                      # the model's own early call stands
         d_p = newest.get((g, pid))
         if not d_p or d_p[0] < fresh_cut or not d_p[1] or d_p[1] <= 0:
             continue                      # no fresh TCG anchor -> stay blank

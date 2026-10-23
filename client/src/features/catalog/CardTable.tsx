@@ -24,7 +24,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
     const period = (trend ?? '1m').toLowerCase();
     // Header follows the rows: under a forecast sort the API returns that
     // horizon's forecast (fcstHorizon), which need not be the trend window's.
-    const HZ_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y' };
+    const HZ_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y', 'launch1m': 'EARLY' };
     const rowHz = cards.find(c => c.fcstHorizon)?.fcstHorizon;
     const fcstLabel = (rowHz && HZ_LABEL[rowHz]) ?? TREND_FCST[period] ?? '1Y';
 
@@ -88,7 +88,15 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                         ? <span className="mono screener__muted" title="No forecast until the card has a market price">
                                             {isUpcoming(card.releaseDate) ? 'pre-release' : 'awaiting sales'}
                                           </span>
-                                        : <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />}
+                                        : <>
+                                            <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />
+                                            {card.fcstHorizon === 'launch1m' && (
+                                                <span className="early-badge"
+                                                    title="Early estimate: a single month of price history — the model's first-month call from traits, art and set. A ranking signal, not a price target.">
+                                                    EARLY
+                                                </span>
+                                            )}
+                                          </>}
                                 </td>
                                 <td className="screener__mid">
                                     {card.isPrerelease

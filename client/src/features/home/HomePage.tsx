@@ -31,7 +31,7 @@ function preloadArt(card: Card) {
 }
 
 // '1m' -> '1M', '6m' -> '6M', '12m' -> '1Y': label next to a mover's forecast.
-const hzLabel = (h?: string) => (h === '1m' ? '1M' : h === '6m' ? '6M' : '1Y');
+const hzLabel = (h?: string) => (h === '1m' ? '1M' : h === '6m' ? '6M' : h === 'launch1m' ? 'EARLY' : '1Y');
 // A mover's headline forecast price: fcstTo at the card's own ranking horizon
 // (the hero mixes categories; tiles rank on 1m), legacy 12m field as fallback.
 const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;

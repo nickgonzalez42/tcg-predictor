@@ -284,7 +284,11 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             From: basePrice,
             To: fcst);
         // Keep only the row for the printing this card is being SHOWN as.
-        void Take(int pid, string pr, double b, double f)
+        // EARLY rows (2026-10-23) join a 1m sort only for cards that have no
+        // standard 1m row: collected apart and merged last.
+        var early = new Dictionary<int, (double B, double F)>();
+        var useEarly = horizon == "1m";
+        void Take(int pid, string pr, string hz, double b, double f)
         {
             var want = printing == null || (baseIsSelected?.Contains(pid) ?? false) ? "" : printing;
             if (pr != want) return;
@@ -292,7 +296,14 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             // price (it then sorts on the same basis it always did).
             var basis = shownBase != null && shownBase.TryGetValue(pid, out var sp) && sp > 0
                 ? sp : b;
-            Add(pid, basis, f);
+            if (hz == "launch1m") early[pid] = (basis, f);
+            else Add(pid, basis, f);
+        }
+        Dictionary<int, ForecastChange> Finish()
+        {
+            foreach (var (pid, (b, f)) in early)
+                if (!changes.ContainsKey(pid)) Add(pid, b, f);
+            return changes;
         }
 
         // A whole-game id list (the catalog's unfiltered forecast sorts) is
@@ -303,27 +314,29 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         {
             var idSet = ids.ToHashSet();
             var rows = await Fc(printing)
-                .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon
+                .Where(f => f.Game == game && f.Target == target
+                            && (f.Horizon == horizon || (useEarly && f.Horizon == "launch1m"))
                             && f.BasePrice > 0)
-                .Select(f => new { f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice })
+                .Select(f => new { f.ProductId, f.Printing, f.Horizon, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
             foreach (var r in rows)
                 if (idSet.Contains(r.ProductId))
-                    Take(r.ProductId, r.Printing, r.BasePrice, r.ForecastPrice);
-            return changes;
+                    Take(r.ProductId, r.Printing, r.Horizon, r.BasePrice, r.ForecastPrice);
+            return Finish();
         }
 
         foreach (var batch in Batches(ids))
         {
             var rows = await Fc(printing)
-                .Where(f => f.Game == game && f.Target == target && f.Horizon == horizon
+                .Where(f => f.Game == game && f.Target == target
+                            && (f.Horizon == horizon || (useEarly && f.Horizon == "launch1m"))
                             && f.BasePrice > 0 && batch.Contains(f.ProductId))
-                .Select(f => new { f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice })
+                .Select(f => new { f.ProductId, f.Printing, f.Horizon, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
             foreach (var r in rows)
-                Take(r.ProductId, r.Printing, r.BasePrice, r.ForecastPrice);
+                Take(r.ProductId, r.Printing, r.Horizon, r.BasePrice, r.ForecastPrice);
         }
-        return changes;
+        return Finish();
     }
 
     // Fill the "expected change" screener columns from a forecast-sorted query.
@@ -389,7 +402,10 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         // (movers rank on 1m but keep the year-long sparkline window — a 1m
         // window would leave monthly history with too few points to draw).
         var fcstHorizon = fcstOverride ?? window.FcstHorizon;
-        var horizons = new[] { "6m", "12m", fcstHorizon }.Distinct().ToArray();
+        // 'launch1m' (2026-10-23) is the EARLY tier: a single-bucket card's
+        // first-month call, published by the model under its own horizon. The
+        // catalog shows it only where the window's horizon has no row.
+        var horizons = new[] { "6m", "12m", fcstHorizon, "launch1m" }.Distinct().ToArray();
         var fc = tierHasForecast
             ? await (printing == null
                     ? predictions.Forecasts
@@ -452,7 +468,8 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                     card.TrendPeriod = period;
                 }
             }
-            foreach (var f in fcById[(card.Id, Pr(card))])
+            var rowsFor = fcById[(card.Id, Pr(card))];
+            foreach (var f in rowsFor)
             {
                 var pct = f.BasePrice > 0 ? (f.ForecastPrice / f.BasePrice - 1) * 100 : 0;
                 if (f.Horizon == "6m") card.Fcst6Pct = pct;
@@ -466,6 +483,18 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                     card.FcstTo = f.ForecastPrice;
                     card.FcstHorizon = fcstHorizon;
                     card.FcstConfidence = f.Confidence;
+                }
+            }
+            // No row at the window's horizon: a card too new for the standard
+            // model shows its EARLY call instead, badged by the client.
+            if (card.FcstTo == null)
+            {
+                var early = rowsFor.FirstOrDefault(f => f.Horizon == "launch1m");
+                if (early != null)
+                {
+                    card.FcstTo = early.ForecastPrice;
+                    card.FcstHorizon = "launch1m";
+                    card.FcstConfidence = early.Confidence;
                 }
             }
         }
