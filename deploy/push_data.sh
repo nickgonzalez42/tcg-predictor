@@ -115,7 +115,8 @@ for ep in \
   "api/cards/movers?count=24&horizon=1m&trend=6m" \
   "api/cards/movers?horizon=mix&perGame=4" \
   "api/cards/movers?game=all&count=10" \
-  "api/cards?game=pokemon&pageSize=24"; do
+  "api/cards?game=pokemon&pageSize=24" \
+  "api/home/stats"; do
   t0=$(date +%s)
   curl -s -o /dev/null --max-time 120 "https://cardstock.guide/$ep" || true
   echo "  warmed $ep in $(( $(date +%s) - t0 ))s"
