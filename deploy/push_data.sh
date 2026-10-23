@@ -76,7 +76,9 @@ push_pc_full() {
   echo "== pricecharting (full) =="
   ${=RS} "$SSH_CMD" $API_DATA/pricecharting.db ubuntu@$IP:/srv/tcg/data/cards/
 }
-if [ -f "$DELTA" ] && [ "$(sqlite3 "$DELTA" 'SELECT date FROM meta' 2>/dev/null)" = "$(date -u +%F)" ]; then
+# The delta is tonight's when its meta date is the night's batch label
+# (TCG_BATCH_DATE, exported by run_daily_refresh.sh; UTC day for hand runs).
+if [ -f "$DELTA" ] && [ "$(sqlite3 "$DELTA" 'SELECT date FROM meta' 2>/dev/null)" = "${TCG_BATCH_DATE:-$(date -u +%F)}" ]; then
   echo "== pricecharting (delta, $(du -h "$DELTA" | cut -f1)) =="
   scp -i $KEY -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$DELTA" ubuntu@$IP:/tmp/unified_delta.db
   if ${=SSH_CMD} ubuntu@$IP 'sqlite3 -bail /srv/tcg/data/cards/pricecharting.db' <<'SQL' | tail -1 | grep -qx 0

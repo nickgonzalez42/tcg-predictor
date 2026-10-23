@@ -391,9 +391,10 @@ def main():
     print(f"TCGplayer NM scrape — rate limit: <= {args.rpm:g} req/min, "
           f">= {args.delay:g}s between requests. Games: {', '.join(games)}")
 
-    # Batch label = UTC date (2026-08-14): the 22:00 CDT start is already the
-    # next UTC day, so the label matches the morning the batch goes live.
-    today = datetime.now(timezone.utc).date().isoformat()
+    # Batch label = the morning the batch goes live: TCG_BATCH_DATE from
+    # run_daily_refresh.sh (2026-10-23), with the UTC date — what every row
+    # before then was stamped with — as the fallback for hand runs.
+    today = os.environ.get("TCG_BATCH_DATE", "").strip() or datetime.now(timezone.utc).date().isoformat()
     session = tp.make_session()
     conn = sqlite3.connect(PC_DB, timeout=60)
     init_db(conn)

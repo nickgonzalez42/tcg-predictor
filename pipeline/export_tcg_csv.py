@@ -651,9 +651,10 @@ def mode_inspect(p, url, headless):
 
 
 def mode_export(p, games, headless, force=False):
-    # UTC day, like every other batch label in the pipeline (the 8 PM local
-    # start is already the next UTC day; the crawl and the import agree).
-    today = datetime.now(timezone.utc).date().isoformat()
+    # The night's batch label (TCG_BATCH_DATE from run_daily_refresh.sh,
+    # 2026-10-23); UTC day as the fallback for hand runs. The import keys on
+    # this file name, so the two always agree.
+    today = os.environ.get("TCG_BATCH_DATE", "").strip() or datetime.now(timezone.utc).date().isoformat()
     ctx = launch(p, headless=headless)
     page = ctx.pages[0] if ctx.pages else ctx.new_page()
     page.set_default_timeout(NAV_TIMEOUT_MS)

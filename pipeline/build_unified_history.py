@@ -33,7 +33,13 @@ def nominal_day():
     trainer push, ending ~13:30 UTC) falls inside one UTC calendar day: the
     day after the local start evening. All batch labels, day-keyed decisions
     (Sunday full rebuild, Friday report, delta meta date), and the site's
-    notion of 'today' share this clock — no more (now - 12h) hack."""
+    notion of 'today' share this clock — no more (now - 12h) hack.
+    Since 2026-10-23 the nightly passes that day explicitly as
+    TCG_BATCH_DATE (push_data.sh compares the delta's meta date to the same
+    variable); the UTC date remains the fallback for hand runs."""
+    env = os.environ.get("TCG_BATCH_DATE", "").strip()
+    if env:
+        return date.fromisoformat(env)
     return datetime.now(timezone.utc).date()
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir

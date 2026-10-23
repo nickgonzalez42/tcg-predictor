@@ -70,7 +70,7 @@ SNS_TOPIC=arn:aws:sns:us-east-1:522029196375:cardstock-problem-reports
 notify_failure() {
   local rc=$1
   $AWS sns publish --region us-east-1 --topic-arn "$SNS_TOPIC" \
-    --subject "cardstock daily refresh FAILED ($(date +%F), exit $rc)" \
+    --subject "cardstock daily refresh FAILED ($BATCH, exit $rc)" \
     --message "$(printf 'Daily refresh failed (exit %s) at %s.\nSee %s\n\nLast 30 log lines:\n\n%s' \
         "$rc" "$(date '+%F %T')" "$LOG" "$(tail -30 "$LOG")")" \
     >/dev/null 2>&1 || echo "(SNS notify itself failed — check aws cli/creds)"
@@ -132,7 +132,20 @@ find "$LOG_DIR" -name "refresh-*.log" -mtime +30 -delete 2>/dev/null
 # every other night is a CSV night. Two gates still key on UTC and still
 # hold under the new times: the THURSDAY run's UTC day is Friday, which
 # gates the weekly report and (=5) the S3 dumps.
-LOG="$LOG_DIR/refresh-$(date -u +%Y-%m-%d).log"
+# ONE label per night (2026-10-23): the local calendar date the batch goes
+# LIVE — the morning after the start. Exported as TCG_BATCH_DATE and read by
+# every step that stamps a day (export/import file names, price rows, the
+# unified delta's meta date, push_data's delta check) and by the ledger, so
+# a night is one key everywhere. It equals what "today in UTC" used to give
+# on every night but two: Tue 18:55 CDT and Sat 18:20 CDT are still the
+# same UTC day as the night before, which made Tuesday append to Monday's
+# log and overwrite its ledger row (2026-10-20), and would have had the
+# Saturday crawl's price rows REPLACE Friday's. Also: the ledger used to
+# key each EVENT on UTC-at-that-moment, splitting one run across two rows
+# once it crossed 00:00 UTC. macOS date: -v+1d.
+BATCH=$(date -v+1d +%F)
+export TCG_BATCH_DATE="$BATCH"
+LOG="$LOG_DIR/refresh-$BATCH.log"
 # Which night this is, from the LOCAL weekday (2026-10-18): Saturday is the
 # crawl + full-rebuild night. Exported for weekly_refresh.py (CRAWL_NIGHT),
 # build_unified_history.py (full rebuild) and local_model_run.sh (long
@@ -147,7 +160,7 @@ fi
 # Run ledger (refresh_ledger.py -> ml_data/refresh_runs.csv): start, phase
 # boundaries, finish, and how the night landed against TCG_REFRESH_DEADLINE.
 # Never fatal — a ledger hiccup must not touch the refresh.
-ledger() { "$PY" refresh_ledger.py record "$@" || echo "(ledger record failed — non-fatal)"; }
+ledger() { "$PY" refresh_ledger.py record --run "$BATCH" "$@" || echo "(ledger record failed — non-fatal)"; }
 
 {
   ledger --event started --kind "$NIGHT"
@@ -197,7 +210,7 @@ ledger() { "$PY" refresh_ledger.py record "$@" || echo "(ledger record failed �
         # handoff + trainer-completion pair.
         $AWS sns publish --region us-east-1 \
           --topic-arn "arn:aws:sns:us-east-1:522029196375:cardstock-refresh-reports" \
-          --subject "cardstock refresh done ($(date -u +%F), local model)" \
+          --subject "cardstock refresh done ($BATCH, local model)" \
           --message "$(printf 'Full refresh finished %s — crawls, local model block, and prod push all complete.\n\nRecent nights (vs the 06:00 target):\n%s\n\nSteps:\n%s\n\nModel block:\n%s' \
               "$(date '+%F %T')" \
               "$("$PY" refresh_ledger.py report --last 7 2>/dev/null)" \

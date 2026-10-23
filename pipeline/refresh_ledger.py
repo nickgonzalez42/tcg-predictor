@@ -47,7 +47,13 @@ def deadline_str():
 
 
 def run_label(now_utc=None):
-    """The run's UTC day — identical to the refresh-<day>.log name."""
+    """The night's batch label — identical to the refresh-<day>.log name.
+    run_daily_refresh.sh exports TCG_BATCH_DATE (the local date the batch
+    goes live) and passes --run explicitly; the UTC day is the fallback for
+    hand runs, and what every row before 2026-10-23 was keyed on."""
+    env = os.environ.get("TCG_BATCH_DATE", "").strip()
+    if env:
+        return env
     return (now_utc or datetime.now(timezone.utc)).date().isoformat()
 
 
@@ -176,7 +182,7 @@ def main():
     p.add_argument("--event", required=True, choices=["started", "phase_a", "model", "deploy", "finished"])
     p.add_argument("--kind", choices=["csv", "crawl"])
     p.add_argument("--status", choices=["ok", "failed"])
-    p.add_argument("--run", help="UTC day label (default: today UTC)")
+    p.add_argument("--run", help="batch label (default: $TCG_BATCH_DATE, else today UTC)")
     p.add_argument("--notes")
     p.set_defaults(fn=cmd_record)
     p = sub.add_parser("backfill")
