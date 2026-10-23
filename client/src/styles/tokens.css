@@ -64,7 +64,12 @@
   --control-h: 38px;     /* standard buttons, pagination, inputs */
   --control-h-sm: 28px;  /* chips, tabs, pills */
   --sidebar-w: 300px;  /* desktop left-rail nav width */
-  --page-top: 30px;    /* gap from the top of the page to the first element */
+  --nav-bar-h: 64px;   /* .navbar__bar height (the fixed top bar) */
+  /* Every page's first element starts one bar-height down (user request
+     2026-10-23), so content clears the bar on phones and sits on the same
+     line on every page on desktop. The floating logo keeps its own offset. */
+  --page-top: var(--nav-bar-h);
+  --logo-top: 30px;
   --container-max: 1280px;   /* .container max-width */
   --container-pad: 40px;     /* .container left padding (pinned at every size) */
   /* Screen's left edge → where container content begins (auto-centering margin

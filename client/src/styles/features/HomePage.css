@@ -3,7 +3,7 @@
 .hero {
   /* align-items: center; */
   margin-bottom: var(--space-50);
-  padding: var(--space-20) 0 var(--space-10);
+  padding: 0 0 var(--space-10);
 }
 
 .hero__copy {

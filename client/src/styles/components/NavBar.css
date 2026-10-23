@@ -20,7 +20,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 64px;
+  height: var(--nav-bar-h);
   max-width: 1280px;
   margin: 0 auto;
   padding: 0 var(--space-20);
@@ -207,7 +207,7 @@ button.navbar__link {
     margin: 0;
     /* Top aligns with page content; left centers the logo in the gutter
        between the screen edge and where container content starts. */
-    padding: var(--page-top) var(--space-20) 0 calc(var(--content-left) / 2 - var(--logo-w) / 2);
+    padding: var(--logo-top) var(--space-20) 0 calc(var(--content-left) / 2 - var(--logo-w) / 2);
     justify-content: flex-start;
     position: relative;
     z-index: 2;                 /* logo stays above the drawer */
