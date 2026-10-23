@@ -46,6 +46,7 @@ Requires only the `requests` library from PyPI.
 
 import argparse
 import json
+import hashlib
 import os
 import random
 import sqlite3
@@ -495,6 +496,27 @@ def fetch_price_history(session, product_id, base_delay):
 # Images
 # ----------------------------------------------------------------------------
 
+# TCGplayer's "Image Coming Soon" placeholder, byte-identical for every
+# product that has no photo yet (32,552 B). An older run saved it as card
+# art for 22 One Piece cards (2026-10-22); a card carrying it looked like it
+# HAD art, so the site showed a grey box and the imageless audit never
+# re-checked it. Treat it as "no image" wherever an image is downloaded.
+PLACEHOLDER_MD5 = "6810409b5f6564ddf54aabf123f3819e"
+PLACEHOLDER_SIZE = 32552
+
+
+def is_placeholder_file(path):
+    """True when the file on disk is the TCGplayer placeholder (size first,
+    then hash — the hash is only computed on an exact size match)."""
+    try:
+        if os.path.getsize(path) != PLACEHOLDER_SIZE:
+            return False
+        with open(path, "rb") as f:
+            return hashlib.md5(f.read()).hexdigest() == PLACEHOLDER_MD5
+    except OSError:
+        return False
+
+
 def download_image(session, product_id, base_delay, image_dir):
     """Download a card image to disk. Returns local path or None.
 
@@ -505,7 +527,9 @@ def download_image(session, product_id, base_delay, image_dir):
     os.makedirs(image_dir, exist_ok=True)
     path = os.path.join(image_dir, f"{product_id}.jpg")
     if os.path.exists(path) and os.path.getsize(path) > 0:
-        return path
+        if not is_placeholder_file(path):
+            return path
+        os.remove(path)   # a placeholder saved by an older run — fetch afresh
     url = IMAGE_URL.format(pid=product_id)
     try:
         # A 403 here means the product has no CDN image; don't retry (see note
@@ -514,6 +538,8 @@ def download_image(session, product_id, base_delay, image_dir):
                                     retry_forbidden=False)
         if resp is None or resp.status_code != 200:
             return None
+        if hashlib.md5(resp.content).hexdigest() == PLACEHOLDER_MD5:
+            return None   # "Image Coming Soon" — the product has no art yet
         with open(path, "wb") as f:
             f.write(resp.content)
         return path
