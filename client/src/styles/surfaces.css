@@ -117,10 +117,11 @@
 .hero-field::after {
   content: "";
   position: absolute;
-  top: -40px;
+  /* The field starts at the very top of the page — up through the page's
+     own top padding, behind the nav — and runs edge to edge of the viewport
+     (user request 2026-10-23). */
+  top: calc(-1 * var(--page-top));
   bottom: -40px;
-  /* Full-bleed (user request 2026-10-23): the field runs edge to edge of the
-     viewport, not just across the container the hero sits in. */
   left: calc(50% - 50vw);
   width: 100vw;
   z-index: -1;
