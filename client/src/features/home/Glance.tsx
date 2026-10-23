@@ -154,12 +154,15 @@ function TrackRecordPanel() {
                 <span className="mono">1 month · near mint</span>
             </div>
             <div className="glance__row">
+                {/* Until the stats arrive the figures read as a dash, never as
+                    "0 forecasts graded" (the API's first call after a restart
+                    takes a few seconds while it primes its cache). */}
                 <div className="glance__stat">
-                    <div className="glance__big">{compact(graded)}</div>
+                    <div className="glance__big">{data ? compact(graded) : '—'}</div>
                     <div className="mono">forecasts graded</div>
                 </div>
                 <div className="glance__stat">
-                    <div className="glance__big glance__big--up">{hit.toFixed(1)}%</div>
+                    <div className="glance__big glance__big--up">{data ? `${hit.toFixed(1)}%` : '—'}</div>
                     <div className="mono">landed inside the model's 80% range</div>
                 </div>
             </div>
@@ -193,6 +196,7 @@ function LeanPanel() {
                 <span className="band__title">Where the model leans</span>
                 <span className="mono">next month</span>
             </div>
+            {!data && <div className="glance__text">Loading the model's calls…</div>}
             <ul className="glance__bars">
                 {(data?.lean ?? []).map((g, i) => {
                     const n = Math.max(1, g.up + g.flat + g.down);
