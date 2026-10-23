@@ -148,11 +148,13 @@ export default function Filters({ filtersData: data }: Props) {
                                 </div>
                             </div>
                             <div className="panel">
-                                <RadioButtonGroup
-                                    selectedValue={game}
-                                    options={gameOptions}
-                                    onChange={e => dispatch(setGame(e.target.value))}
-                                />
+                                {/* Twelve games outgrew a radio list (user request
+                                    2026-10-23): a select, matching the Sort control. */}
+                                <label htmlFor="game-select" className="field-label">Game</label>
+                                <select id="game-select" className="input" value={game}
+                                    onChange={e => dispatch(setGame(e.target.value))}>
+                                    {gameOptions.map(g => <option key={g.value} value={g.value}>{g.label}</option>)}
+                                </select>
                             </div>
                             <div className="panel">
                                 <MultiSelectDropdown
