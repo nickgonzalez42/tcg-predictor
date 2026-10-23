@@ -38,6 +38,13 @@
   --danger: #e53935;
   --radius: 15px;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Editorial accents (2026-10-22, guide-redesign inspiration): a condensed
+     display face for headlines, the gradient band that heads a panel, and
+     the dot-grid field behind a page's hero. */
+  --display: "Big Shoulders Display", Impact, "Arial Narrow", sans-serif;
+  --band: linear-gradient(180deg, #2e3a52, #1f2738);
+  --dots: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  --panel-edge: #2a3348;
 
   /* Spacing scale — every margin/padding/gap snaps to a multiple of 5px
      (named by pixel value). The page .container gutters and .grid-box

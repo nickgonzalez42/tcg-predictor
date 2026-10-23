@@ -3,49 +3,79 @@
 .hero {
   /* align-items: center; */
   margin-bottom: var(--space-50);
+  padding: var(--space-20) 0 var(--space-10);
 }
 
 .hero__copy {
   grid-column: span 6;
 }
 
+/* Condensed display headline (2026-10-22): big, uppercase, tight leading,
+   the closing word in brand yellow. The old sans title sat at 41.6px with
+   a cap-leading hack to meet the panel's top edge; the display face's
+   0.92 leading has no such overhang. */
 .hero__title {
-  font-size: 41.6px;
-  letter-spacing: -0.02em;
-  margin-bottom: var(--space-10);
-  /* Line the top of the letters up with the top edge of .hero__panel by
-     removing the font's over-cap leading. Baseline approach (all browsers):
-     pull the title up by that leading (~0.25em at line-height 1.2). */
-  margin-top: -0.25em;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 66px;
+  line-height: 0.92;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
+  margin: 0 0 var(--space-20);
+}
+
+.hero__accent {
+  color: var(--brand);
 }
 
 /* Where supported, trim precisely instead — cross-platform-correct, no guess —
    and drop the margin so the two don't stack. */
-@supports (text-box-trim: trim-start) {
-  .hero__title {
-    margin-top: 0;
-    text-box-trim: trim-start;
-    text-box-edge: cap alphabetic;
-  }
-}
-
 .hero__sub {
   color: var(--text-muted);
-  font-size: 16.8px;
-  line-height: 1.5;
-  max-width: 544px;
-  margin: 0 0 var(--space-25);
+  font-size: 17.6px;
+  line-height: 1.55;
+  max-width: 520px;
+  margin: 0 0 var(--space-30);
+}
+
+/* Hero CTAs take the display voice: uppercase, letter-spaced, 2px rule,
+   tighter corners than the app's standard button. Scoped to the hero. */
+.hero .btn {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 19px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-width: 2px;
+  border-radius: 8px;
+  padding: 0 var(--space-20);
+}
+
+.hero .btn--outline {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.hero .btn--outline:hover {
+  background: rgba(255, 203, 5, 0.10);
 }
 
 .hero__panel {
   grid-column: span 6;
   position: relative;
-  background: var(--surface-tint);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-15);
-  min-height: 260px;
+  background: var(--surface);
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  padding: 0 var(--space-15) var(--space-15);
+  min-height: 300px;
   overflow: hidden;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.45);
+}
+
+/* The panel's band sits flush at its top (the panel has no top padding). */
+.hero__panel .band {
+  margin: 0 calc(-1 * var(--space-15)) var(--space-10);
+  padding: var(--space-10) var(--space-15);
 }
 
 .hero__chart {
@@ -78,7 +108,24 @@
 
 .home__heading {
   margin: 0 0 var(--space-15);
-  font-size: 21.6px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* The heading's aside keeps the body voice. */
+.home__heading .est-note {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+
+.home__kicker {
+  margin-bottom: var(--space-5);
 }
 
 .movers {
@@ -97,11 +144,47 @@
   color: var(--text);
   padding: var(--space-15);
   overflow: hidden;
+  position: relative;
+  border-radius: 12px;
+  border-color: var(--panel-edge);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  /* Staggered entrance: each tile rises in 45ms after the last (--i is set
+     inline). `backwards` holds the start state through the delay and then
+     releases the property, so the hover transform below still applies. */
+  animation: mover-rise 0.45s ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 45ms);
 }
+
+/* A 3px accent along the top, coloured by the direction of the forecast. */
+.mover::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: var(--border);
+}
+
+.mover--up::before { background: var(--up); }
+
+.mover--down::before { background: var(--down); }
 
 .mover:hover {
   text-decoration: none;
-  border-color: var(--primary);
+  border-color: var(--brand);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+}
+
+@keyframes mover-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mover { animation: none; transition: none; }
+  .mover:hover { transform: none; }
 }
 
 .mover__thumb {
@@ -144,21 +227,35 @@
   font-weight: 700;
 }
 
+/* How it works: one callout with a thick brand rule down its left edge and
+   numbered steps in two columns, instead of four identical boxes. */
 .how {
   grid-column: 1 / -1;
   margin-bottom: var(--space-50);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-15) var(--space-40);
+  background: var(--surface);
+  border: 1px solid #3a4763;
+  border-left: 6px solid var(--brand);
+  border-radius: 10px;
+  padding: var(--space-20) var(--space-25);
 }
 
 .how__step {
-  grid-column: span 3;
-  background: var(--surface-tint);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-20);
+  display: flex;
+  gap: var(--space-15);
+  align-items: flex-start;
+  padding: var(--space-5) 0;
 }
 
 .how__title {
-  font-weight: 700;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   margin-bottom: var(--space-5);
 }
 
@@ -186,11 +283,7 @@
     grid-column: span 4;
   }
 
-  .how__step {
-    grid-column: span 4;
-  }
-
-  .movers, .how {
+  .movers {
     row-gap: var(--space-25);
   }
 
@@ -203,7 +296,7 @@
 /* --- Mobile (4-col grid): movers 2-up small, steps stacked. */
 @media (max-width: 767px) {
   .hero__title {
-    font-size: 30px;
+    font-size: 44px;
   }
 
   .mover {
@@ -211,11 +304,12 @@
     padding: var(--space-10);
   }
 
-  .how__step {
-    grid-column: span 4;
+  .how {
+    grid-template-columns: 1fr;
+    padding: var(--space-15) var(--space-15);
   }
 
-  .movers, .how {
+  .movers {
     row-gap: var(--space-15);
   }
 }

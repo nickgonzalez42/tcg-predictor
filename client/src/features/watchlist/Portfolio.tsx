@@ -81,7 +81,7 @@ export default function Portfolio() {
         <>
             {/* ----- Header: total value + change pills + value chart ----- */}
             {!empty && (
-            <div className="pf-hero">
+            <div className="pf-hero hero-field">
                 <span className="mono">Portfolio value</span>
                 <div className="pf-hero__value">
                     {summary ? currencyFormat(summary.totalValue) : 'n/a'}

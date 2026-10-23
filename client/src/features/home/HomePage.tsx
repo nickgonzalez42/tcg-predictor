@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useFetchMoversQuery } from "../catalog/catalogApi";
 import { useUserInfoQuery } from "../account/accountApi";
@@ -249,10 +249,15 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     );
 }
 
-function MoverTile({ mover }: { mover: Card }) {
+function MoverTile({ mover, index = 0 }: { mover: Card; index?: number }) {
     const path = `/catalog/${gameKey(mover.game)}/${mover.id}`;
+    // Top accent follows the forecast's direction; --i staggers the entrance.
+    const fcst = moverFcst(mover);
+    const dir = fcst != null && mover.price
+        ? (fcst >= mover.price ? ' mover--up' : ' mover--down') : '';
     return (
-        <Link to={path} className="mover panel">
+        <Link to={path} className={`mover panel${dir}`}
+            style={{ '--i': index } as CSSProperties}>
             <img
                 className="mover__thumb"
                 src={mover.pictureUrl} alt=""
@@ -324,9 +329,12 @@ export default function HomePage() {
 
     return (
         <>
-            <section className="hero subgrid full-span">
+            <section className="hero subgrid full-span hero-field">
                 <div className="hero__copy">
-                    <h1 className="hero__title">Know your cards' worth: yesterday, today, tomorrow.</h1>
+                    <h1 className="hero__title">
+                        Know your cards' worth: yesterday, today,{' '}
+                        <span className="hero__accent">tomorrow.</span>
+                    </h1>
                     <p className="hero__sub">
                         CardStock uses machine learning to predict what any card will be worth a month,
                         six months, or a year from now. Twelve TCGs, graded and ungraded
@@ -340,28 +348,37 @@ export default function HomePage() {
                     </div>
                 </div>
                 <div className="hero__panel">
+                    <div className="band">
+                        <span className="band__title">Featured card</span>
+                        <span className="mono">1 month forecast · live</span>
+                    </div>
                     <HeroChart movers={heroMovers} />
                 </div>
             </section>
 
             {tiles.length > 0 && (
                 <section className="full-span subgrid">
+                    <span className="kicker home__kicker full-span">01 · Market</span>
                     <h2 className="home__heading full-span">
                         Top movers <span className="est-note">· 1 month model forecast</span>
                     </h2>
                     <div className="movers subgrid">
-                        {tiles.map(m => <MoverTile mover={m} key={`${m.game}-${m.id}`} />)}
+                        {tiles.map((m, i) => <MoverTile mover={m} index={i} key={`${m.game}-${m.id}`} />)}
                     </div>
                 </section>
             )}
 
             <section className="full-span subgrid">
+                <span className="kicker home__kicker full-span">02 · Getting started</span>
                 <h2 className="home__heading full-span">How it works</h2>
-                <div className="how subgrid">
+                <div className="how">
                     {HOW_IT_WORKS.map(step => (
                         <div className="how__step" key={step.n}>
-                            <div className="how__title">{step.n} · {step.title}</div>
-                            <p className="how__text">{step.text}</p>
+                            <span className="num">{step.n}</span>
+                            <div>
+                                <div className="how__title">{step.title}</div>
+                                <p className="how__text">{step.text}</p>
+                            </div>
                         </div>
                     ))}
                 </div>
