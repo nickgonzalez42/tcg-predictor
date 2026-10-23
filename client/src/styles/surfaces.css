@@ -117,7 +117,12 @@
 .hero-field::after {
   content: "";
   position: absolute;
-  inset: -40px -30px;
+  top: -40px;
+  bottom: -40px;
+  /* Full-bleed (user request 2026-10-23): the field runs edge to edge of the
+     viewport, not just across the container the hero sits in. */
+  left: calc(50% - 50vw);
+  width: 100vw;
   z-index: -1;
   pointer-events: none;
 }

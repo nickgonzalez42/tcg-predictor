@@ -4,6 +4,10 @@
   min-height: 100vh;
   color: var(--text);
   background: var(--bg);
+  /* Full-bleed fields (.hero-field) are 100vw wide, which on a desktop with
+     a visible scrollbar overshoots by its width; clip (not hidden — no new
+     scroll container, so the smooth scroller is unaffected) absorbs it. */
+  overflow-x: clip;
 }
 
 /* Page container: fluid with responsive gutters, capped on desktop.
