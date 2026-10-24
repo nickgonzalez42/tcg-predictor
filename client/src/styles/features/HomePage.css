@@ -485,6 +485,38 @@
   color: var(--up);
 }
 
+.glance__big--down {
+  color: var(--down);
+}
+
+/* The portfolio panel spans the row; its ring, figures, legend and link
+   line up across it. */
+.glance__panel--wide {
+  grid-column: 1 / -1;
+}
+
+.glance__panel--wide .glance__row {
+  gap: var(--space-25);
+  flex-wrap: wrap;
+}
+
+.glance__panel--wide .glance__col {
+  flex: 2 1 260px;
+}
+
+.glance__legend--side {
+  flex: 1 1 150px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: var(--space-15);
+}
+
+.glance__foot--side {
+  margin-top: 0;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
 .glance__text {
   margin: 0;
   color: var(--text-muted);
@@ -627,6 +659,10 @@
   .glance__panel {
     grid-column: span 4;   /* two per row on the 8-col grid */
   }
+
+  .glance__panel--wide {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 767px) {
@@ -636,6 +672,11 @@
 
   .glance__barrow {
     grid-template-columns: 76px 1fr 36px;
+  }
+
+  .glance__foot--side {
+    margin-left: 0;
+    flex-basis: 100%;
   }
 }
 

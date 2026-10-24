@@ -76,6 +76,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             a.Property(x => x.Horizon).HasColumnName("horizon");
             a.Property(x => x.N).HasColumnName("n");
             a.Property(x => x.RetMae).HasColumnName("ret_mae");
+            a.Property(x => x.RetBias).HasColumnName("ret_bias");
             a.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
             a.Property(x => x.GradedThrough).HasColumnName("graded_through");
         });

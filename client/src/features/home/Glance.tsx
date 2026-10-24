@@ -7,8 +7,8 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchPortfolioSummaryQuery } from "../watchlist/watchlistApi";
 import { useFetchHomeStatsQuery } from "./homeApi";
 
-// "At a glance" (2026-10-23): three animated infographics in place of the
-// old how-it-works boxes. Each panel reveals once it scrolls into view —
+// "At a glance" (2026-10-23): animated infographics in place of the old
+// how-it-works boxes — the portfolio on its own row, then three model panels. Each panel reveals once it scrolls into view —
 // bars grow, rings draw, numbers count up — and all of it collapses to the
 // final state under prefers-reduced-motion.
 
@@ -83,7 +83,12 @@ function Ring({ slices, size = 104, stroke = 13, inView }: {
     );
 }
 
+// Log-return error → the percentage a reader understands ("±12%").
+const pct = (logRet: number) => (Math.exp(Math.abs(logRet)) - 1) * 100;
+
 // ----- 1. Portfolio (signed in) / Track your collection (signed out) -------
+// Its own full-width row (user request 2026-10-23): ring, headline figures,
+// legend and the call to action sit side by side.
 function PortfolioPanel({ user }: { user?: User | null }) {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks: true }, { skip: !user });
@@ -96,7 +101,7 @@ function PortfolioPanel({ user }: { user?: User | null }) {
            { label: 'Magic', pct: 21, color: gameColor('magic') },
            { label: 'Lorcana', pct: 14, color: gameColor('lorcana') }];
     return (
-        <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
+        <div ref={ref} className="panel glance__panel glance__panel--wide" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">{has ? 'Your portfolio' : 'Track your collection'}</span>
                 <span className="mono">{has ? `${summary!.copies} cards` : 'sample'}</span>
@@ -120,22 +125,22 @@ function PortfolioPanel({ user }: { user?: User | null }) {
                             game, and how the collection stacks up against the S&amp;P 500.
                         </p>
                     )}
-                    <ul className="glance__legend">
-                        {slices.map(s => (
-                            <li key={s.label}>
-                                <span className="glance__dot" style={{ background: s.color }} />{s.label}
-                                <span className="mono"> {Math.round(s.pct)}%</span>
-                            </li>
-                        ))}
-                    </ul>
                 </div>
-            </div>
-            <div className="glance__foot">
-                {has
-                    ? <Link to="/portfolio">Open your portfolio →</Link>
-                    : user
-                        ? <Link to="/portfolio">Add your first card →</Link>
-                        : <Link className="btn btn--sm" to="/register">Start tracking free</Link>}
+                <ul className="glance__legend glance__legend--side">
+                    {slices.map(s => (
+                        <li key={s.label}>
+                            <span className="glance__dot" style={{ background: s.color }} />{s.label}
+                            <span className="mono"> {Math.round(s.pct)}%</span>
+                        </li>
+                    ))}
+                </ul>
+                <div className="glance__foot glance__foot--side">
+                    {has
+                        ? <Link to="/portfolio">Open your portfolio →</Link>
+                        : user
+                            ? <Link to="/portfolio">Add your first card →</Link>
+                            : <Link className="btn btn--sm" to="/register">Start tracking free</Link>}
+                </div>
             </div>
         </div>
     );
@@ -179,14 +184,61 @@ function TrackRecordPanel() {
                 ))}
             </ul>
             <div className="glance__foot">
-                Every forecast is saved and graded 28 days later.{' '}
+                Every forecast is saved and graded once it lands.{' '}
                 <Link to="/about">How the forecasts work →</Link>
             </div>
         </div>
     );
 }
 
-// ----- 3. Where the model leans ----------------------------------------------
+// ----- 3. How far off: the typical miss and its lean, per game ---------------
+function MissPanel() {
+    const { ref, inView } = useInView<HTMLDivElement>();
+    const { data } = useFetchHomeStatsQuery();
+    const miss = useCountUp(data ? pct(data.mae) : 0, inView && !!data);
+    const lean = useCountUp(data ? pct(data.bias) : 0, inView && !!data);
+    const hot = (data?.bias ?? 0) > 0;
+    const worst = Math.max(...(data?.miss ?? []).map(g => pct(g.mae)), 1);
+    return (
+        <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
+            <div className="band">
+                <span className="band__title">How far off</span>
+                <span className="mono">1 month · near mint</span>
+            </div>
+            <div className="glance__row">
+                <div className="glance__stat">
+                    <div className="glance__big">{data ? `±${miss.toFixed(1)}%` : '—'}</div>
+                    <div className="mono">typical miss</div>
+                </div>
+                <div className="glance__stat">
+                    <div className={`glance__big ${hot ? 'glance__big--down' : 'glance__big--up'}`}>
+                        {data ? `${lean.toFixed(1)}% ${hot ? 'hot' : 'cold'}` : '—'}
+                    </div>
+                    <div className="mono">{hot ? 'calls run above the landing' : 'calls run below the landing'}</div>
+                </div>
+            </div>
+            <ul className="glance__bars">
+                {(data?.miss ?? []).map((g, i) => (
+                    <li key={g.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}
+                        title={`${g.label}: typical miss ±${pct(g.mae).toFixed(1)}%, runs ${pct(g.bias).toFixed(1)}% ${g.bias > 0 ? 'hot' : 'cold'} over ${g.graded.toLocaleString()} graded`}>
+                        <span className="glance__barlabel">{g.label}</span>
+                        <span className="glance__track">
+                            <span className="glance__fill"
+                                style={{ '--w': pct(g.mae) / worst, '--c': gameColor(g.game) } as CSSProperties} />
+                        </span>
+                        <span className="mono glance__barval">±{Math.round(pct(g.mae))}%</span>
+                    </li>
+                ))}
+            </ul>
+            <div className="glance__foot">
+                Average gap between the model's 1-month call and where the price landed.
+                Shorter is better; hot means the calls run high, cold means they run low.
+            </div>
+        </div>
+    );
+}
+
+// ----- 4. Where the model leans ----------------------------------------------
 function LeanPanel() {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data } = useFetchHomeStatsQuery();
@@ -232,6 +284,7 @@ export default function Glance({ user }: { user?: User | null }) {
         <div className="glance subgrid">
             <PortfolioPanel user={user} />
             <TrackRecordPanel />
+            <MissPanel />
             <LeanPanel />
         </div>
     );

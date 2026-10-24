@@ -9,6 +9,7 @@ public class ForecastAccuracy
     public string Horizon { get; set; } = "";
     public long N { get; set; }                 // forecasts graded
     public double RetMae { get; set; }          // mean absolute log-return error
+    public double RetBias { get; set; }         // mean (predicted - realized): + = runs hot
     public double BandHitRate { get; set; }     // share landing inside the 80% band
     public string? GradedThrough { get; set; }  // newest graded as-of date
 }

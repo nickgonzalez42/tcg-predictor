@@ -5,6 +5,9 @@ import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 // the model's public scorecard and where its 1-month calls lean, per game.
 export type GameHit = { game: string; label: string; graded: number; bandHit: number };
 export type GameLean = { game: string; label: string; up: number; flat: number; down: number };
+// mae = typical size of the miss, bias = mean (predicted − realized); both
+// are mean log-return errors (+bias = the model runs hot).
+export type GameMiss = { game: string; label: string; graded: number; mae: number; bias: number };
 export type HomeStats = {
     horizon: string;          // '1m'
     graded: number;           // forecasts graded at that horizon, all games
@@ -12,6 +15,9 @@ export type HomeStats = {
     gradedThrough?: string | null;
     byGame: GameHit[];        // sorted by bandHit desc
     lean: GameLean[];         // sorted by up-share desc
+    mae: number;              // graded-weighted typical miss, all games
+    bias: number;             // graded-weighted lean of the error
+    miss: GameMiss[];         // sorted by mae asc (best first)
 }
 
 export const homeApi = createApi({
