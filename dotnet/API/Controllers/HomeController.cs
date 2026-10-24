@@ -11,7 +11,7 @@ namespace API.Controllers;
 // Both change only when a data push swaps predictions.db, and every push
 // restarts this process — cached for the process lifetime like the movers.
 [Route("api/home")]
-public class HomeController(PredictionsContext predictions, IMemoryCache cache) : BaseApiController
+public partial class HomeController(PredictionsContext predictions, IMemoryCache cache) : BaseApiController
 {
     public record GameHit(string Game, string Label, long Graded, double BandHit);
     public record GameLean(string Game, string Label, int Up, int Flat, int Down);
@@ -73,6 +73,67 @@ public class HomeController(PredictionsContext predictions, IMemoryCache cache) 
             return new HomeStats("1m", graded, bandHit, through, byGame, lean, mae, bias, miss);
         });
         return Ok(stats);
+    }
+}
+
+public partial class HomeController
+{
+    public record ModelScore(string Game, string Label, string Target, string Horizon,
+                             long Graded, double BandHit, double Mae, double Bias, string? GradedThrough);
+    public record WeekScore(string Week, long N, double? BandHit, double? Mae, double? FlatMae,
+                            long? DirN, double? DirHit, long? N10, double? BandHit10, double? Mae10, double? FlatMae10);
+    public record MonthScore(string Game, string Label, string Target, string Horizon, string Month,
+                             long N, double? BandHit, double? Mae, double? Bias);
+    public record Scorecard(List<ModelScore> Models, List<WeekScore> Weekly, List<MonthScore> Monthly,
+                            string? UpdatedAt);
+
+    // Every model's public record for the About page (2026-10-24): one row
+    // per (game, tier, horizon) from forecast_accuracy, the full-cohort
+    // weekly series of the 1-month Near Mint cohorts, and the persisted
+    // monthly rows. The weekly table arrives with the first push after it
+    // was introduced — a missing table reads as an empty series, never an
+    // error. Cached for the process lifetime like the other home numbers.
+    [HttpGet("scorecard")]
+    public async Task<ActionResult<Scorecard>> GetScorecard()
+    {
+        var card = await cache.GetOrCreateAsync("home:scorecard", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);
+            entry.Priority = CacheItemPriority.NeverRemove;
+
+            var models = (await predictions.Accuracy.Where(a => a.N > 0).ToListAsync())
+                .Where(a => GameRegistry.Normalize(a.Game) != null)
+                .Select(a => new ModelScore(a.Game, GameRegistry.Label(a.Game), a.Target, a.Horizon,
+                                            a.N, a.BandHitRate, a.RetMae, a.RetBias, a.GradedThrough))
+                .OrderBy(m => m.Label).ThenBy(m => m.Target).ThenBy(m => m.Horizon)
+                .ToList();
+
+            List<WeekScore> weekly = [];
+            try
+            {
+                weekly = (await predictions.AccuracyWeekly.OrderBy(w => w.Week).ToListAsync())
+                    .Select(w => new WeekScore(w.Week, w.N, w.BandHitRate, w.RetMae, w.FlatMae, w.DirN,
+                                               w.DirHitRate, w.N10, w.BandHitRate10, w.RetMae10, w.FlatMae10))
+                    .ToList();
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException) { /* table not pushed yet */ }
+
+            List<MonthScore> monthly = [];
+            try
+            {
+                monthly = (await predictions.AccuracyMonthly.ToListAsync())
+                    .Where(m => GameRegistry.Normalize(m.Game) != null)
+                    .Select(m => new MonthScore(m.Game, GameRegistry.Label(m.Game), m.Target, m.Horizon,
+                                                m.Month, m.N, m.BandHitRate, m.RetMae, m.RetBias))
+                    .OrderBy(m => m.Month).ThenBy(m => m.Label)
+                    .ToList();
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException) { }
+
+            var updated = models.Select(m => m.GradedThrough).Where(d => d != null).Max();
+            return new Scorecard(models, weekly, monthly, updated);
+        });
+        return Ok(card);
     }
 }
 

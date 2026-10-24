@@ -20,6 +20,22 @@ export type HomeStats = {
     miss: GameMiss[];         // sorted by mae asc (best first)
 }
 
+// Every model's public record (GET home/scorecard), for the About page.
+export type ModelScore = {
+    game: string; label: string; target: string; horizon: string;
+    graded: number; bandHit: number; mae: number; bias: number; gradedThrough?: string | null;
+};
+export type WeekScore = {
+    week: string; n: number; bandHit?: number | null; mae?: number | null; flatMae?: number | null;
+    dirN?: number | null; dirHit?: number | null;
+    n10?: number | null; bandHit10?: number | null; mae10?: number | null; flatMae10?: number | null;
+};
+export type MonthScore = {
+    game: string; label: string; target: string; horizon: string; month: string;
+    n: number; bandHit?: number | null; mae?: number | null; bias?: number | null;
+};
+export type Scorecard = { models: ModelScore[]; weekly: WeekScore[]; monthly: MonthScore[]; updatedAt?: string | null };
+
 export const homeApi = createApi({
     reducerPath: 'homeApi',
     baseQuery: baseQueryWithErrorHandling,
@@ -27,7 +43,10 @@ export const homeApi = createApi({
         fetchHomeStats: builder.query<HomeStats, void>({
             query: () => 'home/stats',
         }),
+        fetchScorecard: builder.query<Scorecard, void>({
+            query: () => 'home/scorecard',
+        }),
     }),
 });
 
-export const { useFetchHomeStatsQuery } = homeApi;
+export const { useFetchHomeStatsQuery, useFetchScorecardQuery } = homeApi;

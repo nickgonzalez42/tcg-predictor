@@ -17,7 +17,7 @@ const reducedMotion = () =>
     typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 // True once the element has entered the viewport (never flips back).
-function useInView<T extends HTMLElement>() {
+export function useInView<T extends HTMLElement>() {
     const ref = useRef<T>(null);
     const [inView, setInView] = useState(() => reducedMotion());
     useEffect(() => {
@@ -34,7 +34,7 @@ function useInView<T extends HTMLElement>() {
 }
 
 // Eases a number from 0 to `target` over `ms` once `active`.
-function useCountUp(target: number, active: boolean, ms = 1200) {
+export function useCountUp(target: number, active: boolean, ms = 1200) {
     const [value, setValue] = useState(0);
     useEffect(() => {
         if (!active) return;
@@ -53,7 +53,7 @@ function useCountUp(target: number, active: boolean, ms = 1200) {
     return value;
 }
 
-const compact = (n: number) =>
+export const compact = (n: number) =>
     n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${Math.round(n)}`;
 
 // Allocation ring: one arc per slice, drawn in sequence once in view.
@@ -88,7 +88,7 @@ function Ring({ slices, size = 104, stroke = 13, inView }: {
 const signedUsd = (n: number) => (n < 0 ? '−' : '+') + currencyFormat(Math.abs(n));
 
 // Log-return error → the percentage a reader understands ("±12%").
-const pct = (logRet: number) => (Math.exp(Math.abs(logRet)) - 1) * 100;
+export const pct = (logRet: number) => (Math.exp(Math.abs(logRet)) - 1) * 100;
 
 // ----- 1. Portfolio (signed in) / Track your collection (signed out) -------
 // Its own full-width row, taller (user request 2026-10-24): ring + legend,

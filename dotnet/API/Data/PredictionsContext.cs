@@ -15,6 +15,8 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     public DbSet<PrereleaseEstimate> Prerelease => Set<PrereleaseEstimate>();
     // The public scorecard (2026-10-23): keyless, one row per (game, tier, horizon).
     public DbSet<ForecastAccuracy> Accuracy => Set<ForecastAccuracy>();
+    public DbSet<ForecastAccuracyWeekly> AccuracyWeekly => Set<ForecastAccuracyWeekly>();
+    public DbSet<ForecastAccuracyMonthly> AccuracyMonthly => Set<ForecastAccuracyMonthly>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -79,6 +81,38 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             a.Property(x => x.RetBias).HasColumnName("ret_bias");
             a.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
             a.Property(x => x.GradedThrough).HasColumnName("graded_through");
+        });
+
+        builder.Entity<ForecastAccuracyWeekly>(w =>
+        {
+            w.ToTable("forecast_accuracy_weekly");
+            w.HasNoKey();
+            w.Property(x => x.Week).HasColumnName("week");
+            w.Property(x => x.N).HasColumnName("n");
+            w.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
+            w.Property(x => x.RetMae).HasColumnName("ret_mae");
+            w.Property(x => x.FlatMae).HasColumnName("flat_mae");
+            w.Property(x => x.DirN).HasColumnName("dir_n");
+            w.Property(x => x.DirHitRate).HasColumnName("dir_hit_rate");
+            w.Property(x => x.N10).HasColumnName("n10");
+            w.Property(x => x.BandHitRate10).HasColumnName("band_hit_rate10");
+            w.Property(x => x.RetMae10).HasColumnName("ret_mae10");
+            w.Property(x => x.FlatMae10).HasColumnName("flat_mae10");
+        });
+
+        builder.Entity<ForecastAccuracyMonthly>(m =>
+        {
+            m.ToTable("forecast_accuracy_monthly");
+            m.HasNoKey();
+            m.Property(x => x.Game).HasColumnName("game");
+            m.Property(x => x.Target).HasColumnName("target");
+            m.Property(x => x.Horizon).HasColumnName("horizon");
+            m.Property(x => x.Month).HasColumnName("month");
+            m.Property(x => x.N).HasColumnName("n");
+            m.Property(x => x.RetMae).HasColumnName("ret_mae");
+            m.Property(x => x.RetBias).HasColumnName("ret_bias");
+            m.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
+            m.Property(x => x.GradedThrough).HasColumnName("graded_through");
         });
 
         builder.Entity<MarketReport>(r =>

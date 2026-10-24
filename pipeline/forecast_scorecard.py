@@ -27,6 +27,7 @@ import collections
 import math
 import os
 import sqlite3
+import sys
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -439,6 +440,75 @@ def rebuild_accuracy(conn, now_iso):
          for (g, t, h), s in stats.items() if s[0]])
 
 
+def write_weekly_accuracy(conn):
+    """forecast_accuracy_weekly (2026-10-24): the FULL-cohort week-over-week
+    record of the nightly dated 1-month Near Mint cohorts, by the Friday-
+    starting week they came due — the series the About page's "accuracy
+    over time" infographic draws. Same merge the Friday report performs
+    (market_report.weekly_coverage): live archive rows PLUS the tallies
+    compact_1m banked for the rows it deleted. Rebuilt from scratch each run,
+    so it is always the whole record. Day-01 landings (month-bucket
+    stragglers) are excluded, as in the report."""
+    ensure_weekly_coverage(conn)
+    conn.executescript(
+        """
+        DROP TABLE IF EXISTS forecast_accuracy_weekly;
+        CREATE TABLE forecast_accuracy_weekly (
+            week TEXT PRIMARY KEY,      -- Friday the landing week starts
+            n INTEGER NOT NULL,
+            band_hit_rate REAL,         -- share inside the 80% band
+            ret_mae REAL,               -- mean |predicted - realized|
+            flat_mae REAL,              -- mean |realized|: the hold-flat baseline
+            dir_n INTEGER,              -- decisive calls (both sides moved >= 1%)
+            dir_hit_rate REAL,          -- direction right among decisive calls
+            n10 INTEGER,                -- same four for cards priced $10+
+            band_hit_rate10 REAL,
+            ret_mae10 REAL,
+            flat_mae10 REAL
+        );
+        """)
+    DEC = "ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01"
+    HIT = "(COALESCE(ret, 0) > 0) = (realized_ret > 0)"
+    agg = {}
+    for (wk, n_, hits, errs, dn, dh, reals,
+         n10, hits10, errs10, reals10) in conn.execute(
+            f"SELECT {WEEK_FRI}, COUNT(*), "
+            "  SUM(CASE WHEN realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
+            "  SUM(ABS(COALESCE(ret, 0) - realized_ret)), "
+            f" SUM(CASE WHEN {DEC} THEN 1 ELSE 0 END), "
+            f" SUM(CASE WHEN {DEC} AND {HIT} THEN 1 ELSE 0 END), "
+            "  SUM(ABS(realized_ret)), "
+            "  SUM(CASE WHEN base_price >= 10 THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN base_price >= 10 AND realized_price BETWEEN low AND high THEN 1 ELSE 0 END), "
+            "  SUM(CASE WHEN base_price >= 10 THEN ABS(COALESCE(ret, 0) - realized_ret) ELSE 0 END), "
+            "  SUM(CASE WHEN base_price >= 10 THEN ABS(realized_ret) ELSE 0 END) "
+            "FROM forecast_archive "
+            "WHERE horizon='1m' AND target='ungraded' AND printing='' "
+            "  AND realized_ret IS NOT NULL AND substr(model_version, 1, 2) != '__' "
+            "  AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
+            f"GROUP BY {WEEK_FRI}"):
+        agg[wk] = [n_, hits or 0, errs or 0.0, dn or 0, dh or 0, reals or 0.0,
+                   n10 or 0, hits10 or 0, errs10 or 0.0, reals10 or 0.0]
+    for (wk, n_, hits, errs, dn, dh, reals,
+         n10, hits10, errs10, reals10) in conn.execute(
+            "SELECT week, n, band_hits, abs_err_sum, dir_n, dir_hits, abs_real_sum, "
+            "  n10, band_hits10, abs_err10, abs_real10 FROM forecast_coverage_weekly"):
+        a = agg.setdefault(wk, [0, 0, 0.0, 0, 0, 0.0, 0, 0, 0.0, 0.0])
+        for i, v in enumerate((n_, hits, errs, dn, dh, reals, n10, hits10, errs10, reals10)):
+            a[i] += v or 0
+    rows = []
+    for wk, (n_, hits, errs, dn, dh, reals, n10, hits10, errs10, reals10) in sorted(agg.items()):
+        if not wk or n_ <= 0:
+            continue
+        rows.append((wk, n_, round(hits / n_, 4), round(errs / n_, 4), round(reals / n_, 4),
+                     dn, round(dh / dn, 4) if dn else None,
+                     n10, round(hits10 / n10, 4) if n10 else None,
+                     round(errs10 / n10, 4) if n10 else None,
+                     round(reals10 / n10, 4) if n10 else None))
+    conn.executemany("INSERT INTO forecast_accuracy_weekly VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    return len(rows)
+
+
 def card_sets(game):
     """product_id -> set_name from the ml export."""
     path = os.path.join(DATA, f"{game}_cards.csv")
@@ -509,6 +579,14 @@ def main():
     conn = sqlite3.connect(OUT_DB, timeout=60)
     if not conn.execute("SELECT name FROM sqlite_master WHERE name='forecast_archive'").fetchone():
         print("no forecast_archive yet — run forecast_predict.py first")
+        return
+    # --weekly-only: rebuild just the About page's weekly series (no grading,
+    # no compaction) — for a backfill between nightly runs.
+    if "--weekly-only" in sys.argv[1:]:
+        n = write_weekly_accuracy(conn)
+        conn.commit()
+        print(f"forecast_accuracy_weekly: {n} week(s)")
+        conn.close()
         return
 
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -584,6 +662,8 @@ def main():
         print(f"compacted {compacted} matured nightly 1m row(s) — kept each card's "
               f"median-error forecast; full-month stats persisted")
     rebuild_accuracy(conn, now_iso)
+    weeks = write_weekly_accuracy(conn)
+    print(f"forecast_accuracy_weekly: {weeks} week(s)")
     conn.commit()
 
     total, done = conn.execute(
