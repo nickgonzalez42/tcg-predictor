@@ -128,16 +128,102 @@
   margin-bottom: var(--space-5);
 }
 
+/* --- Top movers carousel (Carousel.tsx). --per is how many slides show at
+   once and --car-gap matches the page grid's column gap at each breakpoint,
+   so a 4-up slide sits exactly on three grid columns. --per is read by the
+   script; change it here only. */
 .movers {
   grid-column: 1 / -1;
   margin-bottom: var(--space-50);
-  /* Two rows of four tiles on desktop — give the rows air. (The tablet/
-     mobile blocks below override with their tighter gap.) */
-  row-gap: var(--space-40);
+  --per: 4;
+  --car-gap: 40px;
+}
+
+.carousel__viewport {
+  overflow: hidden;
+  /* Clip sideways only, so the tiles' hover lift and shadow stay visible. */
+  overflow-x: clip;
+  overflow-y: visible;
+}
+
+.carousel__track {
+  display: flex;
+  gap: var(--car-gap);
+  will-change: transform;
+  cursor: grab;             /* Draggable swaps to grabbing while dragging */
+  user-select: none;
+  touch-action: pan-y;      /* sideways drags the belt; up/down scrolls the page */
+}
+
+.carousel__slide {
+  flex: 0 0 calc((100% - (var(--per) - 1) * var(--car-gap)) / var(--per));
+  min-width: 0;
+  display: flex;
+}
+
+.carousel__slide > * {
+  width: 100%;
+}
+
+.carousel__nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-15);
+  margin-top: var(--space-20);
+}
+
+.carousel__dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.carousel__dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--border);
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+
+.carousel__dot:hover {
+  background: var(--text-muted, var(--text));
+}
+
+.carousel__dot[aria-current="true"] {
+  background: var(--brand);
+  transform: scale(1.3);
+}
+
+.carousel__arrows {
+  display: flex;
+  gap: var(--space-5);
+}
+
+.carousel__arrow {
+  width: 36px;
+  height: 36px;
+  border: 1.4px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 22px;
+  line-height: 1;
+  padding: 0 0 3px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease;
+}
+
+.carousel__arrow:hover {
+  border-color: var(--brand);
+  color: var(--brand);
 }
 
 .mover {
-  grid-column: span 3;
   display: flex;
   gap: var(--space-10);
   align-items: flex-start;
@@ -241,12 +327,9 @@
     grid-column: 1 / -1;
   }
 
-  .mover {
-    grid-column: span 4;
-  }
-
   .movers {
-    row-gap: var(--space-25);
+    --per: 2;
+    --car-gap: 24px;
   }
 
   /* Tile is narrower here — keep price + pills + sparkline on one line. */
@@ -262,12 +345,12 @@
   }
 
   .mover {
-    grid-column: 1 / -1;
     padding: var(--space-10);
   }
 
   .movers {
-    row-gap: var(--space-15);
+    --per: 1;
+    --car-gap: 16px;
   }
 }
 

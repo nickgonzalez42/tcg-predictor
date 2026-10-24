@@ -8,6 +8,8 @@ import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Glance from "./Glance";
+import Carousel from "./Carousel";
+import { GAMES } from "../../lib/games";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { usePageMeta } from "../../lib/usePageMeta";
 
@@ -302,9 +304,10 @@ export default function HomePage() {
     // 1-month ranking.
     const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 4 });
     const { data: user } = useUserInfoQuery();
-    // One tile per game — one tile for every game in GAMES: each game's strongest
-    // mover in ranking order, topping up from the remainder only if fewer
-    // than 8 games qualify (a game with no showable movers cedes its slot).
+    // One tile per game (user request 2026-10-23): each game's strongest
+    // mover, in ranking order. A game with no showable mover simply has no
+    // slide — the feed's per-game guarantee (with its early-tier fallback)
+    // decides which games appear.
     const tiles = useMemo(() => {
         const seen = new Set<string>();
         const picks: Card[] = [];
@@ -312,11 +315,7 @@ export default function HomePage() {
             if (seen.has(gameKey(m.game))) continue;
             seen.add(gameKey(m.game));
             picks.push(m);
-            if (picks.length === 8) break;
-        }
-        for (const m of movers ?? []) {
-            if (picks.length === 8) break;
-            if (!picks.includes(m)) picks.push(m);
+            if (picks.length === GAMES.length) break;
         }
         return picks;
     }, [movers]);
@@ -354,11 +353,13 @@ export default function HomePage() {
                 <section className="full-span subgrid">
                     <span className="kicker home__kicker full-span">01 · Market</span>
                     <h2 className="home__heading full-span">
-                        Top movers <span className="est-note">· 1 month model forecast</span>
+                        Top movers <span className="est-note">· 1 month forecast · one per game</span>
                     </h2>
-                    <div className="movers subgrid">
-                        {tiles.map((m, i) => <MoverTile mover={m} index={i} key={`${m.game}-${m.id}`} />)}
-                    </div>
+                    <Carousel className="movers" label="Top movers, one card per game"
+                        slides={tiles.map((m, i) => ({
+                            key: `${m.game}-${m.id}`,
+                            node: <MoverTile mover={m} index={i} />,
+                        }))} />
                 </section>
             )}
 

@@ -110,8 +110,20 @@ public class MoverService(
         foreach (var game in guaranteeGames ? GameRegistry.Keys : Array.Empty<string>())
         {
             var gameHorizon = hz != "12m" ? hz : (gamesWith12m.Contains(game) ? "12m" : "6m");
-            if (await BestMover(game, gameHorizon, gainerSide: true) is { } gainer) guaranteed.Add(gainer);
-            if (await BestMover(game, gameHorizon, gainerSide: false) is { } loser) guaranteed.Add(loser);
+            var gainer = await BestMover(game, gameHorizon, gainerSide: true);
+            var loser = await BestMover(game, gameHorizon, gainerSide: false);
+            // A game with no 1m mover at all (the new games and brand-new
+            // sets carry only the EARLY tier, 'launch1m') takes its strongest
+            // early call instead, so the home page can show one card per
+            // game (user request 2026-10-23). ApplyMarket then reports the
+            // card's horizon as launch1m and the tile labels it EARLY.
+            if (gainer == null && loser == null && hz == "1m")
+            {
+                gainer = await BestMover(game, "launch1m", gainerSide: true);
+                loser = await BestMover(game, "launch1m", gainerSide: false);
+            }
+            if (gainer != null) guaranteed.Add(gainer);
+            if (loser != null) guaranteed.Add(loser);
         }
 
         var picked = guaranteed
