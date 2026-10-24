@@ -485,4 +485,19 @@
     padding-left: 8px;
     padding-right: 8px;
   }
+
+  /* Three row actions (−, ＋, $) don't fit one line on a phone: the cell is
+     held to two circles wide so the $ wraps onto its own row. */
+  .screener--positions:not(.screener--sold) .screener__actions {
+    white-space: normal;
+    /* min-width is what holds under a squeezed table; two 32px circles with
+       2px margins inside 6px cell padding = 84px. */
+    min-width: 88px;
+    width: 88px;
+    max-width: 88px;
+  }
+
+  .screener--positions:not(.screener--sold) .screener__actions .btn--circle {
+    margin: 2px;
+  }
 }

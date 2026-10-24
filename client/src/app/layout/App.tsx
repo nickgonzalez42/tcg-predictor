@@ -14,6 +14,11 @@ function App() {
 
   // The market ticker rides under the navbar on the landing + catalog screens.
   const showTicker = pathname === "/" || pathname === "/catalog";
+  // Pages whose dot-and-glow field runs the whole page length rather than
+  // just the hero (portfolio, user request 2026-10-24 — the cut-off below
+  // its tall hero looked awkward). The class lives on the page wrapper so
+  // the field can span every section.
+  const pageField = pathname === "/portfolio";
 
   // GSAP smooth scrolling: the fixed header lives OUTSIDE the smoothed
   // wrapper (transformed ancestors break position: fixed). Touch devices
@@ -37,7 +42,7 @@ function App() {
       <NavBar showTicker={showTicker} />
       <div id="smooth-wrapper">
         <div id="smooth-content">
-          <main className="container page grid-box">
+          <main className={`container page grid-box${pageField ? " page--field" : ""}`}>
             <Outlet />
           </main>
           {/* In-flow at the bottom of the page, above the footer (and so above

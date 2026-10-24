@@ -145,3 +145,42 @@
     radial-gradient(ellipse at 18% 20%, rgba(61, 125, 202, 0.16), transparent 58%),
     radial-gradient(ellipse at 88% 70%, rgba(255, 203, 5, 0.09), transparent 55%);
 }
+
+/* Page-length field (2026-10-24): the same dots and glow, but on the page
+   wrapper (App.tsx adds .page--field per route) so it runs from the top of
+   the page to the footer instead of cutting off under the hero. The page
+   wrapper is the centred container, so centring the 100vw box works here.
+   The dots fade out over the lower part of the page so the footer's edge
+   stays soft; the glows are sized in pixels so a tall page doesn't stretch
+   them into bands. */
+.page--field {
+  position: relative;
+  isolation: isolate;
+}
+
+.page--field::before,
+.page--field::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100vw;
+  transform: translateX(-50%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.page--field::before {
+  background-image: var(--dots);
+  background-size: 4px 4px;
+  -webkit-mask-image: linear-gradient(180deg, #000 0%, #000 40%, rgba(0, 0, 0, 0.5) 72%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 0%, #000 40%, rgba(0, 0, 0, 0.5) 72%, transparent 100%);
+}
+
+.page--field::after {
+  background:
+    radial-gradient(1100px 720px at 16% 0px, rgba(61, 125, 202, 0.16), transparent 60%),
+    radial-gradient(900px 620px at 96% 480px, rgba(255, 203, 5, 0.09), transparent 58%),
+    radial-gradient(900px 700px at 10% 100%, rgba(61, 125, 202, 0.08), transparent 60%);
+}
