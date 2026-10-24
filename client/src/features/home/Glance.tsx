@@ -7,8 +7,9 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchPortfolioSummaryQuery } from "../watchlist/watchlistApi";
 import { useFetchHomeStatsQuery } from "./homeApi";
 
-// "At a glance" (2026-10-23): animated infographics in place of the old
-// how-it-works boxes — the portfolio on its own row, then three model panels. Each panel reveals once it scrolls into view —
+// Home infographics (2026-10-23/24): the collection block (section 02, its
+// own row) and the three model-performance panels (section 03), in place of
+// the old how-it-works boxes. Each panel reveals once it scrolls into view —
 // bars grow, rings draw, numbers count up — and all of it collapses to the
 // final state under prefers-reduced-motion.
 
@@ -83,63 +84,134 @@ function Ring({ slices, size = 104, stroke = 13, inView }: {
     );
 }
 
+// "+$212.00" / "−$48.10" for the P/L cells.
+const signedUsd = (n: number) => (n < 0 ? '−' : '+') + currencyFormat(Math.abs(n));
+
 // Log-return error → the percentage a reader understands ("±12%").
 const pct = (logRet: number) => (Math.exp(Math.abs(logRet)) - 1) * 100;
 
 // ----- 1. Portfolio (signed in) / Track your collection (signed out) -------
-// Its own full-width row (user request 2026-10-23): ring, headline figures,
-// legend and the call to action sit side by side.
+// Its own full-width row, taller (user request 2026-10-24): ring + legend,
+// a six-stat grid under the headline value, and the value-over-time line
+// against the S&P what-if. Signed out, every figure is a labelled sample.
+
+// Value line (brand) with the "same $ in the S&P 500" line (muted, dashed).
+function ValueLine({ series, bench, inView }: { series: number[]; bench?: number[]; inView: boolean }) {
+    const W = 260, H = 96, P = 4;
+    const all = [...series, ...(bench ?? [])];
+    const min = Math.min(...all), span = Math.max(...all) - min || 1;
+    const path = (pts: number[]) => pts.map((v, i) =>
+        `${i ? 'L' : 'M'}${(P + (i / (pts.length - 1)) * (W - 2 * P)).toFixed(1)} ${(P + (1 - (v - min) / span) * (H - 2 * P)).toFixed(1)}`).join(' ');
+    const up = series[series.length - 1] >= series[0];
+    return (
+        <svg className="glance__line" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true" data-in={inView ? 1 : 0}>
+            {bench && bench.length > 1 && <path className="glance__line-bench" d={path(bench)} />}
+            <path className={`glance__line-value${up ? '' : ' glance__line-value--down'}`} d={path(series)} />
+        </svg>
+    );
+}
+
+// Evenly thin a daily series to at most `n` points (keeps the last one).
+function thin(values: number[], n = 60) {
+    if (values.length <= n) return values;
+    const step = (values.length - 1) / (n - 1);
+    return Array.from({ length: n }, (_, i) => values[Math.round(i * step)]);
+}
+
+const SAMPLE = {
+    value: 4820, month: 212, monthPct: 4.6, paid: 3680, plUsd: 1140, plPct: 31.0, copies: 142, packs: 23,
+    best: 'Charizard ex', bestPct: 38, spx: 4215,
+    series: [3680, 3740, 3700, 3810, 3900, 3860, 3980, 4120, 4050, 4210, 4330, 4290, 4460, 4610, 4580, 4700, 4820],
+    bench: [3680, 3700, 3720, 3750, 3790, 3770, 3830, 3880, 3900, 3950, 3990, 4020, 4080, 4130, 4150, 4190, 4215],
+};
+
 function PortfolioPanel({ user }: { user?: User | null }) {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks: true }, { skip: !user });
     const has = !!user && !!summary && summary.copies > 0;
-    const value = useCountUp(has ? summary!.totalValue : 0, inView && has);
+    const value = useCountUp(has ? summary!.totalValue : SAMPLE.value, inView);
     const slices = has
         ? (summary!.allocation ?? []).slice(0, 6).map(a => ({ label: a.label, pct: a.pct, color: gameColor(a.label) }))
         : [{ label: 'Pokémon', pct: 38, color: gameColor('pokemon') },
            { label: 'One Piece', pct: 27, color: gameColor('onepiece') },
            { label: 'Magic', pct: 21, color: gameColor('magic') },
            { label: 'Lorcana', pct: 14, color: gameColor('lorcana') }];
+    // The six stats. Real figures when the member has cards; the sample otherwise.
+    const series = has ? thin((summary!.series ?? []).map(p => p.value)) : SAMPLE.series;
+    const bench = has ? thin((summary!.benchmark ?? []).map(p => p.value)) : SAMPLE.bench;
+    const spxEnd = bench.length ? bench[bench.length - 1] : null;
+    const vsSpx = spxEnd && series.length ? (series[series.length - 1] / spxEnd - 1) * 100 : null;
+    const stats: { label: string; value: string; pill?: { value: number; unit?: 'usd' | 'percent' } ; note?: string }[] = has
+        ? [
+            { label: 'This month', value: summary!.monthChangeUsd != null ? signedUsd(summary!.monthChangeUsd) : '—',
+              pill: summary!.monthChangePct != null ? { value: summary!.monthChangePct } : undefined },
+            { label: 'All-time P/L', value: summary!.allTime ? signedUsd(summary!.allTime.plUsd) : '—',
+              pill: summary!.allTime ? { value: summary!.allTime.plPct } : undefined },
+            { label: 'Cost basis', value: summary!.allTime ? currencyFormat(summary!.allTime.paid) : '—' },
+            { label: 'Cards', value: summary!.copies.toLocaleString(),
+              note: summary!.packCopies ? `${summary!.packCopies.toLocaleString()} from packs` : undefined },
+            { label: 'Best performer', value: summary!.best?.name ?? '—',
+              pill: summary!.best ? { value: summary!.best.pct } : undefined },
+            { label: 'vs S&P 500', value: vsSpx != null ? `${vsSpx >= 0 ? '+' : ''}${vsSpx.toFixed(1)}%` : '—',
+              note: 'same money in the index' },
+          ]
+        : [
+            { label: 'This month', value: signedUsd(SAMPLE.month), pill: { value: SAMPLE.monthPct } },
+            { label: 'All-time P/L', value: signedUsd(SAMPLE.plUsd), pill: { value: SAMPLE.plPct } },
+            { label: 'Cost basis', value: currencyFormat(SAMPLE.paid) },
+            { label: 'Cards', value: String(SAMPLE.copies), note: `${SAMPLE.packs} from packs` },
+            { label: 'Best performer', value: SAMPLE.best, pill: { value: SAMPLE.bestPct } },
+            { label: 'vs S&P 500', value: `+${((SAMPLE.value / SAMPLE.spx - 1) * 100).toFixed(1)}%`, note: 'same money in the index' },
+          ];
     return (
-        <div ref={ref} className="panel glance__panel glance__panel--wide" data-in={inView ? 1 : 0}>
+        <div ref={ref} className="panel glance__panel glance__panel--wide glance__panel--tall" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">{has ? 'Your portfolio' : 'Track your collection'}</span>
-                <span className="mono">{has ? `${summary!.copies} cards` : 'sample'}</span>
+                <span className="mono">{has ? `${summary!.copies.toLocaleString()} cards · live` : 'sample figures'}</span>
             </div>
-            <div className="glance__row">
-                <Ring slices={slices} inView={inView} />
-                <div className="glance__col">
-                    {has ? (
-                        <>
-                            <div className="glance__big">{currencyFormat(value)}</div>
-                            <div className="glance__pills">
-                                {summary!.monthChangeUsd != null && (
-                                    <ChangePill value={summary!.monthChangeUsd} unit="usd" suffix="this month" />
-                                )}
-                                {summary!.allTime && <ChangePill value={summary!.allTime.plPct} suffix="vs cost" />}
-                            </div>
-                        </>
-                    ) : (
-                        <p className="glance__text">
-                            Add your cards and see their value, P/L by condition, allocation by
-                            game, and how the collection stacks up against the S&amp;P 500.
-                        </p>
-                    )}
+            <div className="glance__wide">
+                <div className="glance__wide-alloc">
+                    <Ring slices={slices} size={120} stroke={14} inView={inView} />
+                    <ul className="glance__legend">
+                        {slices.map(s => (
+                            <li key={s.label}>
+                                <span className="glance__dot" style={{ background: s.color }} />{s.label}
+                                <span className="mono"> {Math.round(s.pct)}%</span>
+                            </li>
+                        ))}
+                    </ul>
                 </div>
-                <ul className="glance__legend glance__legend--side">
-                    {slices.map(s => (
-                        <li key={s.label}>
-                            <span className="glance__dot" style={{ background: s.color }} />{s.label}
-                            <span className="mono"> {Math.round(s.pct)}%</span>
-                        </li>
-                    ))}
-                </ul>
-                <div className="glance__foot glance__foot--side">
-                    {has
-                        ? <Link to="/portfolio">Open your portfolio →</Link>
-                        : user
-                            ? <Link to="/portfolio">Add your first card →</Link>
-                            : <Link className="btn btn--sm" to="/register">Start tracking free</Link>}
+                <div className="glance__wide-main">
+                    <div className="glance__big">{currencyFormat(value)}</div>
+                    <div className="mono glance__big-label">{has ? 'collection value today' : 'sample collection value'}</div>
+                    <dl className="glance__stats">
+                        {stats.map(st => (
+                            <div className="glance__stat-cell" key={st.label}>
+                                <dt className="mono">{st.label}</dt>
+                                <dd>
+                                    <span className="glance__stat-val">{st.value}</span>
+                                    {st.pill && <ChangePill value={st.pill.value} unit={st.pill.unit} />}
+                                    {st.note && <span className="glance__stat-note">{st.note}</span>}
+                                </dd>
+                            </div>
+                        ))}
+                    </dl>
+                </div>
+                <div className="glance__wide-chart">
+                    <div className="mono glance__chart-title">
+                        <span><span className="glance__dot glance__dot--brand" />value</span>
+                        <span><span className="glance__dot glance__dot--bench" />same $ in S&amp;P 500</span>
+                    </div>
+                    {series.length > 1
+                        ? <ValueLine series={series} bench={bench} inView={inView} />
+                        : <div className="glance__text">The value line starts after your first day of prices.</div>}
+                    <div className="glance__foot glance__foot--chart">
+                        {has
+                            ? <Link to="/portfolio">Open your portfolio →</Link>
+                            : user
+                                ? <Link to="/portfolio">Add your first card →</Link>
+                                : <Link className="btn btn--sm" to="/register">Start tracking free</Link>}
+                    </div>
                 </div>
             </div>
         </div>
@@ -279,10 +351,19 @@ function LeanPanel() {
     );
 }
 
-export default function Glance({ user }: { user?: User | null }) {
+// Section 02: the collection block on its own row.
+export function CollectionGlance({ user }: { user?: User | null }) {
     return (
         <div className="glance subgrid">
             <PortfolioPanel user={user} />
+        </div>
+    );
+}
+
+// Section 03: the three model panels.
+export default function Glance() {
+    return (
+        <div className="glance subgrid">
             <TrackRecordPanel />
             <MissPanel />
             <LeanPanel />

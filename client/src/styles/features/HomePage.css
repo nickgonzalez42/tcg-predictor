@@ -489,32 +489,130 @@
   color: var(--down);
 }
 
-/* The portfolio panel spans the row; its ring, figures, legend and link
-   line up across it. */
+/* The collection panel spans the row (and is deliberately tall): allocation
+   ring + legend | headline value + six-stat grid | value line + link. */
 .glance__panel--wide {
   grid-column: 1 / -1;
 }
 
-.glance__panel--wide .glance__row {
-  gap: var(--space-25);
-  flex-wrap: wrap;
+.glance__panel--tall {
+  min-height: 340px;
 }
 
-.glance__panel--wide .glance__col {
-  flex: 2 1 260px;
-}
-
-.glance__legend--side {
-  flex: 1 1 150px;
+.glance__wide {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  column-gap: var(--space-15);
+  grid-template-columns: 180px minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: var(--space-25);
+  align-items: start;
+  flex: 1;
 }
 
-.glance__foot--side {
-  margin-top: 0;
-  flex: 0 0 auto;
-  margin-left: auto;
+.glance__wide-alloc {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-15);
+}
+
+.glance__wide-main {
+  min-width: 0;
+}
+
+.glance__big-label {
+  margin: var(--space-5) 0 var(--space-15);
+  color: var(--text-muted);
+}
+
+.glance__stats {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-15) var(--space-20);
+}
+
+.glance__stat-cell dt {
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.glance__stat-cell dd {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.glance__stat-val {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--price);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.glance__stat-note {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.glance__wide-chart {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  min-width: 0;
+  align-self: stretch;
+}
+
+.glance__chart-title {
+  display: flex;
+  gap: var(--space-15);
+  color: var(--text-muted);
+}
+
+.glance__dot--brand { background: var(--brand); }
+
+.glance__dot--bench { background: #5b6782; }
+
+/* Value line: draws itself once in view; the index line is dashed. */
+.glance__line {
+  width: 100%;
+  height: 130px;
+  display: block;
+}
+
+.glance__line path {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 1200;
+  stroke-dashoffset: 1200;
+  transition: stroke-dashoffset 1.6s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.glance__line-value { stroke: var(--brand); }
+
+.glance__line-value--down { stroke: var(--down); }
+
+/* Scoped under .glance__line so it outranks the draw-in rule above. */
+.glance__line .glance__line-bench {
+  stroke: #5b6782;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;        /* dashed, so no draw-in for this one */
+  stroke-dashoffset: 0;
+  transition: none;
+}
+
+.glance__line[data-in="1"] .glance__line-value {
+  stroke-dashoffset: 0;
+}
+
+.glance__foot--chart {
+  margin-top: auto;
 }
 
 .glance__text {
@@ -663,6 +761,14 @@
   .glance__panel--wide {
     grid-column: 1 / -1;
   }
+
+  .glance__wide {
+    grid-template-columns: 170px minmax(0, 1fr);
+  }
+
+  .glance__wide-chart {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 767px) {
@@ -674,16 +780,29 @@
     grid-template-columns: 76px 1fr 36px;
   }
 
-  .glance__foot--side {
-    margin-left: 0;
-    flex-basis: 100%;
+  .glance__panel--tall {
+    min-height: 0;
+  }
+
+  .glance__wide {
+    grid-template-columns: 1fr;
+  }
+
+  .glance__wide-alloc {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .glance__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .glance__ring circle,
   .glance__fill,
-  .glance__seg {
+  .glance__seg,
+  .glance__line path {
     transition: none;
   }
 }

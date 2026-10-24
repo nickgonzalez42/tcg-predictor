@@ -7,7 +7,7 @@ import type { Card } from "../../app/models/card";
 import Sparkline from "../../app/shared/components/Sparkline";
 import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
-import Glance from "./Glance";
+import Glance, { CollectionGlance } from "./Glance";
 import Carousel from "./Carousel";
 import { GAMES } from "../../lib/games";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
@@ -404,8 +404,13 @@ export default function HomePage() {
             )}
 
             <section className="full-span subgrid">
-                <span className="kicker home__kicker full-span">02 · At a glance</span>
-                <Glance user={user} />
+                <span className="kicker home__kicker full-span">02 · Your collection</span>
+                <CollectionGlance user={user} />
+            </section>
+
+            <section className="full-span subgrid">
+                <span className="kicker home__kicker full-span">03 · Model performance</span>
+                <Glance />
             </section>
         </>
     );
