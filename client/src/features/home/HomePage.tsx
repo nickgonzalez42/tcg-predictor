@@ -381,7 +381,7 @@ export default function HomePage() {
                 </div>
                 <div className="hero__panel">
                     <div className="band">
-                        <span className="band__title">Featured card</span>
+                        <span className="band__title">Featured cards</span>
                         <RollingText className="mono"
                             text={heroCard ? `${hzLong(heroCard.fcstHorizon)} forecast · live` : 'model forecast · live'} />
                     </div>
