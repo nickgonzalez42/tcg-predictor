@@ -122,7 +122,12 @@
      (user request 2026-10-23). */
   top: calc(-1 * var(--page-top));
   bottom: -40px;
-  left: calc(50% - 50vw);
+  /* Anchored to the VIEWPORT's left edge, not centred on the block: every
+     hero starts at the container's left edge, which sits --content-left
+     from the screen edge, so this reaches x = 0 whether the block is the
+     full row (home) or eight of twelve columns (portfolio, 2026-10-24).
+     Centring (50% - 50vw) only worked for full-width blocks. */
+  left: calc(-1 * var(--content-left));
   width: 100vw;
   z-index: -1;
   pointer-events: none;

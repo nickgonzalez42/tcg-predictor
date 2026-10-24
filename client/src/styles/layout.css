@@ -56,7 +56,7 @@
   }
 
   .container {
-    padding: 0 24px;   /* equal gutters: the nav is a top bar here, not a rail */
+    padding: 0 var(--container-pad);   /* equal gutters: the nav is a top bar here, not a rail */
   }
 }
 
@@ -71,7 +71,7 @@
 
   .container {
     max-width: 100%;
-    padding: 0 20px;
+    padding: 0 var(--container-pad);
   }
 }
 

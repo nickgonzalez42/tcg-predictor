@@ -70,7 +70,7 @@
      logo — on every page (user request 2026-10-23). */
   --page-top: var(--logo-top);
   --container-max: 1280px;   /* .container max-width */
-  --container-pad: 40px;     /* .container left padding (pinned at every size) */
+  --container-pad: 40px;     /* .container side padding (24px tablet, 20px phone below) */
   /* Screen's left edge → where container content begins (auto-centering margin
      on wide screens + the left padding). Used to center the nav logo in the
      left gutter. */
@@ -100,11 +100,13 @@
     --radius: 24px;
     --nav-bar-h: 56px;
     --page-top: calc(var(--nav-bar-h) + 2px + var(--space-20));
+    --container-pad: 24px;   /* equal gutters (layout.css reads this) */
   }
 }
 
 @media (max-width: 767px) {
   :root {
     --radius: 26px;
+    --container-pad: 20px;
   }
 }
