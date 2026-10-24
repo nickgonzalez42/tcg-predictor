@@ -35,6 +35,35 @@ function preloadArt(card: Card) {
 
 // '1m' -> '1M', '6m' -> '6M', '12m' -> '1Y': label next to a mover's forecast.
 const hzLabel = (h?: string) => (h === '1m' ? '1M' : h === '6m' ? '6M' : h === 'launch1m' ? 'EARLY' : '1Y');
+// Text that rolls when it changes: the old line slides up and fades out
+// while the new one rises in from below (the featured-card band). At most
+// two lines exist at once; the outgoing one is dropped when its animation
+// ends. Under prefers-reduced-motion the CSS swaps instantly.
+function RollingText({ text, className = '' }: { text: string; className?: string }) {
+    const [items, setItems] = useState(() => [{ id: 0, text, out: false }]);
+    const nextId = useRef(1);
+    useEffect(() => {
+        setItems(prev => {
+            if (prev.find(p => !p.out)?.text === text) return prev;
+            return [
+                ...prev.filter(p => !p.out).map(p => ({ ...p, out: true })),
+                { id: nextId.current++, text, out: false },
+            ];
+        });
+    }, [text]);
+    return (
+        <span className={`roll ${className}`.trim()}>
+            {items.map(it => (
+                <span key={it.id} className={`roll__item${it.out ? ' roll__item--out' : ''}`}
+                    aria-hidden={it.out || undefined}
+                    onAnimationEnd={() => it.out && setItems(prev => prev.filter(p => p.id !== it.id))}>
+                    {it.text}
+                </span>
+            ))}
+        </span>
+    );
+}
+
 // Spelled-out horizon for the featured-card band: "6 month forecast".
 const hzLong = (h?: string) =>
     h === '1m' ? '1 month' : h === '6m' ? '6 month' : h === 'launch1m' ? 'Early' : '1 year';
@@ -353,9 +382,8 @@ export default function HomePage() {
                 <div className="hero__panel">
                     <div className="band">
                         <span className="band__title">Featured card</span>
-                        <span className="mono">
-                            {heroCard ? `${hzLong(heroCard.fcstHorizon)} forecast · live` : 'model forecast · live'}
-                        </span>
+                        <RollingText className="mono"
+                            text={heroCard ? `${hzLong(heroCard.fcstHorizon)} forecast · live` : 'model forecast · live'} />
                     </div>
                     <HeroChart movers={heroMovers} onCard={setHeroCard} />
                 </div>

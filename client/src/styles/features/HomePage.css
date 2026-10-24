@@ -78,6 +78,45 @@
   padding: var(--space-10) var(--space-15);
 }
 
+/* Rolling band text (RollingText): the current line sets the box; the
+   outgoing line sits on top of it and slides up as it fades, while the new
+   line rises in from below. Clipped to the line box so nothing spills. */
+.roll {
+  display: inline-block;
+  position: relative;
+  overflow: hidden;
+  vertical-align: bottom;
+  line-height: 1.4;
+}
+
+.roll__item {
+  display: block;
+  white-space: nowrap;
+  animation: roll-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.roll__item--out {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: roll-out 0.4s ease-in both;
+}
+
+@keyframes roll-in {
+  from { opacity: 0; transform: translateY(110%); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes roll-out {
+  from { opacity: 1; transform: none; }
+  to   { opacity: 0; transform: translateY(-110%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roll__item { animation: none; }
+  .roll__item--out { display: none; }
+}
+
 .hero__chart {
   width: 100%;
   height: 230px;
