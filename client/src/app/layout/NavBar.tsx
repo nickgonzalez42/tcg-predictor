@@ -19,12 +19,14 @@ const rightLinks = [
 export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     const { data: user } = useUserInfoQuery();
 
-    // Tablet/mobile: the text links collapse behind a ☰ dropdown (the button
-    // is display:none on desktop). Navigating anywhere closes it.
-    const [menuOpen, setMenuOpen] = useState(false);
-    // Touch devices can't hover, so tapping the logo toggles the rail drawer
-    // (hover devices open it on hover — see NavBar.css). Reset on navigation.
+    // Desktop hover devices open the rail drawer on hover (NavBar.css); touch
+    // devices, and every tablet/mobile width, toggle it by tapping the logo.
+    // Reset on navigation.
     const [navOpen, setNavOpen] = useState(false);
+    // Tablet/mobile (2026-10-23): the nav is a top bar that slides away as
+    // the page scrolls down and returns on the first scroll up. The class is
+    // only styled at those widths; an open drawer keeps the bar on screen.
+    const [hidden, setHidden] = useState(false);
     // Desktop drawer is hover/focus-driven, so after clicking a link it lingers
     // open (the link keeps focus / the pointer is still over it). On navigation
     // we blur focus and briefly suppress hover (see .navbar--suppress) so it
@@ -33,16 +35,16 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     const navRef = useRef<HTMLElement>(null);
     const { pathname } = useLocation();
     useEffect(() => {
-        setMenuOpen(false);
         setNavOpen(false);
+        setHidden(false);
         (document.activeElement as HTMLElement | null)?.blur();
         setSuppress(true);
         const t = setTimeout(() => setSuppress(false), 600);
         return () => clearTimeout(t);
     }, [pathname]);
 
-    // Touch: a tap/click anywhere outside the open drawer closes it. The click
-    // isn't prevented, so it still lands on whatever was tapped (not modal).
+    // A tap/click anywhere outside the open drawer closes it, as does Escape.
+    // The click isn't prevented, so it still lands on whatever was tapped.
     useEffect(() => {
         if (!navOpen) return;
         const onOutside = (e: MouseEvent) => {
@@ -50,32 +52,57 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                 setNavOpen(false);
             }
         };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setNavOpen(false); };
         document.addEventListener('click', onOutside);
-        return () => document.removeEventListener('click', onOutside);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('click', onOutside);
+            document.removeEventListener('keydown', onKey);
+        };
     }, [navOpen]);
 
-    // Everything the dropdown lists: mid links, member links when signed in,
-    // auth links when signed out (the avatar UserMenu stays in the bar).
-    const menuLinks = [
-        ...midLinks,
-        ...(user
-            ? [{ title: 'portfolio', path: '/portfolio' }, { title: 'watchlist', path: '/watchlist' }]
-            : rightLinks),
-    ];
+    // Hide-on-scroll: direction from the native scroll position (the smooth
+    // scroller keeps window scrolling), read once per frame. Small jitters
+    // are ignored; near the top the bar is always shown.
+    useEffect(() => {
+        let last = window.scrollY;
+        let raf = 0;
+        const onScroll = () => {
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                raf = 0;
+                const y = window.scrollY;
+                const dy = y - last;
+                last = y;
+                if (y < 24) setHidden(false);
+                else if (dy > 6) setHidden(true);
+                else if (dy < -6) setHidden(false);
+            });
+        };
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf); };
+    }, []);
+
+    // The logo toggles the drawer instead of navigating wherever the drawer
+    // can't open on hover: touch devices, and the tablet/mobile top bar.
+    const logoToggles = () =>
+        window.matchMedia('(hover: none), (max-width: 1023px)').matches;
 
     return (
+        <>
         <header ref={navRef}
-            className={`navbar${navOpen ? ' navbar--open' : ''}${suppress ? ' navbar--suppress' : ''}`}>
-            {/* Always-visible: the logo (static, top-left) and the mobile ☰. The
-                logo lives OUTSIDE the sliding panel so the panel's transform
-                doesn't drag it off-screen — and hovering it reveals the panel. */}
+            className={`navbar${navOpen ? ' navbar--open' : ''}${hidden ? ' navbar--hidden' : ''}${suppress ? ' navbar--suppress' : ''}`}>
+            {/* Always-visible: the logo (static top-left on desktop; in the top
+                bar on tablet/mobile). It lives OUTSIDE the sliding panel so the
+                panel's transform doesn't drag it off-screen — and hovering it
+                (desktop) or tapping it reveals the panel. */}
             <div className="navbar__bar">
                 <NavLink to='/' className="navbar__brand" aria-label="CardStock home"
                     aria-expanded={navOpen}
                     onClick={(e) => {
-                        // Touch: tap toggles the drawer instead of navigating
-                        // (the drawer's HOME link handles navigation there).
-                        if (window.matchMedia('(hover: none)').matches) {
+                        // Tap toggles the drawer instead of navigating (the
+                        // drawer's HOME link handles navigation there).
+                        if (logoToggles()) {
                             e.preventDefault();
                             setNavOpen(o => !o);
                         }
@@ -103,20 +130,17 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                         <span className="navbar__word navbar__word--2">STOCK</span>
                     </span>
                 </NavLink>
-                <button className="navbar__icon-btn navbar__menu-btn"
-                    aria-expanded={menuOpen} aria-label="Menu"
-                    onClick={() => setMenuOpen(o => !o)}>
-                    {menuOpen ? '✕' : '☰'}
-                </button>
             </div>
 
-            {/* Desktop: the sliding glass drawer — off-screen left, in on hover. */}
+            {/* The drawer. Desktop: a glass panel off-screen left that slides
+                in. Tablet/mobile: .navbar__drawer unrolls it beneath the bar. */}
+            <div className="navbar__drawer">
             <div className="navbar__panel">
                 <nav className="navbar__nav">
                     <ul className="navbar__links">
-                        {/* Touch only: the tapped logo opens the drawer rather
-                            than navigating, so HOME lives here (hidden on hover
-                            devices via CSS). */}
+                        {/* Where the logo opens the drawer rather than navigating
+                            (touch, tablet/mobile), HOME lives here; hidden on
+                            desktop hover devices via CSS. */}
                         <li className="navbar__home-item">
                             <NavLink to="/" className="navbar__link">HOME</NavLink>
                         </li>
@@ -156,19 +180,13 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                     )}
                 </div>
             </div>
-            {menuOpen && (
-                <nav className="navbar__menu">
-                    {menuLinks.map(({ title, path }) => (
-                        <NavLink key={path} to={path} className="navbar__link">
-                            {title.toUpperCase()}
-                        </NavLink>
-                    ))}
-                    {/* Signed-in: logout lives in the dropdown on mobile (the
-                        in-bar UserMenu is hidden at this breakpoint). */}
-                    {user && <UserMenu />}
-                </nav>
-            )}
-            {showTicker && <MarketTicker />}
+            </div>
         </header>
+        {/* The crawl is fixed to the viewport bottom. It must NOT live inside
+            the header: the tablet/mobile bar's backdrop blur makes the header
+            the containing block for fixed descendants, which would pin the
+            crawl to the bar instead. */}
+        {showTicker && <MarketTicker />}
+        </>
     )
 }

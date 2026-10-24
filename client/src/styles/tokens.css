@@ -93,10 +93,13 @@
   --nav-glass: rgba(12, 16, 26, 0.55);
 }
 
-/* Tablet and below: slightly rounder corners everywhere the token is used. */
+/* Tablet and below: slightly rounder corners everywhere the token is used,
+   and the nav is a fixed top bar (NavBar.css) — pages start beneath it. */
 @media (max-width: 1023px) {
   :root {
     --radius: 24px;
+    --nav-bar-h: 56px;
+    --page-top: calc(var(--nav-bar-h) + 2px + var(--space-20));
   }
 }
 

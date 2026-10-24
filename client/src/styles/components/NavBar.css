@@ -1,6 +1,8 @@
-/* Glass nav. Mobile/tablet: a fixed frosted top bar with the ☰ dropdown.
-   Desktop: the logo sits static in the top-left of the page and, on hover,
-   a heavily-blurred translucent drawer slides in from the left. */
+/* Glass nav. Desktop: the logo sits static in the top-left of the page and,
+   on hover, a heavily-blurred translucent drawer slides in from the left.
+   Tablet/mobile (2026-10-23): a fixed frosted top bar that hides on scroll
+   down and returns on scroll up; tapping the logo unrolls the same drawer
+   beneath the bar (the block at the end of this file). */
 
 .navbar {
   position: fixed;
@@ -163,25 +165,9 @@ button.navbar__link {
   background: rgba(255, 255, 255, 0.15);
 }
 
-/* Mobile dropdown (frosted, hangs below the bar). */
-.navbar__menu {
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-10) var(--space-15) var(--space-15);
-  background: var(--nav-glass);
-  -webkit-backdrop-filter: blur(20px);
-  backdrop-filter: blur(20px);
-  border-bottom: 2px solid var(--brand);
-}
-
-.navbar__menu .navbar__link {
-  display: block;
-  padding: var(--space-10);
-}
-
-/* The sliding drawer only exists on desktop. */
-.navbar__panel {
-  display: none;
+/* The drawer wrapper is inert on desktop (the panel positions itself). */
+.navbar__drawer {
+  display: contents;
 }
 
 /* Rail + hover-drawer styles applied at every screen width (previously these
@@ -217,11 +203,6 @@ button.navbar__link {
   .navbar__brand {
     pointer-events: auto;       /* the reveal trigger + home link */
     padding: 0;                 /* logo starts exactly at the bar's centered padding */
-  }
-
-  .navbar__menu-btn,
-  .navbar__menu {
-    display: none;              /* desktop uses the drawer, not the ☰ */
   }
 
   .navbar__panel {
@@ -295,7 +276,9 @@ button.navbar__link {
     transition: opacity 0.3s ease 1.65s, transform 0.3s ease 1.65s;
   }
 
-  @media (hover: hover) {
+  /* Desktop widths only: at tablet/mobile the bar must not open on hover
+     (a mouse on an iPad, or a narrowed desktop window). */
+  @media (hover: hover) and (min-width: 1024px) {
     .navbar:is(:hover, :focus-within) .navbar__panel { transform: translateX(0); }
     .navbar:is(:hover, :focus-within) .navbar__logo { transform: rotate(90deg); }
     .navbar:is(:hover, :focus-within) .navbar__logo-trend {
@@ -422,4 +405,136 @@ button.navbar__link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---- Tablet / mobile (2026-10-23): the top bar + unrolling drawer. This
+   block comes last so it wins over the rail rules in @media all above. ---- */
+@media (max-width: 1023px) {
+  .navbar {
+    right: 0;
+    bottom: auto;
+    width: auto;
+    background: var(--nav-glass);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 2px solid var(--brand);
+    pointer-events: auto;
+    /* Hide/show rides `top`, not transform: the market crawl is a fixed
+       child of this header and a transform here would carry it along. */
+    transition: top 0.3s ease;
+  }
+
+  /* Scrolled down: the bar slides up out of view (its border too). An open
+     drawer pins it on screen. */
+  .navbar--hidden:not(.navbar--open) {
+    top: calc(-1 * var(--nav-bar-h) - 2px);
+  }
+
+  .navbar__bar {
+    height: var(--nav-bar-h);
+    padding: 0 24px;
+    align-items: center;
+    pointer-events: auto;
+  }
+
+  .navbar__logo {
+    --logo-h: 32px;
+    --logo-w: calc(32px * 63 / 88);
+  }
+
+  /* The wordmark is always on show in the bar; when the card topples open it
+     steps right to clear the lying card (32px) and its breakout arrow. */
+  .navbar__word {
+    opacity: 1;
+    transform: none;
+    transition: transform 0.3s ease;
+  }
+
+  .navbar__word--1 { font-size: 13px; }
+
+  .navbar__word--2 { font-size: 17px; }
+
+  .navbar--open .navbar__word--1,
+  .navbar--open .navbar__word--2 {
+    opacity: 1;
+    transform: translateX(40px);
+    transition: transform 0.3s ease 0.3s;
+  }
+
+  /* The drawer unrolls from under the bar: a grid row that grows from 0fr to
+     1fr (the panel inside must have min-height 0 + overflow hidden, and no
+     padding of its own, or the row can't collapse). It covers the bar's
+     bottom border while open and carries its own. */
+  .navbar__drawer {
+    display: grid;
+    grid-template-rows: 0fr;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    /* Near-solid: the links sit over page content, and blur alone leaves
+       them fighting whatever is underneath. */
+    background: rgba(12, 16, 26, 0.94);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    border-bottom: 2px solid var(--brand);
+    transition: grid-template-rows 0.35s ease;
+    pointer-events: auto;
+  }
+
+  .navbar--open .navbar__drawer {
+    grid-template-rows: 1fr;
+  }
+
+  .navbar__panel,
+  .has-ticker .navbar__panel {
+    position: static;
+    inset: auto;
+    width: auto;
+    min-height: 0;
+    max-height: calc(100dvh - var(--nav-bar-h) - 2px);
+    overflow: hidden auto;
+    padding: 0;
+    transform: none;
+    transition: none;
+    background: transparent;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    border-right: none;
+  }
+
+  .navbar__panel::before {
+    display: none;
+  }
+
+  .navbar__nav {
+    padding: var(--space-10) 24px 0;
+  }
+
+  .navbar__end {
+    margin-top: var(--space-10);
+    padding: var(--space-10) 24px var(--space-20);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  /* Touch-sized rows. */
+  .navbar__link {
+    font-size: 16px;
+    padding: 12px 0;
+  }
+
+  /* Keyboard focus inside the panel must not pull it open the desktop way;
+     only the tapped logo (.navbar--open) does. */
+  .navbar:focus-within:not(.navbar--open) .navbar__panel {
+    transform: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .navbar__bar,
+  .navbar__nav,
+  .navbar__end {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
 }

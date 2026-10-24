@@ -1,7 +1,7 @@
 /* Scrolling market crawl (home/catalog): fixed to the bottom of the viewport,
-   news-channel style. Full width on mobile; the desktop rail's media query in
-   NavBar.css shifts its left edge past the sidebar. It renders inside the
-   fixed .navbar, so it shares the nav's stacking level above the page. */
+   news-channel style. Rendered by NavBar as a SIBLING of the header (not a
+   child: the tablet/mobile bar's backdrop blur would make the header its
+   containing block and pin it to the bar), above the page by z-index. */
 
 .ticker {
   position: fixed;

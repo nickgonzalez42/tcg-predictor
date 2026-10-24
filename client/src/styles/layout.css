@@ -21,8 +21,8 @@
 }
 
 .page {
-  /* The nav is a left-rail overlay (no top bar) at every size, so content
-     starts --page-top from the top of the page everywhere. */
+  /* Desktop: the nav is a left-rail overlay, so content starts level with
+     the logo. Tablet/mobile: --page-top clears the fixed top bar (tokens.css). */
   padding-top: var(--page-top) !important;
   padding-bottom: var(--space-50) !important;
 }
@@ -56,7 +56,7 @@
   }
 
   .container {
-    padding: 0 24px 0 var(--container-pad);   /* left pinned at every screen size */
+    padding: 0 24px;   /* equal gutters: the nav is a top bar here, not a rail */
   }
 }
 
@@ -71,7 +71,7 @@
 
   .container {
     max-width: 100%;
-    padding: 0 20px 0 var(--container-pad);   /* left pinned at every screen size */
+    padding: 0 20px;
   }
 }
 
