@@ -41,6 +41,14 @@ public class TrackedCard
     // Wishlist-only detail (null for owned rows).
     public double? WatchedAtPrice { get; set; }    // NM price when the card was wishlisted
 
+    // Sold (2026-10-24): an owned copy the user has sold keeps its row — grade,
+    // printing, cost basis, acquired date, note — with Kind = "sold" plus the
+    // sale. It leaves every owned rollup (value, chart, positions, export)
+    // and shows on the portfolio's Sold track with its realized P/L. Restore
+    // flips it back to owned and clears these two fields.
+    public double? SoldPrice { get; set; }         // proceeds per copy, USD
+    public DateTime? SoldAt { get; set; }          // sale date (defaults to the day it was marked)
+
     // A copy the user has personalized (marked paid, manual price, note, or a
     // hand-set acquired date) displays as its own unit and is never
     // auto-deleted by quantity changes; untouched pack pulls stack.
@@ -73,6 +81,9 @@ public static class TrackKind
 {
     public const string Owned = "owned";
     public const string Wishlist = "wishlist";
+    // Sold rows are only ever created by the sell endpoint (never by Add), so
+    // Normalize deliberately maps everything that isn't "owned" to wishlist.
+    public const string Sold = "sold";
 
     public static string Normalize(string? kind) =>
         string.Equals(kind, Owned, StringComparison.OrdinalIgnoreCase) ? Owned : Wishlist;

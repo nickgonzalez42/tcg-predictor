@@ -5,7 +5,7 @@ import type { CardParams } from "../../app/models/cardParams";
 import type { Pagination } from "../../app/models/pagination";
 import { toApiParams } from "../../lib/util";
 
-export type TrackKind = 'owned' | 'wishlist';
+export type TrackKind = 'owned' | 'wishlist' | 'sold';
 
 export type TrackedCard = {
     printing?: string           // '' / absent = base printing
@@ -21,6 +21,41 @@ export type TrackedCard = {
     note?: string;
     // Wishlist detail (wishlist rows only).
     watchedAtPrice?: number;
+    // Sold rows only.
+    soldPrice?: number;
+    soldAt?: string;
+}
+
+// One sale on the Sold track (GET /watchlist/sold).
+export type SoldCopy = {
+    id: number;
+    game: string;
+    productId: number;
+    name?: string;
+    setName?: string;
+    rarity?: string;
+    pictureUrl?: string;
+    grade?: string;
+    printing: string;
+    source: 'pack' | 'paid';
+    purchasePrice: number;   // cost basis, 0 for pack pulls
+    acquiredAt: string;
+    soldPrice: number;
+    soldAt: string;
+    note?: string;
+    plUsd: number;
+    plPct?: number | null;
+    heldDays: number;
+}
+
+// Realized rollup of the Sold track, inside the portfolio summary.
+export type Realized = {
+    count: number;
+    proceeds: number;
+    basis: number;
+    plUsd: number;
+    plPct?: number | null;
+    packCopies: number;
 }
 
 // Brokerage-style portfolio rollup (GET portfolio/summary).
@@ -56,6 +91,8 @@ export type PortfolioSummary = {
     // Pack pulls among the (game-filtered) owned copies — shown on the
     // include/hide toggle even when the rollup itself excludes them.
     packCopies?: number;
+    // The Sold track's totals (null until the first sale).
+    realized?: Realized | null;
 }
 
 // --- Bulk CSV import (POST /watchlist/owned/import) ---
@@ -142,7 +179,7 @@ export const watchlistApi = createApi({
     baseQuery: baseQueryWithErrorHandling,
     // Scoped tags so a mutation only refetches the lists it touched:
     // 'Owned' (portfolio rows), 'Wishlist' (watch rows), 'Summary' (rollup).
-    tagTypes: ['Owned', 'Wishlist', 'Summary', 'Alerts'],
+    tagTypes: ['Owned', 'Wishlist', 'Summary', 'Alerts', 'Sold'],
     endpoints: (builder) => ({
         // All tracked refs across both lists (used by TrackButton to know state).
         fetchWatchlist: builder.query<TrackedCard[], void>({
@@ -207,6 +244,30 @@ export const watchlistApi = createApi({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
+        // ----- Sold track (2026-10-24) -----
+        // Mark owned copies sold: they leave the positions and appear on the
+        // Sold track with the sale price and date.
+        sellCopies: builder.mutation<{ sold: number },
+            { ids: number[]; price: number; soldAt?: string; note?: string }>({
+            query: (body) => ({ url: 'watchlist/sold', method: 'POST', body }),
+            invalidatesTags: ['Owned', 'Summary', 'Sold'],
+        }),
+        fetchSold: builder.query<SoldCopy[], void>({
+            query: () => 'watchlist/sold',
+            providesTags: ['Sold'],
+        }),
+        updateSold: builder.mutation<void, { id: number; price: number; soldAt?: string | null; note?: string | null }>({
+            query: ({ id, ...body }) => ({ url: `watchlist/sold/${id}`, method: 'PATCH', body }),
+            invalidatesTags: ['Sold', 'Summary'],
+        }),
+        restoreSold: builder.mutation<void, { id: number }>({
+            query: ({ id }) => ({ url: `watchlist/sold/${id}/restore`, method: 'POST' }),
+            invalidatesTags: ['Owned', 'Summary', 'Sold'],
+        }),
+        removeSold: builder.mutation<void, { id: number }>({
+            query: ({ id }) => ({ url: `watchlist/sold/${id}`, method: 'DELETE' }),
+            invalidatesTags: ['Sold', 'Summary'],
+        }),
         // Wipe the whole portfolio (double-confirmed in the UI; no undo).
         clearOwned: builder.mutation<{ removed: number }, void>({
             query: () => ({ url: 'watchlist/owned', method: 'DELETE' }),
@@ -258,4 +319,9 @@ export const {
     useAddAlertMutation,
     useDeleteAlertMutation,
     useFetchPortfolioSummaryQuery,
+    useSellCopiesMutation,
+    useFetchSoldQuery,
+    useUpdateSoldMutation,
+    useRestoreSoldMutation,
+    useRemoveSoldMutation,
 } = watchlistApi;

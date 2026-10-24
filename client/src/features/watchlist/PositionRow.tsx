@@ -2,19 +2,22 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useAddToWatchlistMutation, useRemoveOwnedCopyMutation } from "./watchlistApi";
 import { OwnedCopyRow } from "./OwnedCopyRow";
+import SellModal from "./SellModal";
 import { packPrice, tierLabel } from "./grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import Modal from "../../app/shared/components/Modal";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
-import type { Card } from "../../app/models/card";
+import type { Card, OwnedCopy } from "../../app/models/card";
 
 // One position row (a card + condition unit). Clicking the row expands the
 // per-copy editor inline; −/＋ remove or add a copy at this condition.
 export default function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
     const [expanded, setExpanded] = useState(false);
     const [confirming, setConfirming] = useState(false);
+    // "Mark as sold": the whole stack (the $ button) or one copy (from the editor).
+    const [selling, setSelling] = useState<OwnedCopy[] | null>(null);
     const [addCopy, { isLoading: adding }] = useAddToWatchlistMutation();
     const [removeCopy, { isLoading: removing }] = useRemoveOwnedCopyMutation();
 
@@ -71,6 +74,10 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                     </div>
                 </Modal>
             )}
+            {selling && (
+                <SellModal title={`${card.name} · ${tierLabel(card.ownedGrade)}`} copies={selling}
+                    marketPrice={card.price} onClose={() => setSelling(null)} />
+            )}
             <tr className="screener__row" onClick={() => setExpanded(v => !v)}>
                 <CardThumbCell card={card} />
                 <td>
@@ -113,6 +120,8 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                         onClick={onMinus} title="Remove one copy">−</button>
                     <button className="btn btn--outline btn--circle" disabled={adding}
                         onClick={addOne} title="Add one copy">＋</button>
+                    <button className="btn btn--outline btn--circle btn--sell" disabled={qty === 0}
+                        onClick={() => setSelling(copies)} title="Mark copies as sold">$</button>
                 </td>
             </tr>
             {expanded && (
@@ -125,7 +134,8 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                     <div className="owned-copies owned-copies--modal">
                         {copies.map(copy => (
                             <OwnedCopyRow key={copy.id} copy={copy}
-                                onDone={() => setExpanded(false)} />
+                                onDone={() => setExpanded(false)}
+                                onSell={() => { setExpanded(false); setSelling([copy]); }} />
                         ))}
                     </div>
                 </Modal>

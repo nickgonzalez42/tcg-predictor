@@ -313,3 +313,176 @@
   .bw-tile { transition: none; }
   .bw-tile:hover { transform: none; }
 }
+
+/* ---- Sold track (2026-10-24): Positions / Sold tabs, the realized totals
+   strip, the sell modal's preview and the $ action. ---- */
+.pf-tabs {
+  display: flex;
+  gap: var(--space-5);
+  margin-right: auto;
+}
+
+.pf-tab {
+  height: var(--control-h);
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1.4px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, color 0.2s ease, background-color 0.2s ease;
+}
+
+.pf-tab:hover {
+  border-color: var(--brand);
+  color: var(--text);
+}
+
+.pf-tab[aria-selected="true"] {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--on-brand);
+}
+
+.btn--sell {
+  color: var(--up);
+  border-color: var(--up);
+  font-weight: 700;
+}
+
+.sold-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-15) var(--space-30);
+  align-items: flex-end;
+  padding: var(--space-15) var(--space-20);
+  margin-bottom: var(--space-15);
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.sold-totals__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sold-totals__cell .mono {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.sold-totals__cell strong {
+  font-size: 18px;
+  color: var(--price);
+}
+
+.sold-totals__pills {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+}
+
+.sold-totals__note {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.sold-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.screener--sold .screener__actions {
+  white-space: nowrap;
+}
+
+.screener--sold .screener__actions .btn {
+  margin-left: 4px;
+}
+
+.sell-preview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-10);
+  margin: var(--space-15) 0;
+  padding: var(--space-15);
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+
+.sell-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sell-preview .mono {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.sell-preview strong {
+  color: var(--price);
+}
+
+.sell-preview__note {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The sold table rides .screener--positions for its look but has its own
+   columns (1 thumb · 2 card · 3 condition · 4 acquired · 5 sold · 6 held ·
+   7 realized · 8 actions), so tables.css's positions column drops are
+   undone here and replaced with this table's own priorities. */
+@media (max-width: 1023px) {
+  .screener--positions.screener--sold th:nth-child(5),
+  .screener--positions.screener--sold td:nth-child(5),
+  .screener--positions.screener--sold th:nth-child(8),
+  .screener--positions.screener--sold td:nth-child(8) {
+    display: table-cell;
+  }
+
+  .screener--positions.screener--sold th:nth-child(6),
+  .screener--positions.screener--sold td:nth-child(6) {
+    display: none;   /* Held goes first */
+  }
+}
+
+@media (max-width: 767px) {
+  .sell-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .screener--positions.screener--sold th:nth-child(3),
+  .screener--positions.screener--sold td:nth-child(3),
+  .screener--positions.screener--sold th:nth-child(4),
+  .screener--positions.screener--sold td:nth-child(4) {
+    display: none;   /* then Condition and Acquired */
+  }
+}
+
+@media (max-width: 640px) {
+  .screener--positions.screener--sold th:nth-child(7),
+  .screener--positions.screener--sold td:nth-child(7) {
+    display: table-cell;   /* Realized always shows */
+  }
+
+  .screener--sold .screener__actions .btn {
+    margin-left: 2px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+}

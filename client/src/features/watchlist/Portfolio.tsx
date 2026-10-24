@@ -19,12 +19,16 @@ import BestWorst from "./BestWorst";
 import PositionRow from "./PositionRow";
 import ClearPortfolioModal from "./ClearPortfolioModal";
 import PaidHelpModal from "./PaidHelpModal";
+import SoldTable from "./SoldTable";
 
 export default function Portfolio() {
     usePageMeta("Portfolio");
     const [showPaidHelp, setShowPaidHelp] = useState(false);
     const [showImport, setShowImport] = useState(false);
     const [showClear, setShowClear] = useState(false);
+    // Positions (what you hold) vs the Sold track (what you've sold, with
+    // realized P/L) — two tabs over the same table area (2026-10-24).
+    const [view, setView] = useState<'positions' | 'sold'>('positions');
     const { setPageNumber, setOrderBy } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
@@ -56,6 +60,7 @@ export default function Portfolio() {
     // furniture — chart hero, allocation rail, filters — and shows just the
     // empty state with the Import onramp.
     const empty = summary != null && summary.copies === 0;
+    const soldCount = summary?.realized?.count ?? 0;
 
     // Download the positions as a CSV that round-trips through Import (cookie
     // auth rides the fetch; blob keeps it a same-page download).
@@ -97,6 +102,10 @@ export default function Portfolio() {
                     {summary?.allTime && (
                         <ChangePill value={summary.allTime.plPct} suffix="vs cost" />
                     )}
+                    {summary?.realized && (
+                        <ChangePill value={summary.realized.plUsd} unit="usd" suffix="realized"
+                            title={`Realized P/L across ${summary.realized.count} sale${summary.realized.count === 1 ? '' : 's'}`} />
+                    )}
                 </div>
                 {summary && <ValueChart summary={summary}
                     includePacks={includePacks} onIncludePacks={setIncludePacks} />}
@@ -113,10 +122,19 @@ export default function Portfolio() {
             )}
 
             {/* ----- Positions table ----- */}
-            <div className={`pf-positions full-span${empty ? ' pf-positions--empty' : ''}`}>
+            <div className={`pf-positions full-span${empty && soldCount === 0 ? ' pf-positions--empty' : ''}`}>
                 <div className="table-head">
-                    <h2 className="table-head__title">Positions</h2>
-                    {!empty && (
+                    <div className="pf-tabs" role="tablist" aria-label="Portfolio tracks">
+                        <button type="button" role="tab" aria-selected={view === 'positions'}
+                            className="pf-tab" onClick={() => setView('positions')}>
+                            Positions{summary ? ` · ${summary.copies}` : ''}
+                        </button>
+                        <button type="button" role="tab" aria-selected={view === 'sold'}
+                            className="pf-tab" onClick={() => setView('sold')}>
+                            Sold{soldCount ? ` · ${soldCount}` : ''}
+                        </button>
+                    </div>
+                    {!empty && view === 'positions' && (
                         <button className="btn btn--outline" onClick={exportCsv}>
                             Export
                         </button>
@@ -140,6 +158,10 @@ export default function Portfolio() {
                 )}
                 {showPaidHelp && <PaidHelpModal onClose={() => setShowPaidHelp(false)} />}
 
+                {view === 'sold' ? (
+                    <SoldTable realized={summary?.realized} />
+                ) : (
+                <>
                 {/* No "Price shown" tier picker here: positions already price at
                     each copy's own condition. Hidden entirely while the
                     portfolio has nothing to filter. */}
@@ -188,6 +210,8 @@ export default function Portfolio() {
                         No cards in your portfolio yet. Browse the <Link to="/catalog">catalog</Link> and
                         tap "＋ Add" on any card.
                     </p>
+                )}
+                </>
                 )}
             </div>
         </>

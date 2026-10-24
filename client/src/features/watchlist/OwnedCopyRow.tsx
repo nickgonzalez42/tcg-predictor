@@ -14,8 +14,8 @@ const copyGradeOptions = PRICE_TIER_OPTIONS;
 // condition's card; adding/clearing detail moves it between stack and standalone.
 // onDone fires after a successful save; onClose (when given) shows a ✕ that
 // closes the editor without touching the copy. Deleting is its own button.
-export function OwnedCopyRow({ copy, onDone, onClose }: {
-    copy: OwnedCopy; onDone?: () => void; onClose?: () => void;
+export function OwnedCopyRow({ copy, onDone, onClose, onSell }: {
+    copy: OwnedCopy; onDone?: () => void; onClose?: () => void; onSell?: () => void;
 }) {
     const [update, { isLoading: saving }] = useUpdateOwnedCopyMutation();
     const [remove, { isLoading: removing }] = useRemoveOwnedCopyMutation();
@@ -95,6 +95,11 @@ export function OwnedCopyRow({ copy, onDone, onClose }: {
             </div>
             <div className="owned-copy__actions">
                 <button className="btn btn--outline" disabled={!dirty || saving} onClick={save}>Save</button>
+                {onSell && (
+                    <button className="btn btn--outline" title="Record a sale of this copy" onClick={onSell}>
+                        Mark sold
+                    </button>
+                )}
                 <button className="btn btn--outline btn--danger" disabled={removing}
                     title="Delete this copy from your portfolio"
                     onClick={() => remove({ id: copy.id })}>

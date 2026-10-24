@@ -362,6 +362,124 @@ public class WatchlistController(
         return Ok();
     }
 
+    // ----- Sold track (2026-10-24) -------------------------------------------
+    // Mark owned copies as sold: the rows stay (grade, printing, basis, dates,
+    // note) and move to Kind = sold with the sale on them, leaving every owned
+    // rollup. The client sends the ids — a stack's newest N, or one copy.
+    [HttpPost("sold")]
+    public async Task<ActionResult> Sell(SellCopiesDto dto)
+    {
+        if (dto.Ids.Count == 0 || dto.Ids.Count > MaxCopiesPerCondition)
+            return BadRequest($"Sell between 1 and {MaxCopiesPerCondition} copies at a time.");
+        if (double.IsNaN(dto.Price) || double.IsInfinity(dto.Price) || dto.Price < 0)
+            return BadRequest("Sale price must be 0 or more.");
+
+        var user = User.Identity!.Name!;
+        var copies = await context.TrackedCards
+            .Where(x => dto.Ids.Contains(x.Id) && x.UserName == user && x.Kind == TrackKind.Owned)
+            .ToListAsync();
+        if (copies.Count == 0) return NotFound();
+
+        var when = ClampToNow(dto.SoldAt);
+        foreach (var c in copies)
+        {
+            c.Kind = TrackKind.Sold;
+            c.SoldPrice = Math.Round(dto.Price, 2);
+            c.SoldAt = when;
+            if (!Blank(dto.Note)) c.Note = dto.Note!.Trim();
+        }
+        await context.SaveChangesAsync();
+        return Ok(new { sold = copies.Count });
+    }
+
+    // Every sale, newest first, with card context and realized P/L.
+    [HttpGet("sold")]
+    public async Task<ActionResult<List<SoldCopyDto>>> GetSold()
+    {
+        var user = User.Identity!.Name!;
+        var rows = await context.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Sold)
+            .OrderByDescending(x => x.SoldAt).ThenByDescending(x => x.Id)
+            .ToListAsync();
+
+        var cardByKey = new Dictionary<(string, int), (string? Name, string? Set, string? Rarity)>();
+        foreach (var game in rows.Select(r => r.Game).Distinct())
+        {
+            var ids = rows.Where(r => r.Game == game).Select(r => r.ProductId).Distinct().ToList();
+            foreach (var c in await sources.Cards(game).Where(c => ids.Contains(c.Id))
+                         .Select(c => new { c.Id, c.Name, c.SetName, c.Rarity }).ToListAsync())
+                cardByKey[(game, c.Id)] = (c.Name, c.SetName, c.Rarity);
+        }
+
+        return rows.Select(r =>
+        {
+            var card = cardByKey.GetValueOrDefault((r.Game, r.ProductId));
+            var basis = r.Source == AcquireSource.Paid ? r.PurchasePrice ?? 0 : 0;
+            var sold = r.SoldPrice ?? 0;
+            var acquired = r.AcquiredAt ?? r.AddedAt;
+            var soldAt = r.SoldAt ?? r.AddedAt;
+            return new SoldCopyDto
+            {
+                Id = r.Id, Game = r.Game, ProductId = r.ProductId,
+                Name = card.Name, SetName = card.Set, Rarity = card.Rarity,
+                PictureUrl = CardImageUrl(r.Game, r.ProductId),
+                Grade = r.Grade, Printing = r.Printing, Source = r.Source,
+                PurchasePrice = basis, AcquiredAt = acquired,
+                SoldPrice = sold, SoldAt = soldAt, Note = r.Note,
+                PlUsd = Math.Round(sold - basis, 2),
+                PlPct = basis > 0 ? Math.Round((sold / basis - 1) * 100, 1) : null,
+                HeldDays = Math.Max(0, (int)(soldAt.Date - acquired.Date).TotalDays),
+            };
+        }).ToList();
+    }
+
+    // Correct a sale's price, date or note.
+    [HttpPatch("sold/{id:int}")]
+    public async Task<ActionResult> UpdateSold(int id, UpdateSoldDto dto)
+    {
+        if (double.IsNaN(dto.Price) || double.IsInfinity(dto.Price) || dto.Price < 0)
+            return BadRequest("Sale price must be 0 or more.");
+        var row = await FindSoldCopy(id);
+        if (row == null) return NotFound();
+        row.SoldPrice = Math.Round(dto.Price, 2);
+        row.SoldAt = ClampToNow(dto.SoldAt ?? row.SoldAt);
+        row.Note = Blank(dto.Note) ? null : dto.Note!.Trim();
+        await context.SaveChangesAsync();
+        return Ok();
+    }
+
+    // Undo a sale: the copy returns to the portfolio exactly as it was.
+    [HttpPost("sold/{id:int}/restore")]
+    public async Task<ActionResult> RestoreSold(int id)
+    {
+        var row = await FindSoldCopy(id);
+        if (row == null) return NotFound();
+        row.Kind = TrackKind.Owned;
+        row.SoldPrice = null;
+        row.SoldAt = null;
+        await context.SaveChangesAsync();
+        return Ok();
+    }
+
+    // Drop a sale record entirely (the copy is gone from both tracks).
+    [HttpDelete("sold/{id:int}")]
+    public async Task<ActionResult> RemoveSold(int id)
+    {
+        var row = await FindSoldCopy(id);
+        if (row == null) return NotFound();
+        context.TrackedCards.Remove(row);
+        await context.SaveChangesAsync();
+        return Ok();
+    }
+
+    private Task<TrackedCard?> FindSoldCopy(int id) =>
+        context.TrackedCards.FirstOrDefaultAsync(
+            x => x.Id == id && x.UserName == User.Identity!.Name && x.Kind == TrackKind.Sold);
+
+    // A sale date can't be in the future; blank means now.
+    private static DateTime ClampToNow(DateTime? d) =>
+        d == null || d > DateTime.UtcNow ? DateTime.UtcNow : d.Value;
+
     // The card's market price at the copy's condition tier on a given date:
     // the last known history point at-or-before it, else 0 (no data that far
     // back — young games, or dates before PriceCharting tracked the game).

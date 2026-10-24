@@ -49,8 +49,37 @@ public class PortfolioController(
         var packCopies = copies.Count(c => c.Source == AcquireSource.Pack);
         if (!includePacks)
             copies = copies.Where(c => c.Source == AcquireSource.Paid).ToList();
+
+        // ----- Realized: the Sold track (2026-10-24), same game scope -----
+        // Proceeds and P/L of every copy the user has marked sold. Pack
+        // pulls carry no basis, so their proceeds count as pure gain; the
+        // count is reported so the client can say so.
+        var soldQuery = store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Sold);
+        if (!string.IsNullOrEmpty(game) && game != "all")
+        {
+            var key = GameRegistry.KeyOrDefault(game);
+            soldQuery = soldQuery.Where(x => x.Game == key);
+        }
+        var sold = await soldQuery.ToListAsync();
+        object? realized = null;
+        if (sold.Count > 0)
+        {
+            var proceeds = sold.Sum(c => c.SoldPrice ?? 0);
+            var basis = sold.Where(c => c.Source == AcquireSource.Paid).Sum(c => c.PurchasePrice ?? 0);
+            realized = new
+            {
+                count = sold.Count,
+                proceeds = Math.Round(proceeds, 2),
+                basis = Math.Round(basis, 2),
+                plUsd = Math.Round(proceeds - basis, 2),
+                plPct = basis > 0 ? Math.Round((proceeds / basis - 1) * 100, 1) : (double?)null,
+                packCopies = sold.Count(c => c.Source == AcquireSource.Pack),
+            };
+        }
+
         if (copies.Count == 0)
-            return Ok(new { totalValue = 0.0, copies = 0, packCopies });
+            return Ok(new { totalValue = 0.0, copies = 0, packCopies, realized });
 
         // Full monthly history for every (game, product, tier) the portfolio touches.
         var seriesByKey = new Dictionary<(string Game, int Id, string Tier), List<(string Date, double Price)>>();
@@ -261,6 +290,7 @@ public class PortfolioController(
             invested,
             accountCreated = acctDate,
             packCopies,
+            realized,
         });
     }
 }

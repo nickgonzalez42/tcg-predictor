@@ -279,6 +279,12 @@ namespace API.Data.Migrations
                     b.Property<double?>("PurchasePrice")
                         .HasColumnType("REAL");
 
+                    b.Property<DateTime?>("SoldAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("SoldPrice")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("Source")
                         .IsRequired()
                         .HasColumnType("TEXT");
