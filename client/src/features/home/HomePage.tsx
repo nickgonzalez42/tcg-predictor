@@ -35,11 +35,16 @@ function preloadArt(card: Card) {
 
 // '1m' -> '1M', '6m' -> '6M', '12m' -> '1Y': label next to a mover's forecast.
 const hzLabel = (h?: string) => (h === '1m' ? '1M' : h === '6m' ? '6M' : h === 'launch1m' ? 'EARLY' : '1Y');
+// Spelled-out horizon for the featured-card band: "6 month forecast".
+const hzLong = (h?: string) =>
+    h === '1m' ? '1 month' : h === '6m' ? '6 month' : h === 'launch1m' ? 'Early' : '1 year';
 // A mover's headline forecast price: fcstTo at the card's own ranking horizon
 // (the hero mixes categories; tiles rank on 1m), legacy 12m field as fallback.
 const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;
 
-function HeroChart({ movers }: { movers?: Card[] }) {
+// onCard reports the card each scene features (null while the placeholder
+// line shows) so the panel's band can name the horizon on screen.
+function HeroChart({ movers, onCard }: { movers?: Card[]; onCard?: (c: Card | null) => void }) {
     const cards = useMemo(() => {
         // Same value floor as the movers feed itself ($10); the sparkline just
         // needs enough points to trace a line worth watching.
@@ -66,6 +71,9 @@ function HeroChart({ movers }: { movers?: Card[] }) {
         preloadArt(cards[0]).then(art => { if (live) setScene({ i: 0, art }); });
         return () => { live = false; };
     }, [cards]);
+
+    const shown = scene && cards.length ? cards[scene.i % cards.length] : null;
+    useEffect(() => { onCard?.(shown); }, [shown, onCard]);
 
     const nextIdx = (scene?.i ?? 0) + 1;
     useEffect(() => {   // preload the NEXT card's art while this scene plays
@@ -304,6 +312,8 @@ export default function HomePage() {
     // 1-month ranking.
     const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 4 });
     const { data: user } = useUserInfoQuery();
+    // The card the hero scene is featuring right now; the band follows it.
+    const [heroCard, setHeroCard] = useState<Card | null>(null);
     // One tile per game (user request 2026-10-23): each game's strongest
     // mover, in ranking order. A game with no showable mover simply has no
     // slide — the feed's per-game guarantee (with its early-tier fallback)
@@ -343,9 +353,11 @@ export default function HomePage() {
                 <div className="hero__panel">
                     <div className="band">
                         <span className="band__title">Featured card</span>
-                        <span className="mono">1 month forecast · live</span>
+                        <span className="mono">
+                            {heroCard ? `${hzLong(heroCard.fcstHorizon)} forecast · live` : 'model forecast · live'}
+                        </span>
                     </div>
-                    <HeroChart movers={heroMovers} />
+                    <HeroChart movers={heroMovers} onCard={setHeroCard} />
                 </div>
             </section>
 
