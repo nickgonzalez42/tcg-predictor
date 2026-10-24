@@ -419,11 +419,11 @@ button.navbar__link {
     right: 0;
     bottom: auto;
     width: auto;
-    /* Near-solid (user request 2026-10-23): the bar and its drawer read as
-       one dark panel, not glass over the page. */
-    background: rgba(11, 16, 28, 0.97);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
+    /* Solid, one colour with the drawer (user requests 2026-10-23/24): the
+       bar and its drawer read as a single dark sheet, not glass. */
+    background: var(--nav-sheet);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
     border-bottom: 2px solid var(--brand);
     pointer-events: auto;
     /* Hide/show rides `top`, not transform: the market crawl is a fixed
@@ -458,6 +458,7 @@ button.navbar__link {
   }
 
   .navbar {
+    --nav-sheet: #111a2b;                    /* the ONE colour of bar, drawer and foot */
     --bar-pad: 24px;                         /* side gutter (20px on phones) */
     --m-logo-w: calc(32px * 63 / 88);        /* the 32px logo's width */
     /* Once the card topples (pivot: bottom-right) it lies to the right of
@@ -502,9 +503,7 @@ button.navbar__link {
     top: 100%;
     left: 0;
     right: 0;
-    /* Solid panel: a shade lighter than the bar with a soft top light, so
-       the drawer reads as a sheet that unrolled from under the bar. */
-    background: linear-gradient(180deg, #151d2e, #0f1626);
+    background: var(--nav-sheet);
     border-bottom: 2px solid var(--brand);
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
     transition: grid-template-rows 0.35s ease;
@@ -596,7 +595,6 @@ button.navbar__link {
     margin-top: var(--space-5);
     padding: var(--space-15) var(--bar-pad) var(--space-20) var(--m-tipped-left);
     border-top: 1px solid var(--border);
-    background: rgba(0, 0, 0, 0.18);
   }
 
   .navbar__auth {
