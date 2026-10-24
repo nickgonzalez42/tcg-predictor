@@ -442,23 +442,17 @@ button.navbar__link {
     --logo-w: calc(32px * 63 / 88);
   }
 
-  /* The wordmark is always on show in the bar; when the card topples open it
-     steps right to clear the lying card (32px) and its breakout arrow. */
-  .navbar__word {
-    opacity: 1;
-    transform: none;
-    transition: transform 0.3s ease;
-  }
-
+  /* The wordmark stays hidden until the logo is tapped, then reveals with
+     the same topple → trend → arrow → words sequence as desktop (the @media
+     all rules). Only the slide distance differs: it clears the lying 32px
+     card and its breakout arrow. */
   .navbar__word--1 { font-size: 13px; }
 
   .navbar__word--2 { font-size: 17px; }
 
   .navbar--open .navbar__word--1,
   .navbar--open .navbar__word--2 {
-    opacity: 1;
     transform: translateX(40px);
-    transition: transform 0.3s ease 0.3s;
   }
 
   /* The drawer unrolls from under the bar: a grid row that grows from 0fr to
