@@ -90,6 +90,10 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
 
     return (
         <>
+        {/* Tablet/mobile: a scrim under the open drawer. Tapping it closes the
+            drawer and the tap goes nowhere else — nothing beneath the nav is
+            reachable while it is open. Not rendered on desktop (CSS). */}
+        {navOpen && <div className="navbar__scrim" onClick={() => setNavOpen(false)} />}
         <header ref={navRef}
             className={`navbar${navOpen ? ' navbar--open' : ''}${hidden ? ' navbar--hidden' : ''}${suppress ? ' navbar--suppress' : ''}`}>
             {/* Always-visible: the logo (static top-left on desktop; in the top
