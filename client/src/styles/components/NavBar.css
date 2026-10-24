@@ -414,9 +414,11 @@ button.navbar__link {
     right: 0;
     bottom: auto;
     width: auto;
-    background: var(--nav-glass);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
+    /* Near-solid (user request 2026-10-23): the bar and its drawer read as
+       one dark panel, not glass over the page. */
+    background: rgba(11, 16, 28, 0.97);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
     border-bottom: 2px solid var(--brand);
     pointer-events: auto;
     /* Hide/show rides `top`, not transform: the market crawl is a fixed
@@ -466,14 +468,25 @@ button.navbar__link {
     top: 100%;
     left: 0;
     right: 0;
-    /* Near-solid: the links sit over page content, and blur alone leaves
-       them fighting whatever is underneath. */
-    background: rgba(12, 16, 26, 0.94);
-    -webkit-backdrop-filter: blur(20px);
-    backdrop-filter: blur(20px);
+    /* Solid panel: a shade lighter than the bar with a soft top light, so
+       the drawer reads as a sheet that unrolled from under the bar. */
+    background: linear-gradient(180deg, #151d2e, #0f1626);
     border-bottom: 2px solid var(--brand);
+    box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
     transition: grid-template-rows 0.35s ease;
     pointer-events: auto;
+  }
+
+  /* Contents fade in a beat after the row starts growing, and vanish at
+     once on close so nothing lingers over the collapsing sheet. */
+  .navbar__panel {
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  .navbar--open .navbar__panel {
+    opacity: 1;
+    transition: opacity 0.25s ease 0.12s;
   }
 
   .navbar--open .navbar__drawer {
@@ -490,7 +503,6 @@ button.navbar__link {
     overflow: hidden auto;
     padding: 0;
     transform: none;
-    transition: none;
     background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -505,16 +517,96 @@ button.navbar__link {
     padding: var(--space-10) 24px 0;
   }
 
-  .navbar__end {
-    margin-top: var(--space-10);
-    padding: var(--space-10) 24px var(--space-20);
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  .navbar__links {
+    gap: 0;
   }
 
-  /* Touch-sized rows. */
-  .navbar__link {
+  /* Full-width rows with hairline separators; the active page carries a
+     brand bar at its left edge. */
+  .navbar__nav .navbar__link {
+    display: flex;
+    align-items: center;
+    width: 100%;
     font-size: 16px;
-    padding: 12px 0;
+    letter-spacing: 0.04em;
+    padding: 14px 0 14px 14px;
+    border-radius: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+    border-left: 3px solid transparent;
+    transition: border-color 0.2s ease, color 0.2s ease;
+  }
+
+  .navbar__nav li:last-child .navbar__link {
+    border-bottom: none;
+  }
+
+  .navbar__nav .navbar__link.active {
+    border-left-color: var(--brand);
+  }
+
+  .navbar__nav .navbar__link:hover {
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  /* The foot: account actions. Signed out, Login / Register are a pair of
+     buttons; signed in, bell / profile / logout are compact rows. */
+  .navbar__end {
+    margin-top: var(--space-5);
+    padding: var(--space-15) 24px var(--space-20);
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  .navbar__auth {
+    flex-direction: row;
+    gap: var(--space-10);
+    max-width: 420px;   /* a pair of buttons, not a full-width tablet bar */
+  }
+
+  .navbar__auth li {
+    flex: 1;
+  }
+
+  .navbar__auth .navbar__link {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: var(--control-h);
+    padding: 0;
+    border-radius: 999px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    border: 1.5px solid var(--brand);
+    color: var(--brand);
+  }
+
+  .navbar__auth li:last-child .navbar__link {
+    background: var(--brand);
+    color: var(--on-brand);
+  }
+
+  .navbar__auth .navbar__link:hover {
+    text-decoration: none;
+    filter: brightness(1.08);
+  }
+
+  .navbar__usermenu {
+    gap: 0;
+  }
+
+  .navbar__usermenu .navbar__link {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    font-size: 15px;
+    padding: 12px 0 12px 14px;
+    border-radius: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  }
+
+  .navbar__usermenu > :last-child {
+    border-bottom: none;
   }
 
   /* Keyboard focus inside the panel must not pull it open the desktop way;
