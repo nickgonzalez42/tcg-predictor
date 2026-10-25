@@ -54,6 +54,16 @@ for step in forecast_scorecard forecast_predict forecast_launch sealed_prices fo
   fi
 done
 
+# One-off job hook: a self-contained pipeline/oneoff_model_job.sh (never
+# committed; .gitignore) runs once after the model block and is deleted on
+# success — surgical re-runs that must not collide with Phase A's crawls.
+# Non-fatal: a failing one-off neither blocks the push nor deletes itself.
+if [ -x "$DIR/oneoff_model_job.sh" ]; then
+  echo "--- oneoff_model_job $(date '+%T') ---"
+  /bin/zsh "$DIR/oneoff_model_job.sh" && rm -f "$DIR/oneoff_model_job.sh"
+  echo "--- oneoff_model_job done $(date '+%T') ---"
+fi
+
 echo "=== push predictions.db -> prod ($SERVER_IP) ==="
 # Publish-retry (2026-10-09, after the 10-02 offline-at-publish failure):
 # the model block can finish with the laptop offline — retry every 15 min

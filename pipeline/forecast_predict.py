@@ -1399,7 +1399,13 @@ def main():
             try:
                 rows += forecast_game_target(game, target, now, args.as_of, horizons)
             except Exception as e:
-                print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}", flush=True)
+                # Name the failing line: a bare "database is locked" (a read
+                # colliding with a crawl's write, 2026-10-24) says nothing
+                # about WHICH database.
+                import traceback
+                tb = traceback.extract_tb(e.__traceback__)
+                where = f" at {os.path.basename(tb[-1].filename)}:{tb[-1].lineno}" if tb else ""
+                print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}{where}", flush=True)
             # Parseable progress for the dashboard (counts every segment, so it
             # reaches N/N even when a young-game tier is skipped without rows).
             print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)

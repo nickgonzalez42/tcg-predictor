@@ -29,3 +29,6 @@ __pycache__/
 *.pyc
 .venv/
 /pipeline_bt/
+
+# transient one-off model jobs (see local_model_run.sh)
+pipeline/oneoff_model_job.sh
