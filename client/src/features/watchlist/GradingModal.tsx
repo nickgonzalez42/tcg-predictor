@@ -4,6 +4,7 @@ import Modal from "../../app/shared/components/Modal";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { useFetchGradingCandidatesQuery, type GradingCandidate } from "./watchlistApi";
 import { currencyFormat, gameKey } from "../../lib/util";
+import { fallbackToCardBack } from "../../lib/cardImages";
 
 // "Recommend grading" (2026-10-25, portfolio header): the user's Near Mint cards with the
 // latest price at every PSA tier, ranked by what grading would add. Gains
@@ -130,7 +131,8 @@ export default function GradingModal({ onClose }: { onClose: () => void }) {
                                 {sorted.map(r => (
                                     <tr key={`${r.game}:${r.productId}:${r.printing}`} className="screener__row">
                                         <td className="screener__thumbcell">
-                                            <img className="screener__thumb" src={r.pictureUrl} alt="" loading="lazy" />
+                                            <img className="screener__thumb" src={r.pictureUrl} alt="" loading="lazy"
+                                                onError={e => fallbackToCardBack(e, r.game)} />
                                         </td>
                                         <td>
                                             <Link className="screener__name" to={`/catalog/${gameKey(r.game)}/${r.productId}`}

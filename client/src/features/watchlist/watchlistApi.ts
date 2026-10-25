@@ -18,6 +18,27 @@ export type GradingCandidate = {
 };
 export type GradingResponse = { nmCopies: number; cards: GradingCandidate[] };
 
+// Collection analysis (portfolio/analysis): the aggregates behind the
+// Tools > Collection analysis infographics.
+export type Slice = { label: string; value: number; copies: number; pct: number };
+export type CollectionAnalysis = {
+    copies: number; cards: number; games: number;
+    totalValue: number; avgValue: number; medianValue: number;
+    packCopies: number; paidCopies: number;
+    invested: number; unrealizedUsd: number; unrealizedPct: number | null;
+    realizedUsd: number | null; soldCopies: number;
+    byGame: Slice[]; byTier: Slice[]; bySet: Slice[]; byRarity: Slice[];
+    priceBands: { label: string; copies: number; value: number }[];
+    concentration: { cards: number; top1: number; top5: number; top10: number; top25: number;
+        curve: { cards: number; value: number }[] };
+    acquisitions: { month: string; copies: number; value: number; spent: number }[];
+    momentum: { copies: number; up: number; down: number; flat: number; netUsd: number; netPct: number };
+    outlook: Record<string, { copies: number; now: number; forecast: number; changeUsd: number; changePct: number; up: number; down: number }>;
+    holding: { avgDays: number; medianDays: number; firstDate: string;
+        oldest: { name?: string; game: string; id: number; days: number; since: string } };
+    topCards: { game: string; id: number; name?: string; setName?: string; pictureUrl: string; value: number; copies: number; pct: number }[];
+};
+
 export type TrackedCard = {
     printing?: string           // '' / absent = base printing
     id: number;
@@ -251,6 +272,11 @@ export const watchlistApi = createApi({
             query: ({ id, ...body }) => ({ url: `watchlist/owned/${id}`, method: 'PATCH', body }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
+        // The whole collection rolled up for the Collection analysis modal.
+        fetchCollectionAnalysis: builder.query<CollectionAnalysis, void>({
+            query: () => 'portfolio/analysis',
+            providesTags: ['Owned', 'Summary'],
+        }),
         // Near Mint cards with graded prices, for the "Recommend grading" modal.
         fetchGradingCandidates: builder.query<GradingResponse, void>({
             query: () => 'portfolio/grading',
@@ -329,7 +355,7 @@ export const {
     useSetOwnedQuantityMutation,
     useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
-    useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery,
+    useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery, useFetchCollectionAnalysisQuery,
     useClearOwnedMutation,
     useFetchAlertsQuery,
     useAddAlertMutation,

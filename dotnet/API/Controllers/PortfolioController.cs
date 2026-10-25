@@ -15,7 +15,7 @@ namespace API.Controllers;
 [Authorize]
 public class PortfolioController(
     StoreContext store, PriceChartingContext priceCharting, CardSources sources,
-    SpxService spx) : BaseApiController
+    PredictionsContext predictions, SpxService spx) : BaseApiController
 {
     private static readonly Dictionary<string, string> TierLabels = new()
     {
@@ -94,6 +94,213 @@ public class PortfolioController(
             }
         }
         return Ok(new { nmCopies = copies.Count, cards = rows });
+    }
+
+    // Collection analysis (2026-10-25): one pass over the user's owned copies
+    // into the figures the Tools > Collection analysis modal draws — where the
+    // value sits (game, condition, set, rarity, price band, concentration),
+    // how it got there (acquisitions by month, holding time), what it did last
+    // month, what the model expects, and the cards that matter most.
+    [HttpGet("analysis")]
+    public async Task<IActionResult> GetAnalysis()
+    {
+        var user = User.Identity!.Name!;
+        var copies = await store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned)
+            .ToListAsync();
+        if (copies.Count == 0) return Ok(new { copies = 0 });
+
+        // Latest price per (game, product, tier) and the price ~30 days back.
+        var seriesByKey = new Dictionary<(string Game, int Id, string Tier), List<(string Date, double Price)>>();
+        var meta = new Dictionary<(string Game, int Id), CardBase>();
+        foreach (var gameGroup in copies.GroupBy(c => c.Game))
+        {
+            var ids = gameGroup.Select(c => c.ProductId).Distinct().ToList();
+            var tiers = gameGroup.Select(c => GradeTiers.PriceTier(c.Grade)).Distinct().ToList();
+            var rows = await priceCharting.History
+                .Where(h => h.Game == gameGroup.Key && ids.Contains(h.ProductId) && tiers.Contains(h.Grade))
+                .Select(h => new { h.ProductId, h.Grade, h.Date, h.Price })
+                .ToListAsync();
+            foreach (var g in rows.GroupBy(r => (r.ProductId, r.Grade)))
+                seriesByKey[(gameGroup.Key, g.Key.ProductId, g.Key.Grade)] =
+                    g.OrderBy(r => r.Date).Select(r => (r.Date, r.Price)).ToList();
+            foreach (var card in await sources.Cards(gameGroup.Key).Where(c => ids.Contains(c.Id)).ToListAsync())
+                meta[(gameGroup.Key, card.Id)] = card;
+        }
+        List<(string Date, double Price)>? SeriesOf(TrackedCard c) =>
+            seriesByKey.GetValueOrDefault((c.Game, c.ProductId, GradeTiers.PriceTier(c.Grade)));
+        double ValueOf(TrackedCard c) => SeriesOf(c) is { Count: > 0 } s ? s[^1].Price : 0;
+        var monthAgo = DateTime.UtcNow.AddDays(-30).ToString("yyyy-MM-dd");
+        double? AgoOf(TrackedCard c)
+        {
+            if (SeriesOf(c) is not { Count: > 0 } s) return null;
+            var p = s.LastOrDefault(x => string.CompareOrdinal(x.Date, monthAgo) <= 0);
+            return p.Price > 0 ? p.Price : null;
+        }
+        string OwnedDate(TrackedCard c) => (c.AcquiredAt ?? c.AddedAt).ToString("yyyy-MM-dd");
+        CardBase? MetaOf(TrackedCard c) => meta.GetValueOrDefault((c.Game, c.ProductId));
+
+        var total = copies.Sum(ValueOf);
+        double Share(double v) => total > 0 ? Math.Round(v / total * 100, 1) : 0;
+
+        // ----- headline -----
+        var paidCopies = copies.Where(c => c.Source == AcquireSource.Paid && c.PurchasePrice is > 0).ToList();
+        var invested = paidCopies.Sum(c => c.PurchasePrice!.Value);
+        var paidValue = paidCopies.Sum(ValueOf);
+        var sold = await store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Sold).ToListAsync();
+        var realizedPl = sold.Sum(c => c.SoldPrice ?? 0)
+                         - sold.Where(c => c.Source == AcquireSource.Paid).Sum(c => c.PurchasePrice ?? 0);
+        var cardValues = copies.GroupBy(c => (c.Game, c.ProductId))
+            .Select(g => new { g.Key.Game, Id = g.Key.ProductId, Value = g.Sum(ValueOf), Copies = g.Count() })
+            .OrderByDescending(x => x.Value).ToList();
+        var priced = cardValues.Where(x => x.Value > 0).Select(x => x.Value).OrderBy(v => v).ToList();
+        var median = priced.Count == 0 ? 0
+            : priced.Count % 2 == 1 ? priced[priced.Count / 2]
+            : (priced[priced.Count / 2 - 1] + priced[priced.Count / 2]) / 2;
+
+        // ----- breakdowns -----
+        List<object> Breakdown(Func<TrackedCard, string> key, int keep = 8) => copies
+            .GroupBy(key)
+            .Select(g => new { label = g.Key, value = g.Sum(ValueOf), copies = g.Count() })
+            .Where(a => a.value > 0)   // unpriced cards would only add empty slices
+            .OrderByDescending(a => a.value)
+            .Select((a, i) => (a, i))
+            .GroupBy(t => t.i < keep ? t.a.label : "Other")
+            .Select(g => new { label = g.Key, value = g.Sum(t => t.a.value), copies = g.Sum(t => t.a.copies), other = g.Key == "Other" })
+            .OrderBy(a => a.other).ThenByDescending(a => a.value)
+            .Select(a => (object)new { a.label, value = Math.Round(a.value, 2), a.copies, pct = Share(a.value) })
+            .ToList();
+        var byGame = Breakdown(c => GameRegistry.Label(c.Game), 12);
+        var byTier = Breakdown(c => TierLabel(GradeTiers.PriceTier(c.Grade)), 12);
+        var bySet = Breakdown(c => MetaOf(c)?.SetName is { Length: > 0 } sn ? sn : "Unknown set");
+        var byRarity = Breakdown(c => MetaOf(c)?.Rarity is { Length: > 0 } r ? r : "Unknown rarity");
+
+        // ----- price bands (per copy) -----
+        var bands = new[] { ("Under $1", 0.0, 1.0), ("$1 – 5", 1.0, 5.0), ("$5 – 20", 5.0, 20.0),
+                            ("$20 – 100", 20.0, 100.0), ("$100 – 500", 100.0, 500.0), ("$500+", 500.0, double.MaxValue) };
+        var priceBands = bands.Select(b =>
+        {
+            var inBand = copies.Where(c => { var v = ValueOf(c); return v >= b.Item2 && v < b.Item3; }).ToList();
+            return new { label = b.Item1, copies = inBand.Count, value = Math.Round(inBand.Sum(ValueOf), 2) };
+        }).ToList();
+
+        // ----- concentration: how much of the value the top cards hold -----
+        var curve = new List<object>();
+        double run = 0;
+        for (var i = 0; i < cardValues.Count; i++)
+        {
+            run += cardValues[i].Value;
+            if (i == cardValues.Count - 1 || i % Math.Max(1, cardValues.Count / 40) == 0)
+                curve.Add(new { cards = Math.Round((i + 1) * 100.0 / cardValues.Count, 1), value = Share(run) });
+        }
+        double TopShare(int n) => Share(cardValues.Take(n).Sum(x => x.Value));
+        var concentration = new
+        {
+            cards = cardValues.Count,
+            top1 = TopShare(1), top5 = TopShare(5), top10 = TopShare(10), top25 = TopShare(25),
+            curve,
+        };
+
+        // ----- acquisitions by month (last 24) -----
+        var sinceMonth = DateTime.UtcNow.AddMonths(-23).ToString("yyyy-MM");
+        var acquisitions = copies
+            .GroupBy(c => OwnedDate(c)[..7])
+            .Where(g => string.CompareOrdinal(g.Key, sinceMonth) >= 0)
+            .OrderBy(g => g.Key)
+            .Select(g => new
+            {
+                month = g.Key,
+                copies = g.Count(),
+                value = Math.Round(g.Sum(ValueOf), 2),
+                spent = Math.Round(g.Where(c => c.Source == AcquireSource.Paid).Sum(c => c.PurchasePrice ?? 0), 2),
+            })
+            .ToList();
+
+        // ----- last 30 days -----
+        var moved = copies.Select(c => (Now: ValueOf(c), Ago: AgoOf(c))).Where(x => x.Ago is > 0).ToList();
+        var momentum = new
+        {
+            copies = moved.Count,
+            up = moved.Count(x => x.Now > x.Ago * 1.005),
+            down = moved.Count(x => x.Now < x.Ago * 0.995),
+            flat = moved.Count(x => x.Now <= x.Ago * 1.005 && x.Now >= x.Ago * 0.995),
+            netUsd = Math.Round(moved.Sum(x => x.Now - x.Ago!.Value), 2),
+            netPct = moved.Sum(x => x.Ago!.Value) is var agoSum && agoSum > 0
+                ? Math.Round((moved.Sum(x => x.Now) / agoSum - 1) * 100, 1) : 0,
+        };
+
+        // ----- model outlook: the collection's forecast at 6m and 12m -----
+        var outlook = new Dictionary<string, object>();
+        foreach (var horizon in new[] { "6m", "12m" })
+        {
+            double now = 0, fcst = 0; int n = 0, up = 0, down = 0;
+            foreach (var gameGroup in copies.GroupBy(c => c.Game))
+            {
+                var ids = gameGroup.Select(c => c.ProductId).Distinct().ToList();
+                var rows = await predictions.Forecasts
+                    .Where(f => f.Game == gameGroup.Key && ids.Contains(f.ProductId) && f.Horizon == horizon)
+                    .Select(f => new { f.ProductId, f.Target, f.BasePrice, f.ForecastPrice })
+                    .ToListAsync();
+                var byKey = rows.GroupBy(r => (r.ProductId, r.Target)).ToDictionary(g => g.Key, g => g.First());
+                foreach (var c in gameGroup)
+                {
+                    if (!byKey.TryGetValue((c.ProductId, GradeTiers.ForecastTarget(c.Grade)), out var f) || f.BasePrice <= 0) continue;
+                    var v = ValueOf(c); if (v <= 0) v = f.BasePrice;
+                    var expected = v * f.ForecastPrice / f.BasePrice;   // the model's move applied to today's price
+                    now += v; fcst += expected; n++;
+                    if (expected > v * 1.005) up++; else if (expected < v * 0.995) down++;
+                }
+            }
+            outlook[horizon] = new
+            {
+                copies = n, now = Math.Round(now, 2), forecast = Math.Round(fcst, 2),
+                changeUsd = Math.Round(fcst - now, 2),
+                changePct = now > 0 ? Math.Round((fcst / now - 1) * 100, 1) : 0,
+                up, down,
+            };
+        }
+
+        // ----- holding time -----
+        var todayDate = DateTime.UtcNow.Date;
+        var held = copies.Select(c => (c, Days: (todayDate - DateTime.Parse(OwnedDate(c))).TotalDays)).ToList();
+        var daysSorted = held.Select(h => h.Days).OrderBy(d => d).ToList();
+        var oldest = held.OrderByDescending(h => h.Days).First();
+        var holding = new
+        {
+            avgDays = Math.Round(held.Average(h => h.Days)),
+            medianDays = Math.Round(daysSorted[daysSorted.Count / 2]),
+            oldest = new { name = MetaOf(oldest.c)?.Name, game = oldest.c.Game, id = oldest.c.ProductId, days = Math.Round(oldest.Days), since = OwnedDate(oldest.c) },
+            firstDate = copies.Select(OwnedDate).Min(StringComparer.Ordinal),
+        };
+
+        // ----- the cards that matter most -----
+        var topCards = cardValues
+            .Where(x => x.Value > 0 && meta.ContainsKey((x.Game, x.Id)))   // priced, known cards only
+            .Take(8).Select(x => new
+        {
+            x.Game, id = x.Id, name = meta.GetValueOrDefault((x.Game, x.Id))?.Name,
+            setName = meta.GetValueOrDefault((x.Game, x.Id))?.SetName,
+            pictureUrl = CardImageUrl(x.Game, x.Id), value = Math.Round(x.Value, 2), x.Copies, pct = Share(x.Value),
+        }).ToList();
+
+        return Ok(new
+        {
+            copies = copies.Count,
+            cards = cardValues.Count,
+            games = copies.Select(c => c.Game).Distinct().Count(),
+            totalValue = Math.Round(total, 2),
+            avgValue = cardValues.Count > 0 ? Math.Round(total / cardValues.Count, 2) : 0,
+            medianValue = Math.Round(median, 2),
+            packCopies = copies.Count(c => c.Source == AcquireSource.Pack),
+            paidCopies = paidCopies.Count,
+            invested = Math.Round(invested, 2),
+            unrealizedUsd = Math.Round(paidValue - invested, 2),
+            unrealizedPct = invested > 0 ? Math.Round((paidValue / invested - 1) * 100, 1) : (double?)null,
+            realizedUsd = sold.Count > 0 ? Math.Round(realizedPl, 2) : (double?)null,
+            soldCopies = sold.Count,
+            byGame, byTier, bySet, byRarity, priceBands, concentration, acquisitions, momentum, outlook, holding, topCards,
+        });
     }
 
     [HttpGet("summary")]
