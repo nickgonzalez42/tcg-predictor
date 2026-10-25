@@ -1,14 +1,98 @@
 using System.Security.Claims;
+using API.Data;
 using API.DTOS;
 using API.Entities;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
-public class AccountController(SignInManager<User> signInManager, IConfiguration config) : BaseApiController
+public class AccountController(SignInManager<User> signInManager, IConfiguration config,
+    StoreContext store) : BaseApiController
 {
+    // ----- Account settings (2026-10-25): the minimal self-service surface -----
+    // Public profiles, handles, avatars and comments were removed the same
+    // day; what a signed-in user can manage is their email (read-only here),
+    // the alert-email opt-in, their password, and deleting the account.
+
+    public record SettingsDto(bool AlertEmails);
+    public record PasswordDto(string? CurrentPassword, string NewPassword);
+    public record DeleteDto(string Confirm);
+
+    [Authorize]
+    [HttpGet("settings")]
+    public async Task<IActionResult> GetSettings()
+    {
+        var user = await signInManager.UserManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+        var logins = await signInManager.UserManager.GetLoginsAsync(user);
+        return Ok(new
+        {
+            email = user.Email,
+            alertEmails = user.AlertEmails,
+            hasPassword = await signInManager.UserManager.HasPasswordAsync(user),
+            providers = logins.Select(l => l.LoginProvider).ToList(),
+            createdAt = user.CreatedAt.ToString("yyyy-MM-dd"),
+        });
+    }
+
+    [Authorize]
+    [HttpPut("settings")]
+    public async Task<IActionResult> UpdateSettings(SettingsDto dto)
+    {
+        var user = await signInManager.UserManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+        user.AlertEmails = dto.AlertEmails;
+        var result = await signInManager.UserManager.UpdateAsync(user);
+        return result.Succeeded ? Ok() : BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
+    }
+
+    // Change the password, or set one for an account that signed up with
+    // Google and has none yet (then no current password is asked for).
+    [Authorize]
+    [HttpPost("password")]
+    public async Task<IActionResult> ChangePassword(PasswordDto dto)
+    {
+        var user = await signInManager.UserManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+        if (string.IsNullOrWhiteSpace(dto.NewPassword)) return BadRequest("Enter a new password.");
+        var hasPassword = await signInManager.UserManager.HasPasswordAsync(user);
+        var result = hasPassword
+            ? await signInManager.UserManager.ChangePasswordAsync(user, dto.CurrentPassword ?? "", dto.NewPassword)
+            : await signInManager.UserManager.AddPasswordAsync(user, dto.NewPassword);
+        if (!result.Succeeded)
+            return BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
+        await signInManager.RefreshSignInAsync(user);
+        return Ok();
+    }
+
+    // Delete the account and everything it owns: tracked copies (owned,
+    // wishlist, sold), alerts, comments and votes; problem reports stay for
+    // the site's own record but lose the author. The body must say DELETE.
+    [Authorize]
+    [HttpDelete]
+    public async Task<IActionResult> DeleteAccount(DeleteDto dto)
+    {
+        if (dto.Confirm != "DELETE") return BadRequest("Type DELETE to confirm.");
+        var user = await signInManager.UserManager.GetUserAsync(User);
+        if (user == null) return Unauthorized();
+        var name = user.UserName!;
+        await store.TrackedCards.Where(x => x.UserName == name).ExecuteDeleteAsync();
+        await store.CardAlerts.Where(x => x.UserName == name).ExecuteDeleteAsync();
+        await store.CommentVotes.Where(x => x.UserName == name).ExecuteDeleteAsync();
+        await store.Comments.Where(x => x.UserName == name).ExecuteDeleteAsync();
+        await store.ProblemReports.Where(x => x.UserName == name)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.UserName, (string?)null));
+        var result = await signInManager.UserManager.DeleteAsync(user);
+        if (!result.Succeeded)
+            return BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
+        await signInManager.SignOutAsync();
+        return NoContent();
+    }
+
     // Rate-limited: account creation is the classic bot target, and each
     // attempt costs a password hash.
     [HttpPost("register")]

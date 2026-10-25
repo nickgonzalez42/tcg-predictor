@@ -4,8 +4,7 @@ import HomePage from "../../features/home/HomePage";
 import Catalog from "../../features/catalog/Catalog";
 import CardDetails from "../../features/catalog/CardDetails";
 import PrivacyPage from '../../features/about/PrivacyPage';
-import ProfileSettingsPage from '../../features/social/ProfileSettingsPage';
-import PublicProfilePage from '../../features/social/PublicProfilePage';
+import AccountSettingsPage from '../../features/account/AccountSettingsPage';
 import AboutPage from "../../features/about/AboutPage";
 import ContactPage from "../../features/about/ContactPage";
 import TermsPage from "../../features/about/TermsPage";
@@ -33,6 +32,8 @@ export const router = createBrowserRouter([
                     {path: '/scan', element: <ScanPage />},
                     {path: '/watchlist', element: <Wishlist />},
                     {path: '/notifications', element: <NotificationsPage />},
+                    {path: '/settings', element: <AccountSettingsPage />},
+                    {path: '/settings/profile', element: <Navigate replace to='/settings' />},
                     // Old bookmarks from when the page was called "Wishlist".
                     {path: '/wishlist', element: <Navigate replace to='/watchlist' />},
                 ]
@@ -46,8 +47,6 @@ export const router = createBrowserRouter([
             {path: '/privacy', element: <PrivacyPage />},
             {path: '/terms', element: <TermsPage />},
             {path: '/contact', element: <ContactPage />},
-            {path: '/settings/profile', element: <ProfileSettingsPage />},
-            {path: '/u/:handle', element: <PublicProfilePage />},
             {path: '/not-found', element: <NotFound />},
             {path: '/server-error', element: <ServerError />},
             {path: '/login', element: <LoginForm />},

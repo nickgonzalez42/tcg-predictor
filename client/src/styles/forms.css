@@ -109,3 +109,13 @@ textarea.input {
     font-size: 16px !important;
   }
 }
+
+/* Inline error text under a form (used by the report, alert, own-it and
+   sell modals and the contact page; these classes outlived the social
+   feature they were named in, 2026-10-25). */
+.comment-error,
+.profile-settings__error {
+  color: var(--down);
+  font-size: 13px;
+  margin: var(--space-5) 0;
+}

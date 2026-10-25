@@ -4,7 +4,6 @@ import { catalogApi } from "../../features/catalog/catalogApi";
 import { catalogSlice } from "../../features/catalog/catalogSlice";
 import { accountApi } from "../../features/account/accountApi";
 import { watchlistApi } from "../../features/watchlist/watchlistApi";
-import { socialApi } from "../../features/social/socialApi";
 import { reportApi } from "../../features/report/reportApi";
 import { reportsApi } from "../../features/reports/reportsApi";
 import { homeApi } from "../../features/home/homeApi";
@@ -15,7 +14,6 @@ export const store = configureStore({
         [catalogApi.reducerPath]: catalogApi.reducer,
         [accountApi.reducerPath]: accountApi.reducer,
         [watchlistApi.reducerPath]: watchlistApi.reducer,
-        [socialApi.reducerPath]: socialApi.reducer,
         [reportApi.reducerPath]: reportApi.reducer,
         [reportsApi.reducerPath]: reportsApi.reducer,
         [homeApi.reducerPath]: homeApi.reducer,
@@ -26,7 +24,6 @@ export const store = configureStore({
     middleware: (getDefaultMiddleware) =>
         getDefaultMiddleware().concat(
             catalogApi.middleware,
-            socialApi.middleware,
             reportApi.middleware,
             reportsApi.middleware,
             homeApi.middleware,

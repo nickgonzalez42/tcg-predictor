@@ -1,0 +1,35 @@
+/* Account settings (/settings, 2026-10-25): a short stack of panels. */
+
+.account {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-15);
+    max-width: 640px;
+    padding-bottom: 72px;   /* clear the fixed ticker */
+}
+.account__head { margin-bottom: var(--space-5); }
+.account__title { margin: 2px 0 0; font-size: clamp(30px, 5vw, 44px); line-height: 1; }
+
+.account__section { display: flex; flex-direction: column; gap: var(--space-10); }
+.account__section--danger { border-color: rgba(255, 122, 122, .35); }
+.account__h {
+    margin: 0;
+    font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+}
+.account__hint { display: block; font-size: 13px; color: var(--text-muted); margin: 0; }
+
+.account__facts { display: grid; grid-template-columns: 140px minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 14px; }
+.account__facts dt { color: var(--text-muted); }
+.account__facts dd { margin: 0; overflow-wrap: anywhere; }
+
+.account__toggle { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.account__toggle input { margin-top: 3px; }
+.account__toggle strong { display: block; font-size: 14px; font-weight: 600; }
+
+.account__form { display: flex; flex-direction: column; gap: var(--space-10); max-width: 360px; }
+.account__form .field-label { display: flex; flex-direction: column; gap: 4px; }
+
+@media (max-width: 767px) {
+    .account__facts { grid-template-columns: 1fr; gap: 2px; }
+    .account__facts dt { margin-top: 6px; }
+}

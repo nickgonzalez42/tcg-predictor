@@ -62,7 +62,6 @@ if (ImageSearchService.ArtifactsExist(clipDir))
     catch (Exception e) { Console.Error.WriteLine($"image search disabled: {e.GetType().Name}: {e.Message}"); }
 }
 builder.Services.AddSingleton(new ImageSearchHolder { Service = imageSearch });
-builder.Services.AddScoped<ModerationService>();
 builder.Services.AddScoped<NotificationService>();
 // Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
 builder.Services.AddScoped<AlertEvaluator>();

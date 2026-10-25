@@ -6,8 +6,8 @@ export default function UserMenu() {
 
     return (
         <>
-            <NavLink to="/settings/profile" className="navbar__link" title="Profile settings">
-                PROFILE
+            <NavLink to="/settings" className="navbar__link" title="Account settings">
+                ACCOUNT
             </NavLink>
             <button className="navbar__link" onClick={() => logout()} disabled={isLoading}>
                 LOGOUT

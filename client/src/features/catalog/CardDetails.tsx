@@ -28,7 +28,6 @@ import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { tcgBuyUrl } from "../../lib/affiliate";
 import AdSlot from "../../app/shared/components/AdSlot";
-import CommentSection from "../social/CommentSection";
 
 // The stored reason leads with "Projects +X% over 12m. <Signals|Behind it|Key
 // drivers|What moves it>: ..." — the projection is already shown per cell, so
@@ -507,7 +506,6 @@ export default function CardDetails() {
                         )}
                     </>
                 )}
-                <CommentSection game={gameId} productId={cardId} />
                 <AdSlot slot="" />
             </div>
         </>
