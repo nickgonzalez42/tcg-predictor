@@ -10,7 +10,7 @@ import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, set
 import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useUserInfoQuery } from "../account/accountApi";
 import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
 import { useMediaQuery } from "../../lib/useMediaQuery";
@@ -153,6 +153,12 @@ export default function Catalog() {
               ))}
             </div>
           )}
+          {/* Camera scanner (2026-10-25): sits with the collection controls;
+              signed-out visitors land on the login page via RequireAuth. */}
+          <Link className="btn btn--outline results-head__scan" to="/scan"
+            title="Add cards to your collection with your camera">
+            📷 Scan
+          </Link>
           {user && (
             <label className="switch-field"
               title={quick
