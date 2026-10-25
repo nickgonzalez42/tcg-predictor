@@ -17,7 +17,6 @@ import ValueChart from "./ValueChart";
 import AllocationDonut from "./AllocationDonut";
 import BestWorst from "./BestWorst";
 import PositionRow from "./PositionRow";
-import ClearPortfolioModal from "./ClearPortfolioModal";
 import PaidHelpModal from "./PaidHelpModal";
 import SoldTable from "./SoldTable";
 
@@ -25,7 +24,6 @@ export default function Portfolio() {
     usePageMeta("Portfolio");
     const [showPaidHelp, setShowPaidHelp] = useState(false);
     const [showImport, setShowImport] = useState(false);
-    const [showClear, setShowClear] = useState(false);
     // Positions (what you hold) vs the Sold track (what you've sold, with
     // realized P/L) — two tabs over the same table area (2026-10-24).
     const [view, setView] = useState<'positions' | 'sold'>('positions');
@@ -148,19 +146,9 @@ export default function Portfolio() {
                         </button>
                         <button className="btn btn--outline btn--circle" title="How is Paid set?"
                             onClick={() => setShowPaidHelp(true)}>?</button>
-                        {!empty && (
-                            <button className="btn btn--outline btn--danger" title="Delete every position"
-                                onClick={() => setShowClear(true)}>
-                                Clear
-                            </button>
-                        )}
                     </div>
                 </div>
                 {showImport && <ImportModal onClose={() => setShowImport(false)} />}
-                {showClear && (
-                    <ClearPortfolioModal copies={summary?.copies ?? 0}
-                        onClose={() => setShowClear(false)} />
-                )}
                 {showPaidHelp && <PaidHelpModal onClose={() => setShowPaidHelp(false)} />}
 
                 {view === 'sold' ? (
