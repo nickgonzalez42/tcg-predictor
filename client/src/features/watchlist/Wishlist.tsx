@@ -23,7 +23,7 @@ import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 
 
-// Alert chip: "🔔 2" (highlighted when any alert has hit) or "+ set alert".
+// Alert chip: "Alerts · 2" (highlighted when any alert has hit) or "+ set alert".
 // Opens the alert manager modal — several alerts per card, on the actual
 // price, forecast prices, or forecast % growth, per condition and timeframe.
 function AlertChip({ card, ownGrade }: { card: Card; ownGrade: string }) {
@@ -40,7 +40,7 @@ function AlertChip({ card, ownGrade }: { card: Card; ownGrade: string }) {
                 <button className={`alert-chip${anyHit ? ' alert-chip--hit' : ''}`}
                     onClick={() => setOpen(true)}
                     title={anyHit ? 'An alert has hit: manage alerts' : 'Manage alerts'}>
-                    🔔 {mine.length}{anyHit ? ' · hit!' : ''}
+                    Alerts · {mine.length}{anyHit ? ' · hit!' : ''}
                 </button>
             ) : (
                 <button className="alert-chip alert-chip--unset" onClick={() => setOpen(true)}>

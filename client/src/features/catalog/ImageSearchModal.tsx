@@ -35,7 +35,7 @@ export default function ImageSearchModal({ onClose }: { onClose: () => void }) {
                     onChange={e => onPick(e.target.files?.[0])}
                 />
                 <button className="btn btn--block" onClick={() => fileInput.current?.click()}>
-                    {preview ? 'Try another photo' : '📷 Take or choose a photo'}
+                    {preview ? 'Try another photo' : 'Take or choose a photo'}
                 </button>
                 {preview && <img className="imgsearch__preview" src={preview} alt="Your photo" />}
                 {isLoading && <p className="est-note">Searching…</p>}

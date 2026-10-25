@@ -349,7 +349,7 @@ export default function ScanPage() {
                                     : 'This browser can’t open the camera. Use a photo instead.'}
                             </p>
                             <button type="button" className="btn" onClick={() => fileRef.current?.click()}>
-                                📷 Take or choose a photo
+                                Take or choose a photo
                             </button>
                         </div>
                     )}

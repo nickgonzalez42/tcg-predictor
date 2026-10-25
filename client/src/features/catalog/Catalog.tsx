@@ -157,7 +157,7 @@ export default function Catalog() {
               signed-out visitors land on the login page via RequireAuth. */}
           <Link className="btn btn--outline results-head__scan" to="/scan"
             title="Add cards to your collection with your camera">
-            📷 Scan
+            Scan
           </Link>
           {user && (
             <label className="switch-field"
