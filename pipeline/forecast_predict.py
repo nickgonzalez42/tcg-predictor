@@ -1530,6 +1530,14 @@ SCHEMA = """
             printing TEXT NOT NULL DEFAULT '',   -- '' = base printing
             PRIMARY KEY (game, product_id, printing, target, horizon)
         );
+        -- The site's movers ranking filters by (target, horizon, base_price)
+        -- and per game; without these the 1.7M-row table is scanned on every
+        -- cold request, which went from seconds to minutes once the API box's
+        -- page cache tightened (2026-10-25).
+        CREATE INDEX IF NOT EXISTS idx_forecasts_target_horizon_price
+            ON forecasts(target, horizon, base_price);
+        CREATE INDEX IF NOT EXISTS idx_forecasts_game_target_horizon_price
+            ON forecasts(game, target, horizon, base_price);
         """
 
 

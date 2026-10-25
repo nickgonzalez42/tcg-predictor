@@ -249,7 +249,11 @@ def main():
 
     from games import priced_games
     games = priced_games() if args.game == "all" else [args.game]
-    conn = sqlite3.connect(PC_DB)
+    # A long busy timeout: a reader holding a shared lock (a forecast run or
+    # the dev API reading price history) made a commit here fail with
+    # "database is locked" after the default 5 s on 2026-10-25, killing the
+    # night's refresh 100 minutes in. Waiting beats dying.
+    conn = sqlite3.connect(PC_DB, timeout=600)
     ensure_table(conn)
     targets = []
     for game in games:
