@@ -541,15 +541,26 @@
     grid-template-columns: 1fr;
   }
 
-  /* Phones: the thumb goes and the name alone is pinned, a little narrower,
-     so the scrolling columns keep most of the width. */
-  .pf-positions .screener--positions th:nth-child(1),
-  .pf-positions .screener--positions td:nth-child(1) { display: none; }
+  /* Phones keep the card image (user 2026-10-25) — the pinned block just
+     gets tighter: a smaller thumb in a 44px cell plus a 126px name, leaving
+     a bit over half the viewport for the scrolling columns. */
+  .pf-positions .screener--positions td:nth-child(1) {
+    padding-left: 8px;
+    padding-right: 6px;
+    min-width: 44px;
+  }
+
+  .pf-positions .screener--positions th:nth-child(1) { min-width: 44px; }
+
+  .pf-positions .screener--positions td:nth-child(1) .screener__thumb {
+    width: 26px;
+    height: 36px;
+  }
 
   .pf-positions .screener--positions th:nth-child(2),
   .pf-positions .screener--positions td:nth-child(2) {
-    left: 0;
-    max-width: 150px;
+    left: 44px;
+    max-width: 126px;
   }
 
   .pf-positions .screener--positions th,
