@@ -18,7 +18,7 @@ public class MoverService(
     // imageUrl builds the absolute art URL (host-dependent, so the controller
     // supplies it). trend overrides the displayed history window (sparkline +
     // PAST pill); default stays the year-long view. perGame > 0 (with mix)
-    // guarantees every game that many cards.
+    // guarantees every game that many cards at each horizon.
     public async Task<List<CardDto>> TopMovers(
         int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
     {
@@ -29,21 +29,37 @@ public class MoverService(
         // horizon's forecast fields.
         if (horizon == "mix")
         {
-            // perGame: every game contributes up to N cards, drawn from its
-            // strongest gainers/losers per category (the per-game guarantee
-            // inside PickMovers). Display order is the client's concern —
-            // the hero shuffles.
+            // perGame: every game contributes up to N cards AT EACH horizon
+            // (1m, 6m, 12m), drawn from its strongest gainer/loser for that
+            // horizon (the per-game guarantee inside PickMovers). The feed is
+            // the per-horizon lists back to back, each card stamped with the
+            // horizon it was picked on (FcstHorizon), so the hero can rotate
+            // short → long and still show every game at every length (user
+            // request 2026-10-24). A card is spent once featured: a later
+            // horizon prefers a game's other picks and repeats a card only
+            // when that game has nothing else at that length — the same
+            // card at a different horizon is still a different forecast.
+            // Display order is the client's concern.
             if (perGame > 0)
             {
                 var all = new List<CardDto>();
+                var featured = new HashSet<(string Game, int Id)>();
                 foreach (var h in new[] { "1m", "6m", "12m" })
-                    all.AddRange(await PickMovers(
-                        h, GameRegistry.Keys.Length * 2, guaranteeGames: true, trend, imageUrl));
-                return all
-                    .DistinctBy(m => (m.Game, m.Id))
-                    .GroupBy(m => m.Game)
-                    .SelectMany(g => g.Take(perGame))
-                    .ToList();
+                {
+                    var picks = await PickMovers(
+                        h, GameRegistry.Keys.Length * 2, guaranteeGames: true, trend, imageUrl,
+                        flatFallback: true);
+                    foreach (var g in picks.DistinctBy(m => (m.Game, m.Id)).GroupBy(m => m.Game))
+                    {
+                        var chosen = g.Where(m => !featured.Contains((m.Game, m.Id)))
+                            .Concat(g.Where(m => featured.Contains((m.Game, m.Id))))
+                            .Take(perGame)
+                            .ToList();
+                        foreach (var m in chosen) featured.Add((m.Game, m.Id));
+                        all.AddRange(chosen);
+                    }
+                }
+                return all;
             }
 
             // Legacy mix: one small slice per category, deduped; the per-game
@@ -62,8 +78,11 @@ public class MoverService(
         return await PickMovers(hz, count, guaranteeGames: true, trend, imageUrl);
     }
 
+    // flatFallback (the hero's mix feed): a game whose every call at this
+    // horizon is flat still contributes a card — see FlatPick.
     private async Task<List<CardDto>> PickMovers(
-        string hz, int count, bool guaranteeGames, string? trend, Func<string, int, string> imageUrl)
+        string hz, int count, bool guaranteeGames, string? trend, Func<string, int, string> imageUrl,
+        bool flatFallback = false)
     {
         var gamesWith12m = (await predictions.Forecasts
             .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
@@ -122,6 +141,8 @@ public class MoverService(
                 gainer = await BestMover(game, "launch1m", gainerSide: true);
                 loser = await BestMover(game, "launch1m", gainerSide: false);
             }
+            if (gainer == null && loser == null && flatFallback)
+                gainer = await FlatPick(game, gameHorizon);
             if (gainer != null) guaranteed.Add(gainer);
             if (loser != null) guaranteed.Add(loser);
         }
@@ -167,6 +188,27 @@ public class MoverService(
             if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice, hit.Printing);
         }
         return null;
+    }
+
+    // A game whose WHOLE segment at one horizon is flat — the model shrank
+    // every call to "no change" (gundam 6m on 2026-10-24; the soft floor can
+    // do this to any small game's long horizon) — has no gainer or loser to
+    // feature. The hero promises every game at every forecast length, so it
+    // shows the game's most valuable showable card with its flat call
+    // instead: "0%" is the model's honest answer there. Never for the EARLY
+    // tier — the catalog-only games carry nothing but flat launch1m rows and
+    // shouldn't headline on that.
+    private async Task<Pick?> FlatPick(string game, string horizon)
+    {
+        if (horizon == "launch1m") return null;
+        var top = await predictions.Forecasts.IgnoreQueryFilters()
+            .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == horizon
+                        && f.BasePrice >= 10)
+            .OrderByDescending(f => f.BasePrice)
+            .Take(10).ToListAsync();
+        var ok = await ShowcaseIds(game, top.Select(f => f.ProductId));
+        var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
+        return hit == null ? null : new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice, hit.Printing);
     }
 
     // Of these product ids, the ones fit for the showcase (cross-DB, so the

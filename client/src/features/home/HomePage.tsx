@@ -71,22 +71,57 @@ const hzLong = (h?: string) =>
 // (the hero mixes categories; tiles rank on 1m), legacy 12m field as fallback.
 const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;
 
+const shuffle = <T,>(xs: T[]) => {
+    const out = [...xs];
+    for (let i = out.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [out[i], out[j]] = [out[j], out[i]];
+    }
+    return out;
+};
+
+// The hero's running order (user request 2026-10-24): the feed carries every
+// game at every forecast length, and the scenes rotate 1 month → 6 month →
+// 1 year so the band keeps changing. Games are shuffled once per mount;
+// each horizon's list walks that same game order from a different starting
+// point (a third of the way round per horizon), so back-to-back scenes are
+// never the same game either. EARLY calls stand in for a game's 1m pick.
+const HERO_HORIZONS = ['1m', '6m', '12m'];
+function heroOrder(cards: Card[]): Card[] {
+    const hzOf = (c: Card) =>
+        c.fcstHorizon === '1m' || c.fcstHorizon === 'launch1m' ? '1m' : c.fcstHorizon === '6m' ? '6m' : '12m';
+    const games = shuffle([...new Set(cards.map(c => gameKey(c.game)))]);
+    const lanes = HERO_HORIZONS.map((h, k) => {
+        const start = Math.round(k * games.length / HERO_HORIZONS.length);
+        const order = [...games.slice(start), ...games.slice(0, start)];
+        const byGame = new Map(order.map(g =>
+            [g, shuffle(cards.filter(c => gameKey(c.game) === g && hzOf(c) === h))]));
+        const lane: Card[] = [];
+        for (let round = 0; ; round++) {   // one card per game per round
+            const row = order.map(g => byGame.get(g)?.[round]).filter((c): c is Card => !!c);
+            if (!row.length) break;
+            lane.push(...row);
+        }
+        return lane;
+    });
+    const out: Card[] = [];
+    for (let i = 0; lanes.some(l => i < l.length); i++)
+        for (const lane of lanes) if (lane[i]) out.push(lane[i]);
+    return out;
+}
+
 // onCard reports the card each scene features (null while the placeholder
 // line shows) so the panel's band can name the horizon on screen.
 function HeroChart({ movers, onCard }: { movers?: Card[]; onCard?: (c: Card | null) => void }) {
     const cards = useMemo(() => {
-        // Same value floor as the movers feed itself ($10); the sparkline just
-        // needs enough points to trace a line worth watching.
+        // The feed already applies the showcase bar (value floor, fresh price,
+        // art); the sparkline just needs two points to trace a line. No
+        // extra floor here (price or history depth) — it would silently drop
+        // a game's only pick at some horizon and break the every-game promise
+        // (young cards carry only a couple of monthly points).
         const ok = (movers ?? []).filter(m =>
-            (m.price ?? 0) >= 10 && (m.sparkline?.length ?? 0) >= 4 && moverFcst(m) != null);
-        // The feed guarantees each game's share (perGame); the scene order is
-        // a flat Fisher-Yates shuffle — fresh every mount.
-        const shuffled = [...ok];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
+            (m.sparkline?.length ?? 0) >= 2 && moverFcst(m) != null);
+        return heroOrder(ok);   // fresh order every mount
     }, [movers]);
     // A scene only mounts once its art is loaded: the first one waits on the
     // placeholder; later ones are gated by canLeave below, so the finished
@@ -170,6 +205,9 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     const histD = hist.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
     const lastX = x(hist.length - 1), lastY = y(hist[hist.length - 1]);
     const fcstPct = card.price ? (fcstEnd / card.price - 1) * 100 : 0;
+    // A call that rounds to 0% reads neutral, not as a green "+0%" — the
+    // model's flat segments (a game's whole 6m, say) feature as "0%".
+    const flat = Math.abs(fcstPct) < 0.5;
 
     useEffect(() => {
         const path = histRef.current!;
@@ -271,9 +309,9 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     className="hero-scene__fcst"
                     x={HERO_W - HERO_PAD} y={HERO_H - 10}
                     textAnchor="end"
-                    style={{ opacity: 0, fill: fcstPct >= 0 ? 'var(--up)' : 'var(--down)' }}
+                    style={{ opacity: 0, fill: flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
                 >
-                    {fcstPct >= 0 ? '+' : ''}{fcstPct.toFixed(0)}% {hzLabel(card.fcstHorizon)} FCST
+                    {flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% {hzLabel(card.fcstHorizon)} FCST
                 </text>
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
@@ -336,10 +374,11 @@ export default function HomePage() {
     // eight games; the dedupe below then keeps one tile per game. Tiles show
     // the past six months (trend) next to the 1-month forecast they rank on.
     const { data: movers } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '6m' });
-    // The hero graph cycles a MIX of forecast categories (1M/6M/1Y) with four
-    // cards per game, shuffled client-side; the tiles below stay on the
-    // 1-month ranking.
-    const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 4 });
+    // The hero graph cycles every forecast length (1M/6M/1Y) with two cards
+    // per game AT EACH length — its strongest gainer and loser there — in a
+    // horizon-rotating order built client-side (heroOrder); the tiles below
+    // stay on the 1-month ranking.
+    const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 2 });
     const { data: user } = useUserInfoQuery();
     // The card the hero scene is featuring right now; the band follows it.
     const [heroCard, setHeroCard] = useState<Card | null>(null);

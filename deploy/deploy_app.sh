@@ -53,7 +53,7 @@ trap - ERR
 # Prime the process-lifetime caches the home page reads (movers, at-a-glance
 # stats) so the first visitor after a deploy does not watch them load — the
 # same list push_data.sh warms after its own restart.
-for ep in "api/cards/movers?horizon=mix&perGame=4" "api/home/stats"; do
+for ep in "api/cards/movers?horizon=mix&perGame=2" "api/home/stats"; do
   curl -s -o /dev/null --max-time 120 "https://cardstock.guide/$ep" || true
 done
 echo "app deployed -> http://$IP"

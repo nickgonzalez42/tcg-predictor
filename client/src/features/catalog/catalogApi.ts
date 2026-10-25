@@ -86,7 +86,8 @@ export const catalogApi = createApi({
         // Top movers by forecast change across all games (ticker + home tiles).
         // horizon: 1m | 6m | 12m (default 12m, with the young-game 6m fallback).
         // trend: displayed history window (sparkline + PAST pill), default 1y.
-        // perGame (mix only): guarantee every game that many cards (the hero).
+        // perGame (mix only): guarantee every game that many cards at EACH
+        // horizon, 1m/6m/12m back to back (the hero).
         fetchMovers: builder.query<Card[], { count?: number; horizon?: string; trend?: string; perGame?: number } | void>({
             query: (args) => {
                 const p = new URLSearchParams();

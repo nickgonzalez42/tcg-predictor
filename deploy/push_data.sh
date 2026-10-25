@@ -113,7 +113,7 @@ ${=SSH_CMD} ubuntu@$IP 'sudo systemctl restart tcg-api && sleep 2 && systemctl i
 echo "== warmup =="
 for ep in \
   "api/cards/movers?count=24&horizon=1m&trend=6m" \
-  "api/cards/movers?horizon=mix&perGame=4" \
+  "api/cards/movers?horizon=mix&perGame=2" \
   "api/cards/movers?game=all&count=10" \
   "api/cards?game=pokemon&pageSize=24" \
   "api/home/stats"; do
