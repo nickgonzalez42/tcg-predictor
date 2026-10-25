@@ -136,12 +136,18 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
     const bFirst = bench[0], bLast = bench[bench.length - 1];
     const investedAt = (d?: string) =>
         d ? (s?.invested?.filter(p => p.date <= d).at(-1)?.value ?? 0) : 0;
-    const contributed = last ? investedAt(last.date) - (first ? investedAt(first.date) : 0) : 0;
-    const appreciation = (from?: { value: number }, to?: { value: number }) =>
-        to ? to.value - (from?.value ?? 0) - contributed : null;
-    const apprecPct = (from?: { value: number }, to?: { value: number }) => {
+    // Contributions over a LINE's own window, first point to last: the S&P
+    // line starts at the first close on/after the chart start, a few days
+    // after the collection line, so measuring both against the collection's
+    // first date double-counted whatever came in between (2026-10-25).
+    type Pt = { date: string; value: number };
+    const contributedBetween = (from?: Pt, to?: Pt) =>
+        to ? investedAt(to.date) - (from ? investedAt(from.date) : 0) : 0;
+    const appreciation = (from?: Pt, to?: Pt) =>
+        to ? to.value - (from?.value ?? 0) - contributedBetween(from, to) : null;
+    const apprecPct = (from?: Pt, to?: Pt) => {
         const a = appreciation(from, to);
-        const base = (from?.value ?? 0) + contributed;
+        const base = (from?.value ?? 0) + contributedBetween(from, to);
         return a != null && base > 0 ? (a / base) * 100 : null;
     };
     // Whole-life figures (not range-scoped): total money in, and unrealized

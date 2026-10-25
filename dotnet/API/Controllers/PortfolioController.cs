@@ -219,7 +219,17 @@ public class PortfolioController(
             })
             .Where(l => l.Entry > 0)
             .ToList();
-        var benchmark = spxCloses.Select(p => new
+        // The what-if runs to the collection's last date: closes exist only for
+        // trading days (and the cache can trail by a day), so cards added after
+        // the last close — a weekend's scanning — were money the Invested
+        // figure counted and the S&P line had not "bought" yet, which read as
+        // an index loss (2026-10-25). Those lots enter at the last close (their
+        // entry above) and count at face value until the next close arrives.
+        var marks = spxCloses.Select(p => (p.Date, p.Close)).ToList();
+        if (spxCloses.Count > 0 && series.Count > 0
+            && string.CompareOrdinal(series[^1].Date, spxCloses[^1].Date) > 0)
+            marks.Add((series[^1].Date, spxCloses[^1].Close));
+        var benchmark = marks.Select(p => new
         {
             date = p.Date,
             value = Math.Round(lots
