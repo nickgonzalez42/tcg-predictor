@@ -97,7 +97,7 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                     {paid != null ? currencyFormat(paid) : packCost <= 0 ? 'n/a' : null}
                     {packCost > 0 && (
                         <div className="pack-paid mono"
-                            title={`${packPulls} pack pull${packPulls === 1 ? '' : 's'} listed at booster price; not counted in P/L`}>
+                            title={`${packPulls} pack pull${packPulls === 1 ? '' : 's'} shown at booster price; they don't count toward gains`}>
                             {paid != null ? '+' : ''}{currencyFormat(packCost)} pack
                         </div>
                     )}
@@ -107,11 +107,11 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                     {card.priceAsOf && <div className="mono price-asof">{shortDate(card.priceAsOf)}</div>}
                 </td>
                 <td className="screener__num">
-                    {pl != null ? <ChangePill value={pl} unit="usd" title="vs recorded cost" /> : <span className="mono">n/a</span>}
+                    {pl != null ? <ChangePill value={pl} unit="usd" title="Compared with what you paid" /> : <span className="mono">n/a</span>}
                 </td>
                 <td className="screener__num">
                     <ChangePill value={hasYear ? card.fcst12Pct : card.fcst6Pct}
-                        title={`${hasYear ? '1 year' : '6 month'} model forecast`} />
+                        title={`Our ${hasYear ? '1-year' : '6-month'} forecast`} />
                 </td>
                 <td><Sparkline points={card.sparkline} /></td>
                 <td className="screener__actions" onClick={e => e.stopPropagation()}>

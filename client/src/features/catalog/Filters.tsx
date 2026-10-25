@@ -31,8 +31,8 @@ const CONFIDENCE_OPTIONS = [
 // predicted-price cards only, or both at once. Offered only while the game
 // has predicted-price cards.
 const MARKET_OPTIONS = [
-    { value: '', label: 'With market price' },
-    { value: 'without', label: 'Without market price' },
+    { value: '', label: 'Priced cards' },
+    { value: 'without', label: 'Not priced yet' },
     { value: 'all', label: 'Both' },
 ];
 

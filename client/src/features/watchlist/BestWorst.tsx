@@ -25,7 +25,7 @@ export default function BestWorst({ summary }: { summary: PortfolioSummary }) {
                     )}
                     <span className="bw-tile__pills">
                         <ChangePill value={p!.pct} />
-                        {p!.plUsd != null && <ChangePill value={p!.plUsd} unit="usd" title="P/L vs paid" />}
+                        {p!.plUsd != null && <ChangePill value={p!.plUsd} unit="usd" title="Gain on what you paid" />}
                     </span>
                 </Link>
             ))}

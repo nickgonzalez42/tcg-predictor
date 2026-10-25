@@ -670,17 +670,17 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             </div>
             {pastKeys.length > 0 && (
                 <div className="chart-legend mono">
-                    <span className="chart-legend__label">Past forecasts:</span>
+                    <span className="chart-legend__label">Earlier forecasts:</span>
                     {pastKeys.map(renderKey)}
                 </div>
             )}
             {hasPast && (
                 <div className="chart-legend mono">
                     <select className="chart-pastview" value={pastView}
-                        aria-label="Past forecasts shown"
-                        title="Which past forecasts to plot. Only ones whose target date has passed are shown."
+                        aria-label="Earlier forecasts shown"
+                        title="Which earlier forecasts to plot. Only ones whose date has already arrived are shown."
                         onChange={e => setPastView(e.target.value)}>
-                        <option value="latest">Latest per timeframe</option>
+                        <option value="latest">Latest for each timeframe</option>
                         {PAST_HORIZONS
                             .filter(h => (pastData?.forecasts ?? []).some(f => f.target === grade && f.horizon === h))
                             .map(h => (

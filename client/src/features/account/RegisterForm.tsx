@@ -35,7 +35,7 @@ export default function RegisterForm() {
 
     return (
         <div className="panel auth-card">
-            <h3>Register</h3>
+            <h3>Create your account</h3>
             <form onSubmit={handleSubmit(onSubmit)}>
                 <div className="field">
                     <label htmlFor="email">Email</label>
@@ -48,12 +48,12 @@ export default function RegisterForm() {
                     {errors.password && <span className="field__error">{errors.password.message}</span>}
                 </div>
                 <button className="btn btn--block" disabled={isSubmitting || !isValid} type="submit">
-                    Register
+                    Create account
                 </button>
                 <div className="auth-divider"><span>or</span></div>
                 <GoogleSignInButton label="Sign up with Google" />
                 <p style={{ textAlign: 'center' }}>
-                    Already have an account? <Link to='/login'>Login</Link>
+                    Already have an account? <Link to='/login'>Sign in</Link>
                 </p>
             </form>
         </div>

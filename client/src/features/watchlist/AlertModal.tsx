@@ -77,9 +77,9 @@ export default function AlertModal({ card, game, defaultGrade, onClose }: {
                     <label className="field-label" htmlFor="al-kind">Alert on</label>
                     <select id="al-kind" className="input" value={kind}
                         onChange={e => setKind(e.target.value as AlertKind)}>
-                        <option value="price">Actual price</option>
+                        <option value="price">Market price</option>
                         <option value="fcst_price">Forecast price</option>
-                        <option value="fcst_pct">Forecast % growth</option>
+                        <option value="fcst_pct">Forecast % change</option>
                     </select>
                 </div>
                 {kind !== 'price' && (

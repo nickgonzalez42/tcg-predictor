@@ -57,7 +57,7 @@ export default function OwnItModal({ card, game, defaultGrade, onClose }: {
     };
 
     return (
-        <Modal title={`Own it · ${card.name}`} onClose={onClose}>
+        <Modal title={`Add to portfolio · ${card.name}`} onClose={onClose}>
             <p className="est-note">
                 Adds the card to your portfolio and takes it off your watchlist.
             </p>
@@ -78,7 +78,7 @@ export default function OwnItModal({ card, game, defaultGrade, onClose }: {
                 <div className="field">
                     <label className="field-label" htmlFor="own-paid">Price paid per copy (optional)</label>
                     <input id="own-paid" className="input" type="number" min="0" step="any"
-                        inputMode="decimal" placeholder="Blank = pack pull (no recorded cost)"
+                        inputMode="decimal" placeholder="Leave blank if it came from a pack"
                         value={paid} onChange={e => setPaid(e.target.value)} />
                 </div>
                 <div className="field">

@@ -3,35 +3,35 @@
 // also swaps the card's price for the expected change, and on the catalog it
 // snaps the trend-window chips to the matching period (see catalogSlice).
 export const forecastSortOptions = [
-    { value: 'chgPct12Desc', label: '1Y % growth: desc' },
-    { value: 'chgPct12', label: '1Y % growth: asc' },
-    { value: 'chgUsd12Desc', label: '1Y $ growth: desc' },
-    { value: 'chgUsd12', label: '1Y $ growth: asc' },
-    { value: 'chgPct6Desc', label: '6M % growth: desc' },
-    { value: 'chgPct6', label: '6M % growth: asc' },
-    { value: 'chgUsd6Desc', label: '6M $ growth: desc' },
-    { value: 'chgUsd6', label: '6M $ growth: asc' },
-    { value: 'chgPct1mDesc', label: '1M % growth: desc' },
-    { value: 'chgPct1m', label: '1M % growth: asc' },
-    { value: 'chgUsd1mDesc', label: '1M $ growth: desc' },
-    { value: 'chgUsd1m', label: '1M $ growth: asc' },
+    { value: 'chgPct12Desc', label: '1 year, % gain, high to low' },
+    { value: 'chgPct12', label: '1 year, % gain, low to high' },
+    { value: 'chgUsd12Desc', label: '1 year, $ gain, high to low' },
+    { value: 'chgUsd12', label: '1 year, $ gain, low to high' },
+    { value: 'chgPct6Desc', label: '6 months, % gain, high to low' },
+    { value: 'chgPct6', label: '6 months, % gain, low to high' },
+    { value: 'chgUsd6Desc', label: '6 months, $ gain, high to low' },
+    { value: 'chgUsd6', label: '6 months, $ gain, low to high' },
+    { value: 'chgPct1mDesc', label: '1 month, % gain, high to low' },
+    { value: 'chgPct1m', label: '1 month, % gain, low to high' },
+    { value: 'chgUsd1mDesc', label: '1 month, $ gain, high to low' },
+    { value: 'chgUsd1m', label: '1 month, $ gain, low to high' },
 ];
 
 // PAST price growth over a trend window, matching the tiles' PAST pill.
 // Values are parsed server-side: hist{Pct|Usd}{1w|1m|6m|1y}[Desc].
 export const historySortOptions = [
-    { value: 'histPct1yDesc', label: '1Y % growth: desc' },
-    { value: 'histPct1y', label: '1Y % growth: asc' },
-    { value: 'histUsd1yDesc', label: '1Y $ growth: desc' },
-    { value: 'histUsd1y', label: '1Y $ growth: asc' },
-    { value: 'histPct6mDesc', label: '6M % growth: desc' },
-    { value: 'histPct6m', label: '6M % growth: asc' },
-    { value: 'histUsd6mDesc', label: '6M $ growth: desc' },
-    { value: 'histUsd6m', label: '6M $ growth: asc' },
-    { value: 'histPct1mDesc', label: '1M % growth: desc' },
-    { value: 'histPct1m', label: '1M % growth: asc' },
-    { value: 'histUsd1mDesc', label: '1M $ growth: desc' },
-    { value: 'histUsd1m', label: '1M $ growth: asc' },
+    { value: 'histPct1yDesc', label: 'Past year, % change, high to low' },
+    { value: 'histPct1y', label: 'Past year, % change, low to high' },
+    { value: 'histUsd1yDesc', label: 'Past year, $ change, high to low' },
+    { value: 'histUsd1y', label: 'Past year, $ change, low to high' },
+    { value: 'histPct6mDesc', label: 'Past 6 months, % change, high to low' },
+    { value: 'histPct6m', label: 'Past 6 months, % change, low to high' },
+    { value: 'histUsd6mDesc', label: 'Past 6 months, $ change, high to low' },
+    { value: 'histUsd6m', label: 'Past 6 months, $ change, low to high' },
+    { value: 'histPct1mDesc', label: 'Past month, % change, high to low' },
+    { value: 'histPct1m', label: 'Past month, % change, low to high' },
+    { value: 'histUsd1mDesc', label: 'Past month, $ change, high to low' },
+    { value: 'histUsd1m', label: 'Past month, $ change, low to high' },
 ];
 
 // Trend window the chips should snap to when a forecast or history sort is
@@ -53,13 +53,13 @@ export const catalogSortGroups: SortGroup[] = [
     {
         label: 'General',
         options: [
-            { value: 'name', label: 'Alphabetical' },
-            { value: 'priceDesc', label: 'Price: desc' },
-            { value: 'price', label: 'Price: asc' },
+            { value: 'name', label: 'Name, A to Z' },
+            { value: 'priceDesc', label: 'Price, high to low' },
+            { value: 'price', label: 'Price, low to high' },
         ],
     },
-    { label: 'Forecast growth', options: forecastSortOptions },
-    { label: 'Past growth', options: historySortOptions },
+    { label: 'Our forecast', options: forecastSortOptions },
+    { label: 'What already happened', options: historySortOptions },
 ];
 
 // Pre-release mode (2026-10-10): the predicted launch price is the only
@@ -68,9 +68,9 @@ export const prereleaseSortGroups: SortGroup[] = [
     {
         label: 'Pre-release',
         options: [
-            { value: 'priceDesc', label: 'Predicted price: desc' },
-            { value: 'price', label: 'Predicted price: asc' },
-            { value: 'name', label: 'Alphabetical' },
+            { value: 'priceDesc', label: 'Predicted price, high to low' },
+            { value: 'price', label: 'Predicted price, low to high' },
+            { value: 'name', label: 'Name, A to Z' },
         ],
     },
 ];

@@ -310,6 +310,12 @@ def _identity_subject(traits):
     return "its rarity/set profile"
 
 
+def span_of(horizon):
+    """'1m' -> 'one-month' etc., for the plain-English notes."""
+    return {"1m": "one-month", "6m": "six-month", "12m": "one-year",
+            "launch1m": "first-month"}.get(horizon, horizon)
+
+
 def make_reason(ret, mom3, trend12, vol6, horizon,
                 vol_now=None, volchg=None, comp=None, deltas_i=None,
                 traits=None, pid=0, set12=None, comp_examples=None):
@@ -331,12 +337,12 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
         ]
         cand.append((min(abs(t12), 80), variants[pid % len(variants)]))
     if m3 is not None and abs(m3) >= 8:
-        text = f"3-month momentum {m3:+.0f}%"
+        text = f"{'up' if m3 > 0 else 'down'} {abs(m3):.0f}% over the last three months"
         if proj is not None and (proj > 0) != (m3 > 0):
-            text += ", which the model expects to fade (mean-reversion)"
+            text += ", a run we expect to cool off"
         cand.append((min(abs(m3) * 1.3, 85), text))
     if vol6 is not None and not np.isnan(vol6) and vol6 >= 0.15:
-        cand.append((14, "a volatile price history widens the range"))
+        cand.append((14, "a jumpy price history, which is why the range is wide"))
 
     # --- set performance: how the card's whole set is trading ---
     s12 = _pct(set12) if set12 is not None else None
@@ -350,9 +356,9 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
     if vol_now is not None and not np.isnan(vol_now) and vol_now > 0:
         rate = f"~{vol_now:.0f}/mo sold" if vol_now >= 1 else "under 1/mo sold"
         if vol_now < 3:
-            cand.append((16, f"very thin trading ({rate}) makes the price noisy"))
+            cand.append((16, f"it barely trades ({rate}), so the price jumps around"))
         elif volchg is not None and not np.isnan(volchg) and abs(volchg) >= 0.4:
-            cand.append((18, f"sales volume is {'rising' if volchg > 0 else 'falling'} ({rate})"))
+            cand.append((18, f"{'more' if volchg > 0 else 'fewer'} copies are changing hands ({rate})"))
 
     # --- trait attribution: each bucket competes on its own ablation pull ---
     for bucket, delta in (deltas_i or {}).items():
@@ -376,10 +382,11 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
 
     cand.sort(key=lambda sc: -sc[0])
     top = [c for _, c in cand[:3]]
+    span = {"1m": "the next month", "6m": "the next six months", "12m": "the next year"}.get(horizon, horizon)
     if not top:
-        return f"Projects {proj:+.0f}% over {horizon}. Few distinguishing signals; the trajectory is flat."
-    lead = ("Key drivers", "Behind it", "What moves it", "Signals")[pid % 4]
-    return f"Projects {proj:+.0f}% over {horizon}. {lead}: {'; '.join(top)}."
+        return f"We expect about {proj:+.0f}% over {span}. Nothing stands out; the price has been steady."
+    lead = ("What's behind it", "What we're seeing", "The story here", "Why")[pid % 4]
+    return f"We expect about {proj:+.0f}% over {span}. {lead}: {'; '.join(top)}."
 
 
 def price_weight(p):
@@ -683,7 +690,7 @@ def _borrow_returns(game, target, hname, k, pids_k, prints_k):
         if src:
             arr = align(src)
             if usable(arr):
-                return f"the raw card's {hname} call at half strength", arr * BORROW_SHRINK
+                return f"the raw card's {span_of(hname)} forecast at half strength", arr * BORROW_SHRINK
         return None
     for h2 in sorted(HORIZONS, key=lambda h: abs(HORIZONS[h] - k)):
         if h2 == hname:
@@ -693,7 +700,7 @@ def _borrow_returns(game, target, hname, k, pids_k, prints_k):
             continue
         arr = align(src)
         if usable(arr):
-            return f"the {h2} call scaled to {hname}", arr * (k / HORIZONS[h2])
+            return f"our {span_of(h2)} forecast scaled to {span_of(hname)}", arr * (k / HORIZONS[h2])
     return None
 
 
@@ -1193,23 +1200,24 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                                  set12=set12[i], comp_examples=examples)
             # Honesty caveats replace the old suppression gates: flagged, not hidden.
             if unreliable:
-                reason += (" Caution: the model's recent out-of-sample accuracy for this"
-                           " game and horizon is poor; treat this forecast as speculative.")
+                reason += (" Heads up: our recent forecasts for this game and timeframe"
+                           " have been rough, so treat this one as a guess.")
             if early:
-                reason = ("Early estimate: this card has a single month of price history, so "
-                          "this is the model's first-month call from its traits, art and set "
-                          "— read it as a ranking signal, not a price target. " + reason)
+                reason = ("Early estimate: this card has only a month of prices, so this is a "
+                          "first guess from its set, rarity and art. Use it to compare new cards, "
+                          "not as a price target. " + reason)
             if weak_point:
-                reason += (f" Note: over {hname} the model has not beaten 'no change' for"
-                           " this game and tier out of sample, so the size of this call is"
-                           " damped; read it as a ranking signal, not a price target.")
+                reason += (f" One more thing: for {span_of(hname)} forecasts in this game and"
+                           " condition we haven't beaten simply assuming the price stays put,"
+                           " so we've toned this one down. Use it to compare cards, not as a"
+                           " price target.")
             if borrowed[i]:
-                reason += (f" Note: the model has no independent call for this tier over"
-                           f" {hname} (its own calls all round to 0%), so this follows"
-                           f" {borrow_label}; read it as a ranking signal, not a price target.")
+                reason += (f" One more thing: we have no separate read on this condition over"
+                           f" {span_of(hname)}, so this follows {borrow_label}. Use it to compare"
+                           " cards, not as a price target.")
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
-                reason += (" This is an extreme swing the model itself has low confidence"
-                           " in; such calls have historically been unreliable.")
+                reason += (" This is a big swing and we aren't confident in it; calls like"
+                           " this have often been wrong.")
             hz_pub = "launch1m" if early else hname
             conf_pub = "low" if early else str(conf[i])
             ver_pub = f"{version}-early" if early else version

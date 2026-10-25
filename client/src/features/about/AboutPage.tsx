@@ -73,11 +73,11 @@ function Headline({ models, updatedAt }: { models: ModelScore[]; updatedAt?: str
     const vTracked = useCountUp(tracked, inView);
     return (
         <div ref={ref} className="score-tiles" data-in={inView ? 1 : 0}>
-            <Tile value={compact(vTotal)} label="forecasts graded" note="every model, every horizon, since the archive began" />
-            <Tile value={`${vHit.toFixed(1)}%`} label="landed inside the 80% range" tone="up"
-                note="1-month Near Mint calls · 80% means the ranges are honest" />
-            <Tile value={`±${vMiss.toFixed(1)}%`} label="typical miss" note="1-month Near Mint · gap between the call and the landing" />
-            <Tile value={`${Math.round(vTracked)}`} label="models with a record" note={`${MIN_N}+ graded calls · through ${fmtDate(updatedAt)}`} />
+            <Tile value={compact(vTotal)} label="forecasts checked" note="every game, condition and timeframe, since we started keeping score" />
+            <Tile value={`${vHit.toFixed(1)}%`} label="price landed inside our range" tone="up"
+                note="1-month forecasts on raw cards · we aim for 80%" />
+            <Tile value={`±${vMiss.toFixed(1)}%`} label="typical miss" note="1-month forecasts on raw cards · how far off we usually are" />
+            <Tile value={`${Math.round(vTracked)}`} label="models with a record" note={`${MIN_N}+ checked forecasts · through ${fmtDate(updatedAt)}`} />
         </div>
     );
 }
@@ -109,7 +109,7 @@ function WeeklyChart({ pts }: { pts: Pt[] }) {
     const yMiss = (v: number) => T + (1 - v / missMax) * (H - T - B);
     const line = (f: (p: Pt) => number) => pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${f(p).toFixed(1)}`).join(' ');
     if (pts.length < 2) {
-        return <div className="glance__text">The weekly record fills in as cohorts land — check back after the next refresh.</div>;
+        return <div className="glance__text">The weekly record fills in as forecasts come due. Check back after the next refresh.</div>;
     }
     const maxTicks = narrow ? 4 : 8;
     const ticks = pts.map((p, i) => ({ i, label: fmtWeek(p.week) }))
@@ -117,7 +117,7 @@ function WeeklyChart({ pts }: { pts: Pt[] }) {
     return (
         <div ref={ref} className="score-charts" data-in={inView ? 1 : 0}>
             <figure className="score-chart">
-                <figcaption className="mono">Inside the 80% range, by landing week</figcaption>
+                <figcaption className="mono">Inside the range, by the week it came due</figcaption>
                 <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Share of forecasts that landed inside the model's range, week by week">
                     {[0.5, 0.6, 0.7, 0.8, 0.9, 1].map(v => (
                         <g key={v}>
@@ -131,17 +131,17 @@ function WeeklyChart({ pts }: { pts: Pt[] }) {
                     {pts.map((p, i) => (
                         <circle key={p.week} className="score-dot score-dot--hit" cx={x(i)} cy={yHit(Math.max(0.5, p.hit))}
                             r={3 + 5 * Math.sqrt(p.n / maxN)} style={{ '--i': i } as CSSProperties}>
-                            <title>{`Week of ${fmtWeek(p.week)}: ${(p.hit * 100).toFixed(1)}% inside the range · ${p.n.toLocaleString()} graded`}</title>
+                            <title>{`Week of ${fmtWeek(p.week)}: ${(p.hit * 100).toFixed(1)}% inside the range · ${p.n.toLocaleString()} checked`}</title>
                         </circle>
                     ))}
                     {ticks.map(t => (
                         <text key={t.i} className="score-axis" x={x(t.i)} y={H - 12} textAnchor="middle">{t.label}</text>
                     ))}
                 </svg>
-                <div className="score-chart__note">Dot size is how many forecasts landed that week.</div>
+                <div className="score-chart__note">Bigger dots mean more forecasts came due that week.</div>
             </figure>
             <figure className="score-chart">
-                <figcaption className="mono">Typical miss vs. holding flat, by landing week</figcaption>
+                <figcaption className="mono">Typical miss vs. assuming no change, by the week it came due</figcaption>
                 <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label="The model's typical miss compared with assuming no change, week by week">
                     {[0, 0.25, 0.5, 0.75, 1].map(f => (
                         <g key={f}>
@@ -162,8 +162,8 @@ function WeeklyChart({ pts }: { pts: Pt[] }) {
                     ))}
                 </svg>
                 <div className="score-chart__note">
-                    <span><span className="glance__dot glance__dot--brand" />model</span>
-                    <span><span className="glance__dot glance__dot--bench" />holding flat (assume no change)</span>
+                    <span><span className="glance__dot glance__dot--brand" />our forecast</span>
+                    <span><span className="glance__dot glance__dot--bench" />assuming no change</span>
                 </div>
             </figure>
         </div>
@@ -184,15 +184,15 @@ function OverTime({ weekly }: { weekly: WeekScore[] }) {
         <section className="panel score-section">
             <div className="band">
                 <span className="band__title">Accuracy over time</span>
-                <span className="mono">1-month Near Mint cohorts · by the week they came due</span>
+                <span className="mono">1-month forecasts on raw cards · by the week they came due</span>
             </div>
             <div className="score-section__intro">
                 <p className="glance__text">
-                    Every night the model issues a 1-month call on every priced Near Mint card. Twenty-eight days
-                    later each call is graded against the real price. Grouping the graded calls by the week they
-                    landed shows whether the ranges are staying honest and whether the point calls beat simply
+                    Every night we forecast where every priced raw card will be in a month. Twenty-eight days
+                    later we check each one against the real price. Grouping those checks by the week they came
+                    due shows whether our ranges are staying honest and whether our forecasts beat simply
                     assuming nothing changes.
-                    {latest && ` Latest full week: ${(latest.hit * 100).toFixed(0)}% inside the range on ${latest.n.toLocaleString()} calls.`}
+                    {latest && ` Latest full week: ${(latest.hit * 100).toFixed(0)}% inside the range across ${latest.n.toLocaleString()} forecasts.`}
                 </p>
                 <div className="score-tabs" role="tablist" aria-label="Which cards">
                     <button type="button" role="tab" aria-selected={slice === 'all'} className="score-tab" onClick={() => setSlice('all')}>All cards</button>
@@ -225,14 +225,15 @@ function Heatmap({ models }: { models: ModelScore[] }) {
         <section ref={ref} className="panel score-section" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">Every model</span>
-                <span className="mono">share of outcomes inside the 80% range</span>
+                <span className="mono">how often the price landed inside our range</span>
             </div>
             <div className="score-section__intro">
                 <p className="glance__text">
-                    One model per game, condition tier and horizon. A cell shows how often reality landed inside that
-                    model's low-to-high range; 80% is the target, higher is over-cautious, lower is over-confident.
-                    Below each figure is the graded count. The longer horizons are young: a 1-year call issued when
-                    the archive began is only now coming due.
+                    We train one model per game, condition and timeframe. Each cell shows how often the real
+                    price landed inside that model's low-to-high range. We aim for 80%: higher means we're being
+                    too cautious, lower means too confident. Under each figure is how many forecasts were checked.
+                    The longer timeframes are still young, since a 1-year forecast made when we started is only
+                    now coming due.
                 </p>
                 <div className="score-tabs" role="tablist" aria-label="Condition tier">
                     {tiers.map(t => (
@@ -254,9 +255,9 @@ function Heatmap({ models }: { models: ModelScore[] }) {
                             return (
                                 <div key={c.key} className={`score-heat__cell${thin ? ' score-heat__cell--thin' : ''}`}
                                     style={thin ? undefined : { '--c': hitColor(m.bandHit) } as CSSProperties}
-                                    title={`${label} · ${tierLabel(m.target)} · ${hzLabel(m.horizon)}: ${(m.bandHit * 100).toFixed(1)}% inside the range, typical miss ±${pct(m.mae).toFixed(1)}%, runs ${pct(m.bias).toFixed(1)}% ${m.bias > 0 ? 'hot' : 'cold'}, ${m.graded.toLocaleString()} graded`}>
-                                    <span className="score-heat__val">{thin ? 'still grading' : `${Math.round(m.bandHit * 100)}%`}</span>
-                                    <span className="mono score-heat__n">{m.graded.toLocaleString()} graded</span>
+                                    title={`${label} · ${tierLabel(m.target)} · ${hzLabel(m.horizon)}: ${(m.bandHit * 100).toFixed(1)}% inside the range, typical miss ±${pct(m.mae).toFixed(1)}%, runs ${pct(m.bias).toFixed(1)}% ${m.bias > 0 ? 'hot' : 'cold'}, ${m.graded.toLocaleString()} checked`}>
+                                    <span className="score-heat__val">{thin ? 'still checking' : `${Math.round(m.bandHit * 100)}%`}</span>
+                                    <span className="mono score-heat__n">{m.graded.toLocaleString()} checked</span>
                                 </div>
                             );
                         })}
@@ -289,9 +290,9 @@ function ByTier({ models }: { models: ModelScore[] }) {
                 <span className="mono">1 month · all games</span>
             </div>
             <p className="glance__text">
-                Raw cards are priced from daily TCGplayer sales; graded tiers from PriceCharting's per-grade
-                history. The tiers grade about equally well, which says the ranges are set by the method, not the
-                price source.
+                Raw cards are priced from daily TCGplayer sales and graded cards from PriceCharting's per-grade
+                history. Every condition scores about the same, so the method matters more than where the prices
+                come from.
             </p>
             <div className="score-tier">
                 <div className="mono score-tier__head"><span>tier</span><span>inside range</span><span>typical miss</span><span>graded</span></div>
@@ -321,18 +322,18 @@ function Bias({ models }: { models: ModelScore[] }) {
     return (
         <section ref={ref} className="panel score-section score-section--half" data-in={inView ? 1 : 0}>
             <div className="band">
-                <span className="band__title">Which way it misses</span>
-                <span className="mono">1 month · Near Mint · lean of the error</span>
+                <span className="band__title">Which way we miss</span>
+                <span className="mono">1 month · raw cards · high or low</span>
             </div>
             <p className="glance__text">
-                The average signed gap between the call and the landing. Right of centre the model has been
-                running hot (calls above where prices went); left of centre, cold. A calibrated model sits near zero
-                and the nightly recalibration pulls each game back toward it.
+                Whether our forecasts for each game tend to land above or below the real price. Right of
+                centre we've been guessing high; left of centre, low. A well-tuned model sits near zero, and
+                every night we nudge each game back toward it.
             </p>
             <div className="score-bias">
                 {rows.map((r, i) => (
                     <div className="score-bias__row" key={r.game} style={{ '--i': i } as CSSProperties}
-                        title={`${r.label}: runs ${Math.abs(r.biasPct).toFixed(1)}% ${r.biasPct > 0 ? 'hot' : 'cold'} over ${r.graded.toLocaleString()} graded`}>
+                        title={`${r.label}: runs ${Math.abs(r.biasPct).toFixed(1)}% ${r.biasPct > 0 ? 'hot' : 'cold'} over ${r.graded.toLocaleString()} checked`}>
                         <span className="score-bias__label">{r.label}</span>
                         <span className="score-bias__track">
                             <span className="score-bias__zero" />
@@ -364,25 +365,25 @@ function Early({ models }: { models: ModelScore[] }) {
     return (
         <section ref={ref} className="panel score-section" data-in={inView ? 1 : 0}>
             <div className="band">
-                <span className="band__title">The early tier</span>
-                <span className="mono">brand-new cards · first-month call</span>
+                <span className="band__title">Brand-new cards</span>
+                <span className="mono">the early estimate · first month</span>
             </div>
             <div className="score-early">
                 <div className="score-early__stats">
-                    <div className="glance__stat"><div className="glance__big">{compact(vGraded)}</div><div className="mono">early calls graded</div></div>
+                    <div className="glance__stat"><div className="glance__big">{compact(vGraded)}</div><div className="mono">early estimates checked</div></div>
                     <div className="glance__stat"><div className={`glance__big${hit >= 70 ? ' glance__big--up' : ' glance__big--down'}`}>{hit.toFixed(0)}%</div><div className="mono">inside the range</div></div>
                     <div className="glance__stat"><div className="glance__big">±{miss.toFixed(0)}%</div><div className="mono">typical miss</div></div>
                 </div>
                 <p className="glance__text">
-                    A card with under two months of prices gets an <strong>EARLY</strong> call instead of a regular
-                    forecast: the model's first-month estimate, labelled low confidence and kept out of the movers.
-                    It is held to the same grading, and the record is what you would expect of a call made on a
-                    week of sales: wide misses, useful for ranking a new set's chase cards, not for pricing them.
+                    A card with under two months of prices gets an <strong>EARLY</strong> estimate instead of a
+                    regular forecast: our first-month guess, marked low confidence and kept out of the movers. We
+                    check it the same way, and the record is what you'd expect from a guess made on a week of
+                    sales: wide misses, useful for ranking a new set's chase cards, not for pricing them.
                 </p>
                 <ul className="glance__bars">
                     {rows.filter(m => m.graded >= 20).sort((a, b) => b.bandHit - a.bandHit).map((m, i) => (
                         <li key={m.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}
-                            title={`${m.label}: ${(m.bandHit * 100).toFixed(0)}% inside the range over ${m.graded.toLocaleString()} early calls`}>
+                            title={`${m.label}: ${(m.bandHit * 100).toFixed(0)}% inside the range over ${m.graded.toLocaleString()} early estimates`}>
                             <span className="glance__barlabel">{m.label}</span>
                             <span className="glance__track"><span className="glance__fill" style={{ '--w': m.bandHit, '--c': gameColor(m.game) } as CSSProperties} /></span>
                             <span className="mono glance__barval">{Math.round(m.bandHit * 100)}%</span>
@@ -396,21 +397,21 @@ function Early({ models }: { models: ModelScore[] }) {
 
 // ----- page ------------------------------------------------------------------
 export default function AboutPage() {
-    usePageMeta("Model performance", "How CardStock's price forecasts have actually done: every model's graded record, week by week.");
+    usePageMeta("Our track record", "How CardStock's price forecasts have actually done: every forecast checked against the real price, week by week.");
     const { data, isError } = useFetchScorecardQuery();
     const models = data?.models ?? [];
     return (
         <article className="article article--wide full-span score">
             <header className="article__head">
-                <span className="kicker">Model performance</span>
+                <span className="kicker">Our track record</span>
                 <h1 className="article__title display">How the forecasts have actually done</h1>
                 <div className="mono article__meta">
-                    {data?.updatedAt ? `Graded through ${fmtDate(data.updatedAt)} · ` : ''}updated with every refresh · model forecast-deep-v4.5
+                    {data?.updatedAt ? `Checked through ${fmtDate(data.updatedAt)} · ` : ''}updated with every refresh · model forecast-deep-v4.5
                 </div>
                 <p className="article__lede">
-                    Every forecast CardStock publishes is saved the day it is issued and graded against the real
-                    price once its date arrives. Nothing is re-scored or quietly forgotten: the numbers count every
-                    forecast ever graded. What follows is that whole record for every model, the misses included.
+                    Every forecast we publish is saved the day we make it, then checked against the real price
+                    when that day comes. Nothing gets re-scored or quietly dropped: the numbers count every
+                    forecast we've ever checked. What follows is the whole record, misses included.
                 </p>
             </header>
 
@@ -432,36 +433,37 @@ export default function AboutPage() {
 
             <section className="panel score-section score-method">
                 <div className="band">
-                    <span className="band__title">How the grading works</span>
-                    <span className="mono">and what the model is</span>
+                    <span className="band__title">How we keep score</span>
+                    <span className="mono">and what the model actually is</span>
                 </div>
                 <div className="score-method__cols">
                     <div>
-                        <h3>The call</h3>
+                        <h3>The forecast</h3>
                         <p>
-                            For each game, condition tier and horizon a gradient-boosted model predicts a card's future
-                            return from its price history, its set, its game, the hobby as a whole, its rarity, printed
-                            stats and artwork, and its own past misses. Two companion models predict the optimistic and
-                            pessimistic cases to form an 80% range, widened on past errors until it covers 80% of outcomes.
+                            For each game, condition and timeframe, a model learns from a card's price history, its
+                            set, its game, the hobby as a whole, its rarity, its printed stats and its artwork, plus its
+                            own past misses, to predict where the price goes next. Two companion models sketch the
+                            optimistic and pessimistic cases, and that low-to-high range is stretched on past errors
+                            until it catches about 8 outcomes in 10.
                         </p>
                     </div>
                     <div>
-                        <h3>The grade</h3>
+                        <h3>The check</h3>
                         <p>
-                            A 1-month call comes due 28 days after it is issued; longer horizons at their month. The
-                            landing price is the card's real market price on that date. <em>Inside the range</em> means
-                            the landing fell between the call's low and high. <em>Typical miss</em> is the average gap
-                            between the point call and the landing, and <em>holding flat</em> is the same gap for assuming
-                            today's price.
+                            A 1-month forecast comes due 28 days after we make it; longer ones at their month. We
+                            compare it with the card's real market price on that day. <em>Inside the range</em> means
+                            the real price fell between our low and high. <em>Typical miss</em> is the average gap
+                            between our forecast and the real price, and <em>assuming no change</em> is the same gap
+                            if you had just expected today's price to hold.
                         </p>
                     </div>
                     <div>
-                        <h3>The feedback</h3>
+                        <h3>What we learn</h3>
                         <p>
-                            Graded outcomes feed the next retrain, and each game's point calls are scaled to what its
-                            recently graded calls support. The Friday <Link to="/reports">market report</Link> publishes
-                            the same scorecard. None of this is financial advice: a forecast cannot know about a reprint,
-                            a ban or next month's tournament results.
+                            Every checked forecast feeds the next round of training, and each game's forecasts are
+                            scaled to what its recent record supports. The Friday <Link to="/reports">market report</Link>
+                            publishes the same scorecard. None of this is financial advice: no forecast can know about
+                            a reprint, a ban or next month's tournament results.
                         </p>
                     </div>
                 </div>

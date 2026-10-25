@@ -115,7 +115,7 @@ function ForecastSection({ forecasts, game, id }: {
 
     return (
         <section className="panel detail-panel">
-            <h4 className="mono detail-panel__title">Price forecast · model</h4>
+            <h4 className="mono detail-panel__title">Our forecast</h4>
             {reasoning?.prose ? (
                 <div className="model-take">
                     <span className="model-take__label">Model's take</span>
@@ -124,15 +124,15 @@ function ForecastSection({ forecasts, game, id }: {
             ) : reasoningLoading && (
                 <div className="model-take model-take--loading">
                     <span className="model-take__label">Model's take</span>
-                    <p>Summarizing the outlook…</p>
+                    <p>Putting the outlook into words…</p>
                 </div>
             )}
             <div className="forecast-wrap">
             <table className="forecast-table">
                 <thead>
                     <tr>
-                        <th>Tier</th>
-                        <th>Current</th>
+                        <th>Condition</th>
+                        <th>Now</th>
                         {HORIZONS.map(h => <th key={h}>{HORIZON_LABEL[h]}</th>)}
                     </tr>
                 </thead>
@@ -148,8 +148,8 @@ function ForecastSection({ forecasts, game, id }: {
                                         <strong>{GRADE_TIER_LABEL[t] ?? t}</strong>
                                         {tierForecasts.some(f => f.reason) && (
                                             <button className="why-btn"
-                                                aria-label={`Forecast reasoning for ${GRADE_TIER_LABEL[t] ?? t}`}
-                                                title="Forecast reasoning"
+                                                aria-label={`Why we think so, ${GRADE_TIER_LABEL[t] ?? t}`}
+                                                title="Why we think so"
                                                 onClick={() => setWhy({ tier: t, forecasts: tierForecasts })}>
                                                 ⓘ
                                             </button>
@@ -184,7 +184,7 @@ function ForecastSection({ forecasts, game, id }: {
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             {early && (
                                                 <span className="early-badge"
-                                                    title="Early estimate: this card is too new for the standard model. This comes from the launch model (its set's cohort behavior blended with the card's short history) and is graded on the same public scorecard.">
+                                                    title="Early estimate: this card is too new for our usual forecast, so this is a first guess from its set, rarity and art. Expect it to be rough; it is best for comparing new cards with each other.">
                                                     EARLY
                                                 </span>
                                             )}
@@ -201,7 +201,7 @@ function ForecastSection({ forecasts, game, id }: {
             </table>
             </div>
             {why && (
-                <Modal title={`${GRADE_TIER_LABEL[why.tier] ?? why.tier} · forecast reasoning`}
+                <Modal title={`${GRADE_TIER_LABEL[why.tier] ?? why.tier} · why we think so`}
                     onClose={() => setWhy(null)}>
                     {HORIZONS.filter(h => why.forecasts.some(f => f.horizon === h)).map(h => {
                         const f = why.forecasts.find(x => x.horizon === h)!;
@@ -420,7 +420,7 @@ export default function CardDetails() {
                             <span className="detail-prerelease__price">{currencyFormat(card.predictedPrice)}</span>
                             {card.predictedLow != null && card.predictedHigh != null && (
                                 <span className="mono detail-prerelease__range"
-                                    title="Likely range: 80% of the game's past launches landed inside the equivalent band">
+                                    title="Likely range: 8 in 10 of this game's past launches landed inside a range like this">
                                     likely {currencyFormat(card.predictedLow)}–{currencyFormat(card.predictedHigh)}
                                 </span>
                             )}
@@ -472,7 +472,7 @@ export default function CardDetails() {
                                 {pct12 != null && <ChangePill value={pct12} title="1 year model forecast" />}
                                 {pct12 != null && <span className="mono">1Y</span>}
                                 <span className="price-caption">
-                                    {printing ? `${printing} · latest market` : 'latest Near Mint market'}{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
+                                    {printing ? `${printing} · market price` : 'Near Mint market price'}{card.priceAsOf ? ` · as of ${shortDate(card.priceAsOf)}` : ''}
                                 </span>
                             </div>
                         )}
@@ -490,7 +490,7 @@ export default function CardDetails() {
                             );
                         })()}
                         <section className="panel detail-panel">
-                            <h4 className="mono detail-panel__title">Price history + forecast</h4>
+                            <h4 className="mono detail-panel__title">Price history and forecast</h4>
                             <PriceHistoryChart game={gameId} id={cardId} printing={printing || undefined} forecasts={forecasts} />
                         </section>
                         {printing && forecasts.length === 0 ? (

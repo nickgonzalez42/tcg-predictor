@@ -42,14 +42,14 @@ export default function SoldTable({ realized }: { realized?: Realized | null }) 
                         <strong>{currencyFormat(realized.proceeds)}</strong>
                     </div>
                     <div className="sold-totals__cell">
-                        <span className="mono">Cost basis</span>
+                        <span className="mono">What you paid</span>
                         <strong>{realized.basis > 0 ? currencyFormat(realized.basis) : 'none recorded'}</strong>
                     </div>
                     <div className="sold-totals__cell">
-                        <span className="mono">Realized P/L</span>
+                        <span className="mono">Profit from sales</span>
                         <span className="sold-totals__pills">
                             <ChangePill value={realized.plUsd} unit="usd" />
-                            {realized.plPct != null && <ChangePill value={realized.plPct} suffix="vs cost" />}
+                            {realized.plPct != null && <ChangePill value={realized.plPct} suffix="on what you paid" />}
                         </span>
                     </div>
                     {realized.packCopies > 0 && (
@@ -71,7 +71,7 @@ export default function SoldTable({ realized }: { realized?: Realized | null }) 
                             <th className="screener__mid">Acquired</th>
                             <th className="screener__mid">Sold</th>
                             <th className="screener__mid">Held</th>
-                            <th className="screener__mid">Realized</th>
+                            <th className="screener__mid">Profit</th>
                             <th aria-label="Actions" />
                         </tr>
                     </thead>

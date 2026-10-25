@@ -311,7 +311,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     textAnchor="end"
                     style={{ opacity: 0, fill: flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
                 >
-                    {flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% {hzLabel(card.fcstHorizon)} FCST
+                    {flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% {card.fcstHorizon === 'launch1m' ? 'EARLY CALL' : `NEXT ${hzLabel(card.fcstHorizon)}`}
                 </text>
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
@@ -356,7 +356,7 @@ function MoverTile({ mover, index = 0 }: { mover: Card; index?: number }) {
                             <span className="mover__trend">
                                 <ChangePill value={mover.trendPct}
                                     title={`Price change over the past ${(mover.trendPeriod ?? '1y').toUpperCase()}`} />
-                                <span className="mono">PAST {(mover.trendPeriod ?? '1y').toUpperCase()}</span>
+                                <span className="mono">LAST {(mover.trendPeriod ?? '1y').toUpperCase()}</span>
                             </span>
                         )}
                         <Sparkline points={mover.sparkline} />
@@ -407,9 +407,9 @@ export default function HomePage() {
                         <span className="hero__accent">tomorrow.</span>
                     </h1>
                     <p className="hero__sub">
-                        CardStock uses machine learning to predict what any card will be worth a month,
-                        six months, or a year from now. Twelve TCGs, graded and ungraded
-                        values, full price history, and a tracker for your whole collection.
+                        CardStock watches the market for twelve card games and predicts where any card's
+                        price is headed a month, six months and a year out. Raw or graded, with
+                        full price history and a tracker for everything you own.
                     </p>
                     <div className="btn-group">
                         {user
@@ -432,7 +432,7 @@ export default function HomePage() {
                 <section className="full-span subgrid">
                     <span className="kicker home__kicker full-span">01 · Market</span>
                     <h2 className="home__heading full-span">
-                        Top movers <span className="est-note">· 1 month forecast · one per game</span>
+                        Biggest expected moves <span className="est-note">· next month · one card per game</span>
                     </h2>
                     <Carousel className="movers" label="Top movers, one card per game"
                         slides={tiles.map((m, i) => ({
@@ -448,7 +448,7 @@ export default function HomePage() {
             </section>
 
             <section className="full-span subgrid">
-                <span className="kicker home__kicker full-span">03 · Model performance</span>
+                <span className="kicker home__kicker full-span">03 · Our track record</span>
                 <Glance />
             </section>
         </>

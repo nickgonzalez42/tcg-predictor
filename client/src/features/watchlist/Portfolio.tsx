@@ -104,11 +104,11 @@ export default function Portfolio() {
                         } />
                     )}
                     {summary?.allTime && (
-                        <ChangePill value={summary.allTime.plPct} suffix="vs cost" />
+                        <ChangePill value={summary.allTime.plPct} suffix="on what you paid" />
                     )}
                     {summary?.realized && (
-                        <ChangePill value={summary.realized.plUsd} unit="usd" suffix="realized"
-                            title={`Realized P/L across ${summary.realized.count} sale${summary.realized.count === 1 ? '' : 's'}`} />
+                        <ChangePill value={summary.realized.plUsd} unit="usd" suffix="from sales"
+                            title={`Profit or loss across ${summary.realized.count} sale${summary.realized.count === 1 ? '' : 's'}`} />
                     )}
                 </div>
                 {summary && <ValueChart summary={summary}
@@ -191,9 +191,9 @@ export default function Portfolio() {
                                         {sortTh("Condition", "condition")}
                                         {sortTh("Qty", "qty")}
                                         {sortTh("Paid", "paid")}
-                                        {sortTh("Mkt value", "value")}
-                                        {sortTh("P/L", "pl")}
-                                        {sortTh(`${hasYear ? '1Y' : '6M'} fcst`, hasYear ? 'chgPct12' : 'chgPct6')}
+                                        {sortTh("Value", "value")}
+                                        {sortTh("Gain", "pl")}
+                                        {sortTh(`${hasYear ? '1Y' : '6M'} forecast`, hasYear ? 'chgPct12' : 'chgPct6')}
                                         {sortTh("Trend", `histPct${params.trend ?? '1m'}`)}
                                         <th aria-label="Actions" />
                                     </tr>

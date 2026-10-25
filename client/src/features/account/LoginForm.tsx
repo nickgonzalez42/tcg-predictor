@@ -40,11 +40,11 @@ export default function LoginForm() {
             <h3>Sign in</h3>
             {teaserPct != null && (
                 <p className="mono auth-card__teaser">
-                    markets don't sleep, top movers point{' '}
+                    Markets don't sleep. Today's top movers point{' '}
                     <span className={teaserPct >= 0 ? 'auth-teaser--up' : 'auth-teaser--down'}>
                         {teaserPct >= 0 ? '+' : '−'}{Math.abs(teaserPct).toFixed(1)}%
                     </span>{' '}
-                    over 1 year
+                    over the next year.
                 </p>
             )}
             <form onSubmit={handleSubmit(onSubmit)}>

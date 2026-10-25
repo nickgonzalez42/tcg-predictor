@@ -177,7 +177,7 @@ export default function Wishlist() {
                                     </th>
                                     <th className="screener__mid">Since added</th>
                                     <th className="screener__mid"
-                                        title="Model forecast over the horizon matching the selected window">
+                                        title="Our forecast for the same stretch of time as the trend chips">
                                         {fcstLabel} fcst
                                     </th>
                                     <th className="screener__mid" title="Actual price history over the selected window">

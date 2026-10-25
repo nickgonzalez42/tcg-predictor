@@ -175,7 +175,7 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
                             className={`btn btn--outline btn--sm${includePacks ? ' btn--active' : ''}`}
                             aria-pressed={includePacks}
                             onClick={() => onIncludePacks(!includePacks)}
-                            title="Cards opened in packs have no individual purchase cost. Toggle whether they count in the value, chart and positions list.">
+                            title="Cards you pulled from packs have no price paid. Choose whether they count in the value, the chart and the list.">
                             {includePacks
                                 ? `Pack pulls (${s!.packCopies})`
                                 : `Pack pulls hidden (${s!.packCopies})`}
@@ -202,7 +202,7 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
                     <span className="chart-legend__item"
                         onMouseEnter={() => highlight('spx')}
                         onMouseLeave={() => highlight(null)}
-                        title="What the same money would be worth if each card's cost had gone into the S&P 500 on the day you added it">
+                        title="What the same money would be worth if you had put each card's price into the S&P 500 on the day you got it">
                         <i className="chart-legend__swatch chart-legend__swatch--dashed" /> S&amp;P 500 (same $ invested)
                     </span>
                 </div>
@@ -215,33 +215,33 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
                         <span className="chart-stat__value">{currencyFormat(last.value)}</span>
                         <span className="chart-stat__delta">
                             <ChangePill value={appreciation(first, last)} unit="usd"
-                                title="Appreciation over the selected range (cards you added don't count as gains)" />
+                                title="How much the value grew over this range, not counting cards you added" />
                             <ChangePill value={apprecPct(first, last)}
-                                title="Appreciation relative to the money at work in this range" />
+                                title="That growth as a share of the money at work in this range" />
                         </span>
                     </div>
                     {bLast && (
                         <>
                             <div className="chart-stat">
-                                <span className="chart-stat__label mono">S&amp;P 500 (same $)</span>
+                                <span className="chart-stat__label mono">Same money in the S&amp;P 500</span>
                                 <span className="chart-stat__value">{currencyFormat(bLast.value)}</span>
                                 <span className="chart-stat__delta">
                                     <ChangePill value={appreciation(bFirst, bLast)} unit="usd"
-                                        title="What the S&P would have gained on the same money (contributions excluded)" />
+                                        title="What the S&P 500 would have made on the same money, not counting cards you added" />
                                     <ChangePill value={apprecPct(bFirst, bLast)}
-                                        title="S&P appreciation relative to the money at work in this range" />
+                                        title="That S&P growth as a share of the money at work in this range" />
                                 </span>
                             </div>
                             <div className="chart-stat">
-                                <span className="chart-stat__label mono">Vs market</span>
+                                <span className="chart-stat__label mono">You vs the S&amp;P</span>
                                 <span className="chart-stat__value">
                                     {last.value >= bLast.value ? 'Ahead' : 'Behind'}
                                 </span>
                                 <span className="chart-stat__delta">
                                     <ChangePill value={last.value - bLast.value} unit="usd"
-                                        title="Collection value minus what the same money in the S&P 500 would be worth today" />
+                                        title="Your collection today minus what the same money in the S&P 500 would be worth" />
                                     <ChangePill value={bLast.value > 0 ? (last.value / bLast.value - 1) * 100 : null}
-                                        title="Collection value relative to the S&P what-if" />
+                                        title="Your collection as a share of the S&P what-if" />
                                 </span>
                             </div>
                         </>
@@ -252,13 +252,13 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
                     </div>
                     {plUsd != null && (
                         <div className="chart-stat">
-                            <span className="chart-stat__label mono">Overall P/L</span>
+                            <span className="chart-stat__label mono">Gain on what you paid</span>
                             <span className="chart-stat__value"
                                 style={{ color: plUsd >= 0 ? 'var(--up)' : 'var(--down)' }}>
                                 {plUsd >= 0 ? '+' : '−'}{currencyFormat(Math.abs(plUsd))}
                             </span>
                             <span className="chart-stat__delta">
-                                <ChangePill value={plPct} title="Unrealized P/L vs total invested" />
+                                <ChangePill value={plPct} title="Today's value against everything you paid" />
                             </span>
                         </div>
                     )}
@@ -275,9 +275,9 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
             )}
             {hasBench && (
                 <p className="est-note chart-note">
-                    S&amp;P comparison invests each card's purchase price on the day you added
-                    it; cards without a purchase price use their market price (at their
-                    grade) on that day.
+                    The S&amp;P line imagines you had put each card's price into the S&amp;P 500 on
+                    the day you got it. Cards with no price paid use their market price that
+                    day, at their condition.
                 </p>
             )}
         </div>

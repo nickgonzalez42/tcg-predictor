@@ -40,10 +40,10 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                             {tierLabel(ownGrade)} price
                         </th>
                         <th className="screener__mid"
-                            title="Model forecast over the horizon matching the selected window">
+                            title="Our forecast for the same stretch of time as the trend chips">
                             {fcstLabel} fcst
                         </th>
-                        <th className="screener__mid" title="Actual price history over the selected window">
+                        <th className="screener__mid" title="How the price really moved over the selected window">
                             Past {period.toUpperCase()}
                         </th>
                         <th aria-label="Actions" />
@@ -92,7 +92,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                             <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />
                                             {card.fcstHorizon === 'launch1m' && (
                                                 <span className="early-badge"
-                                                    title="Early estimate: a single month of price history — the model's first-month call from traits, art and set. A ranking signal, not a price target.">
+                                                    title="Early estimate: this card has a single month of price history, so this is a first guess from its set, rarity and art. Good for comparing new cards, rough as a price.">
                                                     EARLY
                                                 </span>
                                             )}

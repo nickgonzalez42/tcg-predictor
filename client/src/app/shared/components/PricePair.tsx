@@ -23,7 +23,7 @@ export default function PricePair({ price, forecast, horizon = '12M', asOf }: Pr
                 {pct != null && (
                     <span
                         className={`mono pricepair__pct ${forecast! >= price ? 'pricepair__fcst--up' : 'pricepair__fcst--down'}`}
-                        title={`Model's ${label} forecast change`}
+                        title={`Our ${label} forecast change`}
                     >
                         {pct >= 0 ? '+' : ''}{pct}%
                     </span>
@@ -33,9 +33,9 @@ export default function PricePair({ price, forecast, horizon = '12M', asOf }: Pr
             {forecast != null && (
                 <span
                     className={`pricepair__fcst ${forecast >= price ? 'pricepair__fcst--up' : 'pricepair__fcst--down'}`}
-                    title={`Model's ${label} forecast price`}
+                    title={`Our ${label} forecast price`}
                 >
-                    ({currencyFormat(forecast)})<span className="mono pricepair__tag">{label} FCST</span>
+                    ({currencyFormat(forecast)})<span className="mono pricepair__tag">{label === 'EARLY' ? 'EARLY CALL' : `NEXT ${label}`}</span>
                 </span>
             )}
         </span>

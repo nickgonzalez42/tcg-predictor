@@ -5,15 +5,15 @@
 const LEVELS: Record<string, { label: string; short: string; cls: string; reason: string }> = {
     high: {
         label: 'High confidence', short: 'HIGH', cls: 'conf--high',
-        reason: "The model's own 80% scenario range for this forecast is tight, so its optimistic and pessimistic cases mostly agree.",
+        reason: "Our best-case and worst-case scenarios for this card mostly agree, so this forecast stands on firmer ground.",
     },
     med: {
         label: 'Medium confidence', short: 'MED', cls: 'conf--med',
-        reason: "The model's 80% scenario range is moderately wide, so treat the point forecast as a rough center for a spread of outcomes.",
+        reason: "Our range of likely outcomes is fairly wide. Treat the forecast as the middle of a spread, not an exact number.",
     },
     low: {
         label: 'Low confidence', short: 'LOW', cls: 'conf--low',
-        reason: "The model's 80% scenario range is wide, so the model is unsure and the low-to-high band matters more than the point forecast.",
+        reason: "Our range of likely outcomes is wide, which means we're unsure. Pay more attention to the low and high than to the single number.",
     },
 };
 
@@ -21,7 +21,7 @@ export function confidence(level?: string, months?: number) {
     if (level && LEVELS[level]) return LEVELS[level];
     // fallback heuristic (pre-confidence data): history depth
     const m = months ?? 0;
-    if (m < 24) return { ...LEVELS.low, reason: `Only ${m} months of price history, too little for a reliable forecast.` };
-    if (m < 48) return { ...LEVELS.med, reason: `${m} months of price history, a moderate track record.` };
-    return { ...LEVELS.high, reason: `${m} months of price history, a long track record.` };
+    if (m < 24) return { ...LEVELS.low, reason: `Only ${m} months of price history, which is too little to forecast with much confidence.` };
+    if (m < 48) return { ...LEVELS.med, reason: `${m} months of price history, enough for a reasonable read.` };
+    return { ...LEVELS.high, reason: `${m} months of price history, a long record to work from.` };
 }

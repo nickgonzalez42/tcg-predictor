@@ -145,23 +145,23 @@ function PortfolioPanel({ user }: { user?: User | null }) {
         ? [
             { label: 'This month', value: summary!.monthChangeUsd != null ? signedUsd(summary!.monthChangeUsd) : '—',
               pill: summary!.monthChangePct != null ? { value: summary!.monthChangePct } : undefined },
-            { label: 'All-time P/L', value: summary!.allTime ? signedUsd(summary!.allTime.plUsd) : '—',
+            { label: 'Gain since buying', value: summary!.allTime ? signedUsd(summary!.allTime.plUsd) : '—',
               pill: summary!.allTime ? { value: summary!.allTime.plPct } : undefined },
-            { label: 'Cost basis', value: summary!.allTime ? currencyFormat(summary!.allTime.paid) : '—' },
+            { label: 'What you paid', value: summary!.allTime ? currencyFormat(summary!.allTime.paid) : '—' },
             { label: 'Cards', value: summary!.copies.toLocaleString(),
               note: summary!.packCopies ? `${summary!.packCopies.toLocaleString()} from packs` : undefined },
             { label: 'Best performer', value: summary!.best?.name ?? '—',
               pill: summary!.best ? { value: summary!.best.pct } : undefined },
-            { label: 'vs S&P 500', value: vsSpx != null ? `${vsSpx >= 0 ? '+' : ''}${vsSpx.toFixed(1)}%` : '—',
-              note: 'same money in the index' },
+            { label: 'Vs the S&P 500', value: vsSpx != null ? `${vsSpx >= 0 ? '+' : ''}${vsSpx.toFixed(1)}%` : '—',
+              note: 'same money in the stock market' },
           ]
         : [
             { label: 'This month', value: signedUsd(SAMPLE.month), pill: { value: SAMPLE.monthPct } },
-            { label: 'All-time P/L', value: signedUsd(SAMPLE.plUsd), pill: { value: SAMPLE.plPct } },
-            { label: 'Cost basis', value: currencyFormat(SAMPLE.paid) },
+            { label: 'Gain since buying', value: signedUsd(SAMPLE.plUsd), pill: { value: SAMPLE.plPct } },
+            { label: 'What you paid', value: currencyFormat(SAMPLE.paid) },
             { label: 'Cards', value: String(SAMPLE.copies), note: `${SAMPLE.packs} from packs` },
             { label: 'Best performer', value: SAMPLE.best, pill: { value: SAMPLE.bestPct } },
-            { label: 'vs S&P 500', value: `+${((SAMPLE.value / SAMPLE.spx - 1) * 100).toFixed(1)}%`, note: 'same money in the index' },
+            { label: 'Vs the S&P 500', value: `+${((SAMPLE.value / SAMPLE.spx - 1) * 100).toFixed(1)}%`, note: 'same money in the stock market' },
           ];
     return (
         <div ref={ref} className="panel glance__panel glance__panel--wide glance__panel--tall" data-in={inView ? 1 : 0}>
@@ -227,8 +227,8 @@ function TrackRecordPanel() {
     return (
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
-                <span className="band__title">Model track record</span>
-                <span className="mono">1 month · near mint</span>
+                <span className="band__title">How often we're right</span>
+                <span className="mono">1-month forecasts · raw cards</span>
             </div>
             <div className="glance__row">
                 {/* Until the stats arrive the figures read as a dash, never as
@@ -236,11 +236,11 @@ function TrackRecordPanel() {
                     takes a few seconds while it primes its cache). */}
                 <div className="glance__stat">
                     <div className="glance__big">{data ? compact(graded) : '—'}</div>
-                    <div className="mono">forecasts graded</div>
+                    <div className="mono">forecasts checked</div>
                 </div>
                 <div className="glance__stat">
                     <div className="glance__big glance__big--up">{data ? `${hit.toFixed(1)}%` : '—'}</div>
-                    <div className="mono">landed inside the model's 80% range</div>
+                    <div className="mono">landed inside our range</div>
                 </div>
             </div>
             <ul className="glance__bars">
@@ -256,7 +256,7 @@ function TrackRecordPanel() {
                 ))}
             </ul>
             <div className="glance__foot">
-                Every forecast is saved and graded once it lands.{' '}
+                Every forecast is saved, then checked against the real price when its date comes.{' '}
                 <Link to="/about">How the forecasts work →</Link>
             </div>
         </div>
@@ -275,7 +275,7 @@ function MissPanel() {
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">How far off</span>
-                <span className="mono">1 month · near mint</span>
+                <span className="mono">1-month forecasts · raw cards</span>
             </div>
             <div className="glance__row">
                 <div className="glance__stat">
@@ -286,13 +286,13 @@ function MissPanel() {
                     <div className={`glance__big ${hot ? 'glance__big--down' : 'glance__big--up'}`}>
                         {data ? `${lean.toFixed(1)}% ${hot ? 'hot' : 'cold'}` : '—'}
                     </div>
-                    <div className="mono">{hot ? 'calls run above the landing' : 'calls run below the landing'}</div>
+                    <div className="mono">{hot ? 'we tend to guess high' : 'we tend to guess low'}</div>
                 </div>
             </div>
             <ul className="glance__bars">
                 {(data?.miss ?? []).map((g, i) => (
                     <li key={g.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}
-                        title={`${g.label}: typical miss ±${pct(g.mae).toFixed(1)}%, runs ${pct(g.bias).toFixed(1)}% ${g.bias > 0 ? 'hot' : 'cold'} over ${g.graded.toLocaleString()} graded`}>
+                        title={`${g.label}: typical miss ±${pct(g.mae).toFixed(1)}%, runs ${pct(g.bias).toFixed(1)}% ${g.bias > 0 ? 'hot' : 'cold'} over ${g.graded.toLocaleString()} checked`}>
                         <span className="glance__barlabel">{g.label}</span>
                         <span className="glance__track">
                             <span className="glance__fill"
@@ -303,8 +303,8 @@ function MissPanel() {
                 ))}
             </ul>
             <div className="glance__foot">
-                Average gap between the model's 1-month call and where the price landed.
-                Shorter is better; hot means the calls run high, cold means they run low.
+                The average gap between our 1-month forecast and where the price actually went.
+                Smaller is better. Hot means we guessed high, cold means we guessed low.
             </div>
         </div>
     );
@@ -317,10 +317,10 @@ function LeanPanel() {
     return (
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
-                <span className="band__title">Where the model leans</span>
+                <span className="band__title">Where we lean</span>
                 <span className="mono">next month</span>
             </div>
-            {!data && <div className="glance__text">Loading the model's calls…</div>}
+            {!data && <div className="glance__text">Loading our forecasts…</div>}
             <ul className="glance__bars">
                 {(data?.lean ?? []).map((g, i) => {
                     const n = Math.max(1, g.up + g.flat + g.down);
@@ -340,12 +340,12 @@ function LeanPanel() {
             </ul>
             <div className="glance__legend glance__legend--row">
                 <span><span className="glance__dot glance__dot--up" />up</span>
-                <span><span className="glance__dot glance__dot--flat" />unchanged</span>
+                <span><span className="glance__dot glance__dot--flat" />holding</span>
                 <span><span className="glance__dot glance__dot--down" />down</span>
             </div>
             <div className="glance__foot">
-                Share of each game's cards the 1-month model has rising, flat, or falling.
-                Flat means the call was damped to today's price.
+                The share of each game's cards we expect to rise, hold or fall next month.
+                Holding means we don't see it moving much either way.
             </div>
         </div>
     );
