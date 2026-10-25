@@ -177,7 +177,24 @@ public class MoverService(
                 trend: trend ?? (gamesWith12m.Contains(game) ? "1y" : "6m"),
                 fcstOverride: hz == "12m" ? null : hz);
 
-        return movers;
+        // The band above is measured against the forecast's OWN base price;
+        // the tile shows the move against TODAY's price, which drifts apart
+        // when a card has run since the forecast was issued (a -94% display
+        // from a -60% call, 2026-10-25). Re-apply the band to what the
+        // visitor actually reads, keeping the per-game guarantee: a game is
+        // only emptied if every one of its picks is out of band.
+        bool InBand(CardDto m)
+        {
+            var now = m.Price ?? 0;
+            var to = m.FcstTo ?? m.Fcst12To;
+            return now <= 0 || to == null || (to >= now * SaneLo && to <= now * SaneHi);
+        }
+        var shown = movers.Where(InBand).ToList();
+        foreach (var g in movers.GroupBy(m => m.Game))
+            if (!shown.Any(m => m.Game == g.Key))
+                shown.Add(g.OrderBy(m => Math.Abs((m.FcstTo ?? m.Price ?? 0) / Math.Max(m.Price ?? 1, 0.01) - 1)).First());
+
+        return movers.Where(m => shown.Contains(m)).ToList();
     }
 
     // A game's strongest gainer or loser (with art) at one horizon.
