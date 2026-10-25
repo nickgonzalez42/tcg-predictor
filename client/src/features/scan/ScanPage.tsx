@@ -27,9 +27,19 @@ const CARD_RATIO = 88 / 63;          // portrait trading card
 // card too far away 0.57, an out-of-focus card 0.62. A blank dark frame can
 // reach 0.70 against dark cards, so flat frames are dropped BEFORE upload
 // (MIN_SPREAD: luminance standard deviation of the crop, 0-255 scale).
-const AUTO_MIN = 0.70;               // top score that counts as "a card is in the frame"
+const AUTO_MIN = 0.74;               // top score that counts as "a card is in the frame"
 const MIN_SPREAD = 12;
-const SCAN_EVERY = 900;              // ms between automatic frames
+// Stillness trigger (user 2026-10-25: "a good way to determine is if the
+// camera holds still for a little"). Every tick the guide crop is sampled
+// locally; the mean luminance change against the previous tick is the
+// motion. A frame is uploaded only after STILL_TICKS consecutive ticks with
+// motion <= MOTION_MAX (~a second of holding still) and only ONCE per still
+// period — lining a card up or passing it through never uploads anything.
+// Closing the modal pauses auto-open for DISMISS_COOLDOWN.
+const MOTION_MAX = 6;                // mean |Δluminance| per sampled pixel (0-255); sensor noise ~2
+const STILL_TICKS = 2;
+const DISMISS_COOLDOWN = 3000;       // ms
+const SCAN_EVERY = 500;              // ms between local motion checks
 const CROP_W = 448;                  // upload width (the encoder sees 224 anyway)
 const CROP_H = Math.round(CROP_W * CARD_RATIO);
 
@@ -47,6 +57,10 @@ export default function ScanPage() {
     // "game:id" of the card just added or dismissed: not re-offered until a
     // different card tops a frame (so the same card doesn't reopen the sheet).
     const suppressRef = useRef<string | null>(null);
+    const cooldownRef = useRef(0);                 // auto-open paused until (ms since epoch)
+    const prevSampleRef = useRef<Float32Array | null>(null);   // last tick's luminance sample
+    const stillRef = useRef(0);                    // consecutive still ticks
+    const consumedRef = useRef(false);             // this still period already produced a look
 
     const [camState, setCamState] = useState<'starting' | 'live' | 'denied' | 'unsupported'>(
         () => (typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getUserMedia === 'function'
@@ -60,6 +74,7 @@ export default function ScanPage() {
     const [session, setSession] = useState<Entry[]>([]);
     const [toast, setToast] = useState<string | null>(null);
     const [nextHint, setNextHint] = useState(false);   // "show the next card" after an add
+    const [holding, setHolding] = useState(false);     // something is in view but still moving
 
     const [scan] = useScanCardMutation();
     const { data: tracked } = useFetchWatchlistQuery();
@@ -104,11 +119,13 @@ export default function ScanPage() {
         return () => ro.disconnect();
     }, []);
 
-    // The video pixels under the guide (object-fit: cover mapping), as a JPEG.
-    // skipFlat: automatic frames don't upload a near-uniform crop (no card).
-    const grab = useCallback((skipFlat: boolean): Promise<Blob | null> => new Promise(resolve => {
+    // Draw the video pixels under the guide (object-fit: cover mapping) onto
+    // the work canvas and measure them on a 1-in-8 pixel luminance sample:
+    // spread (std, 0-255: is anything there?) and motion (mean |Δ| against
+    // the previous tick's sample: is it holding still?).
+    const draw = useCallback((): { spread: number; motion: number } | null => {
         const v = videoRef.current, st = stageRef.current;
-        if (!v || !st || !v.videoWidth || !v.videoHeight) return resolve(null);
+        if (!v || !st || !v.videoWidth || !v.videoHeight) return null;
         const W = st.clientWidth, H = st.clientHeight;
         let h = H * 0.78, w = h / CARD_RATIO;
         if (w > W * 0.82) { w = W * 0.82; h = w * CARD_RATIO; }
@@ -118,19 +135,32 @@ export default function ScanPage() {
         const c = canvasRef.current ?? (canvasRef.current = document.createElement('canvas'));
         c.width = CROP_W; c.height = CROP_H;
         const ctx = c.getContext('2d');
-        if (!ctx) return resolve(null);
+        if (!ctx) return null;
         ctx.drawImage(v, (gx - offX) / scale, (gy - offY) / scale, w / scale, h / scale, 0, 0, CROP_W, CROP_H);
-        if (skipFlat) {
-            // Luminance spread on a 1-in-8 pixel sample (~4k pixels).
-            const d = ctx.getImageData(0, 0, CROP_W, CROP_H).data;
-            let n = 0, sum = 0, sq = 0;
-            for (let i = 0; i < d.length; i += 32) {
-                const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-                n++; sum += l; sq += l * l;
-            }
-            const mean = sum / n, sd = Math.sqrt(Math.max(0, sq / n - mean * mean));
-            if (sd < MIN_SPREAD) return resolve(null);
+        const d = ctx.getImageData(0, 0, CROP_W, CROP_H).data;
+        const cur = new Float32Array(Math.ceil(d.length / 32));
+        let sum = 0, sq = 0;
+        for (let i = 0, j = 0; i < d.length; i += 32, j++) {
+            const l = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            cur[j] = l; sum += l; sq += l * l;
         }
+        const n = cur.length, mean = sum / n;
+        const spread = Math.sqrt(Math.max(0, sq / n - mean * mean));
+        const prev = prevSampleRef.current;
+        let motion = 999;
+        if (prev && prev.length === n) {
+            let acc = 0;
+            for (let j = 0; j < n; j++) acc += Math.abs(cur[j] - prev[j]);
+            motion = acc / n;
+        }
+        prevSampleRef.current = cur;
+        return { spread, motion };
+    }, []);
+
+    // The work canvas as a JPEG (call after draw()).
+    const encode = useCallback((): Promise<Blob | null> => new Promise(resolve => {
+        const c = canvasRef.current;
+        if (!c) return resolve(null);
         c.toBlob(b => resolve(b), 'image/jpeg', 0.85);
     }), []);
 
@@ -151,7 +181,7 @@ export default function ScanPage() {
             const key = `${top.card.game}:${top.card.id}`;
             if (!manual) {
                 if (top.score < AUTO_MIN) { suppressRef.current = null; setNextHint(false); return; }
-                if (suppressRef.current === key) return;
+                if (suppressRef.current === key || Date.now() < cooldownRef.current) return;
             }
             setNextHint(false);
             setHits(res);
@@ -163,15 +193,31 @@ export default function ScanPage() {
         }
     }, [scan, lock]);
 
+    // Auto mode: a local motion check every tick; one upload per still period.
     useEffect(() => {
         if (camState !== 'live' || !auto || hits) return;
         const id = setInterval(async () => {
-            const b = await grab(true);
+            const m = draw();
+            if (!m) return;
+            if (m.spread < MIN_SPREAD) {              // nothing in the guide
+                stillRef.current = 0; consumedRef.current = false;
+                setHolding(false); setLastTop(0);
+                return;
+            }
+            if (m.motion > MOTION_MAX) {              // something there, but moving
+                stillRef.current = 0; consumedRef.current = false;
+                setHolding(true); setLastTop(0);
+                return;
+            }
+            stillRef.current += 1;
+            if (stillRef.current < STILL_TICKS || consumedRef.current) return;
+            consumedRef.current = true;               // one look per still period
+            setHolding(false);
+            const b = await encode();
             if (b) void look(b, false);
-            else setLastTop(0);
         }, SCAN_EVERY);
         return () => clearInterval(id);
-    }, [camState, auto, hits, grab, look]);
+    }, [camState, auto, hits, draw, encode, look]);
 
     useEffect(() => {
         if (!toast) return;
@@ -180,7 +226,8 @@ export default function ScanPage() {
     }, [toast]);
 
     const shutter = async () => {
-        const b = await grab(false);
+        if (!draw()) return;
+        const b = await encode();
         if (b) void look(b, true);
     };
 
@@ -230,6 +277,7 @@ export default function ScanPage() {
 
     const dismiss = () => {
         if (hits?.[0]) suppressRef.current = `${hits[0].card.game}:${hits[0].card.id}`;
+        cooldownRef.current = Date.now() + DISMISS_COOLDOWN;
         setHits(null);
     };
 
@@ -240,6 +288,7 @@ export default function ScanPage() {
         camState === 'starting' ? 'Starting camera…'
         : camState !== 'live' ? 'Camera unavailable'
         : nextHint ? 'Added · show the next card'
+        : holding ? 'Hold still…'
         : looking ? 'Looking…'
         : auto ? (hot ? 'Card detected' : 'Hold a card inside the frame')
         : 'Tap the button to scan';
