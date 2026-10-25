@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import Modal from "../../app/shared/components/Modal";
 import { useScanCardMutation, type ScanHit } from "../catalog/catalogApi";
 import {
     useAddToWatchlistMutation, useFetchWatchlistQuery, useRemoveOwnedCopyMutation,
@@ -15,9 +16,11 @@ import type { Card } from "../../app/models/card";
 // sent to api/cards/scan, which embeds the frame with the same CLIP encoder
 // the catalog art was embedded with and returns the closest cards. Because
 // recognition is by ART, same-art reprints and variants score alike, so the
-// result is always offered as a short list: the user picks the exact card,
-// a quantity and a condition, and the copies land in the collection. Frames
-// are processed in memory server-side and never stored.
+// result is always offered as a short list IN A MODAL over the live camera:
+// the user picks the exact card, a quantity and a condition, the copies land
+// in the collection, the modal closes and the camera is ready for the next
+// card (the one just added is not re-offered until another card is shown).
+// Frames are processed in memory server-side and never stored.
 const CARD_RATIO = 88 / 63;          // portrait trading card
 // Calibrated 2026-10-24 on the 256-d index: real cards score 0.71+ (90% of
 // synthetic phone shots, 0.88 typical); a wooden desk 0.63, a hand 0.59, a
@@ -56,6 +59,7 @@ export default function ScanPage() {
     const [lastTop, setLastTop] = useState(0);
     const [session, setSession] = useState<Entry[]>([]);
     const [toast, setToast] = useState<string | null>(null);
+    const [nextHint, setNextHint] = useState(false);   // "show the next card" after an add
 
     const [scan] = useScanCardMutation();
     const { data: tracked } = useFetchWatchlistQuery();
@@ -146,9 +150,10 @@ export default function ScanPage() {
             }
             const key = `${top.card.game}:${top.card.id}`;
             if (!manual) {
-                if (top.score < AUTO_MIN) { suppressRef.current = null; return; }
+                if (top.score < AUTO_MIN) { suppressRef.current = null; setNextHint(false); return; }
                 if (suppressRef.current === key) return;
             }
+            setNextHint(false);
             setHits(res);
         } catch {
             // rate limit / offline / 503: the next frame simply tries again
@@ -202,6 +207,7 @@ export default function ScanPage() {
         if (done > 0) setSession(s => [{ key: Date.now(), card, qty: done, grade, printing }, ...s]);
         suppressRef.current = `${game}:${card.id}`;
         setHits(null);
+        setNextHint(done > 0);
         setToast(done === qty ? `Added ${qty} × ${card.name}`
             : done > 0 ? `Added ${done} of ${qty} × ${card.name} — try the rest again`
             : `Couldn't add ${card.name} — try again`);
@@ -233,6 +239,7 @@ export default function ScanPage() {
     const status =
         camState === 'starting' ? 'Starting camera…'
         : camState !== 'live' ? 'Camera unavailable'
+        : nextHint ? 'Added · show the next card'
         : looking ? 'Looking…'
         : auto ? (hot ? 'Card detected' : 'Hold a card inside the frame')
         : 'Tap the button to scan';
@@ -273,7 +280,7 @@ export default function ScanPage() {
                 ))}
             </div>
 
-            <div className={`scan__body${hits ? ' scan__body--picking' : ''}`}>
+            <div className="scan__body">
                 <div className="scan__stage" ref={stageRef}>
                     <video ref={videoRef} className="scan__video" playsInline muted autoPlay />
                     {guide && camState === 'live' && (
@@ -300,13 +307,15 @@ export default function ScanPage() {
                 </div>
 
                 <aside className="scan__side">
-                    {hits ? (
-                        <PickSheet hits={hits} owned={ownedCount} onAdd={add} onClose={dismiss} />
-                    ) : (
-                        <SessionList entries={session} onUndo={undo} />
-                    )}
+                    <SessionList entries={session} onUndo={undo} />
                 </aside>
             </div>
+
+            {hits && (
+                <Modal title="Which card is it?" onClose={dismiss}>
+                    <PickSheet hits={hits} owned={ownedCount} onAdd={add} />
+                </Modal>
+            )}
 
             <input ref={fileRef} type="file" accept="image/*" capture="environment" hidden
                 onChange={e => { const f = e.target.files?.[0]; if (f) void look(f, true); e.target.value = ''; }} />
@@ -315,12 +324,11 @@ export default function ScanPage() {
     );
 }
 
-// "Which card is it?" — the candidates, then quantity and condition.
-function PickSheet({ hits, owned, onAdd, onClose }: {
+// The modal's body: the candidates, then quantity and condition.
+function PickSheet({ hits, owned, onAdd }: {
     hits: ScanHit[];
     owned: (card: Card) => number;
     onAdd: (card: Card, qty: number, grade: string, printing: string, paid: boolean) => Promise<void>;
-    onClose: () => void;
 }) {
     const [sel, setSel] = useState(0);
     const [qty, setQty] = useState(1);
@@ -339,12 +347,7 @@ function PickSheet({ hits, owned, onAdd, onClose }: {
     };
 
     return (
-        <div className="scan-sheet" role="dialog" aria-label="Which card is it?">
-            <div className="band scan-sheet__band">
-                <span className="band__title">Which card is it?</span>
-                <button type="button" className="btn btn--outline btn--circle" aria-label="Not these"
-                    title="Not these — keep scanning" onClick={onClose}>✕</button>
-            </div>
+        <div className="scan-sheet">
             <ul className="scan-cands">
                 {hits.map((h, i) => (
                     <li key={`${h.card.game}-${h.card.id}`}>

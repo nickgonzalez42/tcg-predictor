@@ -1,7 +1,8 @@
 /* Collection scanner (/scan, 2026-10-24): camera stage with a card-shaped
-   guide, a "which card is it?" sheet, and the session tally. Phones: one
-   column, portrait stage, the sheet rises from the bottom. Desktop: stage
-   left, sheet / session on the right. */
+   guide, the session tally, and the "which card is it?" picker, which opens
+   in the shared modal OVER the live camera and closes on add so the next
+   card can be shown. Phones: one column, portrait stage. Desktop: stage
+   left, session on the right. */
 
 .scan {
     display: flex;
@@ -90,15 +91,19 @@
 }
 .scan__nocam p { margin: 0; max-width: 320px; color: var(--text-muted); font-size: 14px; }
 
-/* ----- the sheet (which card is it?) ----- */
+/* ----- the picker (inside the shared modal, over the live camera) ----- */
 .scan__side { min-width: 0; }
-.scan-sheet, .scan-session {
+.scan-session {
     border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
     padding: var(--space-15);
     display: flex; flex-direction: column; gap: var(--space-10);
 }
-.scan-sheet__band { margin: 0; }
-.scan-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.scan-sheet { display: flex; flex-direction: column; gap: var(--space-10); }
+.scan-cands {
+    list-style: none; margin: 0; padding: 0 2px 0 0;
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 42vh; overflow: auto;   /* quantity + Add stay reachable on phones */
+}
 .scan-cand {
     display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px;
     width: 100%; padding: 6px 8px; text-align: left;
@@ -145,20 +150,6 @@
     animation: scan-toast .25s ease;
 }
 @keyframes scan-toast { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
-
-/* ----- phones: the sheet rises over the stage ----- */
-@media (max-width: 1023px) {
-    .scan__body--picking .scan__side {
-        position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
-        max-height: 78vh; overflow: auto;
-        padding: 0 var(--container-pad) calc(var(--container-pad) + 56px);
-        background: linear-gradient(180deg, transparent 0, var(--bg) 28px);
-    }
-    .scan__body--picking .scan-sheet { box-shadow: 0 -12px 40px rgba(0, 0, 0, .45); }
-    .scan__body--picking::before {
-        content: ""; position: fixed; inset: 0; z-index: 24; background: rgba(5, 7, 12, .45);
-    }
-}
 
 /* ----- desktop: stage left, sheet right ----- */
 @media (min-width: 1024px) {
