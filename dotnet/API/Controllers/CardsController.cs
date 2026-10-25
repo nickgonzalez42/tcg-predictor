@@ -162,6 +162,11 @@ public partial class CardsController(
         };
     }
 
+    // The facets change only when a data push swaps the DBs, and every push
+    // restarts this process — so, like the movers, the answer is cached for
+    // the process lifetime. Uncached it was a full scan of the game's card
+    // table on EVERY catalog visit: 43 s for Magic and 14-18 s for Yu-Gi-Oh!
+    // on the 2 GB box (2026-10-25), and the catalog page blocks on it.
     [HttpGet("filters")]
     public async Task<IActionResult> GetFilters([FromQuery] string? game,
         [FromQuery] bool prerelease = false,
@@ -169,6 +174,19 @@ public partial class CardsController(
     {
         var key = GameRegistry.KeyOrDefault(game);
         var mode = MarketMode(new CardParams { Prerelease = prerelease, Market = marketMode });
+        var cacheKey = $"filters:{key}:{mode}";
+        if (cache.TryGetValue(cacheKey, out object? hit)) return Ok(hit);
+        var result = await cache.GetOrCreateAsync(cacheKey, entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);
+            entry.Priority = CacheItemPriority.NeverRemove;
+            return BuildFilters(key, mode);
+        });
+        return Ok(result);
+    }
+
+    private async Task<object> BuildFilters(string key, string mode)
+    {
 
         // Pre-release facets come from the unpriced-with-estimate population
         // (so the Sets list offers the upcoming set, not the priced ones).
@@ -182,7 +200,7 @@ public partial class CardsController(
             .Where(r => estimates.ContainsKey(r.Id)).ToList();
         if (mode == "without")
         {
-            return Ok(new
+            return new
             {
                 sets = unpriced.Where(r => r.SetName != null).Select(r => r.SetName!)
                     .Distinct().OrderBy(s => s).ToList(),
@@ -191,7 +209,7 @@ public partial class CardsController(
                 hasYear = true,
                 printings = new List<string>(),
                 prereleaseCount = unpriced.Count,
-            });
+            };
         }
         var prereleaseCount = unpriced.Count;
 
@@ -238,7 +256,7 @@ public partial class CardsController(
             .OrderBy(p => p)
             .ToList();
 
-        return Ok(new { sets, rarities, hasYear, printings, prereleaseCount });
+        return new { sets, rarities, hasYear, printings, prereleaseCount };
     }
 
     // ----- Pre-release paging (2026-10-10) -----

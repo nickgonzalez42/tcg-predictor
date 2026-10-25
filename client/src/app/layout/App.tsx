@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import NavBar from "./NavBar";
 import Footer from "./Footer";
+import ConsentBanner from "../shared/components/ConsentBanner";
 import ReportProblem from "../../features/report/ReportProblem";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
 import gsap from "gsap";
@@ -49,6 +50,7 @@ function App() {
               the fixed crawl). The modal it opens portals to <body>. */}
           <ReportProblem />
           <Footer />
+          <ConsentBanner />
         </div>
       </div>
     </div>

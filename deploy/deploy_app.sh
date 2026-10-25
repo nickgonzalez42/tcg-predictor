@@ -50,13 +50,27 @@ $RSYNC -az -e "$SSH_E" "$ROOT/static-content/" ubuntu@$IP:/srv/tcg/static/
 
 ${=SSH} 'chmod +x /srv/tcg/api/API && sudo systemctl start tcg-api && sleep 2 && systemctl is-active tcg-api'
 trap - ERR
+# The API takes 10-30 s to come up (migrations, the scanner artifacts); a
+# warm-up fired before that only collects 502s from Caddy (2026-10-25). Wait
+# for a real answer first, then prime what the startup self-warmup covers as
+# well — belt and braces. The per-game facets are the slow ones.
+wait_for_api() {
+  for i in $(seq 1 60); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://cardstock.guide/api/home/stats" || true)
+    [ "$code" = "200" ] && { echo "api up after $((i*5))s"; return 0; }
+    sleep 5
+  done
+  echo "api not answering after 300s — warming anyway"
+}
+wait_for_api
 # Prime the process-lifetime caches the home page reads (movers, at-a-glance
 # stats) so the first visitor after a deploy does not watch them load — the
 # same list push_data.sh warms after its own restart.
 for ep in "api/cards/movers?count=24&horizon=1m&trend=6m" \
           "api/cards/movers?horizon=mix&perGame=2" \
           "api/cards/movers?game=all&count=10" \
-          "api/home/stats"; do
+          "api/home/stats" \
+          $(for g in pokemon magic yugioh onepiece lorcana digimon gundam starwars fleshandblood sorcery riftbound cyberpunk; do echo "api/cards/filters?game=$g"; done); do
   curl -s -o /dev/null --max-time 900 "https://cardstock.guide/$ep" || true
 done
 echo "app deployed -> http://$IP"

@@ -15,6 +15,10 @@ public class MoverService(
 {
     private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice, string Printing = "");
 
+    // Forecast/base ratio band a card must sit in to headline the home page
+    // and ticker: -50% .. +120%. Wider swings still show on the card page.
+    private const double SaneLo = 0.5, SaneHi = 2.2;
+
     // imageUrl builds the absolute art URL (host-dependent, so the controller
     // supplies it). trend overrides the displayed history window (sparkline +
     // PAST pill); default stays the year-long view. perGame > 0 (with mix)
@@ -97,7 +101,16 @@ public class MoverService(
             ? moverPool.Where(f => f.Horizon == "12m"
                                    || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game)))
             : moverPool.Where(f => f.Horizon == hz);
+        // Showcase sanity (2026-10-25, launch review): the ticker led with
+        // 1-year calls of -94%/-95% — the model's least trustworthy output as
+        // the first thing a visitor sees. The global ranking skips calls the
+        // model itself marks low confidence and anything beyond the SANE
+        // band; the per-game guarantee below applies the same band and only
+        // falls back to low-confidence calls when a game has nothing else.
         var baseQuery = moverPool
+            .Where(f => f.Confidence != "low"
+                        && f.ForecastPrice >= f.BasePrice * SaneLo
+                        && f.ForecastPrice <= f.BasePrice * SaneHi)
             .Select(f => new { f.Game, f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice });
         // 2x buffer per side: candidates without local art are filtered below.
         var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
@@ -172,11 +185,14 @@ public class MoverService(
     // ungraded market sits below that (e.g. Digimon) still gets its pick.
     private async Task<Pick?> BestMover(string game, string horizon, bool gainerSide)
     {
-        foreach (var floor in new[] { 10.0, 1.0 })
+        foreach (var (floor, allowLow) in new[] { (10.0, false), (1.0, false), (10.0, true), (1.0, true) })
         {
             var q = predictions.Forecasts.IgnoreQueryFilters()
                 .Where(f => f.Game == game && f.Target == "ungraded" && f.Horizon == horizon
-                            && f.BasePrice >= floor)
+                            && f.BasePrice >= floor
+                            && f.ForecastPrice >= f.BasePrice * SaneLo
+                            && f.ForecastPrice <= f.BasePrice * SaneHi)
+                .Where(f => allowLow || f.Confidence != "low")
                 .Where(f => gainerSide ? f.ForecastPrice > f.BasePrice : f.ForecastPrice < f.BasePrice);
             q = gainerSide
                 ? q.OrderByDescending(f => f.ForecastPrice / f.BasePrice)

@@ -14,12 +14,23 @@ namespace API.Services;
 public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
                            ILogger<StartupWarmup> logger) : BackgroundService
 {
+    // Keep these byte-identical to the requests the client makes (the cache
+    // keys are built from the normalized parameters). 2026-10-25: the ticker
+    // and hero keys had drifted (count=12 / perGame=4), so the warm-up was
+    // priming entries nobody read; the per-game facets were never warmed and
+    // cost 14-43 s cold on the big games — the catalog page blocks on them.
     private static readonly string[] Paths =
     [
-        "/api/cards/movers?count=12",                      // market ticker
-        "/api/cards/movers?count=24&horizon=1m&trend=6m",  // homepage movers grid
-        "/api/cards/movers?horizon=mix&perGame=4",         // hero scenes
-        "/api/cards?game=pokemon&pageSize=30",             // default catalog page
+        "/api/cards/movers?game=all&count=10",             // market ticker
+        "/api/cards/movers?count=24&horizon=1m&trend=6m",  // homepage mover tiles
+        "/api/cards/movers?horizon=mix&perGame=2",         // featured-card hero
+        "/api/home/stats",                                 // home glance panels
+        "/api/home/scorecard",                             // About page
+        .. API.RequestHelpers.GameRegistry.Keys.SelectMany(g => new[]
+        {
+            $"/api/cards/filters?game={g}",                // catalog facets (cached per process)
+            $"/api/cards?game={g}&pageSize=30",            // first catalog page (pulls pages into the OS cache)
+        }),
     ];
 
     protected override async Task ExecuteAsync(CancellationToken ct)

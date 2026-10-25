@@ -118,11 +118,25 @@ ${=SSH_CMD} ubuntu@$IP 'sudo systemctl restart tcg-api && sleep 2 && systemctl i
 # Warm the hot paths so the first visitor after a restart doesn't pay the
 # cold-cache cost (2026-08-14: homepage movers took ages on a cold API —
 # ranking recompute + cold page cache over the multi-GB DBs).
+# The API takes 10-30 s to come up (migrations, the scanner artifacts); a
+# warm-up fired before that only collects 502s from Caddy (2026-10-25). Wait
+# for a real answer first, then prime what the startup self-warmup covers as
+# well — belt and braces. The per-game facets are the slow ones.
+wait_for_api() {
+  for i in $(seq 1 60); do
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "https://cardstock.guide/api/home/stats" || true)
+    [ "$code" = "200" ] && { echo "api up after $((i*5))s"; return 0; }
+    sleep 5
+  done
+  echo "api not answering after 300s — warming anyway"
+}
+wait_for_api
 echo "== warmup =="
 for ep in \
   "api/cards/movers?count=24&horizon=1m&trend=6m" \
   "api/cards/movers?horizon=mix&perGame=2" \
   "api/cards/movers?game=all&count=10" \
+  $(for g in pokemon magic yugioh onepiece lorcana digimon gundam starwars fleshandblood sorcery riftbound cyberpunk; do echo "api/cards/filters?game=$g"; done) \
   "api/cards?game=pokemon&pageSize=24" \
   "api/home/stats"; do
   t0=$(date +%s)
