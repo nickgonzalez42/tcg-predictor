@@ -119,6 +119,9 @@ export default function Catalog() {
   // disabled and cards are forced. The stored preference isn't touched — a
   // rows user gets rows back the moment the viewport grows past 767px.
   const isMobile = useMediaQuery('(max-width: 767px)');
+  // Scan link only where a camera is at hand: touchscreen phones/tablets
+  // (coarse pointer, no hover) below the desktop breakpoint (user 2026-10-25).
+  const touchDevice = useMediaQuery('(hover: none) and (pointer: coarse) and (max-width: 1023px)');
 
   if (isLoading || !data || filtersLoading || !filtersData) return <CardLoader game={cardParams.game} />
 
@@ -155,10 +158,12 @@ export default function Catalog() {
           )}
           {/* Camera scanner (2026-10-25): sits with the collection controls;
               signed-out visitors land on the login page via RequireAuth. */}
-          <Link className="btn btn--outline results-head__scan" to="/scan"
-            title="Add cards to your collection with your camera">
-            Scan
-          </Link>
+          {touchDevice && (
+            <Link className="btn btn--outline results-head__scan" to="/scan"
+              title="Add cards to your collection with your camera">
+              Scan
+            </Link>
+          )}
           {user && (
             <label className="switch-field"
               title={quick
