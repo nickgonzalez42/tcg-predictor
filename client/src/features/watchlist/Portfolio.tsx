@@ -19,11 +19,14 @@ import BestWorst from "./BestWorst";
 import PositionRow from "./PositionRow";
 import PaidHelpModal from "./PaidHelpModal";
 import SoldTable from "./SoldTable";
+import GradingModal from "./GradingModal";
 
 export default function Portfolio() {
     usePageMeta("Portfolio");
     const [showPaidHelp, setShowPaidHelp] = useState(false);
     const [showImport, setShowImport] = useState(false);
+    // "Recommend grading": which Near Mint cards gain most from PSA grading.
+    const [showGrading, setShowGrading] = useState(false);
     // Positions (what you hold) vs the Sold track (what you've sold, with
     // realized P/L) — two tabs over the same table area (2026-10-24).
     const [view, setView] = useState<'positions' | 'sold'>('positions');
@@ -144,11 +147,16 @@ export default function Portfolio() {
                         <button className="btn btn--outline" onClick={() => setShowImport(true)}>
                             Import
                         </button>
+                        <button className="btn btn--outline" onClick={() => setShowGrading(true)}
+                            title="Which of your Near Mint cards gain the most from PSA grading">
+                            Recommend grading
+                        </button>
                         <button className="btn btn--outline btn--circle" title="How is Paid set?"
                             onClick={() => setShowPaidHelp(true)}>?</button>
                     </div>
                 </div>
                 {showImport && <ImportModal onClose={() => setShowImport(false)} />}
+                {showGrading && <GradingModal onClose={() => setShowGrading(false)} />}
                 {showPaidHelp && <PaidHelpModal onClose={() => setShowPaidHelp(false)} />}
 
                 {view === 'sold' ? (

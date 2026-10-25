@@ -2,10 +2,10 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Modal from "../../app/shared/components/Modal";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { useFetchGradingCandidatesQuery, type GradingCandidate } from "../watchlist/watchlistApi";
+import { useFetchGradingCandidatesQuery, type GradingCandidate } from "./watchlistApi";
 import { currencyFormat, gameKey } from "../../lib/util";
 
-// "Recommend grading" (2026-10-25): the user's Near Mint cards with the
+// "Recommend grading" (2026-10-25, portfolio header): the user's Near Mint cards with the
 // latest price at every PSA tier, ranked by what grading would add. Gains
 // are per copy and net of the grading fee the user sets; the table sorts by
 // the best tier or by any single grade.
