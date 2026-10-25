@@ -45,15 +45,12 @@ MODEL_VERSION = "forecast-deep-v4.5"  # v4.5 (2026-10-10 review): absolute-error
                                       # conformal bands, sqrt-t 1w bands, no img PCA
                                       # v4.2: cross-game market features
                                       # v4.1: confidence, set/age/drawdown, reasons
-# 3m added 2026-10-11 (user decision): the 1-month horizon is mostly event
-# noise the model can't call (its calibration shrinks most up-signal to
-# zero), while 6m/12m won't have graded cohorts until 2027. Three months is
-# the shortest horizon where trend beats noise AND the first cohort grades
-# fast (~mid-January). It ships SILENTLY: the site renders only 1m/6m/12m,
-# so 3m accrues a graded record first — same earn-before-display rollout as
-# the launch tier. Trains on full-rebuild nights only (TCG_FC_HORIZONS=1m
-# on the other nights, set in local_model_run.sh).
-HORIZONS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12}
+# 3m (added 2026-10-11 as a silent horizon) was RETIRED 2026-10-24 (user
+# decision): the site never showed it, its first clean cohort would not
+# have graded before January, and its rows were a quarter of every full
+# run. main() purges any standing row of a retired horizon from the
+# forecasts table; forecast_scorecard.py purges them from the archive.
+HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 # (WEEK_FRACTION / the pro-rated 1w horizon removed 2026-08-14 — a true weekly
 # model arrives once the daily NM data matures, ~Oct 2026.)
 # bgs10/cgc10/sgc10 dropped 2026-08-01: their only source was the retired paid
@@ -92,6 +89,26 @@ EXTREME_LOW_CONF_RET = 1.1
 # screen is for. Such rows are flagged low-confidence and say so. 0.25 is
 # the first step of the shrink grid; 0 restores the old hard floor.
 MIN_SHRINK = float(os.environ.get("TCG_FC_MIN_SHRINK", "0.25"))
+# Flat-segment guard (2026-10-24, user rule: "no game should have only flat
+# forecasts for any timespan"). The point model trains on absolute error,
+# so a (game, tier, horizon) whose monthly labels are mostly "unchanged"
+# (thin graded tiers: PriceCharting carries a graded price forward for
+# months) starts at a median of exactly 0 and the trees never leave it —
+# every card publishes 0%, and no multiplier rescues a zero (digimon/psa10,
+# gundam/grade9, lorcana/grade7, starwars/grade95 at 1m on 2026-10-23: raw
+# model output 0.0 on every row). When at least FLAT_SEGMENT_SHARE of a
+# segment's own calls round to 0%, its rows follow a donor call instead,
+# flagged low confidence with a note: a graded tier follows the raw
+# (ungraded) card's call at the same horizon at BORROW_SHRINK strength —
+# graded copies move with the raw card — and an ungraded segment follows
+# its nearest other horizon's standing call scaled to this horizon's
+# months. A segment with no donor at all publishes flat and is listed at
+# the end of the run so the log shows it.
+FLAT_SEGMENT_SHARE = 0.98
+BORROW_SHRINK = 0.5
+UNGRADED_RET = {}     # game -> horizon -> {(pid, printing): published ret}, this run
+FLAT_SEGMENTS = []    # "game/target/horizon" left flat for want of a donor
+DB_PATH = None        # set by main(); the standing-rows donor lookups read it
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -623,6 +640,63 @@ def _rolling_live_shrink(game, target, hname, version, days=120, min_n=500):
 RAW_EXTRA = {}   # (game, pid, printing, target, horizon) -> (raw_ret, raw_width)
 
 
+def _standing_returns(game, target, hname):
+    """{(pid, printing): ret} of the forecasts table's current rows for one
+    segment — last run's calls, the donor when this run hasn't (re)computed
+    the segment. Empty on any error."""
+    try:
+        c = sqlite3.connect(DB_PATH or OUT_DB, timeout=60)
+        rows = c.execute("SELECT product_id, printing, ret FROM forecasts "
+                         "WHERE game=? AND target=? AND horizon=? AND ret IS NOT NULL",
+                         (game, target, hname)).fetchall()
+        c.close()
+    except sqlite3.Error:
+        return {}
+    return {(int(p), str(pr or "")): float(r) for p, pr, r in rows}
+
+
+def _borrow_returns(game, target, hname, k, pids_k, prints_k):
+    """Donor log-returns for a flat segment (see FLAT_SEGMENT_SHARE), aligned
+    to its rows (nan where the donor has no call for that card), already
+    scaled to publish strength: (label, array) or None when nothing can
+    stand in. A graded tier borrows the raw card's call at this horizon
+    (this run's if computed, else the standing rows); an ungraded segment
+    borrows the nearest other horizon's standing call scaled by months."""
+    keys = [(int(p), str(pr)) for p, pr in zip(pids_k, prints_k)]
+
+    def align(src):
+        out = np.full(len(keys), np.nan)
+        for i, (pid, pr) in enumerate(keys):
+            v = src.get((pid, pr))
+            if v is None and pr != "":
+                v = src.get((pid, ""))
+            if v is not None:
+                out[i] = v
+        return out
+
+    def usable(arr):
+        fin = np.isfinite(arr)
+        return fin.sum() >= max(10, len(arr) // 4) and float(np.nanstd(arr)) > 0
+
+    if target != "ungraded":
+        src = UNGRADED_RET.get(game, {}).get(hname) or _standing_returns(game, "ungraded", hname)
+        if src:
+            arr = align(src)
+            if usable(arr):
+                return f"the raw card's {hname} call at half strength", arr * BORROW_SHRINK
+        return None
+    for h2 in sorted(HORIZONS, key=lambda h: abs(HORIZONS[h] - k)):
+        if h2 == hname:
+            continue
+        src = UNGRADED_RET.get(game, {}).get(h2) or _standing_returns(game, "ungraded", h2)
+        if not src:
+            continue
+        arr = align(src)
+        if usable(arr):
+            return f"the {h2} call scaled to {hname}", arr * (k / HORIZONS[h2])
+    return None
+
+
 def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None):
     horizons = horizons or HORIZONS
     # Calibration flags (2026-08-11) — validated by backtest_forecast.py before
@@ -1009,6 +1083,32 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         if unreliable or weak_point:
             conf = np.full(len(ret), "low", dtype=object)
 
+        # Flat-segment guard — see FLAT_SEGMENT_SHARE. Live runs only:
+        # backtests must score the model's own output.
+        borrowed = np.zeros(len(ret), dtype=bool)
+        borrow_label = ""
+        if not as_of and len(ret):
+            flat_share = float(np.mean(np.round(base * np.exp(ret), 2) == np.round(base, 2)))
+            if flat_share >= FLAT_SEGMENT_SHARE:
+                donor = _borrow_returns(game, target, hname, k, pids[keep], prints[keep])
+                if donor is not None:
+                    borrow_label, pred_b = donor
+                    has = np.isfinite(pred_b)
+                    ret, lo_ret, hi_ret = fcal.emit_bands(np.where(has, pred_b, pred_pub),
+                                                          q10_now, q90_now, widen, b_, RET_CLIP)
+                    borrowed = has
+                    conf = np.where(has, "low", conf).astype(object)
+                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of its "
+                          f"own calls round to 0% — {int(has.sum())}/{len(ret)} rows follow "
+                          f"{borrow_label}", flush=True)
+                else:
+                    FLAT_SEGMENTS.append(f"{game}/{target}/{hname}")
+                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of calls "
+                          f"round to 0% and no donor call exists — published flat", flush=True)
+        if target == "ungraded" and not as_of:
+            UNGRADED_RET.setdefault(game, {})[hname] = {
+                (int(p), str(pr)): float(r) for p, pr, r in zip(pids[keep], prints[keep], ret)}
+
         if debug is not None and hname in debug:
             debug[hname]["emit"] = {
                 "pids": pids[keep].copy(), "prints": prints[keep].copy(),
@@ -1103,6 +1203,10 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
                 reason += (f" Note: over {hname} the model has not beaten 'no change' for"
                            " this game and tier out of sample, so the size of this call is"
                            " damped; read it as a ranking signal, not a price target.")
+            if borrowed[i]:
+                reason += (f" Note: the model has no independent call for this tier over"
+                           f" {hname} (its own calls all round to 0%), so this follows"
+                           f" {borrow_label}; read it as a ranking signal, not a price target.")
             if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
                 reason += (" This is an extreme swing the model itself has low confidence"
                            " in; such calls have historically been unreliable.")
@@ -1201,6 +1305,9 @@ def main():
     ap.add_argument("--game", action="append",
                     help="retrain only this game (repeatable); merges into the "
                          "existing forecasts table instead of rebuilding it")
+    ap.add_argument("--target", action="append", choices=TARGETS, metavar="TIER",
+                    help="retrain only this tier (repeatable; for surgical re-runs with "
+                         "--game): the other tiers' standing rows are kept")
     ap.add_argument("--as-of", metavar="YYYY-MM",
                     help="backtest: truncate all price history after this month "
                          "and archive theoretical 1m forecasts tagged __bt-<month>; "
@@ -1248,9 +1355,10 @@ def main():
         print(f"[forecast] archive column check skipped: {e}", flush=True)
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    total_seg = len(games) * len(TARGETS)
+    run_targets = args.target or TARGETS
+    total_seg = len(games) * len(run_targets)
     done_seg = 0
-    print(f"[forecast] plan: {len(games)} games x {len(TARGETS)} tiers = {total_seg} segments", flush=True)
+    print(f"[forecast] plan: {len(games)} games x {len(run_targets)} tiers = {total_seg} segments", flush=True)
     # Per-game compute -> gate -> write (2026-10-13): the old flow collected
     # every game's rows in one list and wrote once at the end — ~2M tuples
     # (~1.4GB of Python objects) once the 3m horizon landed, which pushed the
@@ -1260,6 +1368,8 @@ def main():
     # not the whole run, and each game commits in its own transaction, so a
     # crash mid-run keeps every finished game and rolls back the partial one.
     out_db = args.db or OUT_DB
+    global DB_PATH
+    DB_PATH = out_db
     conn = sqlite3.connect(out_db, timeout=60)
 
     # Previous per-(game,target) row counts, read BEFORE any write: every
@@ -1284,7 +1394,7 @@ def main():
     gated = []
     for game in games:
         rows = []
-        for target in TARGETS:
+        for target in run_targets:
             done_seg += 1
             try:
                 rows += forecast_game_target(game, target, now, args.as_of, horizons)
@@ -1314,7 +1424,8 @@ def main():
         # rows; other games still publish, and the run exits nonzero at the
         # end so the night is flagged (a flagged night never pushes to prod).
         checked = {k: n for k, n in prev.items()
-                   if k[0] == game and (args.game or k[1] in TARGETS)}
+                   if k[0] == game and (k[1] in args.target if args.target
+                                        else (args.game or k[1] in TARGETS))}
         if checked:
             new_counts = {}
             for r in rows:
@@ -1331,15 +1442,28 @@ def main():
                 gated.append(game)
                 continue
 
-        write_game(conn, game, rows, subset, horizons)
+        write_game(conn, game, rows, subset, horizons, args.target)
         wrote += len(rows)
         print(f"[forecast] [{game}] published {len(rows)} rows", flush=True)
+        UNGRADED_RET.pop(game, None)   # donor calls are per game; free them
 
     if args.as_of:
         conn.close()
         print(f"\nbacktest {args.as_of}: {archived} theoretical forecast(s) "
               f"archived -> {os.path.normpath(out_db)}")
         return
+
+    # Retired horizons (3m, 2026-10-24) never retrain, so nothing else would
+    # ever clear their standing rows: sweep them every run. Idempotent.
+    keep_h = tuple(HORIZONS) + ("launch1m",)
+    cur = conn.execute(f"DELETE FROM forecasts WHERE horizon NOT IN ({','.join('?' * len(keep_h))})",
+                       keep_h)
+    if cur.rowcount > 0:
+        print(f"[forecast] purged {cur.rowcount} row(s) of retired horizon(s)", flush=True)
+        conn.commit()
+    if FLAT_SEGMENTS:
+        print(f"[forecast] FLAT SEGMENTS published without a donor: {', '.join(FLAT_SEGMENTS)}",
+              flush=True)
 
     if not args.game:
         # The old full-run DROP also cleared games retired from priced_games();
@@ -1363,19 +1487,25 @@ def main():
         raise SystemExit(f"publish gate tripped for: {', '.join(gated)}")
 
 
-def write_game(conn, game, rows, subset, horizons):
-    """Replace one game's forecast rows in a single transaction."""
+def write_game(conn, game, rows, subset, horizons, targets=None):
+    """Replace one game's forecast rows in a single transaction. `targets`
+    (a --target run) narrows every delete to those tiers so the others'
+    standing rows survive."""
     conn.executescript(SCHEMA)
+    t_sql, t_args = "", ()
+    if targets:
+        t_sql = f" AND target IN ({','.join('?' * len(targets))})"
+        t_args = tuple(targets)
     if subset:
-        conn.executemany("DELETE FROM forecasts WHERE game = ? AND horizon = ?",
-                         [(game, h) for h in horizons])
+        conn.executemany(f"DELETE FROM forecasts WHERE game = ? AND horizon = ?{t_sql}",
+                         [(game, h) + t_args for h in horizons])
         # The 1m segment also owns the model's EARLY rows: clear last night's so
         # a card that gained its second bucket does not keep a stale early call.
         if "1m" in horizons:
             conn.execute("DELETE FROM forecasts WHERE game = ? AND horizon = 'launch1m' "
-                         "AND model_version LIKE '%-early'", (game,))
+                         f"AND model_version LIKE '%-early'{t_sql}", (game,) + t_args)
     else:
-        conn.execute("DELETE FROM forecasts WHERE game = ?", (game,))
+        conn.execute(f"DELETE FROM forecasts WHERE game = ?{t_sql}", (game,) + t_args)
     conn.executemany("INSERT OR REPLACE INTO forecasts VALUES "
                      "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     archive(conn, rows)

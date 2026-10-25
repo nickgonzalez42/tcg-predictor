@@ -30,13 +30,13 @@ export TCG_FC_PRERELEASE=1
 # 6m/12m retrain on the FULL-REBUILD night only (2026-10-09, user decision):
 # they stay unvalidated until their first cohorts mature in 2027 and barely
 # move between runs; a 1m-only night cuts the model block roughly in half.
-# The long horizons (3m/6m/12m) retrain MONTHLY (2026-10-18 evened week):
+# The long horizons (6m/12m; 3m retired 2026-10-24) retrain MONTHLY (2026-10-18 evened week):
 # on the crawl night (run_daily_refresh.sh exports TCG_CRAWL_NIGHT from the
 # LOCAL weekday — the old UTC-Sunday test cannot see an 18:20 Saturday
 # start) in the first week of the month, i.e. the month's first Saturday.
 # They are unvalidated until 2027 and barely move between runs; that one
 # night is ~27 h, every other night trains 1m only and keeps serving the
-# standing 3m/6m/12m rows (horizon-scoped delete in forecast_predict.py).
+# standing 6m/12m rows (horizon-scoped delete in forecast_predict.py).
 if [ "${TCG_CRAWL_NIGHT:-0}" != "1" ] || [ "$(date +%d)" -gt 7 ]; then
   export TCG_FC_HORIZONS=1m
 fi

@@ -40,10 +40,10 @@ OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "car
 from games import market_games
 GAMES = market_games()   # any price source, incl. CSV-only games (2026-10-18)
 
-MONTH_HORIZONS = {"1m": 1, "3m": 3, "6m": 6, "12m": 12}   # 3m added 2026-10-11
+MONTH_HORIZONS = {"1m": 1, "6m": 6, "12m": 12}   # 3m added 2026-10-11, retired 2026-10-24
 # For error normalization: a 12m miss of 0.24 and a 1m miss of 0.02 are the
 # same monthly-scale error, so different horizons can share one signal.
-HORIZON_MONTHS = {"1w": 7 / 30.44, "1m": 1, "3m": 3, "6m": 6, "12m": 12}
+HORIZON_MONTHS = {"1w": 7 / 30.44, "1m": 1, "6m": 6, "12m": 12}
 GRACE_MONTHS = 2          # a gappy series may skip the exact due month
 TOLERANCE_DAYS = 3        # nearest dated point this close to a due date grades a row
 CARRY_DAYS = 31           # else: newest at-or-before due, if at most this old
@@ -592,9 +592,19 @@ def main():
     now_iso = datetime.now(timezone.utc).isoformat(timespec="seconds")
     # 1w retired 2026-08-14 (was the 1m forecast pro-rated to 7 days; a true
     # weekly model arrives with the daily data, ~Oct 2026). Idempotent.
-    purged = conn.execute("DELETE FROM forecast_archive WHERE horizon='1w'").rowcount
+    # 3m retired 2026-10-24 (user decision; it never showed on the site and
+    # its first clean cohort would not have graded before January): its
+    # archive rows go too, so nothing grades, scores or signals on them, and
+    # the accuracy tables rebuild below without them.
+    purged = conn.execute("DELETE FROM forecast_archive WHERE horizon IN ('1w', '3m')").rowcount
     if purged:
-        print(f"purged {purged} retired 1w row(s)")
+        print(f"purged {purged} retired-horizon (1w/3m) row(s)")
+    try:
+        gone = conn.execute("DELETE FROM forecast_accuracy_monthly WHERE horizon='3m'").rowcount
+        if gone:
+            print(f"purged {gone} retired 3m monthly accuracy row(s)")
+    except sqlite3.OperationalError:
+        pass   # table not created yet on this DB
     # One-time re-grade (2026-08-14): legacy ungraded 1m rows were graded
     # against MONTH buckets (realized_at = 'YYYY-MM-01', a label — a Jul 10
     # forecast read as landing Aug 1 instead of its true Aug 7 due date).

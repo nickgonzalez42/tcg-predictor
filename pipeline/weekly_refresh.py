@@ -85,7 +85,7 @@ CRAWL_NIGHT = (_env_crawl == "1") if _env_crawl in ("0", "1") \
 #                     night
 #   detailed backfill Tuesday + Friday (its series only has weekly points)
 #   console sweep, full price-table rebuild, full-file push: Saturday
-#   3m/6m/12m retrain first Saturday of the month (local_model_run.sh)
+#   6m/12m retrain first Saturday of the month (local_model_run.sh; 3m retired 2026-10-24)
 LOCAL_WEEKDAY = datetime.now().weekday()
 DEPTH_SLICE = {
     0: "magic",
