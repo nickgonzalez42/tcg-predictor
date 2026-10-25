@@ -20,7 +20,6 @@ const TIERS: { key: string; label: string }[] = [
 ];
 const HORIZONS: { key: string; label: string }[] = [
     { key: '1m', label: '1 month' },
-    { key: '3m', label: '3 months' },
     { key: '6m', label: '6 months' },
     { key: '12m', label: '1 year' },
     { key: 'launch1m', label: 'Early' },

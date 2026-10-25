@@ -93,6 +93,11 @@ public partial class HomeController
     // monthly rows. The weekly table arrives with the first push after it
     // was introduced — a missing table reads as an empty series, never an
     // error. Cached for the process lifetime like the other home numbers.
+    // The horizons the site scores. Anything else in the accuracy tables is
+    // a retired experiment's residue (3m, retired 2026-10-24) and never
+    // reaches the About page.
+    private static readonly HashSet<string> ScoreHorizons = ["1m", "6m", "12m", "launch1m"];
+
     [HttpGet("scorecard")]
     public async Task<ActionResult<Scorecard>> GetScorecard()
     {
@@ -102,7 +107,7 @@ public partial class HomeController
             entry.Priority = CacheItemPriority.NeverRemove;
 
             var models = (await predictions.Accuracy.Where(a => a.N > 0).ToListAsync())
-                .Where(a => GameRegistry.Normalize(a.Game) != null)
+                .Where(a => GameRegistry.Normalize(a.Game) != null && ScoreHorizons.Contains(a.Horizon))
                 .Select(a => new ModelScore(a.Game, GameRegistry.Label(a.Game), a.Target, a.Horizon,
                                             a.N, a.BandHitRate, a.RetMae, a.RetBias, a.GradedThrough))
                 .OrderBy(m => m.Label).ThenBy(m => m.Target).ThenBy(m => m.Horizon)
@@ -122,7 +127,7 @@ public partial class HomeController
             try
             {
                 monthly = (await predictions.AccuracyMonthly.ToListAsync())
-                    .Where(m => GameRegistry.Normalize(m.Game) != null)
+                    .Where(m => GameRegistry.Normalize(m.Game) != null && ScoreHorizons.Contains(m.Horizon))
                     .Select(m => new MonthScore(m.Game, GameRegistry.Label(m.Game), m.Target, m.Horizon,
                                                 m.Month, m.N, m.BandHitRate, m.RetMae, m.RetBias))
                     .OrderBy(m => m.Month).ThenBy(m => m.Label)
