@@ -133,25 +133,28 @@ export default function Portfolio() {
                             Sold{soldCount ? ` · ${soldCount}` : ''}
                         </button>
                     </div>
-                    {!empty && view === 'positions' && (
-                        <button className="btn btn--outline" onClick={exportCsv}>
-                            Export
+                    {/* Actions on their own row beneath the tabs (user 2026-10-25). */}
+                    <div className="pf-actions">
+                        {!empty && view === 'positions' && (
+                            <button className="btn btn--outline" onClick={exportCsv}>
+                                Export
+                            </button>
+                        )}
+                        <Link className="btn btn--outline" to="/scan" title="Add cards with your camera">
+                            Scan
+                        </Link>
+                        <button className="btn btn--outline" onClick={() => setShowImport(true)}>
+                            Import
                         </button>
-                    )}
-                    <Link className="btn btn--outline" to="/scan" title="Add cards with your camera">
-                        Scan
-                    </Link>
-                    <button className="btn btn--outline" onClick={() => setShowImport(true)}>
-                        Import
-                    </button>
-                    <button className="btn btn--outline btn--circle" title="How is Paid set?"
-                        onClick={() => setShowPaidHelp(true)}>?</button>
-                    {!empty && (
-                        <button className="btn btn--outline btn--danger" title="Delete every position"
-                            onClick={() => setShowClear(true)}>
-                            Clear
-                        </button>
-                    )}
+                        <button className="btn btn--outline btn--circle" title="How is Paid set?"
+                            onClick={() => setShowPaidHelp(true)}>?</button>
+                        {!empty && (
+                            <button className="btn btn--outline btn--danger" title="Delete every position"
+                                onClick={() => setShowClear(true)}>
+                                Clear
+                            </button>
+                        )}
+                    </div>
                 </div>
                 {showImport && <ImportModal onClose={() => setShowImport(false)} />}
                 {showClear && (

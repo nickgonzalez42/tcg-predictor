@@ -316,10 +316,40 @@
 
 /* ---- Sold track (2026-10-24): Positions / Sold tabs, the realized totals
    strip, the sell modal's preview and the $ action. ---- */
+/* Two rows (user 2026-10-25): the Positions/Sold tabs, then the actions. */
+.pf-positions .table-head {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-10);
+}
 .pf-tabs {
   display: flex;
   gap: var(--space-5);
-  margin-right: auto;
+}
+.pf-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-10);
+}
+/* The "?" circle matches its siblings' height (tables.css sizes it only as
+   a direct child of the header row). */
+.pf-actions > .btn.btn--circle {
+  width: var(--control-h);
+  height: var(--control-h);
+  min-height: var(--control-h);
+}
+/* Phones: the actions stay ONE row and scroll sideways rather than wrapping
+   into a third line. */
+@media (max-width: 767px) {
+  .pf-actions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .pf-actions::-webkit-scrollbar { display: none; }
+  .pf-actions > * { flex: 0 0 auto; }
 }
 
 .pf-tab {
@@ -443,21 +473,66 @@
   color: var(--text-muted);
 }
 
-/* The sold table rides .screener--positions for its look but has its own
-   columns (1 thumb · 2 card · 3 condition · 4 acquired · 5 sold · 6 held ·
-   7 realized · 8 actions), so tables.css's positions column drops are
-   undone here and replaced with this table's own priorities. */
+/* Tablet and phone (user 2026-10-25, reversing the 2026-10-02 column drops):
+   the positions and sold tables keep EVERY column and scroll sideways inside
+   .screener-wrap; the thumb and card name stay pinned on the left so the row
+   keeps its identity while the numbers scroll. Pinned cells need opaque
+   backgrounds, so the zebra and hover tints are restated for them. */
 @media (max-width: 1023px) {
-  .screener--positions.screener--sold th:nth-child(5),
-  .screener--positions.screener--sold td:nth-child(5),
-  .screener--positions.screener--sold th:nth-child(8),
-  .screener--positions.screener--sold td:nth-child(8) {
-    display: table-cell;
+  .pf-positions .screener-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 
-  .screener--positions.screener--sold th:nth-child(6),
-  .screener--positions.screener--sold td:nth-child(6) {
-    display: none;   /* Held goes first */
+  .pf-positions .screener--positions { min-width: 960px; }
+  .pf-positions .screener--positions.screener--sold { min-width: 840px; }
+
+  .pf-positions .screener--positions th:nth-child(1),
+  .pf-positions .screener--positions td:nth-child(1),
+  .pf-positions .screener--positions th:nth-child(2),
+  .pf-positions .screener--positions td:nth-child(2) {
+    position: sticky;
+    z-index: 2;
+    background: var(--bg);
+  }
+
+  .pf-positions .screener--positions th:nth-child(1),
+  .pf-positions .screener--positions td:nth-child(1) {
+    left: 0;
+    /* Table cells take min-width as the whole box: 60px = the name cell's
+       `left` below, so the two pinned cells meet edge to edge (auto layout
+       otherwise gave the 30px thumb a 50px cell and a sliver of the scrolled
+       column showed between them). */
+    min-width: 60px;
+  }
+
+  .pf-positions .screener--positions th:nth-child(2),
+  .pf-positions .screener--positions td:nth-child(2) {
+    left: 60px;   /* the thumb cell: 40px + 10px padding each side */
+    max-width: 180px;
+    box-shadow: 8px 0 10px -8px rgba(0, 0, 0, 0.55);
+  }
+
+  .pf-positions .screener--positions th:nth-child(1),
+  .pf-positions .screener--positions th:nth-child(2) { background: #232c40; }
+
+  .pf-positions .screener--positions tbody tr:nth-child(even) td:nth-child(1),
+  .pf-positions .screener--positions tbody tr:nth-child(even) td:nth-child(2) {
+    background: color-mix(in srgb, var(--bg) 97.5%, #fff);
+  }
+
+  .pf-positions .screener--positions .screener__row:hover td:nth-child(1),
+  .pf-positions .screener--positions .screener__row:hover td:nth-child(2) {
+    background: var(--surface-2);
+  }
+
+  .pf-positions .screener--positions td:nth-child(2) .screener__name,
+  .pf-positions .screener--positions td:nth-child(2) .mono {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
@@ -466,38 +541,21 @@
     grid-template-columns: 1fr;
   }
 
-  .screener--positions.screener--sold th:nth-child(3),
-  .screener--positions.screener--sold td:nth-child(3),
-  .screener--positions.screener--sold th:nth-child(4),
-  .screener--positions.screener--sold td:nth-child(4) {
-    display: none;   /* then Condition and Acquired */
-  }
-}
+  /* Phones: the thumb goes and the name alone is pinned, a little narrower,
+     so the scrolling columns keep most of the width. */
+  .pf-positions .screener--positions th:nth-child(1),
+  .pf-positions .screener--positions td:nth-child(1) { display: none; }
 
-@media (max-width: 640px) {
-  .screener--positions.screener--sold th:nth-child(7),
-  .screener--positions.screener--sold td:nth-child(7) {
-    display: table-cell;   /* Realized always shows */
+  .pf-positions .screener--positions th:nth-child(2),
+  .pf-positions .screener--positions td:nth-child(2) {
+    left: 0;
+    max-width: 150px;
   }
 
-  .screener--sold .screener__actions .btn {
-    margin-left: 2px;
+  .pf-positions .screener--positions th,
+  .pf-positions .screener--positions td {
     padding-left: 8px;
     padding-right: 8px;
   }
-
-  /* Three row actions (−, ＋, $) don't fit one line on a phone: the cell is
-     held to two circles wide so the $ wraps onto its own row. */
-  .screener--positions:not(.screener--sold) .screener__actions {
-    white-space: normal;
-    /* min-width is what holds under a squeezed table; two 32px circles with
-       2px margins inside 6px cell padding = 84px. */
-    min-width: 88px;
-    width: 88px;
-    max-width: 88px;
-  }
-
-  .screener--positions:not(.screener--sold) .screener__actions .btn--circle {
-    margin: 2px;
-  }
 }
+

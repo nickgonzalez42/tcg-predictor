@@ -98,57 +98,11 @@
   pointer-events: none;
 }
 
-/* Positions table never scrolls sideways (2026-10-02, user request):
-   columns drop by priority instead, and the copy editor opens in a modal.
-   Columns: 1 thumb · 2 card · 3 condition · 4 qty · 5 paid · 6 value ·
-   7 P/L · 8 fcst · 9 trend · 10 actions. */
-@media (max-width: 1023px) {
-  .screener--positions th:nth-child(5),
-  .screener--positions td:nth-child(5),
-  .screener--positions th:nth-child(8),
-  .screener--positions td:nth-child(8),
-  .screener--positions th:nth-child(9),
-  .screener--positions td:nth-child(9) {
-    display: none;
-  }
-}
+/* Positions/sold tables on tablet and phone: every column stays and the
+   table scrolls sideways with the card name pinned (Portfolio.css; user
+   2026-10-25, reversing the 2026-10-02 column-drop scheme that lived here). */
 
-@media (max-width: 640px) {
-  .screener--positions th:nth-child(1),
-  .screener--positions td:nth-child(1),
-  .screener--positions th:nth-child(3),
-  .screener--positions td:nth-child(3),
-  .screener--positions th:nth-child(7),
-  .screener--positions td:nth-child(7) {
-    display: none;
-  }
-
-  .screener--positions th,
-  .screener--positions td {
-    padding-left: 6px;
-    padding-right: 6px;
-  }
-
-  .screener--positions td:nth-child(2) {
-    max-width: 140px;
-  }
-
-  .screener--positions td:nth-child(2) .screener__name,
-  .screener--positions td:nth-child(2) .mono {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* The hidden Condition column's tier shows under the name instead. */
-  .screener--positions .screener__cond-inline {
-    display: block;
-    margin-top: 4px;
-  }
-}
-
-/* Hidden except on phones (rule above). */
+/* Tier-under-the-name slot: unused since the column drops went (kept hidden). */
 .screener__cond-inline {
   display: none;
 }
