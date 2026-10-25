@@ -75,7 +75,8 @@ public class AlertEmailNotifier(
                 "One of your CardStock price alerts just hit:\n\n" +
                 string.Join("\n\n", lines) + "\n\n" +
                 "Manage alerts from your watchlist: " + clientUrl + "/watchlist\n" +
-                "To stop these emails, turn off alert emails in your profile settings.";
+                "You are getting this because you turned on alert emails in your CardStock\n" +
+                "account. Turn them off any time: " + clientUrl + "/settings";
 
             if (await email.SendAsync(emailByUser[byUser.Key], subject, body))
             {
