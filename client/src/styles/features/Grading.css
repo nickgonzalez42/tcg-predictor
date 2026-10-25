@@ -1,0 +1,57 @@
+/* Recommend grading (catalog modal, 2026-10-25): controls row, then a
+   sortable table of the user's Near Mint cards with the price and net gain
+   at every PSA tier. Scrolls sideways on narrow screens with the card name
+   pinned, like the portfolio tables. */
+
+.grading { display: flex; flex-direction: column; gap: var(--space-10); }
+.grading__intro, .grading__note { margin: 0; font-size: 12.5px; }
+
+.grading__controls {
+    display: flex; align-items: center; gap: var(--space-15); flex-wrap: wrap;
+}
+.grading__fee { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+.grading__fee .input { width: 84px; }
+.grading__count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+.grading__wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.grading__table { min-width: 880px; }
+.grading__table th.sortable { white-space: nowrap; }
+.grading__table td { vertical-align: middle; }
+.grading__nm { white-space: nowrap; }
+.grading__tier, .grading__best { white-space: nowrap; }
+.grading__price { display: block; font-weight: 600; }
+.grading__gain { display: block; font-size: 11px; color: var(--up); }
+.grading__gain--down { color: var(--down); }
+.grading__na { color: var(--text-muted); }
+.grading__asof { font-size: 10.5px; color: var(--text-muted); margin-top: 2px; }
+.grading__tier--best {
+    box-shadow: inset 0 -2px 0 var(--brand);
+}
+.grading__tier--best .grading__price { color: var(--brand); }
+
+/* Pinned thumb + name while the grades scroll (narrow screens). */
+@media (max-width: 1023px) {
+    .grading__table th:nth-child(1), .grading__table td:nth-child(1),
+    .grading__table th:nth-child(2), .grading__table td:nth-child(2) {
+        position: sticky; z-index: 2; background: var(--surface);
+    }
+    .grading__table th:nth-child(1), .grading__table td:nth-child(1) { left: 0; min-width: 60px; }
+    .grading__table th:nth-child(2), .grading__table td:nth-child(2) {
+        left: 60px; max-width: 160px; box-shadow: 8px 0 10px -8px rgba(0, 0, 0, 0.55);
+    }
+    .grading__table th:nth-child(1), .grading__table th:nth-child(2) { background: #232c40; }
+    .grading__table tbody tr:nth-child(even) td:nth-child(1),
+    .grading__table tbody tr:nth-child(even) td:nth-child(2) {
+        background: color-mix(in srgb, var(--surface) 97.5%, #fff);
+    }
+    .grading__table .screener__row:hover td:nth-child(1),
+    .grading__table .screener__row:hover td:nth-child(2) { background: var(--surface-2); }
+    .grading__table td:nth-child(2) .screener__name,
+    .grading__table td:nth-child(2) .mono {
+        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+}
+@media (max-width: 767px) {
+    .grading__table th:nth-child(1), .grading__table td:nth-child(1) { display: none; }
+    .grading__table th:nth-child(2), .grading__table td:nth-child(2) { left: 0; max-width: 140px; }
+}

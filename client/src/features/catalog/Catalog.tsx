@@ -9,7 +9,8 @@ import CardLoader from "../../app/shared/components/CardLoader";
 import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
 import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import GradingModal from "./GradingModal";
 import { Link, useSearchParams } from "react-router-dom";
 import { useUserInfoQuery } from "../account/accountApi";
 import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
@@ -122,6 +123,7 @@ export default function Catalog() {
   // Scan link only where a camera is at hand: touchscreen phones/tablets
   // (coarse pointer, no hover) below the desktop breakpoint (user 2026-10-25).
   const touchDevice = useMediaQuery('(hover: none) and (pointer: coarse) and (max-width: 1023px)');
+  const [grading, setGrading] = useState(false);   // "Recommend grading" modal
 
   if (isLoading || !data || filtersLoading || !filtersData) return <CardLoader game={cardParams.game} />
 
@@ -131,6 +133,7 @@ export default function Catalog() {
 
   return (
     <div className={`catalog subgrid full-span${view === 'rows' ? ' catalog--rows' : ''}`}>
+      {grading && <GradingModal onClose={() => setGrading(false)} />}
       <Filters filtersData={filtersData} />
       <div className="catalog-items subgrid">
         <div className="results-head full-span">
@@ -163,6 +166,12 @@ export default function Catalog() {
               title="Add cards to your collection with your camera">
               Scan
             </Link>
+          )}
+          {user && (
+            <button type="button" className="btn btn--outline" onClick={() => setGrading(true)}
+              title="Which of your Near Mint cards gain the most from PSA grading">
+              Recommend grading
+            </button>
           )}
           {user && (
             <label className="switch-field"

@@ -7,6 +7,17 @@ import { toApiParams } from "../../lib/util";
 
 export type TrackKind = 'owned' | 'wishlist' | 'sold';
 
+// Grading analysis (portfolio/grading): a Near Mint owned card with the
+// latest price at each PSA tier (null = no graded sales on record).
+export type GradingCandidate = {
+    game: string; productId: number; printing: string;
+    name: string; setName?: string; cardNumber?: string; pictureUrl?: string;
+    copies: number; nm: number;
+    grades: { grade7: number | null; grade8: number | null; grade9: number | null; grade95: number | null; psa10: number | null };
+    asOf?: string;
+};
+export type GradingResponse = { nmCopies: number; cards: GradingCandidate[] };
+
 export type TrackedCard = {
     printing?: string           // '' / absent = base printing
     id: number;
@@ -240,6 +251,11 @@ export const watchlistApi = createApi({
             query: ({ id, ...body }) => ({ url: `watchlist/owned/${id}`, method: 'PATCH', body }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
+        // Near Mint cards with graded prices, for the "Recommend grading" modal.
+        fetchGradingCandidates: builder.query<GradingResponse, void>({
+            query: () => 'portfolio/grading',
+            providesTags: ['Owned'],
+        }),
         removeOwnedCopy: builder.mutation<void, { id: number }>({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
@@ -313,7 +329,7 @@ export const {
     useSetOwnedQuantityMutation,
     useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
-    useRemoveOwnedCopyMutation,
+    useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery,
     useClearOwnedMutation,
     useFetchAlertsQuery,
     useAddAlertMutation,

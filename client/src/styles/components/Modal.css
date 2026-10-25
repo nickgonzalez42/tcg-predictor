@@ -82,3 +82,8 @@ body.modal-open {
   gap: var(--space-10);
   margin-top: var(--space-15);
 }
+
+/* Wide variant for tables (the grading analysis). */
+.modal--wide {
+  width: min(1040px, 100%);
+}

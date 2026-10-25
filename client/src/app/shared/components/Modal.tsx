@@ -3,8 +3,8 @@ import { createPortal } from "react-dom";
 
 // Minimal centered modal: dimmed backdrop, ✕ / backdrop click / Escape all
 // close it, tall content scrolls inside, page behind is scroll-locked.
-export default function Modal({ title, onClose, children }: {
-    title: string; onClose: () => void; children: ReactNode;
+export default function Modal({ title, onClose, children, className }: {
+    title: string; onClose: () => void; children: ReactNode; className?: string;
 }) {
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
@@ -18,7 +18,7 @@ export default function Modal({ title, onClose, children }: {
 
     return createPortal(
         <div className="modal__backdrop" onClick={onClose}>
-            <div className="modal" role="dialog" aria-modal="true" aria-label={title}
+            <div className={`modal${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-label={title}
                 onClick={e => e.stopPropagation()}>
                 <div className="modal__head">
                     <h4 className="mono modal__title">{title}</h4>

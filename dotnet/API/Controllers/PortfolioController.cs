@@ -33,6 +33,69 @@ public class PortfolioController(
     // chart, allocation, count) — the "hide cards I didn't buy" view. Pack
     // pulls NEVER enter the money sections (paid P/L, invested, benchmark)
     // either way: no dollars were individually spent on them.
+    // Grading analysis (2026-10-25): the user's Near Mint (ungraded) owned
+    // cards with the latest price at every PSA tier, so the client can rank
+    // what grading would add and sort by any grade. One row per distinct
+    // (card, printing); copies counted. NM = the same unified series the
+    // portfolio values ungraded copies with (card's NM column as fallback).
+    [HttpGet("grading")]
+    public async Task<IActionResult> GetGradingCandidates()
+    {
+        var user = User.Identity!.Name!;
+        var copies = await store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned
+                        && (x.Grade == null || x.Grade == ""))
+            .ToListAsync();
+        var tiers = new[] { "ungraded", "grade7", "grade8", "grade9", "grade95", "psa10" };
+        var rows = new List<object>();
+        foreach (var g in copies.GroupBy(c => c.Game))
+        {
+            var ids = g.Select(c => c.ProductId).Distinct().ToList();
+            var hist = await priceCharting.History
+                .Where(h => h.Game == g.Key && ids.Contains(h.ProductId) && tiers.Contains(h.Grade))
+                .Select(h => new { h.ProductId, h.Printing, h.Grade, h.Date, h.Price })
+                .ToListAsync();
+            var latest = hist
+                .GroupBy(h => (h.ProductId, h.Printing, h.Grade))
+                .ToDictionary(x => x.Key, x => x.OrderByDescending(h => h.Date).First());
+            var cards = (await sources.Cards(g.Key).Where(c => ids.Contains(c.Id)).ToListAsync())
+                .ToDictionary(c => c.Id);
+            foreach (var unit in g.GroupBy(c => (c.ProductId, Printing: c.Printing ?? "")))
+            {
+                var (pid, printing) = unit.Key;
+                if (!cards.TryGetValue(pid, out var card)) continue;
+                double? At(string tier) =>
+                    latest.TryGetValue((pid, printing, tier), out var p) && p.Price > 0 ? p.Price : null;
+                var nm = At("ungraded") ?? (printing == "" ? card.NearMintPrice : null);
+                if (nm is not > 0) continue;
+                var graded = new Dictionary<string, double?>
+                {
+                    ["grade7"] = At("grade7"), ["grade8"] = At("grade8"), ["grade9"] = At("grade9"),
+                    ["grade95"] = At("grade95"), ["psa10"] = At("psa10"),
+                };
+                if (graded.Values.All(v => v == null)) continue;   // no graded market: nothing to say
+                var asOf = latest.Where(kv => kv.Key.ProductId == pid && kv.Key.Printing == printing
+                                              && kv.Key.Grade != "ungraded")
+                    .Select(kv => kv.Value.Date).DefaultIfEmpty("").Max();
+                rows.Add(new
+                {
+                    game = g.Key,
+                    productId = pid,
+                    printing,
+                    name = card.Name,
+                    setName = card.SetName,
+                    cardNumber = card.CardNumber,
+                    pictureUrl = CardImageUrl(g.Key, pid),
+                    copies = unit.Count(),
+                    nm = Math.Round(nm.Value, 2),
+                    grades = graded,
+                    asOf,
+                });
+            }
+        }
+        return Ok(new { nmCopies = copies.Count, cards = rows });
+    }
+
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
         [FromQuery] string? game = null, [FromQuery] bool includePacks = true)
