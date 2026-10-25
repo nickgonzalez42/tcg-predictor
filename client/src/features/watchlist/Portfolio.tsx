@@ -138,6 +138,9 @@ export default function Portfolio() {
                             Export
                         </button>
                     )}
+                    <Link className="btn btn--outline" to="/scan" title="Add cards with your camera">
+                        Scan
+                    </Link>
                     <button className="btn btn--outline" onClick={() => setShowImport(true)}>
                         Import
                     </button>

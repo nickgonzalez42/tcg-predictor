@@ -163,6 +163,9 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                                 <li>
                                     <NavLink to="/watchlist" className="navbar__link">WATCHLIST</NavLink>
                                 </li>
+                                <li>
+                                    <NavLink to="/scan" className="navbar__link">SCAN</NavLink>
+                                </li>
                             </>
                         )}
                     </ul>

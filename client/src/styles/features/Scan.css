@@ -1,0 +1,168 @@
+/* Collection scanner (/scan, 2026-10-24): camera stage with a card-shaped
+   guide, a "which card is it?" sheet, and the session tally. Phones: one
+   column, portrait stage, the sheet rises from the bottom. Desktop: stage
+   left, sheet / session on the right. */
+
+.scan {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-15);
+    padding-bottom: 72px;   /* clear the fixed ticker */
+}
+
+.scan__head {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--space-15);
+    flex-wrap: wrap;
+}
+.scan__title { margin: 2px 0 6px; font-size: clamp(30px, 5vw, 44px); line-height: 1; }
+.scan__sub { margin: 0; max-width: 560px; color: var(--text-muted); font-size: 14px; }
+
+.scan__meta { display: flex; align-items: center; gap: var(--space-15); flex-wrap: wrap; }
+.scan__totals {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface);
+}
+.scan__count { font-size: 24px; line-height: 1; }
+.scan__totals .mono, .scan__auto { font-size: 12px; color: var(--text-muted); }
+.scan__auto { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; }
+
+/* ----- game lock chips ----- */
+.scan__chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+.scan__chips::-webkit-scrollbar { display: none; }
+.scan-chip {
+    flex: 0 0 auto;
+    padding: 6px 11px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--text-muted);
+    font: 600 12px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase;
+    cursor: pointer;
+}
+.scan-chip:hover { color: var(--text); }
+.scan-chip.is-on { background: var(--brand); border-color: var(--brand-border); color: var(--on-brand); }
+
+/* ----- stage ----- */
+.scan__body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-15); }
+.scan__stage {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    max-height: 72vh;
+    width: 100%;
+    background: #05070c;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    isolation: isolate;
+}
+.scan__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.scan__guide {
+    position: absolute;
+    border: 2px solid rgba(255, 255, 255, .78);
+    border-radius: 12px;
+    box-shadow: 0 0 0 9999px rgba(5, 7, 12, .42);
+    transition: border-color .2s ease, box-shadow .2s ease;
+    pointer-events: none;
+}
+.scan__guide--hot { border-color: var(--brand); box-shadow: 0 0 0 9999px rgba(5, 7, 12, .3), 0 0 0 3px rgba(255, 203, 5, .25); }
+.scan__status {
+    position: absolute; left: 50%; bottom: 76px; transform: translateX(-50%);
+    padding: 6px 12px; border-radius: 999px;
+    background: rgba(5, 7, 12, .72); color: #fff; font-size: 12px; letter-spacing: .04em;
+    white-space: nowrap; pointer-events: none;
+}
+.scan__status--busy::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 8px; border-radius: 50%; background: var(--brand); animation: scan-pulse .9s ease-in-out infinite; }
+@keyframes scan-pulse { 0%, 100% { opacity: .3; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.2); } }
+.scan__shutter {
+    position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+    width: 52px; height: 52px; border-radius: 50%;
+    border: 3px solid #fff; background: rgba(255, 255, 255, .22);
+    cursor: pointer; transition: transform .1s ease, background .15s ease;
+}
+.scan__shutter:hover:not(:disabled) { background: rgba(255, 255, 255, .4); }
+.scan__shutter:active:not(:disabled) { transform: translateX(-50%) scale(.92); }
+.scan__shutter:disabled { opacity: .5; cursor: default; }
+.scan__nocam {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: var(--space-15); padding: var(--space-25); text-align: center; color: var(--text);
+    background: var(--surface);
+}
+.scan__nocam p { margin: 0; max-width: 320px; color: var(--text-muted); font-size: 14px; }
+
+/* ----- the sheet (which card is it?) ----- */
+.scan__side { min-width: 0; }
+.scan-sheet, .scan-session {
+    border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
+    padding: var(--space-15);
+    display: flex; flex-direction: column; gap: var(--space-10);
+}
+.scan-sheet__band { margin: 0; }
+.scan-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.scan-cand {
+    display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    width: 100%; padding: 6px 8px; text-align: left;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2); color: var(--text);
+    cursor: pointer;
+}
+.scan-cand:hover { border-color: var(--brand-border); }
+.scan-cand.is-on { border-color: var(--brand); box-shadow: inset 3px 0 0 var(--brand); }
+.scan-cand img { width: 44px; height: 61px; object-fit: cover; border-radius: 4px; background: #000; }
+.scan-cand__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.scan-cand__name { font-weight: 600; font-size: 14px; line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-cand__sub { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-cand__side { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 12px; }
+.scan-cand__score { color: var(--text-muted); font-size: 11px; }
+
+.scan-form { display: flex; flex-direction: column; gap: 10px; }
+.scan-form > label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-muted); }
+.scan-form > label > .input { width: 100%; }
+.scan-stepper { display: grid; grid-template-columns: 36px minmax(0, 1fr) 36px; gap: 6px; align-items: center; }
+.scan-stepper .input { text-align: center; }
+.scan-form__paid { flex-direction: row !important; align-items: center; gap: 8px !important; cursor: pointer; }
+.scan-form__row { display: flex; align-items: center; justify-content: space-between; gap: var(--space-10); flex-wrap: wrap; }
+.scan-form__own { font-size: 12px; color: var(--text-muted); }
+.scan-form__add { flex: 1 1 auto; }
+.scan-form__note { margin: 0; font-size: 12px; }
+
+/* ----- session ----- */
+.scan-session__empty { margin: 0; font-size: 13px; }
+.scan-session__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow: auto; }
+.scan-session__row {
+    display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+    padding: 6px 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-2);
+}
+.scan-session__row img { width: 32px; height: 45px; object-fit: cover; border-radius: 3px; background: #000; }
+.scan-session__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.scan-session__name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scan-session__sub { font-size: 11px; color: var(--text-muted); }
+
+.scan__toast {
+    position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%);
+    padding: 10px 16px; border-radius: 999px; z-index: 30;
+    background: var(--brand); color: var(--on-brand); font-size: 13px; font-weight: 600;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+    animation: scan-toast .25s ease;
+}
+@keyframes scan-toast { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+/* ----- phones: the sheet rises over the stage ----- */
+@media (max-width: 1023px) {
+    .scan__body--picking .scan__side {
+        position: fixed; left: 0; right: 0; bottom: 0; z-index: 25;
+        max-height: 78vh; overflow: auto;
+        padding: 0 var(--container-pad) calc(var(--container-pad) + 56px);
+        background: linear-gradient(180deg, transparent 0, var(--bg) 28px);
+    }
+    .scan__body--picking .scan-sheet { box-shadow: 0 -12px 40px rgba(0, 0, 0, .45); }
+    .scan__body--picking::before {
+        content: ""; position: fixed; inset: 0; z-index: 24; background: rgba(5, 7, 12, .45);
+    }
+}
+
+/* ----- desktop: stage left, sheet right ----- */
+@media (min-width: 1024px) {
+    .scan__body { grid-template-columns: minmax(0, 1fr) 400px; align-items: start; }
+    .scan__stage { aspect-ratio: 4 / 3; max-height: none; }
+    .scan__side { position: sticky; top: calc(var(--page-top) + 8px); }
+}

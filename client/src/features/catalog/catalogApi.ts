@@ -5,6 +5,7 @@ export type ImageSearchHit = {
     game: string; productId: number; name: string; set: string;
     image: string; score: number;
 };
+export type ScanHit = { card: Card; score: number };
 import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
 import type { CardParams } from "../../app/models/cardParams";
 import { toApiParams } from "../../lib/util";
@@ -36,6 +37,18 @@ export const catalogApi = createApi({
         }),
         // Search-by-photo: the file goes up as multipart, is embedded server-
         // side, and only the matches come back — the image itself isn't stored.
+        // Collection scanner: one camera frame -> the closest cards as full
+        // card objects (name, set, number, price, printings) + a match score;
+        // optional game lock. Signed-in users only (per-user rate limit).
+        scanCard: builder.mutation<ScanHit[], { blob: Blob; game?: string; k?: number }>({
+            query: ({ blob, game, k }) => {
+                const body = new FormData();
+                body.append('image', blob, 'frame.jpg');
+                if (game) body.append('game', game);
+                if (k) body.append('k', String(k));
+                return { url: 'cards/scan', method: 'POST', body };
+            }
+        }),
         imageSearch: builder.mutation<ImageSearchHit[], File>({
             query: (file) => {
                 const body = new FormData();
@@ -105,5 +118,5 @@ export const catalogApi = createApi({
 export const {
     useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery,
     useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardForecastHistoryQuery,
-    useFetchCardReasoningQuery, useFetchMoversQuery, useImageSearchMutation,
+    useFetchCardReasoningQuery, useFetchMoversQuery, useImageSearchMutation, useScanCardMutation,
 } = catalogApi;

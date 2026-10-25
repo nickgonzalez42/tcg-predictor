@@ -60,6 +60,14 @@ echo "preflight: prod free $(( free_kb / 1048576 ))GB >= needed $(( need_kb / 10
 echo "== card DBs =="
 ${=RS} "$SSH_CMD" $DATA/*_cards.db ubuntu@$IP:/srv/tcg/data/
 
+# Scanner / search-by-photo artifacts (2026-10-24): the int8 CLIP encoder
+# (static) and card-index.bin (rebuilt nightly by the clip-index step; its
+# PCA basis is persisted, so a rebuild appends rows and the delta stays
+# small). They live OUTSIDE /srv/tcg/api, which deploy_app.sh syncs with
+# --delete; the API reads them via ClipDir (appsettings.Production).
+echo "== clip artifacts =="
+${=RS} "$SSH_CMD" "$API_DATA/../clip/" ubuntu@$IP:/srv/tcg/data/clip/
+
 # predictions.db is NOT pushed here — the AWS trainer produces it (scorecard/
 # forecast/report offloaded 2026-08-03) and pushes it to prod directly over the
 # private VPC. Pushing the Mac's now-stale copy would clobber the fresh one. The

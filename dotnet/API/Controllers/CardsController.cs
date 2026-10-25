@@ -5,6 +5,7 @@ using API.Extensions;
 using API.RequestHelpers;
 using API.Services;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -537,6 +538,44 @@ public partial class CardsController(
                 image = CardImageUrl(h.Game, h.ProductId),
                 score = Math.Round(h.Score, 3),
             });
+        }
+        return Ok(results);
+    }
+
+    // Collection scanner (2026-10-24): one camera frame of a physical card ->
+    // the closest catalog cards, as full card DTOs (name, set, number, price,
+    // printings) so the client can offer "which one is it?" and add the pick
+    // straight to the collection. Same encoder + index as image-search, with
+    // an optional game lock; signed-in users only, per-user rate limit. The
+    // frame is processed in memory and never stored.
+    [Authorize]
+    [HttpPost("scan")]
+    [EnableRateLimiting("scan")]
+    [RequestSizeLimit(5_000_000)]
+    public async Task<IActionResult> Scan(IFormFile image, [FromForm] string? game, [FromForm] int k,
+        [FromServices] ImageSearchHolder holder)
+    {
+        if (holder.Service == null)
+            return StatusCode(503, "Card scanning isn't available on this server yet.");
+        if (image == null || image.Length == 0) return BadRequest("No image uploaded.");
+        var lockGame = string.IsNullOrEmpty(game) ? null : GameRegistry.Normalize(game);
+        if (!string.IsNullOrEmpty(game) && lockGame == null) return BadRequest("Unknown game.");
+
+        List<ImageSearchService.Hit>? hits;
+        await using (var stream = image.OpenReadStream())
+        {
+            hits = holder.Service.Search(stream, k: Math.Clamp(k <= 0 ? 6 : k, 1, 10), game: lockGame);
+        }
+        if (hits == null) return BadRequest("That file doesn't look like an image.");
+
+        var results = new List<object>();
+        foreach (var h in hits)
+        {
+            var card = await sources.Find(h.Game, h.ProductId);
+            if (card == null || string.IsNullOrEmpty(card.ImagePath)) continue;   // art-pending: not served
+            var dto = card.ToDto(h.Game, CardImageUrl(h.Game, h.ProductId));
+            dto.Game = h.Game;
+            results.Add(new { card = dto, score = Math.Round(h.Score, 3) });
         }
         return Ok(results);
     }

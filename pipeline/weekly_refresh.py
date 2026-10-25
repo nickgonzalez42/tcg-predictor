@@ -377,6 +377,10 @@ STEPS = [
     ("nm-price",      ["backfill_nm_price.py"]),
     ("ml-export",     ["export_for_ml.py"]),
     ("ml-embed",      ["embed_images.py"]),
+    # Scanner / search-by-photo index (2026-10-24): new cards' embeddings
+    # join card-index.bin (PCA basis persisted, so it's an append); the
+    # data push ships Data/clip/ to prod.
+    ("clip-index",    ["export_clip_onnx.py", "--index-only"]),
     ("art-comps",     ["art_comps.py"]),
     # scorecard+forecast+report are the MODEL BLOCK, offloaded to the AWS trainer
     # (run_daily_refresh hands off after art-comps, runs these via aws_model_run.sh,

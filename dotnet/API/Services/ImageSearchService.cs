@@ -17,9 +17,11 @@ namespace API.Services;
 // Google OAuth: a box without the files serves everything else unaffected.
 public class ImageSearchService : IDisposable
 {
-    // Byte values in card-index.bin — must match export_clip_onnx.py GAME_ORDER.
+    // Byte values in card-index.bin — must match export_clip_onnx.py GAME_ORDER
+    // (append only; the byte is persisted in the index).
     private static readonly string[] GameOrder =
-        ["pokemon", "magic", "yugioh", "onepiece", "lorcana", "digimon", "gundam", "starwars"];
+        ["pokemon", "magic", "yugioh", "onepiece", "lorcana", "digimon", "gundam", "starwars",
+         "fleshandblood", "sorcery", "riftbound", "cyberpunk"];
 
     // CLIP's published preprocessing constants (bicubic 224 + center crop).
     private const int Side = 224;
@@ -27,9 +29,12 @@ public class ImageSearchService : IDisposable
     private static readonly float[] Std = [0.26862954f, 0.26130258f, 0.27577711f];
 
     private readonly InferenceSession _session;
-    private readonly float[] _matrix;      // n × dim, L2-normalized rows
+    private readonly float[] _matrix;      // n × dim, L2-normalized rows (PCA space)
     private readonly (byte GameIdx, int ProductId)[] _keys;
-    private readonly int _dim;
+    private readonly int _dim;             // index dimensions (256 by default)
+    private readonly int _full;            // encoder dimensions (512)
+    private readonly float[] _mean;        // PCA mean, length _full
+    private readonly float[] _wt;          // projection, TRANSPOSED: dim × full rows
 
     public record Hit(string Game, int ProductId, float Score);
 
@@ -37,29 +42,59 @@ public class ImageSearchService : IDisposable
         File.Exists(Path.Combine(dir, "clip-visual.onnx")) &&
         File.Exists(Path.Combine(dir, "card-index.bin"));
 
+    // card-index.bin v2 (export_clip_onnx.py): b"CSI2", n, dim, full, mean[full],
+    // W[full × dim] row-major, n × (byte game, int32 pid), n × dim float32.
+    // The v1 layout (no magic, 512-d, no projection) still loads.
     public ImageSearchService(string dir)
     {
         _session = new InferenceSession(Path.Combine(dir, "clip-visual.onnx"));
 
         using var f = File.OpenRead(Path.Combine(dir, "card-index.bin"));
         using var r = new BinaryReader(f);
-        var n = r.ReadInt32();
-        _dim = r.ReadInt32();
+        var head = r.ReadBytes(4);
+        int n;
+        if (head.AsSpan().SequenceEqual("CSI2"u8))
+        {
+            n = r.ReadInt32();
+            _dim = r.ReadInt32();
+            _full = r.ReadInt32();
+            _mean = ReadFloats(r, _full);
+            var w = ReadFloats(r, (long)_full * _dim);          // W[f, d]
+            _wt = new float[(long)_dim * _full];
+            for (var fi = 0; fi < _full; fi++)
+                for (var d = 0; d < _dim; d++)
+                    _wt[(long)d * _full + fi] = w[(long)fi * _dim + d];
+        }
+        else
+        {
+            n = BitConverter.ToInt32(head);
+            _dim = _full = r.ReadInt32();
+            _mean = new float[_full];
+            _wt = new float[(long)_dim * _full];
+            for (var d = 0; d < _dim; d++) _wt[(long)d * _full + d] = 1f;
+        }
         _keys = new (byte, int)[n];
         for (var i = 0; i < n; i++)
             _keys[i] = (r.ReadByte(), r.ReadInt32());
-        _matrix = new float[(long)n * _dim];
-        var bytes = new byte[(long)n * _dim * sizeof(float)];
+        _matrix = ReadFloats(r, (long)n * _dim);
+    }
+
+    private static float[] ReadFloats(BinaryReader r, long count)
+    {
+        var bytes = new byte[count * sizeof(float)];
         r.BaseStream.ReadExactly(bytes);
-        Buffer.BlockCopy(bytes, 0, _matrix, 0, bytes.Length);
+        var out_ = new float[count];
+        Buffer.BlockCopy(bytes, 0, out_, 0, bytes.Length);
+        return out_;
     }
 
     public int CardCount => _keys.Length;
 
-    // Top-k cards for one uploaded image. Thread-safe: InferenceSession.Run is
-    // reentrant and the index is read-only after construction. Returns null
-    // when the bytes don't decode as an image.
-    public List<Hit>? Search(Stream image, int k = 5)
+    // Top-k cards for one uploaded image, optionally within one game.
+    // Thread-safe: InferenceSession.Run is reentrant and the index is
+    // read-only after construction. Returns null when the bytes don't decode
+    // as an image.
+    public List<Hit>? Search(Stream image, int k = 5, string? game = null)
     {
         var input = Preprocess(image);
         if (input == null) return null;
@@ -67,17 +102,30 @@ public class ImageSearchService : IDisposable
             [NamedOnnxValue.CreateFromTensor("image", input)]);
         var emb = results[0].AsEnumerable<float>().ToArray();   // L2-normalized by the model
 
-        // Cosine = dot product (both sides normalized). Full scan is ~100M
-        // mults over 212k cards — TensorPrimitives keeps it well under 100ms.
+        // Into the index's PCA space: q = normalize((emb - mean) · W).
+        var centered = new float[_full];
+        TensorPrimitives.Subtract(emb, _mean, centered);
+        var q = new float[_dim];
+        for (var d = 0; d < _dim; d++)
+            q[d] = TensorPrimitives.Dot(_wt.AsSpan(d * _full, _full), centered);
+        var norm = TensorPrimitives.Norm(q);
+        if (norm > 0) TensorPrimitives.Divide(q, norm, q);
+
+        // Cosine = dot product (both sides normalized). Full scan is ~60M
+        // mults over 230k cards at 256-d — TensorPrimitives keeps it well
+        // under 100ms. A game filter skips the other games' rows.
+        var gameIdx = game == null ? -1 : Array.IndexOf(GameOrder, game);
         var n = _keys.Length;
         var scores = new float[n];
         for (var i = 0; i < n; i++)
-            scores[i] = TensorPrimitives.Dot(
-                _matrix.AsSpan(i * _dim, _dim), emb);
+            scores[i] = gameIdx >= 0 && _keys[i].GameIdx != gameIdx
+                ? float.NegativeInfinity
+                : TensorPrimitives.Dot(_matrix.AsSpan(i * _dim, _dim), q);
 
         return Enumerable.Range(0, n)
             .OrderByDescending(i => scores[i])
             .Take(k)
+            .Where(i => !float.IsNegativeInfinity(scores[i]))
             .Select(i => new Hit(GameOrder[_keys[i].GameIdx], _keys[i].ProductId, scores[i]))
             .ToList();
     }

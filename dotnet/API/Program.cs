@@ -49,11 +49,19 @@ builder.Services.AddScoped<ReasoningService>();
 // Search-by-photo: CLIP encoder + card embedding index, loaded once (~450MB)
 // when the exported artifacts exist (pipeline/export_clip_onnx.py). Absent
 // artifacts -> Service stays null and the endpoint answers 503.
-var clipDir = Path.Combine(builder.Environment.ContentRootPath, "Data", "clip");
-builder.Services.AddSingleton(new ImageSearchHolder
+// ClipDir (appsettings) points at them; prod keeps them under /srv/tcg/data,
+// outside the app directory the deploy rsyncs with --delete.
+var clipDir = builder.Configuration["ClipDir"]
+              ?? Path.Combine(builder.Environment.ContentRootPath, "Data", "clip");
+ImageSearchService? imageSearch = null;
+if (ImageSearchService.ArtifactsExist(clipDir))
 {
-    Service = ImageSearchService.ArtifactsExist(clipDir) ? new ImageSearchService(clipDir) : null
-});
+    // A corrupt or half-pushed artifact must never take the whole API down:
+    // log it and run without the scanner (the endpoints answer 503).
+    try { imageSearch = new ImageSearchService(clipDir); }
+    catch (Exception e) { Console.Error.WriteLine($"image search disabled: {e.GetType().Name}: {e.Message}"); }
+}
+builder.Services.AddSingleton(new ImageSearchHolder { Service = imageSearch });
 builder.Services.AddScoped<ModerationService>();
 builder.Services.AddScoped<NotificationService>();
 // Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
@@ -85,6 +93,17 @@ builder.Services.AddRateLimiter(opt =>
 
     PerIpPerMinute("reasoning", 10);   // CardsController.GetReasoning (paid Anthropic calls)
     PerIpPerMinute("imagesearch", 12); // CardsController.ImageSearch (CPU inference per hit)
+    // The collection scanner streams one frame per card (~1/s while a card
+    // is in view) from a signed-in user: per USER, generous enough for a
+    // scanning session, still a ceiling on CPU inference.
+    opt.AddPolicy("scan", ctx =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            ctx.User.Identity?.Name ?? ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 90,
+                Window = TimeSpan.FromMinutes(1),
+            }));
     PerIpPerMinute("auth", 5);         // AccountController.RegisterUser
     PerIpPerMinute("import", 4);       // WatchlistController.ImportOwned (up to 1000 rows each)
     // 30, not 10: there are 11 sitemap routes (index + static + reports + 8
