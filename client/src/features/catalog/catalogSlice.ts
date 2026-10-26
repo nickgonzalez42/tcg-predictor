@@ -2,12 +2,13 @@ import { createSlice } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
-// 1Y $ growth: desc + the 1Y trend view (2026-10-11, user decision — the v4.5
-// calibration publishes most 1-month calls at ~0%, so a 1M default opened on
-// a wall of zeros; the year horizon is where the model actually calls growth).
-// Was 1M $ growth since 2026-08-16. Young games without year-deep data snap
-// to the 6M equivalent via the hasYear effect in Catalog.tsx.
-export const DEFAULT_ORDER = 'chgUsd12Desc';
+// 6M $ growth: desc + the 6M trend view (2026-10-26, user decision). Six
+// months is the horizon whose forecasts the catalog now opens on: far
+// enough out that the v4.5 calibration still calls real growth (a 1M
+// default opened on a wall of ~0% calls), near enough that the number
+// means something to a reader. Was 1Y $ growth from 2026-10-11, and 1M $
+// growth before that. The trend chips follow the sort via trendForSort.
+export const DEFAULT_ORDER = 'chgUsd6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
@@ -37,7 +38,7 @@ const initialState: CardParams = {
     // Derived from the default sort so the tiles' window always matches the
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
     // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
-    trend: trendForSort(DEFAULT_ORDER) ?? '1y',
+    trend: trendForSort(DEFAULT_ORDER) ?? '6m',
     market: '',
     view: getInitialView(),
     quickAdd: getInitialQuickAdd()
