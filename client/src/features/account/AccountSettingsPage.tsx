@@ -1,17 +1,16 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import Modal from "../../app/shared/components/Modal";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
 import {
-    useSettingsQuery, useUpdateSettingsMutation, useChangePasswordMutation,
+    useSettingsQuery, useChangePasswordMutation,
     useDeleteAccountMutation, useLogoutMutation,
 } from "./accountApi";
 
 // Account settings (2026-10-25): the minimal self-service surface a typical
-// site offers — the email on file, the alert-email opt-in, password change
-// (or set one for a Google sign-up), sign out, and account deletion. The
-// public profile / handle / avatar / comments layer was removed the same day.
+// site offers — the email on file, password change (or set one for a Google
+// sign-up), sign out, and account deletion. Price alerts and their email
+// opt-in were switched off site-wide on 2026-10-26.
 export default function AccountSettingsPage() {
     usePageMeta("Account");
     const { data: s, isLoading } = useSettingsQuery();
@@ -37,8 +36,6 @@ export default function AccountSettingsPage() {
                 </dl>
             </section>
 
-            <AlertToggle initial={s.alertEmails} />
-
             <PasswordSection hasPassword={s.hasPassword} />
 
             <section className="panel account__section">
@@ -49,7 +46,7 @@ export default function AccountSettingsPage() {
             <section className="panel account__section account__section--danger">
                 <h2 className="account__h">Delete account</h2>
                 <p className="account__hint">
-                    Removes your collection, watchlist, sales and alerts permanently. There is no undo.
+                    Removes your collection, watchlist and sales history permanently. There is no undo.
                 </p>
                 <button className="btn btn--outline btn--danger" onClick={() => setConfirmDelete(true)}>
                     Delete my account
@@ -58,31 +55,6 @@ export default function AccountSettingsPage() {
 
             {confirmDelete && <DeleteModal onClose={() => setConfirmDelete(false)} />}
         </div>
-    );
-}
-
-// Optimistic: the box flips at once and only snaps back if the save fails.
-function AlertToggle({ initial }: { initial: boolean }) {
-    const [on, setOn] = useState(initial);
-    const [updateSettings, { isLoading }] = useUpdateSettingsMutation();
-    const flip = async (v: boolean) => {
-        setOn(v);
-        try { await updateSettings({ alertEmails: v }).unwrap(); }
-        catch { setOn(!v); }
-    };
-    return (
-        <section className="panel account__section">
-            <h2 className="account__h">Notifications</h2>
-            <label className="account__toggle">
-                <input type="checkbox" checked={on} disabled={isLoading} onChange={e => void flip(e.target.checked)} />
-                <span>
-                    <strong>Email me when a price alert hits</strong>
-                    <span className="account__hint">
-                        Alerts are set from your <Link to="/watchlist">watchlist</Link>; hits always show on the <Link to="/notifications">notifications</Link> page.
-                    </span>
-                </span>
-            </label>
-        </section>
     );
 }
 
@@ -148,7 +120,7 @@ function DeleteModal({ onClose }: { onClose: () => void }) {
         <Modal title="Delete your account?" onClose={onClose}>
             <p>
                 This permanently deletes your account, every card in your collection and watchlist,
-                your sales history and your alerts. Type <strong>DELETE</strong> to confirm.
+                and your sales history. Type <strong>DELETE</strong> to confirm.
             </p>
             <input className="input" value={typed} onChange={e => setTyped(e.target.value)}
                 placeholder="DELETE" autoComplete="off" aria-label="Type DELETE to confirm" />

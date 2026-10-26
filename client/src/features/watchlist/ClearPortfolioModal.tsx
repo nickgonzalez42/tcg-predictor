@@ -33,7 +33,7 @@ export default function ClearPortfolioModal({ copies, onClose }: { copies: numbe
         <Modal title="Clear portfolio" onClose={onClose}>
             <p>
                 Remove every position from your portfolio ({n} across all games)?
-                Your watchlist and alerts are not affected.
+                Your watchlist is not affected.
             </p>
             <p className="est-note">Tip: Export a CSV first if you might want this collection back.</p>
             <div className="modal__actions">

@@ -21,6 +21,7 @@ public class User : IdentityUser
     public string? AvatarGame { get; set; }
     public int? AvatarProductId { get; set; }
 
-    // Opt-in: email me when one of my card alerts hits (settings page toggle).
+    // Opt-in for card-alert email. Alerts were switched off site-wide on
+    // 2026-10-26; the column stays so re-enabling needs no migration.
     public bool AlertEmails { get; set; }
 }

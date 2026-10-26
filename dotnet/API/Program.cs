@@ -63,10 +63,6 @@ if (ImageSearchService.ArtifactsExist(clipDir))
 }
 builder.Services.AddSingleton(new ImageSearchHolder { Service = imageSearch });
 builder.Services.AddScoped<NotificationService>();
-// Card-alert evaluation + opt-in email delivery (SES; fail-soft when unset).
-builder.Services.AddScoped<AlertEvaluator>();
-builder.Services.AddSingleton<EmailService>();
-builder.Services.AddHostedService<AlertEmailNotifier>();
 builder.Services.AddHostedService<StartupWarmup>();
 // S&P 500 closes for the portfolio benchmark (typed HttpClient, cache in store.db).
 builder.Services.AddHttpClient<SpxService>();

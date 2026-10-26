@@ -1,5 +1,9 @@
 namespace API.Entities;
 
+// DORMANT (2026-10-26): price alerts were switched off across the site and
+// no endpoint reads or writes this any more. The entity and its table stay
+// so turning alerts back on needs no migration.
+
 // A price/forecast alert on a card. A user can hold several per card, each
 // scoped to a condition tier and (for forecast kinds) a horizon. Lives in
 // store.db alongside users. Display-only for now: the client surfaces hit

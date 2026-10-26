@@ -75,7 +75,7 @@
 .screener__actions .btn {
   padding: var(--space-5) var(--space-10);
   font-size: 12.8px;
-  height: 28px;   /* one height for row actions — matches .alert-chip (the
+  height: 28px;   /* one height for row actions (the
                      ＋/− circles keep their own 32px via .btn--circle) */
   vertical-align: middle;   /* center on the cell's line box, not the baseline */
 }

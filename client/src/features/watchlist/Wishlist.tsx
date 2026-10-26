@@ -4,11 +4,9 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import {
     useFetchTrackedCardsQuery,
     useRemoveFromWatchlistMutation,
-    useFetchAlertsQuery,
 } from "./watchlistApi";
 import OwnItModal from "./OwnItModal";
 import BuyTcgLink from "../../app/shared/components/BuyTcgLink";
-import AlertModal from "./AlertModal";
 import { wishlistParamsSlice } from "./trackedParamsSlice";
 import { tierLabel } from "./grades";
 import { trackedSortGroups, TREND_FCST } from "../catalog/sortOptions";
@@ -23,40 +21,8 @@ import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 
 
-// Alert chip: "Alerts · 2" (highlighted when any alert has hit) or "+ set alert".
-// Opens the alert manager modal — several alerts per card, on the actual
-// price, forecast prices, or forecast % growth, per condition and timeframe.
-function AlertChip({ card, ownGrade }: { card: Card; ownGrade: string }) {
-    const { data: alerts } = useFetchAlertsQuery();   // one fetch, shared by every row
-    const [open, setOpen] = useState(false);
-
-    const game = gameKey(card.game);
-    const mine = (alerts ?? []).filter(a => a.game === game && a.productId === card.id);
-    const anyHit = mine.some(a => a.hit);
-
-    return (
-        <>
-            {mine.length > 0 ? (
-                <button className={`alert-chip${anyHit ? ' alert-chip--hit' : ''}`}
-                    onClick={() => setOpen(true)}
-                    title={anyHit ? 'An alert has hit: manage alerts' : 'Manage alerts'}>
-                    Alerts · {mine.length}{anyHit ? ' · hit!' : ''}
-                </button>
-            ) : (
-                <button className="alert-chip alert-chip--unset" onClick={() => setOpen(true)}>
-                    + set alert
-                </button>
-            )}
-            {open && (
-                <AlertModal card={card} game={game} defaultGrade={ownGrade}
-                    onClose={() => setOpen(false)} />
-            )}
-        </>
-    );
-}
-
 // One watched card, laid out like a catalog screener row: row click opens the
-// card; the alert + action cells are interactive and don't bubble.
+// card; the action cells are interactive and don't bubble.
 function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; fcstLabel: string }) {
     const navigate = useNavigate();
     const [remove, { isLoading: removing }] = useRemoveFromWatchlistMutation();
@@ -98,7 +64,6 @@ function WishRow({ card, ownGrade, fcstLabel }: { card: Card; ownGrade: string; 
             </td>
             <td className="screener__mid"><ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} /></td>
             <td className="screener__mid"><Sparkline points={card.sparkline} /></td>
-            <td className="screener__mid" onClick={e => e.stopPropagation()}><AlertChip card={card} ownGrade={ownGrade} /></td>
             <td className="screener__actions" onClick={e => e.stopPropagation()}>
                 <BuyTcgLink productId={card.id} />
                 <button className="btn btn--outline"
@@ -183,7 +148,6 @@ export default function Wishlist() {
                                     <th className="screener__mid" title="Actual price history over the selected window">
                                         Past {period.toUpperCase()}
                                     </th>
-                                    <th className="screener__mid">Alert</th>
                                     <th aria-label="Actions" />
                                 </tr>
                             </thead>

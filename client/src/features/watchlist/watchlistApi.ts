@@ -162,40 +162,6 @@ export type ImportRowResult = {
 
 export type ImportResult = { added: number; rows: ImportRowResult[] };
 
-// --- Card alerts (GET/POST /alerts, DELETE /alerts/{id}) ---
-// Several per card: on the current price, a forecast price, or a forecast %
-// change, scoped to a condition tier (+ horizon for forecast kinds). The
-// server evaluates `current`/`hit` when listing.
-export type AlertKind = 'price' | 'fcst_price' | 'fcst_pct';
-
-export type CardAlert = {
-    id: number;
-    game: string;
-    productId: number;
-    grade?: string | null;      // null = ungraded
-    kind: AlertKind;
-    horizon?: string | null;    // 1w | 1m | 6m | 12m (forecast kinds)
-    direction: 'above' | 'below';
-    target: number;             // $ for price kinds, % for fcst_pct
-    current?: number | null;    // live value the alert is judged against
-    hit: boolean;
-    createdAt: string;
-    // Card context for the notifications page rows.
-    name?: string | null;
-    setName?: string | null;
-    pictureUrl?: string | null;
-}
-
-export type NewAlert = {
-    game: string;
-    productId: number;
-    grade?: string;
-    kind: AlertKind;
-    horizon?: string;
-    direction: 'above' | 'below';
-    target: number;
-}
-
 // Editable per-copy fields sent to PATCH /watchlist/owned/{id}.
 export type OwnedCopyEdit = {
     grade?: string | null;
@@ -211,7 +177,7 @@ export const watchlistApi = createApi({
     baseQuery: baseQueryWithErrorHandling,
     // Scoped tags so a mutation only refetches the lists it touched:
     // 'Owned' (portfolio rows), 'Wishlist' (watch rows), 'Summary' (rollup).
-    tagTypes: ['Owned', 'Wishlist', 'Summary', 'Alerts', 'Sold'],
+    tagTypes: ['Owned', 'Wishlist', 'Summary', 'Sold'],
     endpoints: (builder) => ({
         // All tracked refs across both lists (used by TrackButton to know state).
         fetchWatchlist: builder.query<TrackedCard[], void>({
@@ -315,19 +281,6 @@ export const watchlistApi = createApi({
             query: () => ({ url: 'watchlist/owned', method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
         }),
-        // All of the user's card alerts, evaluated (current value + hit) server-side.
-        fetchAlerts: builder.query<CardAlert[], void>({
-            query: () => 'alerts',
-            providesTags: ['Alerts'],
-        }),
-        addAlert: builder.mutation<{ id: number }, NewAlert>({
-            query: (body) => ({ url: 'alerts', method: 'POST', body }),
-            invalidatesTags: ['Alerts'],
-        }),
-        deleteAlert: builder.mutation<void, { id: number }>({
-            query: ({ id }) => ({ url: `alerts/${id}`, method: 'DELETE' }),
-            invalidatesTags: ['Alerts'],
-        }),
         // Portfolio rollup: total value, monthly series, allocation, best/worst.
         // String arg = game (legacy shape); object adds includePacks.
         fetchPortfolioSummary: builder.query<PortfolioSummary,
@@ -357,9 +310,6 @@ export const {
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery, useFetchCollectionAnalysisQuery,
     useClearOwnedMutation,
-    useFetchAlertsQuery,
-    useAddAlertMutation,
-    useDeleteAlertMutation,
     useFetchPortfolioSummaryQuery,
     useSellCopiesMutation,
     useFetchSoldQuery,

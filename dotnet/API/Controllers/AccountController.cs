@@ -15,10 +15,10 @@ public class AccountController(SignInManager<User> signInManager, IConfiguration
 {
     // ----- Account settings (2026-10-25): the minimal self-service surface -----
     // Public profiles, handles, avatars and comments were removed the same
-    // day; what a signed-in user can manage is their email (read-only here),
-    // the alert-email opt-in, their password, and deleting the account.
+    // day, and price alerts on 2026-10-26; what a signed-in user can manage
+    // is their email (read-only here), their password, and deleting the
+    // account.
 
-    public record SettingsDto(bool AlertEmails);
     public record PasswordDto(string? CurrentPassword, string NewPassword);
     public record DeleteDto(string Confirm);
 
@@ -32,22 +32,10 @@ public class AccountController(SignInManager<User> signInManager, IConfiguration
         return Ok(new
         {
             email = user.Email,
-            alertEmails = user.AlertEmails,
             hasPassword = await signInManager.UserManager.HasPasswordAsync(user),
             providers = logins.Select(l => l.LoginProvider).ToList(),
             createdAt = user.CreatedAt.ToString("yyyy-MM-dd"),
         });
-    }
-
-    [Authorize]
-    [HttpPut("settings")]
-    public async Task<IActionResult> UpdateSettings(SettingsDto dto)
-    {
-        var user = await signInManager.UserManager.GetUserAsync(User);
-        if (user == null) return Unauthorized();
-        user.AlertEmails = dto.AlertEmails;
-        var result = await signInManager.UserManager.UpdateAsync(user);
-        return result.Succeeded ? Ok() : BadRequest(string.Join(" ", result.Errors.Select(e => e.Description)));
     }
 
     // Change the password, or set one for an account that signed up with
