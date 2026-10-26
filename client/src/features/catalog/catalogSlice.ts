@@ -2,13 +2,15 @@ import { createSlice } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
-// 6M $ growth: desc + the 6M trend view (2026-10-26, user decision). Six
-// months is the horizon whose forecasts the catalog now opens on: far
-// enough out that the v4.5 calibration still calls real growth (a 1M
-// default opened on a wall of ~0% calls), near enough that the number
-// means something to a reader. Was 1Y $ growth from 2026-10-11, and 1M $
-// growth before that. The trend chips follow the sort via trendForSort.
-export const DEFAULT_ORDER = 'chgUsd6Desc';
+// 6M % growth: desc + the 6M trend view (2026-10-26, user decision). Six
+// months is the horizon the catalog opens on: far enough out that the v4.5
+// calibration still calls real growth (a 1M default opened on a wall of
+// ~0% calls), near enough that the number means something to a reader.
+// Percent rather than dollars, so a cheap card with a big call can lead
+// instead of only the expensive ones. Was 6M $ growth earlier the same
+// day, 1Y $ growth from 2026-10-11, 1M $ growth before that. The trend
+// chips follow the sort via trendForSort.
+export const DEFAULT_ORDER = 'chgPct6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
 
 const getInitialView = (): CatalogView =>
