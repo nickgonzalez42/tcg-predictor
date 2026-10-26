@@ -20,11 +20,18 @@ import argparse
 import glob
 import html
 import os
+import re
 import shutil
 import sqlite3
 import time
 
 SITE = "https://cardstock.guide"
+GAME_LABELS = {
+    "pokemon": "Pokémon", "magic": "Magic", "yugioh": "Yu-Gi-Oh!", "onepiece": "One Piece",
+    "lorcana": "Lorcana", "digimon": "Digimon", "gundam": "Gundam",
+    "starwars": "Star Wars Unlimited", "fleshandblood": "Flesh and Blood",
+    "sorcery": "Sorcery", "riftbound": "Riftbound", "cyberpunk": "Cyberpunk",
+}
 IMG = "https://d18pzythfo0bgy.cloudfront.net"
 ADS = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/'
        'adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>')
@@ -86,7 +93,28 @@ GRADE_COLS = [("ungraded", "Ungraded"), ("grade7", "Grade 7"), ("grade8", "Grade
               ("grade9", "Grade 9"), ("grade95", "Grade 9.5"), ("psa10", "PSA 10")]
 
 
-def card_body(game, r, ladder, fc):
+HZ_WORDS = {"1m": "the next month", "6m": "the next six months", "12m": "the next year"}
+
+
+def reason_block(reasons):
+    """The model's written reasoning, which is the one genuinely unique piece
+    of prose a card page owns (2026-10-25). Two horizons: the year-ahead call
+    carries the trajectory story, the month-ahead one the near-term read."""
+    out = []
+    for h in ("12m", "1m"):
+        text = (reasons or {}).get(h)
+        if not text:
+            continue
+        out.append(f'<p><strong>Over {HZ_WORDS[h]}:</strong> {html.escape(text)}</p>')
+    if not out:
+        return ""
+    return ("<h2>Why we expect this</h2>" + "".join(out) +
+            f'<p class="muted">Every forecast is saved the day it is made and checked '
+            f'against the real price when its date arrives. The whole record, misses '
+            f'included, is on the <a href="{SITE}/about">track record page</a>.</p>')
+
+
+def card_body(game, r, ladder, fc, reasons=None):
     pid, name, set_name, rarity, number, desc, nm = r
     e = html.escape
     rows = []
@@ -107,7 +135,8 @@ def card_body(game, r, ladder, fc):
             + (f' · #{e(number)}' if number else '') + f' · {e(game)}</p>'
             f'<table>{"".join(rows)}</table>'
             + (f'<h2>Model price forecasts</h2><table>{fc_rows}</table>' if fc_rows else '')
-            + d +
+            + reason_block(reasons)
+            + (f'<h2>Card text</h2>{d}' if d else '') +
             f'<p><a href="{SITE}/catalog/{game}/{pid}">Interactive price chart, full history '
             f'and past-forecast track record →</a></p>')
 
@@ -145,17 +174,27 @@ def main():
 
     pred = sqlite3.connect(os.path.join(cards_dir, "predictions.db"))
     fcs = {}
+    reasons = {}
     try:
-        for g, pid, h, fp, lo, hi in pred.execute(
-                "SELECT game, product_id, horizon, forecast_price, low, high FROM forecasts "
+        for g, pid, h, fp, lo, hi, why in pred.execute(
+                "SELECT game, product_id, horizon, forecast_price, low, high, reason "
+                "FROM forecasts "
                 "WHERE target='ungraded' AND printing='' AND horizon IN ('1m','6m','12m')"):
             fcs.setdefault((g, pid), []).append((h, fp, lo, hi))
+            if why:
+                reasons.setdefault((g, pid), {})[h] = why
         top = pred.execute(
             "SELECT game, product_id, base_price, forecast_price FROM forecasts "
             "WHERE target='ungraded' AND horizon='1m' AND printing='' AND base_price >= 10 "
             "ORDER BY forecast_price/base_price DESC LIMIT 20").fetchall()
     except sqlite3.Error:
         top = []
+    try:
+        reports = pred.execute(
+            "SELECT slug, title, published_at, summary FROM reports "
+            "ORDER BY published_at DESC").fetchall()
+    except sqlite3.Error:
+        reports = []
     pred.close()
 
     n_cards = 0
@@ -169,7 +208,7 @@ def main():
                 "WHERE near_mint_price IS NOT NULL AND image_path IS NOT NULL AND name IS NOT NULL"):
             pid, name = r[0], r[1]
             fc = sorted(fcs.get((game, pid), []), key=lambda x: {"1m": 0, "6m": 1, "12m": 2}[x[0]])
-            body = card_body(game, r, ladders.get((game, pid)), fc)
+            body = card_body(game, r, ladders.get((game, pid)), fc, reasons.get((game, pid)))
             # Forecast in the description = the hook in a link preview.
             fc_bit = ""
             if fc and r[6]:
@@ -200,6 +239,75 @@ def main():
         f"language.</p><h2>Model's top 1-month calls right now</h2>"
         f"<table><tr><th>Card</th><th>Game</th><th>Price</th><th>1M forecast</th></tr>"
         f"{movers}</table>"))
+
+    # ---- hub pages (2026-10-25) --------------------------------------------
+    # /catalog, /reports and /guides rendered nothing at all without
+    # JavaScript: a crawler saw a bare title where a human sees the whole
+    # site. Each hub now lists what it holds, so the three entry points carry
+    # real content and link onward to the pages worth crawling.
+    per_game = {}
+    for (g, _pid) in top_names:
+        per_game[g] = per_game.get(g, 0) + 1
+    game_rows = "".join(
+        f"<tr><td><a href='{SITE}/catalog?game={g}'>{html.escape(GAME_LABELS.get(g, g))}</a></td>"
+        f"<td>{n:,} cards</td></tr>"
+        for g, n in sorted(per_game.items(), key=lambda kv: -kv[1]))
+    write(out_new, "catalog.html", page(
+        "/catalog", "Card price catalog",
+        "Browse trading card prices and model forecasts across twelve games, with "
+        "graded price ladders and a public forecast track record.",
+        f"<h1>Card price catalog</h1>"
+        f"<p>Every card CardStock prices, across twelve trading card games: the Near Mint "
+        f"market price, the graded ladder from Grade 7 to PSA 10, a price history chart, and "
+        f"model forecasts one month, six months and a year ahead. Each forecast is saved and "
+        f"checked against the real price once its date arrives, and the "
+        f"<a href='{SITE}/about'>track record</a> shows how that has gone.</p>"
+        f"<h2>Games we price</h2><table><tr><th>Game</th><th>Priced cards</th></tr>"
+        f"{game_rows}</table>"
+        f"<p>Prices come from daily TCGplayer sales for raw cards and PriceCharting's "
+        f"per-grade history for graded ones. The weekly "
+        f"<a href='{SITE}/reports'>market report</a> rounds up what moved.</p>"))
+
+    report_rows = "".join(
+        f"<li><a href='{SITE}/reports/{html.escape(slug)}'>{html.escape(title)}</a>"
+        f"<div class='muted'>{html.escape(published)} — {html.escape(summary or '')}</div></li>"
+        for slug, title, published, summary in reports[:40])
+    write(out_new, "reports.html", page(
+        "/reports", "Weekly market reports",
+        "A data-driven look at the week in trading card prices, published every Friday: the "
+        "biggest movers, what each game did, and the model's accuracy scorecard.",
+        f"<h1>Weekly market reports</h1>"
+        f"<p>Every Friday CardStock publishes what actually moved: the week's biggest risers "
+        f"and fallers, how each game traded, the groups and sets behind the moves, and the "
+        f"running scorecard of how the model's own forecasts have done. The archive below "
+        f"goes back to the first report.</p>"
+        f"<ul>{report_rows}</ul>" if reports else
+        f"<h1>Weekly market reports</h1><p>The first weekly report lands this Friday.</p>"))
+
+    guides = []
+    for gp in sorted(glob.glob(os.path.join(args.root, "static", "guides", "*.html"))):
+        slug = os.path.basename(gp)[:-5]
+        try:
+            with open(gp, encoding="utf-8") as f:
+                head = f.read(4000)
+        except OSError:
+            continue
+        t = re.search(r"<title>(.*?)</title>", head, re.S)
+        d = re.search(r'<meta name="description" content="(.*?)"', head, re.S)
+        title = html.unescape(t.group(1).split("|")[0].strip()) if t else slug
+        guides.append((slug, title, html.unescape(d.group(1).strip()) if d else ""))
+    guide_rows = "".join(
+        f"<li><a href='{SITE}/guides/{html.escape(slug)}'>{html.escape(title)}</a>"
+        + (f"<div class='muted'>{html.escape(desc)}</div>" if desc else "") + "</li>"
+        for slug, title, desc in guides)
+    write(out_new, "guides.html", page(
+        "/guides", "Guides",
+        "Plain-English guides to trading card prices: reading a price chart, what grading does "
+        "to value, where card prices come from, and the vocabulary of the market.",
+        f"<h1>Guides</h1>"
+        f"<p>Short, plain-English explainers on how the card market works and how to read the "
+        f"numbers on this site.</p><ul>{guide_rows}</ul>" if guides else
+        f"<h1>Guides</h1><p>Guides are on the way.</p>"))
 
     write(out_new, "about.html", page("/about", "About", "What CardStock is and how its trading card price predictions work.", PROSE["about"]))
     write(out_new, "privacy.html", page("/privacy", "Privacy Policy", "How CardStock handles your data, cookies, and advertising.", PROSE["privacy"]))

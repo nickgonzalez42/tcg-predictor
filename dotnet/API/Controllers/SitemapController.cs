@@ -89,8 +89,17 @@ public class SitemapController(
         return Task.FromResult<string?>(CloseUrlset(sb).ToString());
     });
 
-    // Every catalog-visible card page for one game (all games fit the 50k-URL
-    // sitemap limit; the biggest, yugioh, is ~31k).
+    // Cards worth submitting: a page earns a place in the sitemap only when it
+    // has something of its own to say — a published 1-year forecast (which
+    // carries the model's written reasoning) on a card worth at least this
+    // much. Submitting all ~228k catalog rows meant 228k near-identical
+    // stubs, which is what "thin content at scale" looks like to a reviewer
+    // (AdSense "low value content", 2026-10-25). Raise the floor to submit
+    // fewer, richer pages; lower it as the catalog's depth improves.
+    private const double SitemapMinPrice = 5.0;
+
+    // Every card page for one game that clears the bar above (each game fits
+    // the 50k-URL sitemap limit; the biggest, magic, is ~17k).
     [HttpGet("/sitemap-{game}.xml")]
     public async Task<IActionResult> Game(string game)
     {
@@ -101,8 +110,20 @@ public class SitemapController(
 
         return await Cached($"sitemap:{key}", async () =>
         {
-            var ids = await sources.Cards(key).VisibleInCatalog()
-                .Select(c => c.Id).OrderBy(id => id).ToListAsync();
+            // Cross-database: the forecast list comes from predictions.db and
+            // the catalog-visible set from the game's own card DB, so the
+            // intersection happens in memory.
+            var worthy = (await predictions.Forecasts
+                    .Where(f => f.Game == key && f.Target == "ungraded"
+                                && f.Horizon == "12m" && f.Printing == ""
+                                && f.BasePrice >= SitemapMinPrice)
+                    .Select(f => f.ProductId).Distinct().ToListAsync())
+                .ToHashSet();
+            if (worthy.Count == 0) return null;
+
+            var ids = (await sources.Cards(key).VisibleInCatalog()
+                    .Select(c => c.Id).ToListAsync())
+                .Where(worthy.Contains).OrderBy(id => id).ToList();
             if (ids.Count == 0) return null;
 
             var sb = OpenUrlset();

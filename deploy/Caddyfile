@@ -41,7 +41,7 @@ cardstock.guide {
 	# the SPA. Pages without a prerender file fall through to the SPA.
 	@bots {
 		header_regexp ua User-Agent (?i)(googlebot|adsbot|mediapartners|apis-google|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|gptbot|ccbot|claudebot|perplexitybot|discordbot|slackbot|telegrambot|whatsapp|redditbot|pinterestbot)
-		path / /about /privacy /terms /contact /catalog/*
+		path / /about /privacy /terms /contact /catalog /catalog/* /reports /guides
 		file {
 			root /srv/tcg/static
 			try_files /prerender{path}.html /prerender{path}index.html
