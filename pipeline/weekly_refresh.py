@@ -124,7 +124,7 @@ NOMINAL_MIN = {
     "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 11,
     "tcg-nm-prices": 30, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
     "tcg-sales": 15, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
-    "printing-ingest": 63, "imageless-audit": 22, "pc-gundam": 2,
+    "printing-ingest": 63, "imageless-audit": 22, "art-recheck": 14, "pc-gundam": 2,
     "pc-starwars": 3, "pc-graded-new": 120, "nm-pc-sweep": 4, "unify": 20,
     "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
     "pc-link-suggest": 70, "pc-console-discover": 2, "pc-console-sweep": 91,
@@ -137,6 +137,7 @@ TRIMMABLE = {
     "tcg-sales": ("--total-limit", 100),
     "printing-ingest": ("--limit", 300),
     "imageless-audit": ("--limit", 20),
+    "art-recheck": ("--limit", 15),
     "pc-link-suggest": ("--drain", 200),
     "pc-graded-new": ("--total-limit", 800),
 }
@@ -337,6 +338,13 @@ STEPS = [
     # deleted.
     ("imageless-audit", ["audit_imageless.py", "--refresh-days", "7",
                          "--limit", "100", "--rpm", "60"]),
+    # Pre-release art re-check (2026-10-26): TCGplayer swaps a new set's
+    # product images on/after release and we only ever downloaded them once.
+    # Nightly rotation over cards whose art was fetched before the card had
+    # settled; a changed image is replaced in S3 + invalidated on CloudFront
+    # and re-embedded by this same run's ml-embed. Non-fatal, exits 0.
+    ("art-recheck",     ["recheck_prerelease_art.py", "--refresh-days", "3",
+                         "--limit", "60", "--rpm", "60"]),
     ("pc-gundam",     ["scrape_gundam_prices.py"]),
     ("pc-starwars",   ["scrape_starwars_prices.py"]),
     ("pc-match",      ["build_pricecharting.py"]),
