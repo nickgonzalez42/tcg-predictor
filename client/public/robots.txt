@@ -6,5 +6,7 @@ Disallow: /portfolio
 Disallow: /watchlist
 Disallow: /login
 Disallow: /register
+Disallow: /settings
+Disallow: /scan
 
 Sitemap: https://cardstock.guide/sitemap.xml

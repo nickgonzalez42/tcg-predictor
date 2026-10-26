@@ -7,7 +7,6 @@ import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { sanitizeReportHtml } from "../../lib/sanitizeHtml";
 import { cardImageUrl } from "../../lib/cardImageUrl";
-import NewsletterSignup from "./NewsletterSignup";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -195,7 +194,6 @@ export default function ReportPage() {
             <h1 className="reports__title">{report.title}</h1>
             <div className="report__body" ref={bodyRef}
                 dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(report.bodyHtml) }} />
-            <NewsletterSignup source={`report-${report.slug}`} />
         </article>
     );
 }
