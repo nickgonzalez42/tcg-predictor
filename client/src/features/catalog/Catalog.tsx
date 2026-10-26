@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
+import { DEFAULT_MIN_PRICE, DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
 import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
@@ -105,11 +105,15 @@ export default function Catalog() {
     if (cardParams.confidence.length) sp.confidence = cardParams.confidence.join(',');
     if (cardParams.printings.length) sp.printings = cardParams.printings.join(',');
     if (cardParams.grade) sp.grade = cardParams.grade;
-    if (cardParams.minPrice) sp.minPrice = cardParams.minPrice;
+    // minPrice: only when it differs from the default floor, and '0' when the
+    // visitor has cleared it (the sentinel the reader above understands), so a
+    // cleared floor survives a reload.
+    if (cardParams.minPrice && cardParams.minPrice !== DEFAULT_MIN_PRICE) sp.minPrice = cardParams.minPrice;
+    else if (!cardParams.minPrice) sp.minPrice = '0';
     if (cardParams.maxPrice) sp.maxPrice = cardParams.maxPrice;
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);
-    if (cardParams.trend && cardParams.trend !== '1y') sp.trend = cardParams.trend;
+    if (cardParams.trend && cardParams.trend !== DEFAULT_TREND) sp.trend = cardParams.trend;
     if (cardParams.market) sp.market = cardParams.market;
     if (cardParams.view === 'rows') sp.view = 'rows';
     setSearchParams(sp, { replace: true });

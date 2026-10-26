@@ -12,6 +12,15 @@ import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 // chips follow the sort via trendForSort.
 export const DEFAULT_ORDER = 'chgPct6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
+// Default price floor (2026-10-26). Sorting by PERCENT puts penny cards on
+// top — a $0.01 card called at $0.05 is +400%, and the opening screen filled
+// with them (one $0.15 card read +31,453%). A $1 floor is enough to clear
+// that and still keeps genuinely cheap cards. It shows in the Min $ box, so
+// it is visible and a visitor can clear it; clearing writes minPrice=0 to
+// the URL, the sentinel the parser already understands.
+export const DEFAULT_MIN_PRICE = '1';
+// The trend window the opening sort implies; the chips follow the sort.
+export const DEFAULT_TREND = trendForSort('chgPct6Desc') ?? '6m';
 
 const getInitialView = (): CatalogView =>
     localStorage.getItem('catalogView') === 'rows' ? 'rows' : 'cards';
@@ -33,14 +42,12 @@ const initialState: CardParams = {
     searchTerm: '',
     orderBy: DEFAULT_ORDER,
     grade: '',
-    // No price floor by default (2026-08-02): every priced card lists. The
-    // growth sorts still rank penny cards honestly — set a Min $ to hide them.
-    minPrice: '',
+    minPrice: DEFAULT_MIN_PRICE,
     maxPrice: '',
     // Derived from the default sort so the tiles' window always matches the
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
     // a 1M default sort, so the catalog sorted by 1M while displaying 1Y).
-    trend: trendForSort(DEFAULT_ORDER) ?? '6m',
+    trend: DEFAULT_TREND,
     market: '',
     view: getInitialView(),
     quickAdd: getInitialQuickAdd()
