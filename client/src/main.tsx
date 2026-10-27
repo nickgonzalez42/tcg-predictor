@@ -1,7 +1,6 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { initAdsense } from './lib/adsense'
-import { initAnalytics } from './lib/analytics'
 import './index.css'
 import { RouterProvider } from 'react-router-dom';
 import { router } from './app/routes/Routes.tsx';
@@ -11,7 +10,6 @@ import { ToastContainer } from 'react-toastify';
 import 'react-toastify/ReactToastify.css';
 
 initAdsense();
-initAnalytics();   // no-op until a Cloudflare beacon token is set
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

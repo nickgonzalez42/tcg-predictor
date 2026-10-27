@@ -35,8 +35,9 @@ export default function PrivacyPage() {
                 or share them with anyone.
             </p>
             <p>
-                We may also run Cloudflare Web Analytics, which measures page views without
-                setting any cookie and without tracking you across other websites.
+                To count which pages are read we also send our own server a short ping on
+                each page you open, carrying the page's address and nothing else. It sets
+                no cookie, stores no identifier, and goes nowhere but our own server.
             </p>
 
             <h2>Cookies</h2>

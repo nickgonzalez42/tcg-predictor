@@ -28,6 +28,16 @@ cardstock.guide {
 		reverse_proxy 127.0.0.1:5000
 	}
 
+	# First-party page-view beacon (2026-10-27). The site is a single-page
+	# app, so moving from a card to the catalog makes NO document request
+	# and the access log alone undercounts badly. The client pings this on
+	# every route change; Caddy answers 204 here, so the API never sees it,
+	# and the hit lands in the same access log deploy/traffic_report.py
+	# already reads. No cookie, no third party, no database write.
+	handle /px {
+		respond 204
+	}
+
 	@sitemaps path /sitemap.xml /sitemap-*.xml
 	handle @sitemaps {
 		reverse_proxy 127.0.0.1:5000

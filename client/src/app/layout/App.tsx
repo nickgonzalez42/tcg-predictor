@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import NavBar from "./NavBar";
 import Footer from "./Footer";
+import { trackPageView } from "../../lib/pageview";
 import ReportProblem from "../../features/report/ReportProblem";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
 import gsap from "gsap";
@@ -11,6 +12,13 @@ gsap.registerPlugin(ScrollTrigger, ScrollSmoother);
 
 function App() {
   const { pathname } = useLocation();
+
+  // Count this view (see lib/pageview.ts): the search string goes along on
+  // the first view only, so a campaign tag is recorded without turning every
+  // filter change into a separate page.
+  useEffect(() => {
+    trackPageView(pathname);
+  }, [pathname]);
 
   // The market ticker rides under the navbar on the landing + catalog screens.
   const showTicker = pathname === "/" || pathname === "/catalog";

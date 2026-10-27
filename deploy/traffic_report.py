@@ -34,6 +34,7 @@ import re
 import sqlite3
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote_plus
 
 LOG_GLOB = "/var/log/caddy/access.log*"
 CARDS_DIR = "/srv/tcg/data/cards"
@@ -75,7 +76,9 @@ GAME_LABEL = {
     "starwars": "Star Wars Unlimited", "fleshandblood": "Flesh and Blood",
     "sorcery": "Sorcery", "riftbound": "Riftbound", "cyberpunk": "Cyberpunk",
 }
+BEACON = "/px"      # first-party page-view ping, answered 204 by Caddy
 CARD_RE = re.compile(r"^/api/cards/([a-z]+)/(\d+)(?:/|$)")
+ROUTE_CARD_RE = re.compile(r"^/catalog/([a-z]+)/(\d+)$")
 # ONLY the list endpoint itself. A loose /api/cards prefix also swallowed
 # /api/cards/movers and /api/cards/filters, so the home page's own feeds got
 # counted as catalog visits (2026-10-27).
@@ -108,6 +111,25 @@ def card_names(wanted):
         except sqlite3.Error:
             pass
     return out
+
+
+def beacon_page(uri):
+    """The page a /px ping names: ("card", game, id) | ("catalog", game, None)
+    | ("page", path, None). The beacon reports the ROUTE the visitor is on,
+    which is the thing we actually want to count."""
+    q = uri.split("?", 1)[1] if "?" in uri else ""
+    params = {}
+    for part in q.split("&"):
+        k, _, v = part.partition("=")
+        if k:
+            params[k] = unquote_plus(v)
+    path = (params.get("p") or "/").split("?")[0]
+    m = ROUTE_CARD_RE.match(path)
+    if m:
+        return ("card", m.group(1), int(m.group(2))), params
+    if path == "/catalog" or path.startswith("/catalog?"):
+        return ("catalog", None, None), params
+    return ("page", path or "/", None), params
 
 
 def page_of(path):
@@ -165,6 +187,10 @@ def main():
     ap.add_argument("--top", type=int, default=15, help="rows per table")
     args = ap.parse_args()
 
+    # Two passes' worth of state: beacon views are authoritative once the
+    # client ships them; the API-derived view is the fallback for the days
+    # before the beacon existed, and for anyone running without JavaScript.
+    have_beacon = False
     people = set()              # (day, ip, ua)
     per_day = defaultdict(set)
     cards, catalogs, pages, reports = Counter(), Counter(), Counter(), Counter()
@@ -186,9 +212,19 @@ def main():
                 bots[bot_name(ua)] += 1
             continue
 
-        kind = page_of(path)
-        if kind is None:
-            continue
+        if path == BEACON:
+            have_beacon = True
+            kind, params = beacon_page(uri)
+            ref = params.get("r", "")
+            utm = params.get("u", "")
+        else:
+            if have_beacon:
+                continue          # the beacon already counted this view
+            kind = page_of(path)
+            if kind is None:
+                continue
+            ref = (req.get("headers", {}).get("Referer") or [""])[0]
+            utm = uri
         people_hits += 1
         day = when.strftime("%Y-%m-%d")
         people.add((day, ip, ua))
@@ -204,7 +240,7 @@ def main():
                 continue
             cards[(a, b)] += 1
         elif what == "catalog":
-            catalogs[catalog_game(uri) or "all"] += 1
+            catalogs[catalog_game(params.get("p", "") if path == BEACON else uri) or "all"] += 1
         elif what == "report":
             reports[a] += 1
         elif what == "home":
@@ -212,12 +248,12 @@ def main():
         else:
             pages[a] += 1
 
-        ref = (req.get("headers", {}).get("Referer") or [""])[0]
         if ref and "cardstock.guide" not in ref:
             referrers[re.sub(r"^https?://(www\.)?", "", ref).split("/")[0]] += 1
-        m = re.search(r"[?&]utm_source=([^&]+).*?(?:[?&]utm_campaign=([^&]+))?", uri)
-        if m:
-            campaigns[f"{m.group(1)}/{m.group(2) or '-'}"] += 1
+        src = re.search(r"utm_source=([^&]+)", utm)
+        if src:
+            camp = re.search(r"utm_campaign=([^&]+)", utm)
+            campaigns[f"{src.group(1)}/{camp.group(1) if camp else '-'}"] += 1
 
     names = card_names(list(cards))
     span = f"last {args.days:g} day(s)"
@@ -228,6 +264,7 @@ def main():
         print("If the log was only just enabled, data starts from that moment.\n")
         return
 
+    print(f"\n  counted from: {'the page-view beacon' if have_beacon else 'API calls (no beacon data yet)'}")
     print(f"\n  visitors (distinct browsers)   {len({(i, u) for _d, i, u in people}):>8,}")
     print(f"  page views                     {people_hits:>8,}")
     print(f"  bot / monitor requests         {bot_hits:>8,}  (excluded above)")
