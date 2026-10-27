@@ -235,8 +235,10 @@ def main():
         if what == "card":
             # A card page fires several API calls (details, history, forecast,
             # past forecasts). Count the details call only, so "views" means
-            # views and not requests.
-            if not path.rstrip("/").endswith(str(b)):
+            # views and not requests. A beacon is already one-per-view, and
+            # its own path is /px, so the check must not be applied to it
+            # (2026-10-27: it silently dropped every beacon card view).
+            if path != BEACON and not path.rstrip("/").endswith(str(b)):
                 continue
             cards[(a, b)] += 1
         elif what == "catalog":
