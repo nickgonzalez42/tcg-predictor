@@ -5,6 +5,21 @@
 cardstock.guide {
 	encode gzip
 
+	# Access log (2026-10-27): the only record of who visits and what they
+	# read — nothing was logged before, so every visit was lost. Caddy rolls
+	# the file itself (no logrotate entry needed). JSON because
+	# deploy/traffic_report.py parses it. Single-page-app navigation makes no
+	# document request, so the API calls ARE the page views and the report
+	# maps them back to pages.
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 64MiB
+			roll_keep 8
+			roll_keep_for 2160h
+		}
+		format json
+	}
+
 	handle /api/* {
 		reverse_proxy 127.0.0.1:5000
 	}
