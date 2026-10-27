@@ -118,17 +118,24 @@ DEPTH_GAMES, BACKFILL_TONIGHT = night_plan(LOCAL_WEEKDAY)
 # still makes progress. The CRAWL night is exempt: it is inherently ~40 h
 # and is scheduled as a two-day job instead.
 DEADLINE = "" if CRAWL_NIGHT else os.environ.get("TCG_REFRESH_DEADLINE", "").strip()
-# Measured wall-clock minutes per step (2026-10 logs), used only to decide
-# how much of a rotation fits. Steps absent here are treated as ~2 min.
+# Measured wall-clock minutes per step, used only to decide how much of a
+# rotation fits before the deadline. These are the 80th percentile of the
+# last 8 nights' logs (recomputed 2026-10-27) — NOT the median: the point is
+# to reserve enough that a slow-but-normal night still lands on time.
+# Steps absent here are treated as ~2 min.
+# 2026-10-27: tcg-nm-prices was carrying a nominal of 30 while really taking
+# 25-93 min (max 193) — a 60+ min hole in every night's reservation, and the
+# main reason the 2026-10-27 run finished at ~08:00 against a 06:00 deadline.
 NOMINAL_MIN = {
-    "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 11,
-    "tcg-nm-prices": 30, "tcg-nm-verify": 12, "tcg-nm-backfill": 70,
-    "tcg-sales": 15, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
-    "printing-ingest": 63, "imageless-audit": 22, "art-recheck": 14, "pc-gundam": 2,
-    "pc-starwars": 3, "pc-graded-new": 120, "nm-pc-sweep": 4, "unify": 20,
-    "nm-price": 2, "card-trends": 3, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
-    "pc-link-suggest": 70, "pc-console-discover": 2, "pc-console-sweep": 91,
-    "nm-rescue-full": 2, "tcg-market-watch": 1,
+    "tcg-magic": 7, "tcg-onepiece": 5, "tcg-starwars": 4, "tcg-pokemon": 3,
+    "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 9,
+    "tcg-nm-prices": 93, "tcg-nm-verify": 16, "tcg-nm-backfill": 69,
+    "tcg-sales": 16, "tcg-nm-rescue": 1, "tcg-printing-pins": 6,
+    "printing-ingest": 64, "imageless-audit": 18, "art-recheck": 16, "pc-gundam": 2,
+    "pc-starwars": 4, "pc-graded-new": 129, "nm-pc-sweep": 4, "unify": 18,
+    "nm-price": 2, "card-trends": 4, "art-comps": 6, "s3-upload": 3, "art-sync": 2,
+    "pc-link-suggest": 66, "pc-console-discover": 2, "pc-console-sweep": 94,
+    "nm-rescue-full": 1, "tcg-market-watch": 1,
 }
 # Rotation steps whose budget may be cut: step -> (flag, floor). The flag's
 # value is scaled by the fraction of its nominal time that still fits.
@@ -144,7 +151,13 @@ TRIMMABLE = {
 # Work that happens BETWEEN art-comps and s3-upload (the model block, run by
 # run_daily_refresh.sh) plus the prod push, reserved so the rotations don't
 # eat the time the forecasts and the deploy need.
-MODEL_BLOCK_MIN = 200
+# 2026-10-27: measured phase_a -> model in the ledger over five good nights:
+# 234, 247, 259, 263, 277 min, and forecast_predict has grown ~8 min a night
+# as the catalog grows (185 -> 223 over a week). The old 200 under-reserved
+# the model block by 35-77 min EVERY night. Re-measure from the ledger when
+# the trend continues; if this ever exceeds ~5 h the model block itself needs
+# bounding, not a bigger reservation.
+MODEL_BLOCK_MIN = 290
 PUSH_MIN = 25
 
 
