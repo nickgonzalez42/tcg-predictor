@@ -40,12 +40,35 @@ CARDS_DIR = "/srv/tcg/data/cards"
 DATA_DIR = "/srv/tcg/data"
 
 # A request from one of these is never a person.
+# A request from one of these is never a person. Note the hyphens: the
+# uptime check calls itself "Amazon-Route53-Health-Check-Service", and a
+# spaced pattern missed it entirely on the first run (2026-10-27) — 2,880
+# health checks a day then counted as home-page views.
 BOT_RE = re.compile(
-    r"bot|crawl|spider|slurp|bingpreview|facebookexternalhit|embedly|quora|pinterest|"
-    r"vkshare|w3c_validator|headlesschrome|python-requests|curl/|wget|go-http|okhttp|"
-    r"axios|libwww|scrapy|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|gptbot|"
-    r"claudebot|perplexity|ccbot|amazonbot|route 53 health check|uptime|monitor",
+    r"bot\b|bot/|crawl|spider|slurp|bingpreview|facebookexternalhit|embedly|quora|"
+    r"pinterest|vkshare|w3c_validator|headless|python-requests|curl/|wget|go-http|"
+    r"okhttp|axios|libwww|scrapy|semrush|ahrefs|mj12|dotbot|petalbot|bytespider|"
+    r"gptbot|claudebot|perplexity|ccbot|amazonbot|route\s*-?53|health-?check|"
+    r"uptime|monitor|pingdom|statuscake|datadog|newrelic|lighthouse|playwright|"
+    r"puppeteer|phantomjs|selenium",
     re.I)
+
+# A readable name for a non-human caller: the first token that is not the
+# "Mozilla/5.0" camouflage every agent wears.
+def bot_name(ua):
+    generic = ("mozilla", "applewebkit", "khtml", "like", "gecko", "chrome", "safari",
+               "version", "mobile", "macintosh", "windows", "x11", "linux", "intel",
+               "mac", "wow64", "win64", "android", "iphone", "ipad", "compatible")
+    toks = re.split(r"[ ;()]+", ua.strip())
+    # A product token (name/version) names the agent better than the OS does.
+    for tok in toks:
+        if "/" in tok and not tok.split("/")[0].lower() in generic:
+            return tok.split("/")[0][:30]
+    for tok in toks:
+        t = tok.split("/")[0]
+        if t and t.lower() not in generic:
+            return t[:30]
+    return (ua.strip() or "(none)")[:30]
 GAME_LABEL = {
     "pokemon": "Pokémon", "magic": "Magic", "yugioh": "Yu-Gi-Oh!", "onepiece": "One Piece",
     "lorcana": "Lorcana", "digimon": "Digimon", "gundam": "Gundam",
@@ -53,7 +76,13 @@ GAME_LABEL = {
     "sorcery": "Sorcery", "riftbound": "Riftbound", "cyberpunk": "Cyberpunk",
 }
 CARD_RE = re.compile(r"^/api/cards/([a-z]+)/(\d+)(?:/|$)")
-LIST_RE = re.compile(r"^/api/cards\b")
+# ONLY the list endpoint itself. A loose /api/cards prefix also swallowed
+# /api/cards/movers and /api/cards/filters, so the home page's own feeds got
+# counted as catalog visits (2026-10-27).
+LIST_RE = re.compile(r"^/api/cards$")
+# Supporting calls that ride along with a page someone is already on; counting
+# them would double-count the view that triggered them.
+IGNORE = ("/api/cards/filters", "/api/account/", "/api/watchlist", "/api/portfolio")
 REPORT_RE = re.compile(r"^/api/market-reports/(.+)$")
 HOME_API = ("/api/home/stats", "/api/home/scorecard", "/api/cards/movers")
 
@@ -90,10 +119,12 @@ def page_of(path):
     m = REPORT_RE.match(path.split("?")[0])
     if m:
         return ("report", m.group(1), None)
-    if LIST_RE.match(path):
-        return ("catalog", None, None)
     if any(path.startswith(h) for h in HOME_API):
         return ("home", None, None)
+    if any(path.startswith(h) for h in IGNORE):
+        return None
+    if LIST_RE.match(path):
+        return ("catalog", None, None)
     # Document requests: the first load of any route, and every crawler hit.
     if not path.startswith("/api/") and not path.startswith("/card-images/") \
             and "." not in path.rsplit("/", 1)[-1]:
@@ -152,7 +183,7 @@ def main():
         if BOT_RE.search(ua) or not ua:
             bot_hits += 1
             if page_of(path):
-                bots[re.split(r"[/ ]", ua.strip() or "(none)")[0][:28]] += 1
+                bots[bot_name(ua)] += 1
             continue
 
         kind = page_of(path)
@@ -166,6 +197,11 @@ def main():
 
         what, a, b = kind
         if what == "card":
+            # A card page fires several API calls (details, history, forecast,
+            # past forecasts). Count the details call only, so "views" means
+            # views and not requests.
+            if not path.rstrip("/").endswith(str(b)):
+                continue
             cards[(a, b)] += 1
         elif what == "catalog":
             catalogs[catalog_game(uri) or "all"] += 1
