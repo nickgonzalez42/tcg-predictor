@@ -30,6 +30,7 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
         {
             $"/api/cards/filters?game={g}",                // catalog facets (cached per process)
             $"/api/cards?game={g}&pageSize=30",            // first catalog page (pulls pages into the OS cache)
+            $"/api/cards?game={g}&pageSize=30&orderBy=histPct6mDesc",  // past-change sort: loads the game's trends (CardMarketData.TierTrends)
         }),
     ];
 

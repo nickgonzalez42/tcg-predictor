@@ -15,6 +15,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     public DbSet<PrereleaseEstimate> Prerelease => Set<PrereleaseEstimate>();
     // The public scorecard (2026-10-23): keyless, one row per (game, tier, horizon).
     public DbSet<ForecastAccuracy> Accuracy => Set<ForecastAccuracy>();
+    public DbSet<CardTrend> CardTrends => Set<CardTrend>();
     public DbSet<ForecastAccuracyWeekly> AccuracyWeekly => Set<ForecastAccuracyWeekly>();
     public DbSet<ForecastAccuracyMonthly> AccuracyMonthly => Set<ForecastAccuracyMonthly>();
 
@@ -67,6 +68,26 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.RealizedPrice).HasColumnName("realized_price");
             f.Property(x => x.RealizedRet).HasColumnName("realized_ret");
             f.Property(x => x.RealizedAt).HasColumnName("realized_at");
+        });
+
+        builder.Entity<CardTrend>(t =>
+        {
+            t.ToTable("card_trends");
+            t.HasNoKey();
+            t.Property(x => x.Game).HasColumnName("game");
+            t.Property(x => x.Grade).HasColumnName("grade");
+            t.Property(x => x.ProductId).HasColumnName("product_id");
+            t.Property(x => x.LatestDate).HasColumnName("latest_date");
+            t.Property(x => x.LatestPrice).HasColumnName("latest_price");
+            t.Property(x => x.Pct1w).HasColumnName("pct_1w");
+            t.Property(x => x.Usd1w).HasColumnName("usd_1w");
+            t.Property(x => x.Pct1m).HasColumnName("pct_1m");
+            t.Property(x => x.Usd1m).HasColumnName("usd_1m");
+            t.Property(x => x.Pct6m).HasColumnName("pct_6m");
+            t.Property(x => x.Usd6m).HasColumnName("usd_6m");
+            t.Property(x => x.Pct1y).HasColumnName("pct_1y");
+            t.Property(x => x.Usd1y).HasColumnName("usd_1y");
+            t.Property(x => x.AsOf).HasColumnName("as_of");
         });
 
         builder.Entity<ForecastAccuracy>(a =>

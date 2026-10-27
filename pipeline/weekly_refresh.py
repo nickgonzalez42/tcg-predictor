@@ -126,7 +126,7 @@ NOMINAL_MIN = {
     "tcg-sales": 15, "tcg-nm-rescue": 15, "tcg-printing-pins": 6,
     "printing-ingest": 63, "imageless-audit": 22, "art-recheck": 14, "pc-gundam": 2,
     "pc-starwars": 3, "pc-graded-new": 120, "nm-pc-sweep": 4, "unify": 20,
-    "nm-price": 2, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
+    "nm-price": 2, "card-trends": 3, "art-comps": 6, "s3-upload": 3, "art-sync": 15,
     "pc-link-suggest": 70, "pc-console-discover": 2, "pc-console-sweep": 91,
     "nm-rescue-full": 2, "tcg-market-watch": 1,
 }
@@ -383,6 +383,10 @@ STEPS = [
     ("nm-pc-sweep",   ["sweep_nm_vs_pc.py"]),
     ("unify",         ["build_unified_history.py"]),
     ("nm-price",      ["backfill_nm_price.py"]),
+    # Past-change table for the catalog's history sorts (2026-10-26): one
+    # pass over the night's unified history into predictions.db, which the
+    # model block pushes. Replaces a 28 s per-request recompute on prod.
+    ("card-trends",   ["build_card_trends.py"]),
     ("ml-export",     ["export_for_ml.py"]),
     ("ml-embed",      ["embed_images.py"]),
     # Scanner / search-by-photo index (2026-10-24): new cards' embeddings

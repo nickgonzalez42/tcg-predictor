@@ -2,7 +2,9 @@ using API.Data;
 using API.DTOS;
 using API.Entities;
 using API.RequestHelpers;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace API.Services;
 
@@ -18,7 +20,8 @@ public readonly record struct HistoryChange(double Pct, double Usd);
 // Market context for card DTOs. Cards live in per-game DBs, price history in
 // pricecharting.db, and model forecasts in predictions.db — this service owns
 // every lookup that joins them and the decoration the tiles/screener rows use.
-public class CardMarketData(PredictionsContext predictions, PriceChartingContext priceCharting)
+public class CardMarketData(PredictionsContext predictions, PriceChartingContext priceCharting,
+                            IMemoryCache cache)
 {
     // One row per trend window: when the window starts, and which trained
     // forecast horizon a tile's headline forecast should use. History points
@@ -173,29 +176,110 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         string game, string tier, List<int> ids, string window)
     {
         if (ids.Count == 0) return [];
-        var cutoff = WindowStart(window);
-
-        // Batches also bound memory here: a full game's history is millions of
-        // rows, so each batch's rows are reduced to changes and released.
-        var changes = new Dictionary<int, HistoryChange>();
-        foreach (var batch in Batches(ids))
+        var all = await TierTrends(game, tier);
+        var want = ids.ToHashSet();
+        var changes = new Dictionary<int, HistoryChange>(Math.Min(want.Count, all.Count));
+        foreach (var (pid, row) in all)
         {
-            var rows = await priceCharting.History
-                .Where(h => h.Game == game && h.Grade == tier && batch.Contains(h.ProductId))
-                .Select(h => new { h.ProductId, h.Date, h.Price })
-                .ToListAsync();
-            foreach (var g in rows.GroupBy(r => r.ProductId))
-            {
-                var series = g.OrderBy(r => r.Date).ToList();
-                var latest = series[^1];
-                var anchor = series.LastOrDefault(r => string.CompareOrdinal(r.Date, cutoff) <= 0)
-                             ?? series[0];
-                if (anchor.Price <= 0) continue;
-                changes[g.Key] = new HistoryChange(
-                    (latest.Price / anchor.Price - 1) * 100, latest.Price - anchor.Price);
-            }
+            if (!want.Contains(pid)) continue;
+            if (row.For(window) is { } c) changes[pid] = c;
         }
         return changes;
+    }
+
+    // A card's change over each window; null where the series had no usable
+    // anchor price. Mirrors one card_trends row.
+    private sealed record TrendRow(
+        double? Pct1w, double? Usd1w, double? Pct1m, double? Usd1m,
+        double? Pct6m, double? Usd6m, double? Pct1y, double? Usd1y)
+    {
+        public HistoryChange? For(string window) => window switch
+        {
+            "1w" => Pct1w is { } p ? new HistoryChange(p, Usd1w ?? 0) : null,
+            "1m" => Pct1m is { } p ? new HistoryChange(p, Usd1m ?? 0) : null,
+            "6m" => Pct6m is { } p ? new HistoryChange(p, Usd6m ?? 0) : null,
+            "1y" => Pct1y is { } p ? new HistoryChange(p, Usd1y ?? 0) : null,
+            _ => null,
+        };
+    }
+
+    // Every card's past change for one game + tier, all four windows at once.
+    // Source of truth is the nightly card_trends table (build_card_trends.py);
+    // until the first nightly after a deploy ships it — or if a night's build
+    // fails — the same numbers are derived here from the price history, once
+    // per process (the nightly push restarts the API). Either way the result
+    // is held in memory for the day: a catalog sort used to re-read a whole
+    // game's history on every request (28 s for Magic, 2026-10-26 load test).
+    private async Task<Dictionary<int, TrendRow>> TierTrends(string game, string tier)
+    {
+        var key = $"trends:{game}:{tier}";
+        if (cache.TryGetValue(key, out Dictionary<int, TrendRow>? hit) && hit != null) return hit;
+
+        Dictionary<int, TrendRow> map;
+        try
+        {
+            map = await predictions.CardTrends
+                .Where(t => t.Game == game && t.Grade == tier)
+                .Select(t => new { t.ProductId, Row = new TrendRow(
+                    t.Pct1w, t.Usd1w, t.Pct1m, t.Usd1m, t.Pct6m, t.Usd6m, t.Pct1y, t.Usd1y) })
+                .ToDictionaryAsync(x => x.ProductId, x => x.Row);
+        }
+        catch (SqliteException) { map = []; }     // predictions.db predates the table
+        if (map.Count == 0) map = await ComputeTierTrends(game, tier);
+
+        cache.Set(key, map, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(24),
+            Priority = CacheItemPriority.NeverRemove,
+        });
+        return map;
+    }
+
+    // Fallback: one ordered pass over the tier's base-printing history,
+    // streamed so a 3M-row game never sits in memory. Anchor rule per window:
+    // the last price on or before the window start, else the first price.
+    private async Task<Dictionary<int, TrendRow>> ComputeTierTrends(string game, string tier)
+    {
+        var cut = new Dictionary<string, string>();
+        foreach (var w in new[] { "1w", "1m", "6m", "1y" }) cut[w] = WindowStart(w);
+        var map = new Dictionary<int, TrendRow>();
+
+        int? curPid = null;
+        (string Date, double Price)? first = null, latest = null;
+        var anchors = new Dictionary<string, (string Date, double Price)>();
+        void Flush()
+        {
+            if (curPid == null || latest == null) return;
+            double? P(string w, out double? usd)
+            {
+                var a = anchors.TryGetValue(w, out var av) ? av : first!.Value;
+                if (a.Price <= 0) { usd = null; return null; }
+                usd = latest.Value.Price - a.Price;
+                return (latest.Value.Price / a.Price - 1) * 100;
+            }
+            var p1w = P("1w", out var u1w); var p1m = P("1m", out var u1m);
+            var p6m = P("6m", out var u6m); var p1y = P("1y", out var u1y);
+            map[curPid.Value] = new TrendRow(p1w, u1w, p1m, u1m, p6m, u6m, p1y, u1y);
+        }
+
+        var rows = priceCharting.History
+            .Where(h => h.Game == game && h.Grade == tier)
+            .OrderBy(h => h.ProductId).ThenBy(h => h.Date)
+            .Select(h => new { h.ProductId, h.Date, h.Price })
+            .AsAsyncEnumerable();
+        await foreach (var r in rows)
+        {
+            if (r.ProductId != curPid)
+            {
+                Flush();
+                curPid = r.ProductId; first = (r.Date, r.Price); anchors.Clear();
+            }
+            latest = (r.Date, r.Price);
+            foreach (var (w, c) in cut)
+                if (string.CompareOrdinal(r.Date, c) <= 0) anchors[w] = latest.Value;
+        }
+        Flush();
+        return map;
     }
 
     // ----- selected printing (2026-10-20) ------------------------------------
