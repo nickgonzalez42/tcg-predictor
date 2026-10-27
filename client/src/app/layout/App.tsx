@@ -50,9 +50,12 @@ function App() {
               the fixed crawl). The modal it opens portals to <body>. */}
           <ReportProblem />
           <Footer />
-          <ConsentBanner />
         </div>
       </div>
+      {/* position: fixed must live OUTSIDE the smoothed content (a transformed
+          ancestor turns fixed into absolute): inside, the bar sat at the very
+          bottom of the page on desktop and nobody saw it (2026-10-26). */}
+      <ConsentBanner />
     </div>
   );
 }
