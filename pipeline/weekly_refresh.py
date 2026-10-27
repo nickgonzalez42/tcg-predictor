@@ -149,10 +149,23 @@ PUSH_MIN = 25
 
 
 def deadline_at(now):
-    """The next occurrence of TCG_REFRESH_DEADLINE, as a datetime."""
+    """This night's TCG_REFRESH_DEADLINE, as a datetime.
+
+    Normally the next occurrence. But when the deadline passed EARLIER TODAY
+    (within 12 h), this is the overnight run finishing late, and the night's
+    deadline is the one that just passed — the remaining budget must shrink
+    to the floors, not inflate to tomorrow's. 2026-10-27: Phase C started at
+    06:35 against a 06:00 deadline, "next occurrence" gave pc-link-suggest
+    1,400 minutes and a --max-minutes of 1375, enough to hold the lock into
+    the next scheduled start.
+    """
     hh, mm = (int(x) for x in DEADLINE.split(":"))
     d = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
-    return d if d > now else d + timedelta(days=1)
+    if d > now:
+        return d
+    if now - d < timedelta(hours=12):
+        return d
+    return d + timedelta(days=1)
 
 
 def apply_deadline(todo, idx, now):
