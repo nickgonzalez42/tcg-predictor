@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery } from "./catalogApi";
 import {
@@ -28,6 +28,7 @@ import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { tcgBuyUrl } from "../../lib/affiliate";
 import AdSlot from "../../app/shared/components/AdSlot";
+import { useColumnParallax } from "../../lib/useColumnParallax";
 
 // The stored reason leads with "Projects +X% over 12m. <Signals|Behind it|Key
 // drivers|What moves it>: ..." — the projection is already shown per cell, so
@@ -260,6 +261,11 @@ export default function CardDetails() {
     const cardId = id ? +id : 0;
     const { data: card, isLoading } = useFetchCardDetailsQuery(
         { game: gameId, id: cardId, printing: printing || undefined });
+    // The art column and the chart column finish the page together (see the hook).
+    const leftRef = useRef<HTMLDivElement>(null);
+    const centerRef = useRef<HTMLDivElement>(null);
+    useColumnParallax(leftRef, centerRef, [card?.id, isLoading]);
+
     const { data: forecastData } = useFetchCardForecastQuery(
         { game: gameId, id: cardId, printing: printing || undefined });
 
@@ -329,8 +335,8 @@ export default function CardDetails() {
                 <Link to="/catalog">Catalog</Link> / <Link to={`/catalog?game=${gameId}`}>{GAME_LABEL[gameId] ?? card.game}</Link> / <span>{card.name}</span>
             </nav>
 
-            {/* Left: card art + order ticket + prices + details */}
-            <div className="detail-left">
+            {/* Left: card art + order ticket + prices */}
+            <div className="detail-left" ref={leftRef}>
                 <img
                     className="detail-left__img"
                     src={card.pictureUrl}
@@ -371,30 +377,10 @@ export default function CardDetails() {
                         </table>
                     </div>
                 )}
-                {cardDetails.length > 0 && (
-                    <div className="panel detail-panel">
-                        <h4 className="mono detail-panel__title">Details</h4>
-                        <table className="detail-table">
-                            <tbody>
-                                {cardDetails.map((detail, index) => (
-                                    <tr key={index}>
-                                        <td className="mono">{detail.label}</td>
-                                        <td>
-                                            {detail.label === 'Description' && typeof detail.value === 'string'
-                                                ? <span className="detail-desc"
-                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(detail.value) }} />
-                                                : detail.value}
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
             </div>
 
-            {/* Center: header + chart + forecast */}
-            <div className="detail-center">
+            {/* Right: header + chart + forecast + details */}
+            <div className="detail-center" ref={centerRef}>
                 <h1 className="detail-center__name">{card.name}</h1>
                 {sublineParts.length > 0 && (
                     <div className="mono detail-center__subline">
@@ -505,6 +491,26 @@ export default function CardDetails() {
                             <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
                         )}
                     </>
+                )}
+                {cardDetails.length > 0 && (
+                    <div className="panel detail-panel">
+                        <h4 className="mono detail-panel__title">Details</h4>
+                        <table className="detail-table">
+                            <tbody>
+                                {cardDetails.map((detail, index) => (
+                                    <tr key={index}>
+                                        <td className="mono">{detail.label}</td>
+                                        <td>
+                                            {detail.label === 'Description' && typeof detail.value === 'string'
+                                                ? <span className="detail-desc"
+                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(detail.value) }} />
+                                                : detail.value}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 )}
                 <AdSlot slot="" />
             </div>

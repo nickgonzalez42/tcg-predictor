@@ -247,6 +247,17 @@
   grid-column: span 4;
 }
 
+/* Desktop: the two columns keep their natural heights (not stretched to the
+   row) so the parallax hook can measure them, and the shorter one is moved
+   with a transform as the page scrolls (useColumnParallax). */
+@media (min-width: 1024px) {
+  .detail-left,
+  .detail-center {
+    align-self: start;
+    will-change: transform;
+  }
+}
+
 .detail-left__img {
   width: 100%;
   border-radius: 17px;
