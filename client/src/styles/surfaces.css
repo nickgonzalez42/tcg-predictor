@@ -193,27 +193,3 @@
   margin: 0;
   padding: 0;
 }
-
-/* Consent bar (ConsentBanner.tsx): sits above the fixed market ticker. */
-.consent {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--ticker-h, 40px) + 12px);
-  transform: translateX(-50%);
-  z-index: 40;
-  width: min(720px, calc(100vw - 2 * var(--container-pad, 20px)));
-  display: flex;
-  align-items: center;
-  gap: var(--space-15);
-  padding: 12px 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
-}
-.consent__text { margin: 0; font-size: 13px; color: var(--text-muted); flex: 1 1 auto; }
-.consent__actions { display: flex; gap: 8px; flex: 0 0 auto; }
-@media (max-width: 640px) {
-  .consent { flex-direction: column; align-items: stretch; }
-  .consent__actions { justify-content: flex-end; }
-}

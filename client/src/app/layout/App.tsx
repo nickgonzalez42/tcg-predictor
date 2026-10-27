@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import NavBar from "./NavBar";
 import Footer from "./Footer";
-import ConsentBanner from "../shared/components/ConsentBanner";
 import ReportProblem from "../../features/report/ReportProblem";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
 import gsap from "gsap";
@@ -52,10 +51,6 @@ function App() {
           <Footer />
         </div>
       </div>
-      {/* position: fixed must live OUTSIDE the smoothed content (a transformed
-          ancestor turns fixed into absolute): inside, the bar sat at the very
-          bottom of the page on desktop and nobody saw it (2026-10-26). */}
-      <ConsentBanner />
     </div>
   );
 }

@@ -9,7 +9,7 @@ import { store } from './app/store/store.ts';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/ReactToastify.css';
 
-initAdsense();   // no-op until the visitor has allowed ads (see ConsentBanner)
+initAdsense();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

@@ -1,23 +1,20 @@
 import { useEffect, useRef, useState } from "react";
-import { ADSENSE_CLIENT, adsConsent, onAdsConsent } from "../../../lib/adsense";
+import { ADSENSE_CLIENT } from "../../../lib/adsense";
 
 declare global {
     interface Window { adsbygoogle?: unknown[] }
 }
 
-// One responsive AdSense unit. Renders nothing without a publisher id, a
-// slot id, or the visitor's consent, and stays collapsed (no label, no box)
-// until Google reports the unit filled — an unapproved site or an unfilled
-// request leaves the layout exactly as if the slot weren't there.
+// One responsive AdSense unit. Renders nothing without a publisher id or a
+// slot id, and stays collapsed (no label, no box) until Google reports the
+// unit filled — an unapproved site or an unfilled request leaves the layout
+// exactly as if the slot weren't there.
 export default function AdSlot({ slot }: { slot: string }) {
     const insRef = useRef<HTMLModElement>(null);
-    const [consent, setConsent] = useState(adsConsent());
     const [filled, setFilled] = useState(false);
 
-    useEffect(() => onAdsConsent(c => setConsent(c)), []);
-
     useEffect(() => {
-        if (!ADSENSE_CLIENT || !slot || consent !== 'yes') return;
+        if (!ADSENSE_CLIENT || !slot) return;
         const ins = insRef.current;
         if (!ins) return;
         try {
@@ -29,9 +26,9 @@ export default function AdSlot({ slot }: { slot: string }) {
         const mo = new MutationObserver(check);
         mo.observe(ins, { attributes: true, attributeFilter: ['data-ad-status'] });
         return () => mo.disconnect();
-    }, [slot, consent]);
+    }, [slot]);
 
-    if (!ADSENSE_CLIENT || !slot || consent !== 'yes') return null;
+    if (!ADSENSE_CLIENT || !slot) return null;
 
     return (
         <div className={`ad-slot${filled ? '' : ' ad-slot--pending'}`} aria-hidden={!filled}>
