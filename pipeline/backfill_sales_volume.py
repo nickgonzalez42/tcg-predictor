@@ -124,6 +124,12 @@ def main():
 
     games = priced_games() if args.game == "all" else [args.game]
     conn = sqlite3.connect(PC_DB, timeout=60)
+    # A 50-card batch (~13k bucket rows) spilled SQLite's 2 MB page cache,
+    # which escalates the transaction to an EXCLUSIVE lock for the rest of
+    # the batch — readers saw "database is locked" ~90% of the time
+    # (2026-10-28). A bigger cache keeps the writer on a RESERVED lock,
+    # and smaller batches shorten what readers ever wait for.
+    conn.execute("PRAGMA cache_size=-65536")     # 64 MB
     conn.executescript(SALES_SCHEMA)
 
     targets = []
@@ -194,7 +200,7 @@ def main():
         ok += 1
         if n == 0:
             empty += 1          # scanned + marked; no sales buckets to keep
-        if ok % 50 == 0:
+        if ok % 20 == 0:
             conn.commit()
         if i % 500 == 0:
             print(f"  {i}/{len(targets)} ok={ok} empty={empty} fail={fail} "
