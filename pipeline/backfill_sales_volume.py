@@ -51,7 +51,8 @@ def refresh_live():
     return r.returncode == 0
 
 
-def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None):
+def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
+           new_only=False):
     """(game, product_id, nm_price) due for a fetch — value-first.
 
     Value comes from tcg_nm_history (uniform across games) rather than the
@@ -78,15 +79,30 @@ def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None):
                      else cutoff)
         if fetched > due_after:
             done.add(pid)
+    ever = set(r[0] for r in conn.execute(
+        "SELECT product_id FROM tcg_sales_scan WHERE game=?", (game,)))
+    # Backfill phase (2026-10-28, user: "go through every card first"): a card
+    # that has EVER been scanned is done — no card is fetched twice until the
+    # whole catalog has been covered once. The tiered refresh waits.
+    if new_only:
+        done = set(ever)
     cards = sqlite3.connect(db_path(game))
     pids = [r[0] for r in cards.execute("SELECT product_id FROM cards")]
     cards.close()
-    targets = [(game, pid, price.get(pid) or 0.0)
+    # 4th field: was this card ever scanned? A card with NO data yet always
+    # outranks a stale refresh of one that already has a year of weekly
+    # buckets (2026-10-28) — during the backfill, first coverage beats a
+    # slightly fresher re-fetch. Once every card has been scanned once, the
+    # flag is uniformly True and ordering falls back to pure value-first,
+    # i.e. the weekly/monthly maintenance the tiers describe.
+    targets = [(game, pid, price.get(pid) or 0.0, pid in ever)
                for pid in pids if pid not in done]
-    targets.sort(key=lambda t: -t[2])
+    targets.sort(key=lambda t: (t[3], -t[2]))
     if limit:
         targets = targets[:limit]
-    print(f"[{game}] {len(targets)} due | {len(done)} fresh", flush=True)
+    fresh_new = sum(1 for t in targets if not t[3])
+    print(f"[{game}] {len(targets)} due ({fresh_new:,} never scanned) | "
+          f"{len(done)} fresh", flush=True)
     return targets
 
 
@@ -100,6 +116,9 @@ def main():
                     help="cards at or above this NM price re-fetch after "
                          "--fast-refresh-days instead of --refresh-days")
     ap.add_argument("--fast-refresh-days", type=float, default=7.0)
+    ap.add_argument("--new-only", action="store_true",
+                    help="backfill: only cards never scanned; skip all refreshes "
+                         "until the whole catalog has been covered once")
     ap.add_argument("--limit", type=int, default=None, help="cap per game")
     ap.add_argument("--total-limit", type=int, default=None,
                     help="cap the whole run; games compete value-first above "
@@ -135,7 +154,13 @@ def main():
     targets = []
     for game in games:
         targets.extend(gather(game, conn, args.refresh_days, args.limit,
-                              args.fast_tier_price, args.fast_refresh_days))
+                              args.fast_tier_price, args.fast_refresh_days,
+                              args.new_only))
+    # Global order (no per-game budget): every never-scanned card, value-first,
+    # before any refresh — so coverage of the whole catalog finishes before a
+    # single card is fetched twice.
+    if not args.total_limit:
+        targets.sort(key=lambda t: (t[3], -t[2]))
     if args.total_limit and len(targets) > args.total_limit:
         # Same per-game floor as the graded rotation (2026-09-29 lesson):
         # pure global value ranking starves the cheap games entirely.
@@ -147,7 +172,7 @@ def main():
         for ts in by_game.values():
             keep.extend(ts[:floor])
             rest.extend(ts[floor:])
-        rest.sort(key=lambda t: -t[2])
+        rest.sort(key=lambda t: (t[3], -t[2]))
         print(f"total budget: {args.total_limit} of {len(targets)} due "
               f"(per-game floor {floor}, remainder by price)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
@@ -157,7 +182,7 @@ def main():
     ok = empty = fail = rows_total = 0
     streak = trips = 0
     skip = set()
-    for i, (game, pid, _mp) in enumerate(targets, 1):
+    for i, (game, pid, _mp, _ever) in enumerate(targets, 1):
         if (game, pid) in skip:
             continue
         # Yield to the nightly refresh (checked every 10 cards, ~15 s at
