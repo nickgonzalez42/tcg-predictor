@@ -62,6 +62,13 @@ type FocusModal =
     | { kind: 'future'; f: Forecast; time: string; baseDate: string }
     | { kind: 'past'; p: PastForecast };
 
+// Coarse pointer = fingers. Decided once: it drives the default window, the
+// tap handling and the one-time hint (2026-10-28 touch pass).
+const IS_COARSE = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+const HINT_KEY = 'chart-touch-hint-seen';
+const hintSeen = () => { try { return localStorage.getItem(HINT_KEY) === '1'; } catch { return false; } };
+const markHintSeen = () => { try { localStorage.setItem(HINT_KEY, '1'); } catch { /* private mode */ } };
+
 const fmtLongDate = (d: string) =>
     new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 const money = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -124,7 +131,12 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     const { data: pastData } = useFetchCardForecastHistoryQuery({ game, id, printing });
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
-    const [range, setRange] = useState('all');
+    // Phones open on the 1Y window (2026-10-28): on ALL the forecast chain's
+    // year-ahead endpoint stretched the price axis to twice the card's price
+    // and squashed the whole history into the bottom third of a small plot.
+    const [range, setRange] = useState(() =>
+        (typeof window !== 'undefined' && window.innerWidth < 520) ? '1y' : 'all');
+    const [showHint, setShowHint] = useState(() => IS_COARSE && !hintSeen());
     const [hidden, setHidden] = useState<Set<string>>(new Set());
     // 'latest' = most recent matured per horizon; a horizon key = all of that category.
     const [pastView, setPastView] = useState('latest');
@@ -267,7 +279,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const border = v('--border', '#2e3a52');
 
         const chart = createChart(el, {
-            height: narrow ? 260 : 340,
+            height: narrow ? 320 : 340,
             autoSize: true,
             layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: textMuted },
             grid: { vertLines: { color: border }, horzLines: { color: border } },
@@ -300,6 +312,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
         });
         seriesByKey.current = {};
+        const cleanups: (() => void)[] = [];
         const track = (key: string, s: ISeriesApi<SeriesType>) =>
             (seriesByKey.current[key] ??= []).push(s);
 
@@ -680,6 +693,55 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         else if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
         else chart.timeScale().fitContent();
 
+        // Touch (2026-10-28): the library shows its crosshair on touch only in
+        // a hold-and-drag tracking mode, so a plain tap did nothing and the
+        // price line was unreachable by finger (285 emulated taps, zero
+        // readouts). A tap now reads the nearest point exactly as a hover
+        // does: focus marker + docked readout, kept until the next tap. A
+        // drag still pans, pinch still zooms, and a double-tap on the plot
+        // resets the zoom to the tab window (the library only resets from
+        // the axes). The hold-and-drag scrub keeps working through the
+        // crosshair handler above.
+        if (coarse) {
+            let t0 = 0, x0 = 0, y0 = 0, lastTap = 0, lastX = 0, lastY = 0;
+            const onStart = (e: TouchEvent) => {
+                const t = e.touches[0];
+                if (!t) return;
+                t0 = Date.now(); x0 = t.clientX; y0 = t.clientY;
+            };
+            const onEnd = (e: TouchEvent) => {
+                const t = e.changedTouches[0];
+                if (!t) return;
+                if (Date.now() - t0 > 400 || Math.hypot(t.clientX - x0, t.clientY - y0) > 10) return;   // a drag, not a tap
+                const now = Date.now();
+                if (now - lastTap < 320 && Math.hypot(t.clientX - lastX, t.clientY - lastY) < 24) {
+                    lastTap = 0;
+                    savedRange.current = null;
+                    if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
+                    else chart.timeScale().fitContent();
+                    return;
+                }
+                lastTap = now; lastX = t.clientX; lastY = t.clientY;
+                const r = el.getBoundingClientRect();
+                const hit = nearest(t.clientX - r.left, t.clientY - r.top);
+                if (!hit) { tip.style.display = 'none'; showLink(null); setFocus(null, 0, '', 0); return; }
+                setFocus(hit.time, hit.value, hit.color, (hit.kind === 'line' ? 3 : dotR) + 4);
+                if (hit.kind === 'past') { renderTip(hit.m, hit.x, hit.y); showLink(hit.m); }
+                else {
+                    showLink(null);
+                    if (hit.kind === 'future') renderFutureTip(hit.c, hit.x, hit.y);
+                    else renderLineTip(hit.time, hit.value, hit.x, hit.y);
+                }
+                if (!hintSeen()) { markHintSeen(); setShowHint(false); }
+            };
+            el.addEventListener('touchstart', onStart, { passive: true });
+            el.addEventListener('touchend', onEnd, { passive: true });
+            cleanups.push(() => {
+                el.removeEventListener('touchstart', onStart);
+                el.removeEventListener('touchend', onEnd);
+            });
+        }
+
         chart.timeScale().subscribeVisibleTimeRangeChange(r => {
             if (!r) return;
             savedRange.current = { from: r.from, to: r.to };
@@ -700,6 +762,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         });
 
         return () => {
+            for (const c of cleanups) c();
             seriesByKey.current = {};
             tip.remove();
             chart.remove();
@@ -768,6 +831,11 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 </div>
             </div>
             <div ref={containerRef} style={{ width: '100%' }} />
+            {showHint && (
+                <div className="chart-hint mono" role="note">
+                    Tap a point to read it. Hold and drag to scrub. Double-tap to reset the zoom.
+                </div>
+            )}
             <div className="chart-legend mono">
                 {mainKeys.map(renderKey)}
             </div>

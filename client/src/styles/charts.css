@@ -233,14 +233,28 @@
   }
 }
 
-/* Fingers need bigger targets than cursors. */
+/* Fingers need bigger targets than cursors: 44px is the floor both Apple
+   and Google publish, and the range tabs were 28px (2026-10-28). */
 @media (pointer: coarse) {
+  .range-tab {
+    min-height: 44px;
+    padding: 0 14px;
+  }
   .chart-legend__key {
-    padding: var(--space-10);
+    min-height: 44px;
+    padding: 0 var(--space-10);
   }
   .chart-pastview {
-    min-height: 40px;
+    min-height: 44px;
   }
+}
+
+/* One-time touch hint under the plot (dismissed on the first tap that
+   reads a point; remembered per browser). */
+.chart-hint {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--text-muted);
 }
 
 /* Docked tooltip: on narrow screens the tip pins to the bottom of the plot
