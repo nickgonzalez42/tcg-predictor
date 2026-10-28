@@ -515,9 +515,12 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             // Fulfilled dots show the forecast NEXT TO the price that actually
             // landed on that date — the miss in dollars, not just as a visual
             // gap. Pending dots say when they land instead.
+            const due = m.targetDate <= new Date().toISOString().slice(0, 10);
             const outcome = m.realizedPrice != null
                 ? `<span>actual $${m.realizedPrice.toFixed(2)} on ${fmtDate(m.targetDate)}</span>`
-                : `<span>lands ${fmtDate(m.targetDate)}</span>`;
+                : due
+                    ? `<span>for ${fmtDate(m.targetDate)}; no price for that day yet</span>`
+                    : `<span>lands ${fmtDate(m.targetDate)}</span>`;
             tip.innerHTML =
                 `<strong>${HORIZON_LABEL[m.horizon] ?? m.horizon} forecast</strong>` +
                 `<span>generated ${fmtDate(m.issuedAt ?? m.asOf)}</span>` +
@@ -844,7 +847,9 @@ function ForecastPointModal({ item, onClose }: { item: FocusModal; onClose: () =
                                 </span>
                             )}
                         </>
-                        : <>Not yet. It lands {fmtLongDate(p.targetDate)}.</>}
+                        : p.targetDate <= new Date().toISOString().slice(0, 10)
+                            ? <>We don't have a market price for {fmtLongDate(p.targetDate)} yet, so this one is still unchecked.</>
+                            : <>Not yet. It lands {fmtLongDate(p.targetDate)}.</>}
                 </dd>
                 {inRange != null && <><dt>Inside the range?</dt><dd>{inRange ? 'Yes' : 'No'}</dd></>}
             </dl>
