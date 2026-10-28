@@ -4,6 +4,11 @@
 <dict>
 	<key>AbandonProcessGroup</key>
 	<true/>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>TCG_REFRESH_DEADLINE</key>
+		<string>06:00</string>
+	</dict>
 	<key>Label</key>
 	<string>com.tcg-predictor.daily-refresh</string>
 	<key>ProgramArguments</key>
@@ -13,90 +18,63 @@
 	</array>
 	<key>RunAtLoad</key>
 	<false/>
-	<!-- Finish-by target (2026-10-18). weekly_refresh.py trims the backlog
-	     rotations — never the price build, the model or the push — to what
-	     still fits before this time. Unset = no trimming (hand runs). -->
-	<key>EnvironmentVariables</key>
-	<dict>
-		<key>TCG_REFRESH_DEADLINE</key>
-		<string>06:00</string>
-	</dict>
-	<!-- Seven nights a week, each starting when its measured workload lands
-	     at 06:00 local (2026-10-18, per-night start times from the step
-	     timings in ml_data/refresh_runs.csv + the refresh logs). Weekday
-	     0 = Sunday .. 6 = Saturday. The work each night carries is decided
-	     by run_daily_refresh.sh / weekly_refresh.py from the LOCAL weekday
-	     (graded 2,500 pages nightly; one or two games' depth crawl a night;
-	     detailed backfill Tue + Fri; console sweep + full rebuild Sat; the
-	     3/6/12-month retrain the first Saturday of the month, which is the
-	     one night that cannot land at 06:00 — it finishes Sunday evening).
-	       Sun 20:25  graded only                              ~9.6 h
-	       Mon 19:05  + Magic depth                            ~10.9 h
-	       Tue 18:55  + Pokemon depth + detailed backfill      ~11.1 h
-	       Wed 19:55  + Yu-Gi-Oh depth                         ~10.1 h
-	       Thu 20:10  + One Piece/Lorcana depth + weekly report ~9.8 h
-	       Fri 19:00  + small-games depth + detailed backfill  ~11.0 h
-	       Sat 18:20  + console sweep + full rebuild + full push ~11.7 h
-	     Tune these from the ledger after the first week. Install a copy at
-	     ~/Library/LaunchAgents/ and reload ONLY while no refresh is running
-	     (launchctl bootout kills a live run mid-phase). -->
 	<key>StartCalendarInterval</key>
 	<array>
 		<dict>
+			<key>Hour</key>
+			<integer>19</integer>
+			<key>Minute</key>
+			<integer>5</integer>
 			<key>Weekday</key>
 			<integer>0</integer>
-			<key>Hour</key>
-			<integer>20</integer>
-			<key>Minute</key>
-			<integer>25</integer>
 		</dict>
 		<dict>
+			<key>Hour</key>
+			<integer>19</integer>
+			<key>Minute</key>
+			<integer>5</integer>
 			<key>Weekday</key>
 			<integer>1</integer>
+		</dict>
+		<dict>
 			<key>Hour</key>
 			<integer>19</integer>
 			<key>Minute</key>
 			<integer>5</integer>
-		</dict>
-		<dict>
 			<key>Weekday</key>
 			<integer>2</integer>
-			<key>Hour</key>
-			<integer>18</integer>
-			<key>Minute</key>
-			<integer>55</integer>
 		</dict>
 		<dict>
+			<key>Hour</key>
+			<integer>19</integer>
+			<key>Minute</key>
+			<integer>5</integer>
 			<key>Weekday</key>
 			<integer>3</integer>
+		</dict>
+		<dict>
 			<key>Hour</key>
 			<integer>19</integer>
 			<key>Minute</key>
-			<integer>55</integer>
-		</dict>
-		<dict>
+			<integer>5</integer>
 			<key>Weekday</key>
 			<integer>4</integer>
-			<key>Hour</key>
-			<integer>20</integer>
-			<key>Minute</key>
-			<integer>10</integer>
 		</dict>
 		<dict>
-			<key>Weekday</key>
-			<integer>5</integer>
 			<key>Hour</key>
 			<integer>19</integer>
 			<key>Minute</key>
-			<integer>0</integer>
+			<integer>5</integer>
+			<key>Weekday</key>
+			<integer>5</integer>
 		</dict>
 		<dict>
-			<key>Weekday</key>
-			<integer>6</integer>
 			<key>Hour</key>
 			<integer>18</integer>
 			<key>Minute</key>
 			<integer>20</integer>
+			<key>Weekday</key>
+			<integer>6</integer>
 		</dict>
 	</array>
 </dict>
