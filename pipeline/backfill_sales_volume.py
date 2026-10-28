@@ -20,6 +20,7 @@ Run:  .venv/bin/python backfill_sales_volume.py --game all --rpm 40 \
 """
 
 import argparse
+import fcntl
 import os
 import sqlite3
 import subprocess
@@ -50,19 +51,33 @@ def refresh_live():
     return r.returncode == 0
 
 
-def gather(game, conn, refresh_days, limit):
+def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None):
     """(game, product_id, nm_price) due for a fetch — value-first.
 
     Value comes from tcg_nm_history (uniform across games) rather than the
     cards DBs, whose price columns differ by game. SQLite's bare-column rule
-    makes MAX(date) pick each card's newest price row."""
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=refresh_days)).isoformat()
-    done = set(r[0] for r in conn.execute(
-        "SELECT product_id FROM tcg_sales_scan WHERE game=? AND fetched_at > ?",
-        (game, cutoff)))
+    makes MAX(date) pick each card's newest price row.
+
+    Two cadences (2026-10-28, user: every card weekly is ~16 h of crawling a
+    day, so the cards people actually look at get the weekly touch): a card
+    priced at or above --fast-tier-price is due again after --fast-refresh-days,
+    everything else after --refresh-days."""
+    now = datetime.now(timezone.utc)
+    cutoff = (now - timedelta(days=refresh_days)).isoformat()
+    fast_cutoff = ((now - timedelta(days=fast_days)).isoformat()
+                   if fast_price is not None and fast_days else None)
     price = {pid: p for pid, p, _d in conn.execute(
         "SELECT product_id, price, MAX(date) FROM tcg_nm_history "
         "WHERE game=? GROUP BY product_id", (game,))}
+    done = set()
+    for pid, fetched in conn.execute(
+            "SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=?", (game,)):
+        if not fetched:
+            continue
+        due_after = (fast_cutoff if fast_cutoff and (price.get(pid) or 0) >= fast_price
+                     else cutoff)
+        if fetched > due_after:
+            done.add(pid)
     cards = sqlite3.connect(db_path(game))
     pids = [r[0] for r in cards.execute("SELECT product_id FROM cards")]
     cards.close()
@@ -81,6 +96,10 @@ def main():
     ap.add_argument("--rpm", type=float, default=40.0)
     ap.add_argument("--delay", type=float, default=1.0)
     ap.add_argument("--refresh-days", type=float, default=30.0)
+    ap.add_argument("--fast-tier-price", type=float, default=None,
+                    help="cards at or above this NM price re-fetch after "
+                         "--fast-refresh-days instead of --refresh-days")
+    ap.add_argument("--fast-refresh-days", type=float, default=7.0)
     ap.add_argument("--limit", type=int, default=None, help="cap per game")
     ap.add_argument("--total-limit", type=int, default=None,
                     help="cap the whole run; games compete value-first above "
@@ -93,13 +112,24 @@ def main():
                          "deadlocked exactly this way for 5 hours)")
     args = ap.parse_args()
 
+    # One crawl at a time (2026-10-28): the daytime launchd agent relaunches
+    # this hourly; a run that finds the lock held just leaves quietly.
+    lock_path = os.path.join(BASE, ".sales_volume.lock")
+    lock = open(lock_path, "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("another sales crawl is running — exiting", flush=True)
+        return
+
     games = priced_games() if args.game == "all" else [args.game]
     conn = sqlite3.connect(PC_DB, timeout=60)
     conn.executescript(SALES_SCHEMA)
 
     targets = []
     for game in games:
-        targets.extend(gather(game, conn, args.refresh_days, args.limit))
+        targets.extend(gather(game, conn, args.refresh_days, args.limit,
+                              args.fast_tier_price, args.fast_refresh_days))
     if args.total_limit and len(targets) > args.total_limit:
         # Same per-game floor as the graded rotation (2026-09-29 lesson):
         # pure global value ranking starves the cheap games entirely.
@@ -124,9 +154,11 @@ def main():
     for i, (game, pid, _mp) in enumerate(targets, 1):
         if (game, pid) in skip:
             continue
-        # Yield to the nightly refresh (~once a minute at 40rpm). After a
-        # pause, drop targets the refresh's own tcg-sales step fetched.
-        if not args.no_yield and i % 40 == 0 and refresh_live():
+        # Yield to the nightly refresh (checked every 10 cards, ~15 s at
+        # 40rpm, so a refresh that has just started is noticed before more
+        # than a commit or two can meet its crawl on pricecharting.db). After
+        # a pause, drop targets the refresh's own tcg-sales step fetched.
+        if not args.no_yield and i % 10 == 0 and refresh_live():
             print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)",
                   flush=True)
             conn.commit()
