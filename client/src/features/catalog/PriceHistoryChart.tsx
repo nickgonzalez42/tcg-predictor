@@ -717,6 +717,11 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 if (now - lastTap < 320 && Math.hypot(t.clientX - lastX, t.clientY - lastY) < 24) {
                     lastTap = 0;
                     savedRange.current = null;
+                    // A stray drag on the price axis switches its autoscale off
+                    // and a pinch there can zoom prices to a cents-wide band
+                    // (seen under an emulated tap storm, 2026-10-28); the reset
+                    // restores the price scale as well as the time window.
+                    chart.priceScale('right').applyOptions({ autoScale: true });
                     if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
                     else chart.timeScale().fitContent();
                     return;
