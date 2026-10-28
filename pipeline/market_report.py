@@ -646,7 +646,7 @@ def prerelease_report(pred):
             bias = statistics.median(r for r, *_ in rs)
             return med, within, band, bias
         out.append("<table class='report-table'>"
-                   "<thead><tr><th>Game</th><th>Graded</th><th>Typical miss</th>"
+                   "<thead><tr><th>Game</th><th>Checked</th><th>Typical miss</th>"
                    "<th>Within ±50%</th><th>80% band</th><th>Bias</th></tr></thead><tbody>")
         for g in sorted(by_game, key=lambda g: -len(by_game[g])):
             if g not in GAMES:
@@ -926,6 +926,14 @@ def build_report(force=False, as_of=None):
     # one UTC day. The Thursday-night run IS Friday in UTC — its model block
     # (Friday ~10:00 UTC on the trainer) generates the report, which is
     # therefore LIVE on Friday morning instead of Saturday.
+    # --date exists for a same-weekend regen of Friday's report under its
+    # own slug. The price window is ALWAYS the latest data, so a regen days
+    # later silently rewrites last week's article with this week's moves
+    # (2026-10-28: a test regen of the 10-23 report produced an Oct 21-28
+    # window and had to be restored from a backup). Refuse anything older.
+    if as_of and (date.today() - date.fromisoformat(as_of)).days > 2:
+        raise SystemExit(f"--date {as_of} is more than 2 days old: the window would be "
+                         f"this week's, not that report's. Not written.")
     today = (date.fromisoformat(as_of) if as_of
              else datetime.now(timezone.utc).date())
     if today.weekday() != 4 and not force:   # 4 = Friday
@@ -973,6 +981,10 @@ def build_report(force=False, as_of=None):
 
     title = f"Weekly Market Report: {today.strftime('%B %-d, %Y')}"
     slug = f"weekly-market-report-{today.isoformat()}"
+    # The model's record is its own article now (2026-10-28, user request):
+    # written in the same run from the same facts, published side by side.
+    model_title = f"Model Report: {today.strftime('%B %-d, %Y')}"
+    model_slug = f"model-report-{today.isoformat()}"
     # Fallback lede when the editorial call fails (docs/VOICE.md: cold-open
     # with the numbers, prices in motion). Doubles as the meta description.
     summary = (f"{ups:,} cards climbed, {downs:,} slipped: {breadth} across the "
@@ -1142,13 +1154,36 @@ def build_report(force=False, as_of=None):
                         f"<td>{money(base)}</td><td>{money(fcst)}</td>"
                         f"<td>{pct((fcst / base - 1) * 100)}</td></tr>")
         body.append("</tbody></table>"
-                    "<p class='report-note'>Forecasts are model estimates, not financial advice; "
-                    "see the About page for how they work and how they're graded.</p></div>")
+                    "<p class='report-note'>Forecasts are model estimates, not financial advice. "
+                    f"How they have been doing is in this week's <a href='/reports/{model_slug}'>model report</a>; "
+                    "the About page explains how they are made.</p></div>")
+
+    # ------------------------------------------------------------------
+    # MODEL REPORT: a second article from here down (2026-10-28). Opens on
+    # the week's headline numbers, then the report card, the week-over-week
+    # calibration, the per-game record and the pre-release estimates.
+    # ------------------------------------------------------------------
+    model_body = []
+    if live:
+        _label, n_g, mae0, _bias0, hit0, _dn0, da0, flat0 = live[0]
+        model_summary = (
+            f"{n_g:,} one-month forecasts have come due and been checked against the real price. "
+            f"The typical miss is {(exp(mae0) - 1) * 100:.1f}%, against {(exp(flat0) - 1) * 100:.1f}% "
+            f"for simply assuming no change, and {hit0 * 100:.0f}% of prices landed inside the "
+            f"forecast range (80% is the goal)"
+            + (f". When we called a direction, we were right {da0 * 100:.0f}% of the time."
+               if da0 is not None else "."))
+    else:
+        model_summary = ("How the forecasts have been doing, checked against what prices "
+                         "actually did, with the misses counted too.")
+    if prose.get("model_lede"):
+        model_summary = prose["model_lede"]
+    model_body.append(f"<p class='report-lede'>{esc(model_summary)}</p>")
 
     # Model report card. Live horizons appear once their first cohort has had
     # wall-clock time to mature; until then the backtest vintages (retrained
     # in the past with later data hidden, then graded) carry the record.
-    body.append("<h2>Model report card</h2>"
+    model_body.append("<h2>Model report card</h2>"
                 "<p>We keep every forecast the model has ever published, and "
                 "when its target date arrives we check it against what the "
                 "price actually did. The misses count too. Four numbers tell "
@@ -1182,22 +1217,22 @@ def build_report(force=False, as_of=None):
         return f"{dir_acc * 100:.0f}%" if dir_acc is not None else "n/a"
 
     if live:
-        body.append("<table class='report-table'>"
-                    "<thead><tr><th>Horizon</th><th>Graded</th><th>Typical miss</th>"
+        model_body.append("<table class='report-table'>"
+                    "<thead><tr><th>Horizon</th><th>Checked</th><th>Typical miss</th>"
                     "<th>Flat baseline</th>"
                     "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
         for label, n_graded, mae, bias, hit, dir_n, dir_acc, flat in live:
-            body.append(f"<tr><td>{esc(label)}</td><td>{n_graded:,}</td>"
+            model_body.append(f"<tr><td>{esc(label)}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                         f"<td>{(exp(flat) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
-        body.append("<p class='report-note'>The $10+ rows exclude the penny cards "
+        model_body.append("<p class='report-note'>The $10+ rows exclude the penny cards "
                     "whose day-to-day market price is mostly noise: most of the "
                     "catalog by count, a sliver of it by value.</p>")
-        body.append("</tbody></table>")
+        model_body.append("</tbody></table>")
         if prose.get("model_note"):
-            body.append(f"<p>{esc(prose['model_note'])}</p>")
+            model_body.append(f"<p>{esc(prose['model_note'])}</p>")
 
         # Week over week (2026-09-27, user request): the same calibration
         # story as a trend, not a snapshot. Nightly dated cohorts only — see
@@ -1210,7 +1245,7 @@ def build_report(force=False, as_of=None):
                 d = date.fromisoformat(wk)
                 return f"{d.strftime('%b')} {d.day}" + (
                     " (so far)" if (today - d).days < 7 else "")
-            body.append("<h3>Week over week: band coverage</h3>"
+            model_body.append("<h3>Week over week: band coverage</h3>"
                         "<p>Did the real price land inside the forecast's "
                         "range? Each row takes every 1-month forecast that "
                         "came due that week and answers exactly that. Weeks "
@@ -1221,16 +1256,16 @@ def build_report(force=False, as_of=None):
                         "(Scored against ungraded market prices; graded-card "
                         "prices only settle once a month, so they can't be "
                         "read weekly.)</p>")
-            body.append("<table class='report-table'>"
-                        "<thead><tr><th>Week of</th><th>Graded</th><th>80% band</th>"
+            model_body.append("<table class='report-table'>"
+                        "<thead><tr><th>Week of</th><th>Checked</th><th>80% band</th>"
                         "<th>Typical miss</th><th>Direction</th></tr></thead><tbody>")
             for wk, n_wk, hit, mae, dir_n, dir_acc in wow:
-                body.append(f"<tr><td>{wk_label(wk)}</td><td>{n_wk:,}</td>"
+                model_body.append(f"<tr><td>{wk_label(wk)}</td><td>{n_wk:,}</td>"
                             f"<td>{hit * 100:.1f}%</td>"
                             f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                             f"<td>{dir_cell(dir_acc)}</td></tr>")
-            body.append("</tbody></table>")
-            body.append(bar_chart(
+            model_body.append("</tbody></table>")
+            model_body.append(bar_chart(
                 [(wk_label(wk), hit * 100, f"of {n_wk:,}")
                  for wk, n_wk, hit, _mae, _dn, _da in wow],
                 signed=False, color="var(--primary, #3d7dca)",
@@ -1241,7 +1276,7 @@ def build_report(force=False, as_of=None):
         bt = backtest_accuracy(pred)
         by_game = [r for r in backtest_accuracy(pred, by_game=True) if r[0] in GAMES]
         if bt and bt[0]:
-            body.append(f"<p>No live forecast has been out long enough to grade yet: "
+            model_body.append(f"<p>No live forecast has been out long enough to grade yet: "
                         "the first 1-month cohort matures in August 2026, 6-month in "
                         "January 2027, 12-month in July 2027; live grades take over "
                         "here as they land. Until then, the record below comes from "
@@ -1257,20 +1292,20 @@ def build_report(force=False, as_of=None):
     if by_game:
         by_game.sort(key=lambda r: -r[1])
         tag = "" if live else " (backtest)"
-        body.append("<table class='report-table'>"
-                    f"<thead><tr><th>Game</th><th>Graded{tag}</th><th>Typical miss</th>"
+        model_body.append("<table class='report-table'>"
+                    f"<thead><tr><th>Game</th><th>Checked{tag}</th><th>Typical miss</th>"
                     "<th>Flat baseline</th>"
                     "<th>Bias</th><th>80% band</th><th>Direction</th></tr></thead><tbody>")
         for g, n_graded, mae, bias, hit, dir_n, dir_acc, flat in by_game:
-            body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
+            model_body.append(f"<tr><td>{esc(GAMES[g]['label'])}</td><td>{n_graded:,}</td>"
                         f"<td>{(exp(mae) - 1) * 100:.1f}%</td>"
                         f"<td>{(exp(flat) - 1) * 100:.1f}%</td>"
                         f"<td>{pct((exp(bias) - 1) * 100)}</td>"
                         f"<td>{hit * 100:.0f}%</td><td>{dir_cell(dir_acc)}</td></tr>")
-        body.append("</tbody></table>")
+        model_body.append("</tbody></table>")
         acc_rows = [(GAMES[g]["label"], (exp(mae) - 1) * 100, f"{hit * 100:.0f}% band")
                     for g, _n, mae, _bias, hit, _dn, _da, _fl in sorted(by_game, key=lambda r: r[2])]
-        body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
+        model_body.append(bar_chart(acc_rows, signed=False, color="var(--primary, #3d7dca)",
                               title=f"Typical 1-month forecast miss by game{tag} (shorter is better)"))
         # Direction as its own chart, diverging around the coin-flip line:
         # bars right of zero beat chance, bars left of it did worse.
@@ -1279,7 +1314,7 @@ def build_report(force=False, as_of=None):
                     if dir_acc is not None and dir_n >= MIN_GRADED]
         dir_rows.sort(key=lambda r: -r[1])
         if dir_rows:
-            body.append(bar_chart(dir_rows, unit=" pts",
+            model_body.append(bar_chart(dir_rows, unit=" pts",
                                   title=f"Direction calls vs a coin flip, by game{tag}"))
 
     # Overall up/down accuracy as its own chart at the very bottom: is the
@@ -1298,12 +1333,12 @@ def build_report(force=False, as_of=None):
         # Two decimals here (2026-08-29, user report): up/down/overall accuracy
         # can legitimately near-tie, and at one decimal a real tie reads as a
         # copy-paste bug (all three showed "53.7%").
-        body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
+        model_body.append(bar_chart(split_rows, signed=False, color="var(--accent, #c678dd)",
                               decimals=2,
                               title=f"Direction accuracy: up vs down calls{split_tag} (50% is a coin flip)"))
 
     # Pre-release estimates' own record closes the report card.
-    body.extend(prerelease_report(pred))
+    model_body.extend(prerelease_report(pred))
 
     pred.execute("""CREATE TABLE IF NOT EXISTS reports (
         slug TEXT PRIMARY KEY,
@@ -1313,10 +1348,12 @@ def build_report(force=False, as_of=None):
         body_html TEXT NOT NULL)""")
     pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?)",
                  (slug, title, today.isoformat(), summary, "".join(body)))
+    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?)",
+                 (model_slug, model_title, today.isoformat(), model_summary, "".join(model_body)))
     pred.commit()
     pc.close()
     pred.close()
-    print(f"Wrote report: {slug} ({n:,} cards in window {baseline} → {latest})")
+    print(f"Wrote reports: {slug} ({n:,} cards in window {baseline} → {latest}) and {model_slug}")
 
 
 if __name__ == "__main__":

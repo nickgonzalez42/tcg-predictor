@@ -233,3 +233,14 @@
     padding-right: var(--space-5);
   }
 }
+
+/* Kind label on the index and the article: market vs model (2026-10-28). */
+.reports__kind {
+  display: inline-block;
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.reports__kind--model { color: var(--brand); }

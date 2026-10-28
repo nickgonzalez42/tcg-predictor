@@ -273,16 +273,17 @@ def main():
         f"<div class='muted'>{html.escape(published)} — {html.escape(summary or '')}</div></li>"
         for slug, title, published, summary in reports[:40])
     write(out_new, "reports.html", page(
-        "/reports", "Weekly market reports",
+        "/reports", "Weekly reports",
         "A data-driven look at the week in trading card prices, published every Friday: the "
         "biggest movers, what each game did, and the model's accuracy scorecard.",
-        f"<h1>Weekly market reports</h1>"
-        f"<p>Every Friday CardStock publishes what actually moved: the week's biggest risers "
-        f"and fallers, how each game traded, the groups and sets behind the moves, and the "
-        f"running scorecard of how the model's own forecasts have done. The archive below "
-        f"goes back to the first report.</p>"
+        f"<h1>Weekly reports</h1>"
+        f"<p>Every Friday CardStock publishes two reports. The market report covers what "
+        f"actually moved: the week's biggest risers and fallers, how each game traded, and the "
+        f"groups and sets behind the moves. The model report is the running scorecard of how "
+        f"our own forecasts have done, checked against the real prices, misses included. The "
+        f"archive below goes back to the first report.</p>"
         f"<ul>{report_rows}</ul>" if reports else
-        f"<h1>Weekly market reports</h1><p>The first weekly report lands this Friday.</p>"))
+        f"<h1>Weekly reports</h1><p>The first weekly report lands this Friday.</p>"))
 
     guides = []
     for gp in sorted(glob.glob(os.path.join(args.root, "static", "guides", "*.html"))):

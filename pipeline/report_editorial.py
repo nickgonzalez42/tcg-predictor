@@ -36,7 +36,7 @@ CLI_FALLBACKS = (
 
 # Word caps per field — a report lede that runs long reads worse than the
 # template it replaced. Oversized fields are dropped individually.
-LIMITS = {"lede": 70, "overview": 140, "model_note": 50}
+LIMITS = {"lede": 70, "overview": 140, "model_note": 50, "model_lede": 60}
 GAME_LIMIT = 55
 
 PROMPT = """You are the editor of CardStock's weekly trading-card market \
@@ -79,6 +79,11 @@ cards, grounded in its numbers (max {game} words each). Every game key \
 must be present.
 - "model_note": one sentence on the forecast model's live record given the \
 "model" facts, honest about weak spots (max {model_note} words).
+- "model_lede": 2 sentences opening a separate article about the model's \
+record: the headline numbers from the "model" facts in plain words, for a \
+collector who has never heard of a calibration band (max {model_lede} words). \
+Say "forecasts" and "checked", never "calls", "graded" or "calibration"; \
+"we" is the site, "the model" is fine.
 
 FACTS:
 {facts}
@@ -123,7 +128,8 @@ def write_editorial(facts):
 
     prompt = PROMPT.format(facts=json.dumps(facts, indent=1),
                            lede=LIMITS["lede"], overview=LIMITS["overview"],
-                           game=GAME_LIMIT, model_note=LIMITS["model_note"])
+                           game=GAME_LIMIT, model_note=LIMITS["model_note"],
+                           model_lede=LIMITS["model_lede"])
     try:
         out = subprocess.run(
             [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],

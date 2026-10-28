@@ -15,7 +15,7 @@ gsap.registerPlugin(ScrollTrigger);
 export default function ReportPage() {
     const { slug } = useParams<{ slug: string }>();
     const { data: report, isLoading } = useFetchReportQuery(slug!, { skip: !slug });
-    usePageMeta(report?.title ?? "Market Report", report?.summary);
+    usePageMeta(report?.title ?? "Report", report?.summary);
     const bodyRef = useRef<HTMLDivElement>(null);
 
     // Scroll-triggered chart draw-in: when a report chart enters the viewport,
@@ -191,6 +191,9 @@ export default function ReportPage() {
 
     return (
         <article className="reports report full-span">
+            <span className={`mono reports__kind reports__kind--${report.slug.startsWith('model-report') ? 'model' : 'market'}`}>
+                {report.slug.startsWith('model-report') ? 'Model report' : 'Market report'}
+            </span>
             <h1 className="reports__title">{report.title}</h1>
             <div className="report__body" ref={bodyRef}
                 dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(report.bodyHtml) }} />
