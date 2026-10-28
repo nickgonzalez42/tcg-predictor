@@ -4,6 +4,7 @@ import type { ISeriesApi, SeriesType, Time } from "lightweight-charts";
 import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
 import type { Forecast, PastForecast } from "../../app/models/card";
 import { GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
+import Modal from "../../app/shared/components/Modal";
 
 const RANGES: { key: string; label: string; months?: number }[] = [
     { key: '1m', label: '1M', months: 1 },
@@ -52,6 +53,19 @@ const HORIZON_OFFSET: Record<string, (date: string) => string> = {
 // that one category.
 const PAST_HORIZONS = ['1m', '6m', '12m'];
 const HORIZON_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y' };
+const HORIZON_WORDS: Record<string, string> = { '1m': '1-month', '6m': '6-month', '12m': '1-year', 'launch1m': 'early' };
+const CONF_LABEL: Record<string, string> = { high: 'High', med: 'Medium', low: 'Low' };
+
+// What a click on a forecast point opens (2026-10-28): a future point on the
+// dashed chain, or an earlier forecast's dot with its outcome.
+type FocusModal =
+    | { kind: 'future'; f: Forecast; time: string; baseDate: string }
+    | { kind: 'past'; p: PastForecast };
+
+const fmtLongDate = (d: string) =>
+    new Date(d + 'T00:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const money = (v: number) => `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const signedPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)}%`;
 
 // At most one dot per 28-day slot, slots anchored at today (today−28d,
 // today−56d, …; "a month" is always exactly 28 days — calendar months vary and
@@ -130,6 +144,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     // Cleared only when the user intentionally changes view (grade/range tab).
     const savedRange = useRef<{ from: Time; to: Time } | null>(null);
     const viewKey = useRef('');
+    const [focusModal, setFocusModal] = useState<FocusModal | null>(null);
 
     const highlightKey = (key: string | null) => {
         for (const [k, list] of Object.entries(seriesByKey.current)) {
@@ -257,6 +272,14 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: textMuted },
             grid: { vertLines: { color: border }, horzLines: { color: border } },
             rightPriceScale: { borderColor: border },
+            // The library's default crosshair is a dashed grey vertical +
+            // horizontal pair with axis labels, drawn on every hover
+            // ("the grey line keeps appearing", 2026-10-28). Gone: the focus
+            // marker and tooltip below do the pointing instead.
+            crosshair: {
+                vertLine: { visible: false, labelVisible: false },
+                horzLine: { visible: false, labelVisible: false },
+            },
             timeScale: {
                 borderColor: border,
                 // The daily whitespace grid (below) can put thousands of
@@ -340,11 +363,14 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
             .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
         const last = points[points.length - 1];
+        // Each future point keeps its forecast: it is hoverable (focus +
+        // tooltip) and clickable (modal) like the earlier-forecast dots.
+        const chainFc = tierFc
+            .map(f => ({ f, time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
+            .sort((a, b) => a.time.localeCompare(b.time));
         const chainPts = [
             { time: last.date, value: last.price },
-            ...tierFc
-                .map(f => ({ time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
-                .sort((a, b) => a.time.localeCompare(b.time)),
+            ...chainFc.map(c => ({ time: c.time, value: c.value })),
         ];
         for (let i = 0; i + 1 < chainPts.length; i++) {
             const seg = chart.addSeries(LineSeries, {
@@ -441,6 +467,29 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             lastValueVisible: false,
             crosshairMarkerVisible: false,
         });
+        // Focus marker (2026-10-28, "gravity"): ONE overlay point that jumps
+        // to whichever point is nearest the cursor — a point on the price
+        // line, a future forecast point, or an earlier forecast's dot — and
+        // grows as the cursor closes in. Its times are always existing slots
+        // (series data or the day grid), so the axis never re-spaces.
+        const focus = chart.addSeries(LineSeries, {
+            lineVisible: false,
+            pointMarkersVisible: true,
+            pointMarkersRadius: 4,
+            color: history,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+        });
+        let focusKey = '';
+        const setFocus = (time: string | null, value: number, color: string, r: number) => {
+            const k = time ? `${time}|${value}|${color}|${r.toFixed(1)}` : '';
+            if (k === focusKey) return;
+            focusKey = k;
+            if (!time) { focus.setData([]); return; }
+            focus.applyOptions({ color, pointMarkersRadius: r });
+            focus.setData([{ time: time as Time, value }]);
+        };
         let shownTraj: PointMeta | null = null;
         const showLink = (m: PointMeta | null) => {
             if (m === shownTraj) return;
@@ -473,7 +522,8 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 `<strong>${HORIZON_LABEL[m.horizon] ?? m.horizon} forecast</strong>` +
                 `<span>generated ${fmtDate(m.issuedAt ?? m.asOf)}</span>` +
                 `<span>$${m.price.toFixed(2)}</span>` +
-                outcome;
+                outcome +
+                `<span class="chart-tip__hint">${coarse ? 'tap' : 'click'} for details</span>`;
             tip.style.display = 'flex';   // matches .chart-tip's column layout — 'block' would collapse the lines
             if (narrow) return;           // docked: CSS pins it below the plot
             const left = Math.min(Math.max(x + 12, 4), el.clientWidth - tip.offsetWidth - 4);
@@ -489,6 +539,22 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             pricecharting: 'PriceCharting sales',
             'forecast reference': 'forecast reference point',
         };
+        const renderFutureTip = (c: { f: Forecast; time: string }, x: number, y: number) => {
+            const f = c.f;
+            const pct = f.basePrice > 0 ? (f.forecastPrice / f.basePrice - 1) * 100 : null;
+            tip.innerHTML =
+                `<strong>${HORIZON_LABEL[f.horizon] ?? f.horizon} forecast</strong>` +
+                `<span>$${f.forecastPrice.toFixed(2)}${pct != null ? ` (${signedPct(pct)})` : ''}</span>` +
+                `<span>range $${f.low.toFixed(2)} to $${f.high.toFixed(2)}</span>` +
+                `<span>for ${fmtDate(c.time)}</span>` +
+                `<span class="chart-tip__hint">${coarse ? 'tap' : 'click'} for details</span>`;
+            tip.style.display = 'flex';
+            if (narrow) return;
+            const left = Math.min(Math.max(x + 12, 4), el.clientWidth - tip.offsetWidth - 4);
+            tip.style.left = `${left}px`;
+            tip.style.top = `${Math.max(y - tip.offsetHeight - 10, 4)}px`;
+        };
+
         const renderLineTip = (time: string, price: number, x: number, y: number) => {
             const src = sourceByDate.get(time);
             tip.innerHTML =
@@ -502,40 +568,74 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             tip.style.top = `${Math.max(y - tip.offsetHeight - 10, 4)}px`;
         };
 
-        chart.subscribeCrosshairMove(param => {
-            if (!param.point || !pastPointMeta.length) { tip.style.display = 'none'; showLink(null); return; }
-            // Pixel hit-test against every dot's own screen position — the
-            // crosshair's seriesData only reports series with data at the
-            // hovered slot, which silently skipped dots on axis slots no other
-            // series shares. Coordinates treat all dots alike.
-            let best: PointMeta | null = null;
-            let bestD = Infinity;
+        // Nearest point to the cursor, in pixels, across everything a person
+        // can point at: the drawn price line's points, the future forecast
+        // points and the earlier-forecast dots. The crosshair's own
+        // seriesData only reports series with data at the hovered time slot,
+        // which skipped dots on slots no other series shares; coordinates
+        // treat every point alike.
+        type Hit = { d: number; x: number; y: number; time: string; value: number; color: string }
+            & ({ kind: 'line' } | { kind: 'future'; c: typeof chainFc[number] } | { kind: 'past'; m: PointMeta });
+        const hitR = coarse ? 36 : 24;
+        const nearest = (px: number, py: number): Hit | null => {
+            // A holder, not a bare let: TypeScript does not see assignments
+            // made inside the closure and would narrow a let to null/never.
+            const acc: { best: Hit | null } = { best: null };
+            const consider = (h: Hit) => { if (!acc.best || h.d < acc.best.d) acc.best = h; };
+            const ts = chart.timeScale();
             for (const m of pastPointMeta) {
-                const x = chart.timeScale().timeToCoordinate(m.targetDate as Time);
+                const x = ts.timeToCoordinate(m.targetDate as Time);
                 const y = m.series.priceToCoordinate(m.price);
                 if (x == null || y == null) continue;
-                const d = Math.hypot(x - param.point.x, y - param.point.y);
-                if (d < bestD) { bestD = d; best = m; }
+                consider({ kind: 'past', m, d: Math.hypot(x - px, y - py), x, y,
+                           time: m.targetDate, value: m.price, color: pastColors[m.horizon] ?? '#c678dd' });
             }
-            const hitR = coarse ? 34 : 20;
-            if (!best || bestD > hitR) {
-                // No dot under the pointer — fall back to the price line's
-                // own readout at the hovered time.
-                showLink(null);
-                const t = param.time != null ? String(param.time) : null;
-                const sd = historySeries ? param.seriesData.get(historySeries) : undefined;
-                const price = (sd as { value?: number } | undefined)?.value;
-                if (t && price != null) {
-                    const ly = historySeries!.priceToCoordinate(price) ?? param.point.y;
-                    renderLineTip(t, price, param.point.x, ly);
-                } else {
-                    tip.style.display = 'none';
+            const scaleSeries = historySeries ?? focus;
+            for (const c of chainFc) {
+                const x = ts.timeToCoordinate(c.time as Time);
+                const y = scaleSeries.priceToCoordinate(c.value);
+                if (x == null || y == null) continue;
+                consider({ kind: 'future', c, d: Math.hypot(x - px, y - py), x, y,
+                           time: c.time, value: c.value, color: forecastColor });
+            }
+            if (historySeries) {
+                for (const p of tiers[tier]) {
+                    const x = ts.timeToCoordinate(p.date as Time);
+                    if (x == null || Math.abs(x - px) > hitR) continue;
+                    const y = historySeries.priceToCoordinate(p.price);
+                    if (y == null) continue;
+                    consider({ kind: 'line', d: Math.hypot(x - px, y - py), x, y,
+                               time: p.date, value: p.price, color: history });
                 }
-                return;
             }
-            const y = best.series.priceToCoordinate(best.price) ?? param.point.y;
-            renderTip(best, param.point.x, y);
-            showLink(best);
+            return acc.best && acc.best.d <= hitR ? acc.best : null;
+        };
+
+        chart.subscribeCrosshairMove(param => {
+            if (!param.point) { tip.style.display = 'none'; showLink(null); setFocus(null, 0, '', 0); return; }
+            const hit = nearest(param.point.x, param.point.y);
+            if (!hit) { tip.style.display = 'none'; showLink(null); setFocus(null, 0, '', 0); return; }
+            // Gravity: the marker swells as the cursor closes in on the point.
+            const closeness = 1 - hit.d / hitR;
+            const base = hit.kind === 'line' ? 3 : dotR;
+            setFocus(hit.time, hit.value, hit.color, base + 1 + 4 * closeness);
+            if (hit.kind === 'past') { renderTip(hit.m, hit.x, hit.y); showLink(hit.m); return; }
+            showLink(null);
+            if (hit.kind === 'future') { renderFutureTip(hit.c, hit.x, hit.y); return; }
+            renderLineTip(hit.time, hit.value, hit.x, hit.y);
+        });
+
+        // A click (or tap) on a forecast point opens its details.
+        chart.subscribeClick(param => {
+            if (!param.point) return;
+            const hit = nearest(param.point.x, param.point.y);
+            if (!hit || hit.kind === 'line') return;
+            if (hit.kind === 'future') setFocusModal({ kind: 'future', f: hit.c.f, time: hit.c.time, baseDate: last.date });
+            else {
+                const p = pastPicks.find(q => q.targetDate === hit.m.targetDate && q.horizon === hit.m.horizon
+                                              && q.forecastPrice === hit.m.price);
+                if (p) setFocusModal({ kind: 'past', p });
+            }
         });
 
         // Initial window: the user's preserved zoom if this is a prop-churn
@@ -674,6 +774,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                     {pastKeys.map(renderKey)}
                 </div>
             )}
+            {focusModal && <ForecastPointModal item={focusModal} onClose={() => setFocusModal(null)} />}
             {hasPast && (
                 <div className="chart-legend mono">
                     <select className="chart-pastview" value={pastView}
@@ -690,5 +791,64 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 </div>
             )}
         </div>
+    );
+}
+
+
+// Details for one forecast point on the chart (2026-10-28).
+function ForecastPointModal({ item, onClose }: { item: FocusModal; onClose: () => void }) {
+    if (item.kind === 'future') {
+        const f = item.f;
+        const pct = f.basePrice > 0 ? (f.forecastPrice / f.basePrice - 1) * 100 : null;
+        const word = HORIZON_WORDS[f.horizon] ?? f.horizon;
+        return (
+            <Modal title={`Our ${word} forecast`} onClose={onClose}>
+                <dl className="chart-modal">
+                    <dt>Forecast</dt><dd><strong>{money(f.forecastPrice)}</strong>{pct != null && <span className={`chart-modal__pct ${pct >= 0 ? 'up' : 'down'}`}>{signedPct(pct)}</span>}</dd>
+                    <dt>For</dt><dd>{fmtLongDate(item.time)}</dd>
+                    <dt>Likely range</dt><dd>{money(f.low)} to {money(f.high)}</dd>
+                    <dt>Starting from</dt><dd>{money(f.basePrice)} on {fmtLongDate(f.asOf ?? item.baseDate)}</dd>
+                    {f.confidence && <><dt>Confidence</dt><dd>{CONF_LABEL[f.confidence] ?? f.confidence}</dd></>}
+                </dl>
+                {f.reason && (
+                    <>
+                        <h5 className="mono chart-modal__h">Why we think so</h5>
+                        <p className="chart-modal__reason">{f.reason}</p>
+                    </>
+                )}
+                <p className="est-note">The range is where we expect the price to land about 8 times in 10. Not financial advice.</p>
+            </Modal>
+        );
+    }
+    const p = item.p;
+    const word = HORIZON_WORDS[p.horizon] ?? p.horizon;
+    const made = p.issuedAt ?? p.asOf;
+    const landed = p.realizedPrice != null;
+    const missUsd = landed ? p.realizedPrice! - p.forecastPrice : null;
+    const missPct = landed && p.forecastPrice > 0 ? (p.realizedPrice! / p.forecastPrice - 1) * 100 : null;
+    const inRange = landed && p.low != null && p.high != null
+        ? p.realizedPrice! >= p.low && p.realizedPrice! <= p.high : null;
+    return (
+        <Modal title={`Our ${word} forecast from ${made ? fmtLongDate(made) : 'earlier'}`} onClose={onClose}>
+            <dl className="chart-modal">
+                <dt>We said</dt><dd><strong>{money(p.forecastPrice)}</strong> for {fmtLongDate(p.targetDate)}</dd>
+                {p.low != null && p.high != null && <><dt>Likely range</dt><dd>{money(p.low)} to {money(p.high)}</dd></>}
+                {p.basePrice != null && <><dt>Starting from</dt><dd>{money(p.basePrice)}</dd></>}
+                <dt>What happened</dt>
+                <dd>
+                    {landed
+                        ? <><strong>{money(p.realizedPrice!)}</strong> on that day
+                            {missUsd != null && missPct != null && (
+                                <span className={`chart-modal__pct ${Math.abs(missPct) <= 10 ? 'up' : 'down'}`}>
+                                    {missUsd >= 0 ? 'above' : 'below'} our call by {money(Math.abs(missUsd))} ({signedPct(missPct)})
+                                </span>
+                            )}
+                        </>
+                        : <>Not yet. It lands {fmtLongDate(p.targetDate)}.</>}
+                </dd>
+                {inRange != null && <><dt>Inside the range?</dt><dd>{inRange ? 'Yes' : 'No'}</dd></>}
+            </dl>
+            <p className="est-note">Every forecast is saved the day we make it and checked against the real price when its date comes. The misses count too.</p>
+        </Modal>
     );
 }

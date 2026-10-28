@@ -255,3 +255,20 @@
   align-items: baseline;
   gap: 4px 12px;
 }
+
+/* Forecast-point tooltip hint + modal (2026-10-28). */
+.chart-tip__hint { color: var(--text-muted); font-size: 11px; margin-top: 2px; }
+.chart-modal {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0 0 var(--space-15);
+  font-size: 14px;
+}
+.chart-modal dt { color: var(--text-muted); font-family: var(--mono); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; padding-top: 2px; }
+.chart-modal dd { margin: 0; }
+.chart-modal__pct { margin-left: 8px; font-family: var(--mono); font-size: 13px; }
+.chart-modal__pct.up { color: var(--up); }
+.chart-modal__pct.down { color: var(--down); }
+.chart-modal__h { margin: var(--space-15) 0 6px; color: var(--text-muted); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; }
+.chart-modal__reason { margin: 0 0 var(--space-15); line-height: 1.55; }
