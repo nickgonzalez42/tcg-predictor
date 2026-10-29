@@ -1,5 +1,6 @@
 using API.Data;
 using API.RequestHelpers;
+using API.Extensions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -25,6 +26,7 @@ public partial class HomeController(PredictionsContext predictions, IMemoryCache
     [HttpGet("stats")]
     public async Task<ActionResult<HomeStats>> Stats()
     {
+        Response.CacheForVisitor();
         var stats = await cache.GetOrCreateAsync("home:stats", async entry =>
         {
             entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);

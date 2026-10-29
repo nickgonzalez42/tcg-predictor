@@ -617,6 +617,10 @@ public partial class CardsController(
         trend = trend == null ? null : CardMarketData.NormalizeTrend(trend);   // null = per-game default
 
         var key = $"movers:{count}:{horizon}:{trend}:{perGame}";
+        // Same ranking for every visitor and it changes once a night, so the
+        // browser may hold it briefly (see CacheForVisitor: without this the
+        // home page's preload was refetched on Safari).
+        Response.CacheForVisitor();
         if (cache.TryGetValue(key, out object? hit)) return Ok(hit);
 
         // SINGLE-FLIGHT across every movers key: GetOrCreateAsync runs the
