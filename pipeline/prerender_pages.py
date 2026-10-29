@@ -348,11 +348,21 @@ and hobby-wide trends, the card's printed characteristics and artwork, and the m
 trailing forecast errors per card and per set. Under the hood: gradient-boosted decision trees
 per game, tier, and horizon, trained on historical outcomes with held-out validation.</p>
 <h2>How we keep it honest</h2>
-<p>Every published forecast is saved, and once its date arrives it is graded against what the
+<p>Every published forecast is saved, and once its date arrives it is checked against what the
 price actually did. Misses stay on display on each card's chart. The weekly report publishes
-accuracy, bias, and how often prices landed inside the model's ranges, whether flattering or not. Since October 2026 the published number is also held to a flat-price baseline: the point
-forecast is scaled to what recently graded calls support, and the ranges are widened per
-volatility stratum until they cover 80% of outcomes in practice.</p>
+how far off we were, which way we lean, and how often prices landed inside our ranges, whether
+flattering or not.</p>
+<h2>What the low-to-high range means</h2>
+<p>Every forecast carries a price and a range around it. The range is built so the real price
+lands inside it four times out of five. The fifth time it lands outside, and that is the deal
+we are offering rather than a mistake we are hiding. So 80% is a mark we aim for, not a score
+we try to beat. A range that catches 95% of prices is too wide to tell you anything: say a card
+will land between $5 and $500 and you are never wrong and never useful. A range that catches
+60% is too narrow, and it looks confident while overselling what we know. Each range is
+stretched against our own past misses, card by card, until it holds that four-in-five share in
+practice. How close the single price in the middle usually lands is a separate number, the
+typical miss, and both are on the <a href="https://cardstock.guide/about">track record
+page</a>.</p>
 <p>New cards carry no regular forecast until they have at least two months of clean price
 history. Cards with no price at all yet — an upcoming set on pre-order, or one released days
 ago — instead get a clearly labeled predicted launch price, built only from what the card is:

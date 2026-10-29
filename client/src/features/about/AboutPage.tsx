@@ -75,10 +75,63 @@ function Headline({ models, updatedAt }: { models: ModelScore[]; updatedAt?: str
         <div ref={ref} className="score-tiles" data-in={inView ? 1 : 0}>
             <Tile value={compact(vTotal)} label="forecasts checked" note="every game, condition and timeframe, since we started keeping score" />
             <Tile value={`${vHit.toFixed(1)}%`} label="price landed inside our range" tone="up"
-                note="1-month forecasts on raw cards · we aim for 80%" />
+                note="1-month forecasts on raw cards · we aim for 80%, not higher" />
             <Tile value={`±${vMiss.toFixed(1)}%`} label="typical miss" note="1-month forecasts on raw cards · how far off we usually are" />
             <Tile value={`${Math.round(vTracked)}`} label="models with a record" note={`${MIN_N}+ checked forecasts · through ${fmtDate(updatedAt)}`} />
         </div>
+    );
+}
+
+// ----- what the range means --------------------------------------------------
+// The 80% aim is the one number on this page people misread as a grade out
+// of 100 (user, 2026-10-29: "I don't understand"), so it gets its own panel
+// before any chart uses it.
+function RangeExplainer() {
+    return (
+        <section className="panel score-section">
+            <div className="band">
+                <span className="band__title">What the range means</span>
+                <span className="mono">why we aim for 80% instead of 100%</span>
+            </div>
+            <div className="score-section__intro">
+                <p className="glance__text">
+                    Every forecast comes with a price and a low-to-high range around it. The range is built
+                    so the real price lands inside it four times out of five. The fifth time it lands
+                    outside. That is the deal we are offering, not a mistake we are hiding.
+                </p>
+            </div>
+            <div className="score-method__cols">
+                <div>
+                    <h3>Four times in five</h3>
+                    <p>
+                        When we say a card lands between $12 and $19, read it as a four-in-five bet on that
+                        span. Hitting 80% means the width is honest: wide enough to be right most of the
+                        time, tight enough to be worth reading.
+                    </p>
+                </div>
+                <div>
+                    <h3>Why higher is worse</h3>
+                    <p>
+                        A range that catches 95% of prices is too wide to tell you anything. Say a card will
+                        land between $5 and $500 and you are never wrong and never useful. Above 80% we are
+                        being too cautious, so we tighten.
+                    </p>
+                </div>
+                <div>
+                    <h3>Why lower is worse</h3>
+                    <p>
+                        A range that catches 60% is too narrow. It looks confident and it is overselling
+                        what we know, which is the worse way to be wrong. Below 80% we widen until the
+                        record earns the width back.
+                    </p>
+                </div>
+            </div>
+            <div className="glance__foot">
+                This is a promise about the range, not about the price in the middle of it. How close that
+                single price usually lands is the typical miss above, and the two are worth reading together:
+                a tight range you can trust beats a confident guess you cannot.
+            </div>
+        </section>
     );
 }
 
@@ -191,7 +244,8 @@ function OverTime({ weekly }: { weekly: WeekScore[] }) {
                     Every night we forecast where every priced raw card will be in a month. Twenty-eight days
                     later we check each one against the real price. Grouping those checks by the week they came
                     due shows whether our ranges are staying honest and whether our forecasts beat simply
-                    assuming nothing changes.
+                    assuming nothing changes. The flat line marks the 80% we aim for: a week above it means
+                    our ranges were wider than they needed to be, a week below it means they were too tight.
                     {latest && ` Latest full week: ${(latest.hit * 100).toFixed(0)}% inside the range across ${latest.n.toLocaleString()} forecasts.`}
                 </p>
                 <div className="score-tabs" role="tablist" aria-label="Which cards">
@@ -230,8 +284,9 @@ function Heatmap({ models }: { models: ModelScore[] }) {
             <div className="score-section__intro">
                 <p className="glance__text">
                     We train one model per game, condition and timeframe. Each cell shows how often the real
-                    price landed inside that model's low-to-high range. We aim for 80%: higher means we're being
-                    too cautious, lower means too confident. Under each figure is how many forecasts were checked.
+                    price landed inside that model's low-to-high range. Every one of them aims for 80%, so read
+                    these as distance from that mark rather than as scores out of 100: above it the range was too
+                    wide, below it too confident. Under each figure is how many forecasts were checked.
                     The longer timeframes are still young, since a 1-year forecast made when we started is only
                     now coming due.
                 </p>
@@ -421,6 +476,7 @@ export default function AboutPage() {
             {data && (
                 <>
                     <Headline models={models} updatedAt={data.updatedAt} />
+                    <RangeExplainer />
                     <OverTime weekly={data.weekly} />
                     <Heatmap models={models} />
                     <div className="score-pair">
