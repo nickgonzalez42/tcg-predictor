@@ -3,34 +3,21 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
-import { reportKind, reportKindLabel, longDate, type ReportKind } from "./reportKind";
-import { gameColor, isGame } from "../../lib/games";
+import {
+    reportKind, reportKindLabel, reportChipStyle, longDate,
+    REPORT_KINDS, REPORT_KIND_ORDER, type ReportKind,
+} from "./reportKind";
 
 // Index of the weekly reports (newest first): every Friday a market report
 // (what moved) and a model report (how the forecasts have done). The kind
 // comes from the slug prefix, so no schema change was needed (2026-10-28).
 // 2026-10-29: the per-article kind label became a filter at the top of the
 // page, and each article carries its own descriptive headline + date instead.
-// A chip takes the game's own colour, tinted for the fill and the ring so
-// twelve games stay legible side by side on a dark panel. A tag that is not
-// a game we price (never written today, but the column is free text) falls
-// back to the muted default from gameColor().
-const tagsOf = (tags?: string) =>
-    (tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
-
-const chipStyle = (tag: string) => {
-    const color = isGame(tag) ? gameColor(tag) : 'var(--text-muted)';
-    return {
-        color,
-        background: `color-mix(in srgb, ${color} 16%, transparent)`,
-        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
-    };
-};
-
+// Filter row: everything, then one chip per kind, in the order the kinds
+// are declared. A new kind shows up here on its own.
 const TABS: { key: ReportKind | 'all'; label: string }[] = [
     { key: 'all', label: 'All reports' },
-    { key: 'market', label: 'Market' },
-    { key: 'model', label: 'Model' },
+    ...REPORT_KIND_ORDER.map(k => ({ key: k, label: REPORT_KINDS[k].label })),
 ];
 
 export default function ReportsPage() {
@@ -47,7 +34,9 @@ export default function ReportsPage() {
         setParams(next === 'all' ? {} : { type: next }, { replace: true });
 
     const counts = useMemo(() => {
-        const c = { all: reports?.length ?? 0, market: 0, model: 0 };
+        const c = Object.fromEntries(REPORT_KIND_ORDER.map(k => [k, 0])) as
+            Record<ReportKind | 'all', number>;
+        c.all = reports?.length ?? 0;
         for (const r of reports ?? []) c[reportKind(r.slug)]++;
         return c;
     }, [reports]);
@@ -87,18 +76,12 @@ export default function ReportsPage() {
                                     {r.title}
                                 </Link>
                                 <p className="reports__summary">{r.summary}</p>
-                                {/* Tag line: the date in plain type, then a
-                                    chip per category. Each game carries its
-                                    own colour (the one the portfolio donut
-                                    and the charts already use for it) and
-                                    the report type has its own. */}
+                                {/* Tag line: the date in plain type, then
+                                    the kind of article in its own colour. */}
                                 <p className="reports__meta mono">
                                     <span className="reports__date">{longDate(r.publishedAt)}</span>
-                                    {tagsOf(r.tags).map(tag => (
-                                        <span key={tag} className="reports__chip"
-                                            style={chipStyle(tag)}>{tag}</span>
-                                    ))}
-                                    <span className={`reports__chip reports__chip--${reportKind(r.slug)}`}>
+                                    <span className="reports__chip"
+                                        style={reportChipStyle(reportKind(r.slug))}>
                                         {reportKindLabel(r.slug, true)}
                                     </span>
                                 </p>

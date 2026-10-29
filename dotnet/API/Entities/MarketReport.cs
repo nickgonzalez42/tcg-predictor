@@ -9,8 +9,4 @@ public class MarketReport
     public string PublishedAt { get; set; } = "";   // yyyy-MM-dd
     public string Summary { get; set; } = "";
     public string BodyHtml { get; set; } = "";
-    // Comma-separated display labels for the tag line on the reports index,
-    // e.g. "Yu-Gi-Oh!" (2026-10-29). Empty for a report with no single
-    // subject game, such as the model report.
-    public string Tags { get; set; } = "";
 }

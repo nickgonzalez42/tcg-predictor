@@ -1078,15 +1078,11 @@ def build_report(force=False, as_of=None):
         summary = prose["lede"]   # index card + meta description too
 
     # Headlines (2026-10-29). Claude writes them from the same facts pack;
-    # when that field is missing the templated fallback still names the
-    # week's biggest move instead of repeating the date. A name long enough
-    # to swamp the headline (some Pokemon printings run 60 characters) drops
-    # back to the breadth sentence.
-    top = max(all_moves, key=lambda m: abs(m[5]))
-    title = (f"{top[2]} {'jumped' if top[5] > 0 else 'slid'} "
-             f"{abs(top[5]):.0f}% in {breadth}")
-    if len(title) > 80:
-        title = (f"{ups:,} cards up, {downs:,} down: {breadth} across the market")
+    # when that field is missing this templated sentence stands in. Both
+    # describe the market AS A WHOLE, never one card or game (user
+    # 2026-10-29: "I want it to describe overall market conditions") -- the
+    # body is where individual cards and games get their say.
+    title = f"{ups:,} cards up, {downs:,} down: {breadth} across the market"
     if live:
         _l0, _n0, _mae0, _b0, _hit0, _dn0, _da0, _flat0 = live[0]
         model_title = (f"Our one-month forecasts "
@@ -1370,23 +1366,18 @@ def build_report(force=False, as_of=None):
         title TEXT NOT NULL,
         published_at TEXT NOT NULL,
         summary TEXT NOT NULL,
-        body_html TEXT NOT NULL,
-        tags TEXT NOT NULL DEFAULT '')""")
-    # `tags` arrived 2026-10-29 (the article cards on /reports carry a tag
-    # line); older databases predate the column.
-    try:
-        pred.execute("ALTER TABLE reports ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
-    except sqlite3.OperationalError:
-        pass   # already there
-    # The market report's tag is the game the headline is about: the week's
-    # biggest single mover is what the editorial is told to open on. The
-    # model report spans every game, so it carries no game tag.
-    tags = GAMES[top[0]]["label"]
-    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?,?)",
-                 (slug, title, today.isoformat(), summary, "".join(body), tags))
-    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?,?)",
+        body_html TEXT NOT NULL)""")
+    # A per-game `tags` column lived here for a few hours on 2026-10-29; the
+    # reports index tags articles by TYPE only (user: "I just want different
+    # colors for Market/Model"), and the type is the slug prefix. Columns are
+    # named explicitly so an older database that still has the column writes
+    # cleanly.
+    cols = "(slug, title, published_at, summary, body_html)"
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?)",
+                 (slug, title, today.isoformat(), summary, "".join(body)))
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?)",
                  (model_slug, model_title, today.isoformat(), model_summary,
-                  "".join(model_body), ""))
+                  "".join(model_body)))
     pred.commit()
     pc.close()
     pred.close()

@@ -271,8 +271,8 @@
   color: var(--text-muted);
 }
 
-/* One chip per category on the tag line: the game (tinted with its own
-   colour inline, see ReportsPage) and the report type. Same ring-and-tint
+/* The kind of article, as a chip in its own colour (reportChipStyle sets
+   the tint inline, so a new kind needs no CSS here). Same ring-and-tint
    idiom as the status pills in pills.css. */
 .reports__chip {
   display: inline-block;
@@ -285,24 +285,6 @@
   white-space: nowrap;
 }
 
-/* The type chips carry no fill: twelve game colours already cover most of
-   the wheel, so a One Piece or Riftbound chip would sit next to a filled
-   blue MARKET and read as one more game. Ring-only keeps the two kinds of
-   chip apart even when the hues are close. */
-.reports__chip--market,
-.reports__chip--model {
-  background: none;
-}
-
-.reports__chip--market {
-  color: var(--text-muted);
-  border-color: var(--border);
-}
-
-.reports__chip--model {
-  color: var(--accent, #c678dd);
-  border-color: color-mix(in srgb, var(--accent, #c678dd) 55%, transparent);
-}
 
 /* On an article the byline sits under the headline, above the lede. */
 .report > .reports__meta {

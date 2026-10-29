@@ -33,14 +33,6 @@ export function gameColor(game: string): string {
     return GAME_COLOR[gameKey(game)] ?? '#8b96ad';
 }
 
-// True when this string names a game we price, by key or by display label.
-// gameKey() guesses (it falls back to One Piece), so anything that has to
-// tell a game from other text asks here first.
-export function isGame(game: string): boolean {
-    const needle = game.trim().toLowerCase();
-    return GAMES.some(g => g.value === needle || g.label.toLowerCase() === needle);
-}
-
 // Canonical key from either a key or a display label ("Yu-Gi-Oh!" -> "yugioh").
 export function gameKey(game: string): string {
     const needle = game.trim().toLowerCase();

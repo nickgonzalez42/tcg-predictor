@@ -71,12 +71,15 @@ ordinary words.
 - Percent moves in the facts are week-over-week unless labeled otherwise.
 
 Return ONLY a JSON object (no code fences, no commentary) with:
-- "headline": the market report's title, max {headline} words: the week's \
-single biggest story in plain words, as a collector would say it out loud. \
-Name the card, group or game that drove the week and what it did. Sentence \
-case, no date, no label like "Weekly Market Report", no colon-prefixed \
-prefix, no quotation marks, no final period. Example shape: "Dominus Purge \
-leads a broad One Piece rally".
+- "headline": the market report's title, max {headline} words: the state \
+of the market AS A WHOLE this week, in plain words. Use the totals: how \
+many cards rose against how many fell, how far each side moved on average, \
+whether the week was broad or narrow, calm or violent. Do NOT headline a \
+single card, set or game, and do not name one; the body covers those. \
+Sentence case, no date, no label like "Weekly Market Report", no \
+colon-prefixed prefix, no quotation marks, no final period. Example \
+shapes: "Sellers took the week, 10,645 cards down against 9,263 up", \
+"A calm week either way, with both sides moving under 3%".
 - "lede": 2-3 sentences opening the report, the week's headline story \
 (max {lede} words).
 - "overview": one paragraph after the lede telling the cross-game story: \

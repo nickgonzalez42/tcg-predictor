@@ -8,6 +8,9 @@ which told a reader (and a search engine) nothing about the week. New reports
 headline themselves from the facts pack (market_report.py + the "headline"
 field in report_editorial.py); this backfills the archive in one pass.
 
+A headline describes the market as a whole, never one card or game (user,
+2026-10-29) -- the body is where individual cards get their say.
+
 Each report's own lede is the source material, so no number can drift: one
 headless `claude -p` call turns the stored ledes into headlines and anything
 that fails validation keeps the row's existing title. The date moves to the
@@ -40,15 +43,21 @@ Write a descriptive headline for each, drawn ONLY from its own lede.
 
 Rules for every headline:
 - Max {cap} words, sentence case, plain collector language.
-- Say what actually happened that week: name the card, group or game that \
-drove it and what it did. A reader should be able to tell two reports apart.
+- Describe the MARKET AS A WHOLE that week: how many cards rose against how \
+many fell, how far each side moved, whether the week was broad or narrow, \
+calm or violent. Do NOT headline a single card, set or game, and do not \
+name one. A reader should still be able to tell two reports apart by the \
+numbers.
 - Use only facts and numbers present in that report's lede, rounded as given. \
-Invent nothing.
+Invent nothing. If a lede gives no market-wide numbers, describe the week in \
+words rather than borrowing a card's move.
 - No date, no label prefix ("Weekly Market Report:", "Model Report:"), no \
 quotation marks, no final period, no em dashes or en dashes.
 - A slug starting with "model-report" is about how the price forecasts have \
 performed: headline the record, and never use the words "graded", \
 "calibration" or "cohort".
+- Example shapes: "Sellers took the week, 10,645 cards down against 9,263 \
+up", "A calm week either way, with both sides under 3%".
 
 Return ONLY a JSON object mapping each slug to its headline string, no code \
 fences and no commentary.
