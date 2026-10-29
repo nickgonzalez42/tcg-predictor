@@ -11,8 +11,20 @@ namespace API.Services;
 // its art has landed (ImagePath set = fetchable from the image CDN).
 public class MoverService(
     CardSources sources, PredictionsContext predictions, CardMarketData market,
-    PriceChartingContext priceCharting)
+    PriceChartingContext priceCharting, StoreContext store)
 {
+    // Cards shown yesterday, loaded once per recompute. Everything below
+    // PREFERS a card outside this set and falls back to one inside it rather
+    // than return fewer cards or drop a game from the showcase.
+    private HashSet<(string Game, int ProductId)> _seen = [];
+
+    // Showcase history is kept for a fortnight: long enough to debug a
+    // repeat, short enough that the table stays trivial.
+    private const int HistoryDays = 14;
+
+    private static bool Fresh(HashSet<(string, int)> seen, string game, int productId)
+        => !seen.Contains((game, productId));
+
     private sealed record Pick(string Game, int ProductId, double BasePrice, double ForecastPrice, string Printing = "");
 
     // Forecast/base ratio band a card must sit in to headline the home page
@@ -24,6 +36,45 @@ public class MoverService(
     // PAST pill); default stays the year-long view. perGame > 0 (with mix)
     // guarantees every game that many cards at each horizon.
     public async Task<List<CardDto>> TopMovers(
+        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
+    {
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        var yesterday = DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd");
+        try
+        {
+            _seen = (await store.ShownMovers.AsNoTracking().Where(s => s.Day == yesterday)
+                    .Select(s => new { s.Game, s.ProductId }).ToListAsync())
+                .Select(s => (s.Game, s.ProductId)).ToHashSet();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            _seen = [];   // table not migrated yet: rank as before
+        }
+        var ranked = await Rank(count, horizon, trend, perGame, imageUrl);
+        await Record(ranked, today);
+        return ranked;
+    }
+
+    // Remember what this showcase featured, so tomorrow's ranking can step
+    // around it. Failures here never cost the caller its movers: a missed
+    // write only means a card may repeat once.
+    private async Task Record(List<CardDto> movers, string today)
+    {
+        if (movers.Count == 0) return;
+        try
+        {
+            foreach (var m in movers.DistinctBy(m => (m.Game, m.Id)))
+                await store.Database.ExecuteSqlRawAsync(
+                    "INSERT OR IGNORE INTO \"ShownMovers\" (\"Day\", \"Game\", \"ProductId\") VALUES ({0}, {1}, {2})",
+                    today, m.Game, m.Id);
+            await store.Database.ExecuteSqlRawAsync(
+                "DELETE FROM \"ShownMovers\" WHERE \"Day\" < {0}",
+                DateTime.UtcNow.AddDays(-HistoryDays).ToString("yyyy-MM-dd"));
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException) { /* showcase still served */ }
+    }
+
+    private async Task<List<CardDto>> Rank(
         int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
     {
         count = Math.Clamp(count, 1, 24);
@@ -133,6 +184,10 @@ public class MoverService(
         var globalPicks = candidates
             .Where(f => showable[f.Game].Contains(f.ProductId))
             .Select(f => new Pick(f.Game, f.ProductId, f.BasePrice, f.ForecastPrice, f.Printing))
+            // Yesterday's cards sink beneath today's, keeping their order
+            // within each group (OrderBy is stable), so they fill the tail
+            // only when there are too few fresh ones to go round.
+            .OrderBy(p => Fresh(_seen, p.Game, p.ProductId) ? 0 : 1)
             .ToList();
 
         // Every game with forecasts is GUARANTEED two movers (its strongest
@@ -202,6 +257,7 @@ public class MoverService(
     // ungraded market sits below that (e.g. Digimon) still gets its pick.
     private async Task<Pick?> BestMover(string game, string horizon, bool gainerSide)
     {
+        Pick? repeat = null;   // best candidate that DID run yesterday
         foreach (var (floor, allowLow) in new[] { (10.0, false), (1.0, false), (10.0, true), (1.0, true) })
         {
             var q = predictions.Forecasts.IgnoreQueryFilters()
@@ -217,10 +273,17 @@ public class MoverService(
             // Buffer because art-less and prize-card candidates are skipped.
             var top = await q.Take(10).ToListAsync();
             var ok = await ShowcaseIds(game, top.Select(f => f.ProductId));
-            var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
+            // A game's pick skips whatever it showed yesterday; if every
+            // candidate at every price floor ran yesterday, the strongest of
+            // them comes back rather than leaving the game unrepresented.
+            var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId) && Fresh(_seen, game, f.ProductId));
             if (hit != null) return new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice, hit.Printing);
+            var seenHit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
+            if (seenHit != null)
+                repeat ??= new Pick(seenHit.Game, seenHit.ProductId, seenHit.BasePrice,
+                                    seenHit.ForecastPrice, seenHit.Printing);
         }
-        return null;
+        return repeat;
     }
 
     // A game whose WHOLE segment at one horizon is flat — the model shrank
@@ -240,7 +303,8 @@ public class MoverService(
             .OrderByDescending(f => f.BasePrice)
             .Take(10).ToListAsync();
         var ok = await ShowcaseIds(game, top.Select(f => f.ProductId));
-        var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId));
+        var hit = top.FirstOrDefault(f => ok.Contains(f.ProductId) && Fresh(_seen, game, f.ProductId))
+                  ?? top.FirstOrDefault(f => ok.Contains(f.ProductId));
         return hit == null ? null : new Pick(hit.Game, hit.ProductId, hit.BasePrice, hit.ForecastPrice, hit.Printing);
     }
 

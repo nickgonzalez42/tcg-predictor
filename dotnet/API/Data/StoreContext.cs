@@ -15,12 +15,16 @@ public class StoreContext(DbContextOptions<StoreContext> options) : IdentityDbCo
     public DbSet<ProblemReport> ProblemReports => Set<ProblemReport>();
     public DbSet<CardAlert> CardAlerts => Set<CardAlert>();
     public DbSet<NewsletterSubscriber> NewsletterSubscribers => Set<NewsletterSubscriber>();
+    public DbSet<ShownMover> ShownMovers => Set<ShownMover>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
         builder.Entity<SpxClose>().HasKey(x => x.Date);
+
+        // Yesterday's showcase, read once per mover recompute.
+        builder.Entity<ShownMover>().HasKey(x => new { x.Day, x.Game, x.ProductId });
 
         // Handles are unique (case-insensitive via NOCASE collation).
         builder.Entity<User>().HasIndex(x => x.Handle).IsUnique();

@@ -227,6 +227,22 @@ namespace API.Data.Migrations
                     b.ToTable("ReasonProses");
                 });
 
+            modelBuilder.Entity("API.Entities.ShownMover", b =>
+                {
+                    b.Property<string>("Day")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Game")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Day", "Game", "ProductId");
+
+                    b.ToTable("ShownMovers");
+                });
+
             modelBuilder.Entity("API.Entities.SpxClose", b =>
                 {
                     b.Property<string>("Date")
