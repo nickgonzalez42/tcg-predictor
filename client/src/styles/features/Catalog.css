@@ -161,6 +161,30 @@
   min-height: 35.2px;
 }
 
+/* Phones (2026-10-29): the row never wrapped, so the count, the three trend
+   chips, Scan and Quick add competed for ~350px. The chips lost — squeezed
+   into a 118px strip whose own overflow-x scrolled the first one (1M) clean
+   off the left edge. The row wraps now and the chips keep their full width;
+   Quick add finishes the first line so they start a fresh one. Signed out
+   there is no Quick add and everything still fits on one line. */
+@media (max-width: 767px) {
+  .results-head {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: var(--space-10);
+  }
+
+  .results-head .range-tabs {
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+
+  .results-head .switch-field {
+    flex: 1 0 auto;
+    justify-content: flex-end;
+  }
+}
+
 /* Pre-release mode (2026-10-10): the filter rail's mode note sits under its
    radio (the results head shows no banner — the tiles carry the label). */
 .filters__note {
