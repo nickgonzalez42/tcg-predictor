@@ -209,49 +209,67 @@ def gather_targets(game, conn, resume, limit, refresh_days,
     return targets
 
 
-def scrape_targets(conn, targets, workers, delay):
+def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
     ok = fail = total_rows = 0
     announced = False
     per_game = {}
     err_samples = {}
     t0 = time.time()
+    # Work in chunks (2026-10-29): between chunks the workers are idle, so
+    # the main thread can COMMIT and then pause for the nightly refresh with
+    # nothing in flight and no lock held — a days-long catch-up run used to
+    # sail straight into the 19:05 refresh, whose own pc-graded-new step hits
+    # this same host (the 2026-10-12 two-day block), and an open transaction
+    # across that pause would have stalled the refresh's writers.
+    CHUNK = 100
+    i = 0
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(fetch_one, game, pid, pc, delay): game
-                for game, pid, pc, _psa10 in targets}
-        for i, fut in enumerate(as_completed(futs), 1):
-            game = futs[fut]
-            g = per_game.setdefault(game, {"ok": 0, "fail": 0, "rows": 0})
-            product_id, rows, err = fut.result()
-            if err and err != "no chart_data":
-                fail += 1
-                g["fail"] += 1
-                err_samples[err] = err_samples.get(err, 0) + 1
-            else:
-                # "no chart_data" counts as crawled: the page exists but PC has
-                # no chart for it yet — retrying nightly forever buys nothing.
-                if rows:
-                    conn.executemany(
-                        "INSERT OR REPLACE INTO graded_price_history "
-                        "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)", rows)
-                    total_rows += len(rows)
-                    g["rows"] += len(rows)
-                conn.execute(
-                    "INSERT OR REPLACE INTO graded_crawled VALUES (?,?,?)",
-                    (game, product_id, datetime.now(timezone.utc).isoformat()))
-                ok += 1
-                g["ok"] += 1
-                if ok % 50 == 0:
-                    conn.commit()
-            if i % 200 == 0:
-                rate = i / (time.time() - t0)
-                eta = (len(targets) - i) / rate / 3600 if rate else 0
-                print(f"  {i}/{len(targets)} ok={ok} fail={fail} rows={total_rows} "
-                      f"| {rate:.1f}/s ETA {eta:.1f}h", flush=True)
-            if host_blocked() and not announced:
-                announced = True
-                print(f"  PriceCharting blocked us ({BLOCK_LIMIT} refusals in a row) — "
-                      f"skipping the remaining {len(targets) - i:,} page(s); they stay "
-                      f"uncrawled for the next run.", flush=True)
+        for c0 in range(0, len(targets), CHUNK):
+            if host_blocked():
+                if not announced:
+                    announced = True
+                    print(f"  PriceCharting blocked us ({BLOCK_LIMIT} refusals in a row) — "
+                          f"skipping the remaining {len(targets) - i:,} page(s); they stay "
+                          f"uncrawled for the next run.", flush=True)
+                break
+            if yield_to_refresh and refresh_live():
+                conn.commit()
+                print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)", flush=True)
+                while refresh_live():
+                    time.sleep(600)
+                print("  refresh finished — resuming", flush=True)
+            futs = {ex.submit(fetch_one, game, pid, pc, delay): game
+                    for game, pid, pc, _psa10 in targets[c0:c0 + CHUNK]}
+            for fut in as_completed(futs):
+                i += 1
+                game = futs[fut]
+                g = per_game.setdefault(game, {"ok": 0, "fail": 0, "rows": 0})
+                product_id, rows, err = fut.result()
+                if err and err != "no chart_data":
+                    fail += 1
+                    g["fail"] += 1
+                    err_samples[err] = err_samples.get(err, 0) + 1
+                else:
+                    # "no chart_data" counts as crawled: the page exists but PC has
+                    # no chart for it yet — retrying nightly forever buys nothing.
+                    if rows:
+                        conn.executemany(
+                            "INSERT OR REPLACE INTO graded_price_history "
+                            "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)", rows)
+                        total_rows += len(rows)
+                        g["rows"] += len(rows)
+                    conn.execute(
+                        "INSERT OR REPLACE INTO graded_crawled VALUES (?,?,?)",
+                        (game, product_id, datetime.now(timezone.utc).isoformat()))
+                    ok += 1
+                    g["ok"] += 1
+                    if ok % 50 == 0:
+                        conn.commit()
+                if i % 200 == 0:
+                    rate = i / (time.time() - t0)
+                    eta = (len(targets) - i) / rate / 3600 if rate else 0
+                    print(f"  {i}/{len(targets)} ok={ok} fail={fail} rows={total_rows} "
+                          f"| {rate:.1f}/s ETA {eta:.1f}h", flush=True)
     conn.commit()
     for game, g in sorted(per_game.items()):
         print(f"[{game}] done: ok={g['ok']} fail={g['fail']} rows={g['rows']}", flush=True)
@@ -341,7 +359,7 @@ def main():
         print(f"total budget: {args.total_limit} of {len(targets)} due pages "
               f"(per-game floor {floor}, remainder by psa10)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
-    scrape_targets(conn, targets, args.workers, args.delay)
+    scrape_targets(conn, targets, args.workers, args.delay, args.yield_to_refresh)
     conn.close()
 
 

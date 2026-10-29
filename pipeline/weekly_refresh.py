@@ -337,8 +337,10 @@ STEPS = [
     # Dropped to a token slice so the path stays exercised and the backfill
     # still inches forward. TO RESTORE: put --total-limit back to 4000 (and
     # NOMINAL_MIN["tcg-sales"] back to 110) once a feature reads this data.
+    # Same 28-day cycle for sales volume; the daytime sales-crawl agent does
+    # the bulk (~8,100 a day), this is the fallback trickle.
     ("tcg-sales", ["backfill_sales_volume.py", "--game", "all", "--rpm", "40",
-                   "--refresh-days", "30", "--total-limit", "500", "--no-yield"]),
+                   "--refresh-days", "28", "--total-limit", "500", "--no-yield"]),
     # Second pass for cards the search crawl couldn't price tonight: if the
     # product page's sales chart still carries a recent NM series, adopt it
     # (tcg_nm_only) so the card keeps a live price instead of going stale.
@@ -401,12 +403,12 @@ STEPS = [
     # stay at 2 — 3 got the crawl blocked for two days on 2026-10-13. The
     # per-game floor on --total-limit lives in the scraper; the finish-by
     # deadline may trim this one (TRIMMABLE) on a night that runs long.
-    # Tiered cadence (2026-10-29): cards worth $5+ re-crawl monthly, the long
-    # tail quarterly. A flat monthly pass over all 154,814 graded cards needs
-    # 5,160 a night (250 min) and the night does not have it.
+    # Flat 28-day cycle on every graded card (2026-10-29, user decision). The
+    # daytime graded-crawl agent (10:00, pipeline/com.tcg-predictor.graded-
+    # crawl.plist) carries ~5,600 a day, so this step is the fallback for
+    # days the Mac was shut: it finds little or nothing due on a normal night.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
-                       "--delay", "1.0", "--refresh-days", "90", "--workers", "2",
-                       "--fast-tier-price", "5", "--fast-refresh-days", "30",
+                       "--delay", "1.0", "--refresh-days", "28", "--workers", "2",
                        "--limit", "4000", "--total-limit", "2500"]),
     # Price-integrity sweep: TCGplayer NM vs PC sales divergences -> review
     # CSV (no auto-action; the two failure classes need human judgment).

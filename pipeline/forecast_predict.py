@@ -768,6 +768,20 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     if P.shape[1] < 4 or len(pids) < 30:
         return []
     real_dates = anchor_dates_all(game, target)
+    # Graded tiers only publish for cards the PriceCharting crawl has visited
+    # recently (2026-10-29, user: "only run on cards that have been recently
+    # crawled"). The crawl now cycles every card in 28 days, day and night,
+    # so a card not crawled within TCG_FC_GRADED_CRAWL_DAYS (default 35: the
+    # cycle plus a week of slack for pauses) is skipped at publish — its
+    # ladder is whatever it was when we last looked, not a live anchor.
+    crawled_at = {}
+    if target != "ungraded":
+        from forecast_deep import PC_DB as _pc
+        crawled_at = {pid: (d or "")[:10] for pid, d in sqlite3.connect(_pc, timeout=180).execute(
+            "SELECT product_id, crawled_at FROM graded_crawled WHERE game=?", (game,))}
+    crawl_cut = (datetime.now(timezone.utc)
+                 - timedelta(days=float(os.environ.get("TCG_FC_GRADED_CRAWL_DAYS", "35")))
+                 ).strftime("%Y-%m-%d")
     stale_pids = set()   # cards suppressed by the stale-anchor gate (see below)
     thin_pids = set()    # cards suppressed by the minimum-history gate
     R = np.log(P[:, 1:] / P[:, :-1])
@@ -1163,6 +1177,12 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
             pr = str(prints_k[i])
             if not as_of and real_dates.get((int(pid), pr), a) < stale_cut:
+                stale_pids.add((int(pid), pr))
+                continue
+            # Graded: also require a recent crawl (see crawl_cut above). The
+            # price-date gate alone can pass a card whose chart simply has no
+            # new bucket; this one says whether WE have looked lately.
+            if not as_of and target != "ungraded" and crawled_at.get(int(pid), "") < crawl_cut:
                 stale_pids.add((int(pid), pr))
                 continue
             # EARLY tier (2026-10-23): a single-bucket card's 1m call is no
