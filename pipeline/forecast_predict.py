@@ -109,6 +109,7 @@ BORROW_SHRINK = 0.5
 UNGRADED_RET = {}     # game -> horizon -> {(pid, printing): published ret}, this run
 FLAT_SEGMENTS = []    # "game/target/horizon" left flat for want of a donor
 DB_PATH = None        # set by main(); the standing-rows donor lookups read it
+PRESERVED = {}        # game -> standing graded rows kept as-is this run (no new price)
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -782,6 +783,27 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     crawl_cut = (datetime.now(timezone.utc)
                  - timedelta(days=float(os.environ.get("TCG_FC_GRADED_CRAWL_DAYS", "35")))
                  ).strftime("%Y-%m-%d")
+    # Graded tiers re-run only for cards that gained a new price point since
+    # their standing forecast (2026-10-29, user: "the model should only run
+    # on these graded cards once they receive a new price"). A card whose
+    # newest real price date is no later than its standing row's anchor_date
+    # keeps that row untouched: write_game re-inserts it after the segment
+    # wipe and it is NOT archived again (it was archived when issued).
+    # Training is unaffected. TCG_FC_GRADED_FORCE=1 recomputes every card
+    # (use after a model-version bump).
+    standing = {}
+    if (not as_of and target != "ungraded" and DB_PATH
+            and not os.environ.get("TCG_FC_GRADED_FORCE")):
+        hs = tuple(horizons) + ("launch1m",)
+        try:
+            standing = {(int(r[1]), str(r[15]), str(r[3])): tuple(r)
+                        for r in sqlite3.connect(DB_PATH, timeout=60).execute(
+                            "SELECT * FROM forecasts WHERE game=? AND target=? "
+                            f"AND horizon IN ({','.join('?' * len(hs))})",
+                            (game, target) + hs)}
+        except sqlite3.OperationalError:
+            standing = {}   # first run against this DB
+    kept_pids = set()    # cards that kept their standing forecast (no new price)
     stale_pids = set()   # cards suppressed by the stale-anchor gate (see below)
     thin_pids = set()    # cards suppressed by the minimum-history gate
     R = np.log(P[:, 1:] / P[:, :-1])
@@ -1185,6 +1207,13 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             if not as_of and target != "ungraded" and crawled_at.get(int(pid), "") < crawl_cut:
                 stale_pids.add((int(pid), pr))
                 continue
+            # Graded: no new price since the standing forecast -> keep it.
+            if standing:
+                st = standing.get((int(pid), pr, "launch1m" if hist_k[i] < 2 else hname))
+                if st is not None and real_dates.get((int(pid), pr), a) <= (st[14] or "")[:10]:
+                    PRESERVED.setdefault(game, []).append(st)
+                    kept_pids.add((int(pid), pr))
+                    continue
             # EARLY tier (2026-10-23): a single-bucket card's 1m call is no
             # longer dropped — it publishes under horizon 'launch1m' (the
             # tier the card page already badges EARLY), forced low confidence,
@@ -1252,7 +1281,9 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
             # weekly model planned once daily data matures, ~Oct 2026.)
     print(f"[{game}/{target}] {len(rows)} rows"
           + (f" ({len(stale_pids)} stale-anchored card(s) not published)" if stale_pids else "")
-          + (f" ({len(thin_pids)} single-bucket card(s) not published)" if thin_pids else ""),
+          + (f" ({len(thin_pids)} single-bucket card(s) not published)" if thin_pids else "")
+          + (f" ({len(kept_pids)} card(s) kept their standing forecast: no new price)"
+             if kept_pids else ""),
           flush=True)
     return rows
 
@@ -1434,6 +1465,10 @@ def main():
                 tb = traceback.extract_tb(e.__traceback__)
                 where = f" at {os.path.basename(tb[-1].filename)}:{tb[-1].lineno}" if tb else ""
                 print(f"[{game}/{target}] SKIPPED: {type(e).__name__}: {e}{where}", flush=True)
+                # A half-built segment must not publish a partial set of
+                # standing rows as if it were the tier.
+                if game in PRESERVED:
+                    PRESERVED[game] = [r for r in PRESERVED[game] if r[2] != target]
             # Parseable progress for the dashboard (counts every segment, so it
             # reaches N/N even when a young-game tier is skipped without rows).
             print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)
@@ -1462,7 +1497,7 @@ def main():
                                         else (args.game or k[1] in TARGETS))}
         if checked:
             new_counts = {}
-            for r in rows:
+            for r in rows + PRESERVED.get(game, []):
                 k = (r[0], r[2])
                 new_counts[k] = new_counts.get(k, 0) + 1
             gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
@@ -1474,11 +1509,15 @@ def main():
                       f"rows {total_new} vs {total_prev} previous. This game's "
                       f"existing forecasts left untouched.", flush=True)
                 gated.append(game)
+                PRESERVED.pop(game, None)
                 continue
 
+        kept_n = len(PRESERVED.get(game, []))
         write_game(conn, game, rows, subset, horizons, args.target)
         wrote += len(rows)
-        print(f"[forecast] [{game}] published {len(rows)} rows", flush=True)
+        print(f"[forecast] [{game}] published {len(rows)} rows"
+              + (f" (+{kept_n} standing graded row(s) kept, no new price)" if kept_n else ""),
+              flush=True)
         UNGRADED_RET.pop(game, None)   # donor calls are per game; free them
 
     if args.as_of:
@@ -1543,6 +1582,12 @@ def write_game(conn, game, rows, subset, horizons, targets=None):
     conn.executemany("INSERT OR REPLACE INTO forecasts VALUES "
                      "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     archive(conn, rows)
+    # Graded cards with no new price since their standing forecast come back
+    # exactly as they were (see forecast_game_target); not archived again.
+    kept = PRESERVED.pop(game, [])
+    if kept:
+        conn.executemany("INSERT OR REPLACE INTO forecasts VALUES "
+                         "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", kept)
     conn.commit()
 
 
