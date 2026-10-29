@@ -4,12 +4,29 @@ import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { reportKind, reportKindLabel, longDate, type ReportKind } from "./reportKind";
+import { gameColor, isGame } from "../../lib/games";
 
 // Index of the weekly reports (newest first): every Friday a market report
 // (what moved) and a model report (how the forecasts have done). The kind
 // comes from the slug prefix, so no schema change was needed (2026-10-28).
 // 2026-10-29: the per-article kind label became a filter at the top of the
 // page, and each article carries its own descriptive headline + date instead.
+// A chip takes the game's own colour, tinted for the fill and the ring so
+// twelve games stay legible side by side on a dark panel. A tag that is not
+// a game we price (never written today, but the column is free text) falls
+// back to the muted default from gameColor().
+const tagsOf = (tags?: string) =>
+    (tags ? tags.split(',').map(t => t.trim()).filter(Boolean) : []);
+
+const chipStyle = (tag: string) => {
+    const color = isGame(tag) ? gameColor(tag) : 'var(--text-muted)';
+    return {
+        color,
+        background: `color-mix(in srgb, ${color} 16%, transparent)`,
+        borderColor: `color-mix(in srgb, ${color} 55%, transparent)`,
+    };
+};
+
 const TABS: { key: ReportKind | 'all'; label: string }[] = [
     { key: 'all', label: 'All reports' },
     { key: 'market', label: 'Market' },
@@ -70,17 +87,20 @@ export default function ReportsPage() {
                                     {r.title}
                                 </Link>
                                 <p className="reports__summary">{r.summary}</p>
-                                {/* Tag line: date, the game the report is
-                                    about when it has one, and its type. The
-                                    old all-caps MARKET chip above the title
-                                    is gone; this reads as one quiet line. */}
+                                {/* Tag line: the date in plain type, then a
+                                    chip per category. Each game carries its
+                                    own colour (the one the portfolio donut
+                                    and the charts already use for it) and
+                                    the report type has its own. */}
                                 <p className="reports__meta mono">
-                                    {[longDate(r.publishedAt),
-                                      ...(r.tags ? r.tags.split(',').map(t => t.trim()).filter(Boolean) : []),
-                                      reportKindLabel(r.slug, true)]
-                                        .map((part, i) => (
-                                            <span key={i} className="reports__tag">{part}</span>
-                                        ))}
+                                    <span className="reports__date">{longDate(r.publishedAt)}</span>
+                                    {tagsOf(r.tags).map(tag => (
+                                        <span key={tag} className="reports__chip"
+                                            style={chipStyle(tag)}>{tag}</span>
+                                    ))}
+                                    <span className={`reports__chip reports__chip--${reportKind(r.slug)}`}>
+                                        {reportKindLabel(r.slug, true)}
+                                    </span>
                                 </p>
                             </li>
                         ))}
