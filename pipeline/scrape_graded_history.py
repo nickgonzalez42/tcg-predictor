@@ -21,6 +21,8 @@ import os
 import re
 import sqlite3
 import ssl
+import fcntl
+import subprocess
 import threading
 import time
 import urllib.error
@@ -149,8 +151,24 @@ def ensure_table(conn):
     )
 
 
-def gather_targets(game, conn, resume, limit, refresh_days):
-    """Due pages for one game as (game, product_id, pc_id) — value-first."""
+def refresh_live():
+    """True while the nightly refresh is running. Its pc-graded-new step
+    crawls the SAME host at the same politeness budget."""
+    return subprocess.run(["pgrep", "-f", "run_daily_refresh.sh|weekly_refresh.py"],
+                          capture_output=True).returncode == 0
+
+
+def gather_targets(game, conn, resume, limit, refresh_days,
+                   fast_price=None, fast_days=None):
+    """Due pages for one game as (game, product_id, pc_id) — value-first.
+
+    Two cadences (2026-10-29): a true monthly pass over all 154,814 graded
+    cards needs 5,160 a night, which the night cannot give. A card whose raw
+    price is at or above --fast-tier-price is due again after
+    --fast-refresh-days (monthly); the long tail — 89k cards under a dollar,
+    where a graded price moving a few cents changes nothing — falls back to
+    --refresh-days (quarterly). That is ~2,520 a night, about today's budget.
+    """
     done = set()
     if resume:
         if refresh_days:
@@ -159,10 +177,24 @@ def gather_targets(game, conn, resume, limit, refresh_days):
             # into the target list, so graded prices keep refreshing from the
             # public product pages now that the paid daily-snapshot CSV is gone.
             # Ordered by psa10 DESC, value refreshes first each night.
-            cutoff = (datetime.now(timezone.utc) - timedelta(days=refresh_days)).isoformat()
-            done = set(r[0] for r in conn.execute(
-                "SELECT product_id FROM graded_crawled WHERE game=? AND crawled_at > ?",
-                (game, cutoff)))
+            now = datetime.now(timezone.utc)
+            cutoff = (now - timedelta(days=refresh_days)).isoformat()
+            fast_cutoff = ((now - timedelta(days=fast_days)).isoformat()
+                           if fast_price is not None and fast_days else None)
+            price = {}
+            if fast_cutoff:
+                price = {pid: p for pid, p in conn.execute(
+                    "SELECT product_id, MAX(price) FROM tcg_nm_history "
+                    "WHERE game=? AND date >= date('now','-60 day') GROUP BY product_id",
+                    (game,))}
+            for pid, crawled in conn.execute(
+                    "SELECT product_id, crawled_at FROM graded_crawled WHERE game=?", (game,)):
+                if not crawled:
+                    continue
+                due_after = (fast_cutoff if fast_cutoff and (price.get(pid) or 0) >= fast_price
+                             else cutoff)
+                if crawled > due_after:
+                    done.add(pid)
         else:
             done = set(r[0] for r in conn.execute(
                 "SELECT product_id FROM graded_crawled WHERE game=?", (game,)))
@@ -242,6 +274,17 @@ def main():
                          "psa10 value regardless of game, so a cohort of pages "
                          "maturing at once can never blow up the night")
     ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--fast-tier-price", type=float, default=None,
+                    help="cards at or above this raw NM price re-crawl after "
+                         "--fast-refresh-days instead of --refresh-days")
+    ap.add_argument("--fast-refresh-days", type=float, default=30.0)
+    ap.add_argument("--yield-to-refresh", action="store_true",
+                    help="pause while the nightly refresh runs. REQUIRED for the "
+                         "daytime agent: the refresh's own pc-graded-new step "
+                         "crawls the same host, and two at once is what got this "
+                         "IP blocked for two days (2026-10-12). Never set this "
+                         "when running AS a refresh step — it would find its own "
+                         "parent and sleep forever.")
     ap.add_argument("--refresh-days", type=float, default=None,
                     help="re-crawl a card once its last crawl is older than this "
                          "many days (rotation); without it --resume skips forever")
@@ -253,12 +296,30 @@ def main():
     # the dev API reading price history) made a commit here fail with
     # "database is locked" after the default 5 s on 2026-10-25, killing the
     # night's refresh 100 minutes in. Waiting beats dying.
+    # One graded crawl at a time (2026-10-29): the daytime agent relaunches
+    # hourly and must never overlap itself or the nightly step.
+    lock = open(os.path.join(BASE, ".graded_crawl.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("another graded crawl is running — exiting", flush=True)
+        return
+    if args.yield_to_refresh:
+        while refresh_live():
+            print("refresh is live — waiting", flush=True)
+            time.sleep(600)
+
     conn = sqlite3.connect(PC_DB, timeout=600)
+    # The sales-volume crawl writes this same file all day. A roomier page
+    # cache keeps each batch on a RESERVED lock instead of escalating to
+    # EXCLUSIVE, so neither crawl blocks the other for long.
+    conn.execute("PRAGMA cache_size=-65536")
     ensure_table(conn)
     targets = []
     for game in games:
         targets.extend(gather_targets(game, conn, args.resume, args.limit,
-                                      args.refresh_days))
+                                      args.refresh_days, args.fast_tier_price,
+                                      args.fast_refresh_days))
     if args.total_limit and len(targets) > args.total_limit:
         # Value-first, but with a per-game floor (2026-09-29): a pure global
         # psa10 ranking starved the cheap games entirely once the budget

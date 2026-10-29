@@ -401,8 +401,12 @@ STEPS = [
     # stay at 2 — 3 got the crawl blocked for two days on 2026-10-13. The
     # per-game floor on --total-limit lives in the scraper; the finish-by
     # deadline may trim this one (TRIMMABLE) on a night that runs long.
+    # Tiered cadence (2026-10-29): cards worth $5+ re-crawl monthly, the long
+    # tail quarterly. A flat monthly pass over all 154,814 graded cards needs
+    # 5,160 a night (250 min) and the night does not have it.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
-                       "--delay", "1.0", "--refresh-days", "30", "--workers", "2",
+                       "--delay", "1.0", "--refresh-days", "90", "--workers", "2",
+                       "--fast-tier-price", "5", "--fast-refresh-days", "30",
                        "--limit", "4000", "--total-limit", "2500"]),
     # Price-integrity sweep: TCGplayer NM vs PC sales divergences -> review
     # CSV (no auto-action; the two failure classes need human judgment).
