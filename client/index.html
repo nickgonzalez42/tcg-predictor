@@ -44,7 +44,13 @@
          was never actually loaded (it fell back to Menlo). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=IBM+Plex+Mono:wght@400;600&display=swap" />
+    <!-- Non-blocking (2026-10-29): this sheet lives on another origin, so it
+         cost a DNS lookup, a TLS handshake and ~300 ms of held-up paint. Both
+         faces already declare display=swap, so text draws immediately in the
+         fallback (Impact / Menlo) and swaps when the webfont lands. -->
+    <link rel="stylesheet" media="print" onload="this.media='all';this.onload=null"
+          href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=IBM+Plex+Mono:wght@400;600&display=swap" />
+    <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@900&family=IBM+Plex+Mono:wght@400;600&display=swap" /></noscript>
 
     <!-- SEO. Per-page titles/descriptions are set client-side (usePageMeta);
          these are the crawler-visible defaults for the SPA shell. Reports and
