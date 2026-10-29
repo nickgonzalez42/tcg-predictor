@@ -1,23 +1,13 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import App from "../layout/App";
 import HomePage from "../../features/home/HomePage";
-import Catalog from "../../features/catalog/Catalog";
-import CardDetails from "../../features/catalog/CardDetails";
-import PrivacyPage from '../../features/about/PrivacyPage';
-import AccountSettingsPage from '../../features/account/AccountSettingsPage';
-import AboutPage from "../../features/about/AboutPage";
-import ContactPage from "../../features/about/ContactPage";
-import TermsPage from "../../features/about/TermsPage";
-import ServerError from "../errors/ServerError";
-import NotFound from "../errors/NotFound";
-import LoginForm from "../../features/account/LoginForm";
-import RegisterForm from "../../features/account/RegisterForm";
 import RequireAuth from "./RequireAuth";
-import Portfolio from "../../features/watchlist/Portfolio";
-import ScanPage from "../../features/scan/ScanPage";
-import Wishlist from "../../features/watchlist/Wishlist";
-import ReportsPage from "../../features/reports/ReportsPage";
-import ReportPage from "../../features/reports/ReportPage";
+// Every other page is a lazy chunk; see pages.ts for why.
+import {
+    Catalog, CardDetails, PrivacyPage, AccountSettingsPage, AboutPage, ContactPage,
+    TermsPage, ServerError, NotFound, LoginForm, RegisterForm, Portfolio, ScanPage,
+    Wishlist, ReportsPage, ReportPage,
+} from "./pages";
 
 export const router = createBrowserRouter([
     {

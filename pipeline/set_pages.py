@@ -36,6 +36,13 @@ PRED_DB = os.path.join(API_DATA, "predictions.db")
 DEFAULT_OUT = os.path.normpath(os.path.join(
     BASE, "..", "tcg-predictor", "static-content", "sets"))
 SITE = "https://cardstock.guide"
+
+# AdSense is OFF until the site is approved (2026-10-29): the loader costs
+# about 250 KB and three third-party connections on every page view and
+# earns nothing while the application is rejected. Flip to True after
+# approval; the client app has the same switch in lib/adsense.ts.
+ADSENSE_ENABLED = False
+ADS = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>' if ADSENSE_ENABLED else "")
 IMG = "https://d18pzythfo0bgy.cloudfront.net"
 MAX_ROWS = 150          # price-list rows per set page (by price, desc)
 MIN_SET_CARDS = 3       # sets smaller than this aren't worth a page
@@ -97,7 +104,7 @@ def page(path, title, desc, body, og_image=None):
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}">
 <meta property="og:url" content="{SITE}{path}"><meta property="og:site_name" content="CardStock">
 {og_img}
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>
+{ADS}
 <style>{CSS}</style></head>
 <body><div class="wrap">{NAV}{body}{FOOT}</div></body></html>"""
 

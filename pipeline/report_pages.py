@@ -34,6 +34,13 @@ PRED_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "ca
 DEFAULT_OUT = os.path.join(BASE, "..", "tcg-predictor", "static-content", "reports")
 SITE = "https://cardstock.guide"
 
+# AdSense is OFF until the site is approved (2026-10-29): the loader costs
+# about 250 KB and three third-party connections on every page view and
+# earns nothing while the application is rejected. Flip to True after
+# approval; the client app has the same switch in lib/adsense.ts.
+ADSENSE_ENABLED = False
+ADS = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>' if ADSENSE_ENABLED else "")
+
 CSS = """
 :root{--bg:#101623;--panel:#161e2e;--text:#e6ebf4;--text-muted:#8b96ad;
 --border:#2e3a52;--brand:#3d7dca;--report-up:#4caf7d;--report-down:#e05c5c;
@@ -284,7 +291,7 @@ def page(slug, title, published_at, summary, body_html):
 <meta name="twitter:description" content="{s}">
 <meta name="twitter:image" content="{SITE}/og-image.png?v=3">
 <script type="application/ld+json">{schema}</script>
-<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>
+{ADS}
 <style>{CSS}</style>
 </head>
 <body>

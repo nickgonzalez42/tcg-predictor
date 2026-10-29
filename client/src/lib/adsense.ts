@@ -12,11 +12,19 @@
 //      <AdSlot slot="..."/> placements (Catalog, CardDetails).
 export const ADSENSE_CLIENT = "ca-pub-3270328826867583";   // matches public/ads.txt (2026-09-26)
 
+// Off until AdSense approves the site (2026-10-29). The loader and its
+// traffic-quality call cost about 250 KB and three third-party connections
+// in the first seconds of every page view, and with the application
+// rejected they earn nothing. Flip to true after approval; the publisher id
+// and the slots stay wired. The static page generators carry the same
+// switch (report_pages.py, set_pages.py, prerender_pages.py).
+export const ADSENSE_ENABLED = false;
+
 let loaded = false;
 
-// Inject the AdSense loader once (no-op until ADSENSE_CLIENT is set).
+// Inject the AdSense loader once (no-op while disabled or unconfigured).
 export function initAdsense() {
-    if (!ADSENSE_CLIENT || loaded) return;
+    if (!ADSENSE_ENABLED || !ADSENSE_CLIENT || loaded) return;
     loaded = true;
     const s = document.createElement("script");
     s.async = true;

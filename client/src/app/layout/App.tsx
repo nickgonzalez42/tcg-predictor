@@ -1,6 +1,7 @@
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import NavBar from "./NavBar";
 import Footer from "./Footer";
+import CardLoader from "../shared/components/CardLoader";
 import { trackPageView } from "../../lib/pageview";
 import ReportProblem from "../../features/report/ReportProblem";
 import { Outlet, ScrollRestoration, useLocation } from "react-router-dom";
@@ -51,7 +52,11 @@ function App() {
       <div id="smooth-wrapper">
         <div id="smooth-content">
           <main className={`container page grid-box${pageField ? " page--field" : ""}`}>
-            <Outlet />
+            {/* Pages other than home are lazy chunks (Routes.tsx); the
+                loader holds their place for the one round trip it takes. */}
+            <Suspense fallback={<CardLoader />}>
+              <Outlet />
+            </Suspense>
           </main>
           {/* In-flow at the bottom of the page, above the footer (and so above
               the fixed crawl). The modal it opens portals to <body>. */}

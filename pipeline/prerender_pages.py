@@ -33,8 +33,12 @@ GAME_LABELS = {
     "sorcery": "Sorcery", "riftbound": "Riftbound", "cyberpunk": "Cyberpunk",
 }
 IMG = "https://d18pzythfo0bgy.cloudfront.net"
-ADS = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/'
-       'adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>')
+# AdSense is OFF until the site is approved (2026-10-29): the loader costs
+# about 250 KB and three third-party connections on every page view and
+# earns nothing while the application is rejected. Flip to True after
+# approval; the client app has the same switch in lib/adsense.ts.
+ADSENSE_ENABLED = False
+ADS = ('<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>' if ADSENSE_ENABLED else "")
 CSS = """
 :root{--bg:#101623;--text:#e6ebf4;--muted:#8b96ad;--border:#2e3a52;--brand:#3d7dca}
 body{margin:0;background:var(--bg);color:var(--text);

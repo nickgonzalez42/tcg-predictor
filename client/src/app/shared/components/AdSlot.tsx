@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { ADSENSE_CLIENT } from "../../../lib/adsense";
+import { ADSENSE_CLIENT, ADSENSE_ENABLED } from "../../../lib/adsense";
 
 declare global {
     interface Window { adsbygoogle?: unknown[] }
@@ -14,7 +14,7 @@ export default function AdSlot({ slot }: { slot: string }) {
     const [filled, setFilled] = useState(false);
 
     useEffect(() => {
-        if (!ADSENSE_CLIENT || !slot) return;
+        if (!ADSENSE_ENABLED || !ADSENSE_CLIENT || !slot) return;
         const ins = insRef.current;
         if (!ins) return;
         try {
@@ -28,7 +28,7 @@ export default function AdSlot({ slot }: { slot: string }) {
         return () => mo.disconnect();
     }, [slot]);
 
-    if (!ADSENSE_CLIENT || !slot) return null;
+    if (!ADSENSE_ENABLED || !ADSENSE_CLIENT || !slot) return null;
 
     return (
         <div className={`ad-slot${filled ? '' : ' ad-slot--pending'}`} aria-hidden={!filled}>

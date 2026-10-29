@@ -5,6 +5,40 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#101623" />
+    <!-- First paint without JavaScript (2026-10-29). The page used to be blank
+         until the 400 KB bundle arrived and ran, which on a phone over mobile
+         data was about three seconds; paid visitors were leaving in under one.
+         Two things happen here, both before the stylesheet is even requested:
+           1. The real first screen (nav + hero, same classes as the React
+              tree) sits inside #root below, so the headline paints as soon as
+              the stylesheet lands. React replaces it on mount; the copy is
+              identical, so nothing visibly changes.
+           2. On "/" the home page's three data calls are preloaded, so they
+              overlap the bundle download instead of queuing behind it. The
+              credentials mode matches the app's fetch so the browser reuses
+              the responses. Other routes get neither: the shell is hidden
+              through data-route before it is parsed, and no preload fires. -->
+    <style>
+      html { background: #101623; }
+      body { margin: 0; background: #101623; color: #e8ecf4; }
+      html[data-route="other"] #shell { display: none; }
+    </style>
+    <script>
+      (function () {
+        var home = location.pathname === "/";
+        document.documentElement.setAttribute("data-route", home ? "home" : "other");
+        if (!home) return;
+        [
+          "/api/home/stats",
+          "/api/cards/movers?count=24&horizon=1m&trend=6m",
+          "/api/cards/movers?horizon=mix&perGame=2"
+        ].forEach(function (u) {
+          var l = document.createElement("link");
+          l.rel = "preload"; l.as = "fetch"; l.href = u; l.crossOrigin = "use-credentials";
+          document.head.appendChild(l);
+        });
+      })();
+    </script>
     <!-- Type (2026-10-22): Big Shoulders Display for headlines on the home and
          portfolio pages; IBM Plex Mono is what --mono has named all along but
          was never actually loaded (it fell back to Menlo). -->
@@ -55,7 +89,40 @@
          loader only after the visitor allows ads in the consent bar. -->
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root"><div id="shell" class="app-shell has-ticker">
+      <header class="navbar">
+        <div class="navbar__bar">
+          <a class="navbar__brand" href="/" aria-label="CardStock home">
+            <svg class="navbar__logo" viewBox="0 0 63 88" fill="none" aria-hidden="true">
+              <rect x="2.5" y="2.5" width="58" height="83" rx="7" stroke="#fff" stroke-width="4" />
+              <polyline class="navbar__logo-trend" points="52,76 30,54 40,44 18,22 28,12 -6,-22" />
+              <path class="navbar__logo-arrow" d="M-4 -11 L-6 -22 L5 -20" />
+            </svg>
+            <span class="navbar__wordmark" aria-hidden="true" style="margin-top:5px">
+              <span class="navbar__word navbar__word--1">card</span>
+              <span class="navbar__word navbar__word--2">STOCK</span>
+            </span>
+          </a>
+        </div>
+      </header>
+      <div id="smooth-wrapper"><div id="smooth-content">
+        <main class="container page grid-box">
+          <section class="hero subgrid full-span hero-field">
+            <div class="hero__copy">
+              <h1 class="hero__title">Know your cards' worth: yesterday, today, <span class="hero__accent">tomorrow.</span></h1>
+              <p class="hero__sub">CardStock watches the market for twelve card games and predicts where any card's price is headed a month, six months and a year out. Raw or graded, with full price history and a tracker for everything you own.</p>
+              <div class="btn-group">
+                <a class="btn" href="/register">Start tracking free</a>
+                <a class="btn btn--outline" href="/catalog">Look up a card</a>
+              </div>
+            </div>
+            <div class="hero__panel">
+              <div class="band"><span class="band__title">Featured cards</span><span class="mono">model forecast · live</span></div>
+            </div>
+          </section>
+        </main>
+      </div></div>
+    </div></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
