@@ -7,8 +7,12 @@ export function reportKind(slug: string): ReportKind {
     return slug.startsWith('model-report') ? 'model' : 'market';
 }
 
-export function reportKindLabel(slug: string) {
-    return reportKind(slug) === 'model' ? 'Model report' : 'Market report';
+// `short` is the tag-line form on the index cards ("Market"); the long form
+// names the article type in meta tags and prose.
+export function reportKindLabel(slug: string, short = false) {
+    const model = reportKind(slug) === 'model';
+    if (short) return model ? 'Model' : 'Market';
+    return model ? 'Model report' : 'Market report';
 }
 
 // "2026-10-23" -> "October 23, 2026" (midday UTC so the date never slips a

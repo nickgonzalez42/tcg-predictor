@@ -8,6 +8,9 @@ export type ReportSummary = {
     title: string;
     publishedAt: string;   // yyyy-MM-dd
     summary: string;
+    /** Comma-separated subject labels, e.g. "Yu-Gi-Oh!"; empty when a report
+     *  has no single subject game (2026-10-29). */
+    tags?: string;
 }
 
 export type MarketReport = ReportSummary & { bodyHtml: string };

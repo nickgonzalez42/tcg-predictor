@@ -145,6 +145,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             r.Property(x => x.PublishedAt).HasColumnName("published_at");
             r.Property(x => x.Summary).HasColumnName("summary");
             r.Property(x => x.BodyHtml).HasColumnName("body_html");
+            r.Property(x => x.Tags).HasColumnName("tags");
         });
 
         builder.Entity<Forecast>(f =>

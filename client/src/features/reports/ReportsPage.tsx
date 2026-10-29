@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
-import { reportKind, longDate, type ReportKind } from "./reportKind";
+import { reportKind, reportKindLabel, longDate, type ReportKind } from "./reportKind";
 
 // Index of the weekly reports (newest first): every Friday a market report
 // (what moved) and a model report (how the forecasts have done). The kind
@@ -70,11 +70,18 @@ export default function ReportsPage() {
                                     {r.title}
                                 </Link>
                                 <p className="reports__summary">{r.summary}</p>
-                                {/* Date only: the kind used to sit above every
-                                    title as an all-caps MARKET / MODEL chip
-                                    (removed 2026-10-29, user request) and the
-                                    filter above the list carries it now. */}
-                                <p className="reports__meta mono">{longDate(r.publishedAt)}</p>
+                                {/* Tag line: date, the game the report is
+                                    about when it has one, and its type. The
+                                    old all-caps MARKET chip above the title
+                                    is gone; this reads as one quiet line. */}
+                                <p className="reports__meta mono">
+                                    {[longDate(r.publishedAt),
+                                      ...(r.tags ? r.tags.split(',').map(t => t.trim()).filter(Boolean) : []),
+                                      reportKindLabel(r.slug, true)]
+                                        .map((part, i) => (
+                                            <span key={i} className="reports__tag">{part}</span>
+                                        ))}
+                                </p>
                             </li>
                         ))}
                     </ul>

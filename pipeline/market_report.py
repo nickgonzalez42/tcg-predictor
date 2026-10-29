@@ -1370,11 +1370,23 @@ def build_report(force=False, as_of=None):
         title TEXT NOT NULL,
         published_at TEXT NOT NULL,
         summary TEXT NOT NULL,
-        body_html TEXT NOT NULL)""")
-    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?)",
-                 (slug, title, today.isoformat(), summary, "".join(body)))
-    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?)",
-                 (model_slug, model_title, today.isoformat(), model_summary, "".join(model_body)))
+        body_html TEXT NOT NULL,
+        tags TEXT NOT NULL DEFAULT '')""")
+    # `tags` arrived 2026-10-29 (the article cards on /reports carry a tag
+    # line); older databases predate the column.
+    try:
+        pred.execute("ALTER TABLE reports ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+    except sqlite3.OperationalError:
+        pass   # already there
+    # The market report's tag is the game the headline is about: the week's
+    # biggest single mover is what the editorial is told to open on. The
+    # model report spans every game, so it carries no game tag.
+    tags = GAMES[top[0]]["label"]
+    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?,?)",
+                 (slug, title, today.isoformat(), summary, "".join(body), tags))
+    pred.execute("INSERT OR REPLACE INTO reports VALUES (?,?,?,?,?,?)",
+                 (model_slug, model_title, today.isoformat(), model_summary,
+                  "".join(model_body), ""))
     pred.commit()
     pc.close()
     pred.close()

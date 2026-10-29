@@ -19,7 +19,7 @@ public class MarketReportsController(PredictionsContext predictions) : Controlle
         {
             var reports = await predictions.Reports
                 .OrderByDescending(r => r.PublishedAt)
-                .Select(r => new { r.Slug, r.Title, r.PublishedAt, r.Summary })
+                .Select(r => new { r.Slug, r.Title, r.PublishedAt, r.Summary, r.Tags })
                 .ToListAsync();
             return Ok(reports);
         }
