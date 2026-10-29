@@ -21,12 +21,19 @@
     <style>
       html { background: #101623; }
       body { margin: 0; background: #101623; color: #e8ecf4; }
-      html[data-route="other"] #shell { display: none; }
+      html:not([data-route="home"]) #shell-home { display: none; }
+      html:not([data-route="catalog"]) #shell-catalog { display: none; }
+      html:not([data-route="other"]) #shell-loading { display: none; }
     </style>
     <script>
       (function () {
-        var home = location.pathname === "/";
-        document.documentElement.setAttribute("data-route", home ? "home" : "other");
+        var path = location.pathname;
+        var home = path === "/";
+        var route = home ? "home" : path === "/catalog" ? "catalog" : "other";
+        document.documentElement.setAttribute("data-route", route);
+        // Only the home page's data calls are preloadable: the catalog's
+        // depend on which game and filters the app settles on, so guessing
+        // would spend a request on the wrong URL.
         if (!home) return;
         [
           "/api/home/stats",
@@ -113,7 +120,7 @@
       </header>
       <div id="smooth-wrapper"><div id="smooth-content">
         <main class="container page grid-box">
-          <section class="hero subgrid full-span hero-field">
+          <section id="shell-home" class="hero subgrid full-span hero-field">
             <div class="hero__copy">
               <h1 class="hero__title">Know your cards' worth: yesterday, today, <span class="hero__accent">tomorrow.</span></h1>
               <p class="hero__sub">CardStock watches the market for twelve card games and predicts where any card's price is headed a month, six months and a year out. Raw or graded, with full price history and a tracker for everything you own.</p>
@@ -126,6 +133,32 @@
               <div class="band"><span class="band__title">Featured cards</span><span class="mono">model forecast · live</span></div>
             </div>
           </section>
+          <!-- Catalog's first screen. It cannot show results (which cards
+               depends on the visitor's game, filters and page), so it shows
+               the frame and says plainly that it is working: the same
+               spinning card back the app itself uses while it loads. -->
+          <div id="shell-catalog" class="catalog subgrid full-span">
+            <div class="catalog-items subgrid">
+              <div class="results-head full-span"><span class="mono">Loading cards</span></div>
+              <div class="card-loader full-span" role="status" aria-label="Loading cards">
+                <div class="card-loader__inner">
+                  <img class="card-loader__face" src="/images/generic-card-back.svg" alt="" />
+                  <div class="card-loader__core"></div>
+                  <img class="card-loader__face card-loader__face--back" src="/images/generic-card-back.svg" alt="" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <!-- Every other route: the nav and a loader, so no page starts as a
+               blank screen while its chunk and data arrive. Card pages are
+               the ones that matter, being the deepest links people share. -->
+          <div id="shell-loading" class="card-loader full-span" role="status" aria-label="Loading">
+            <div class="card-loader__inner">
+              <img class="card-loader__face" src="/images/generic-card-back.svg" alt="" />
+              <div class="card-loader__core"></div>
+              <img class="card-loader__face card-loader__face--back" src="/images/generic-card-back.svg" alt="" />
+            </div>
+          </div>
         </main>
       </div></div>
     </div></div>
