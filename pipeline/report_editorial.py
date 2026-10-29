@@ -36,7 +36,10 @@ CLI_FALLBACKS = (
 
 # Word caps per field — a report lede that runs long reads worse than the
 # template it replaced. Oversized fields are dropped individually.
-LIMITS = {"lede": 70, "overview": 140, "model_note": 50, "model_lede": 60}
+# Headlines are the article titles on /reports (2026-10-29, user request:
+# "give the articles a descriptive title"), so they are capped tight.
+LIMITS = {"headline": 12, "lede": 70, "overview": 140, "model_note": 50,
+          "model_lede": 60, "model_headline": 12}
 GAME_LIMIT = 55
 
 PROMPT = """You are the editor of CardStock's weekly trading-card market \
@@ -68,6 +71,12 @@ ordinary words.
 - Percent moves in the facts are week-over-week unless labeled otherwise.
 
 Return ONLY a JSON object (no code fences, no commentary) with:
+- "headline": the market report's title, max {headline} words: the week's \
+single biggest story in plain words, as a collector would say it out loud. \
+Name the card, group or game that drove the week and what it did. Sentence \
+case, no date, no label like "Weekly Market Report", no colon-prefixed \
+prefix, no quotation marks, no final period. Example shape: "Dominus Purge \
+leads a broad One Piece rally".
 - "lede": 2-3 sentences opening the report, the week's headline story \
 (max {lede} words).
 - "overview": one paragraph after the lede telling the cross-game story: \
@@ -79,6 +88,12 @@ cards, grounded in its numbers (max {game} words each). Every game key \
 must be present.
 - "model_note": one sentence on the forecast model's live record given the \
 "model" facts, honest about weak spots (max {model_note} words).
+- "model_headline": the model article's title, max {model_headline} words: \
+what the record actually shows this week, in plain words a collector \
+understands. No date, no label like "Model Report", no colon prefix, no \
+quotation marks, no final period, and never the words "graded", \
+"calibration" or "cohort". Example shape: "Our one-month forecasts beat a \
+flat guess in five games".
 - "model_lede": 2 sentences opening a separate article about the model's \
 record: the headline numbers from the "model" facts in plain words, for a \
 collector who has never heard of a calibration band (max {model_lede} words). \
@@ -116,6 +131,21 @@ def _clean(text, cap):
     return text
 
 
+LABEL_PREFIX = re.compile(r"^(weekly\s+)?(market|model)\s+report\s*[:\u2013-]\s*",
+                          re.I)
+
+
+def _headline(text):
+    """Title-shaped: no wrapping quotes, no label prefix, no final period."""
+    if not text:
+        return None
+    text = text.strip().strip('"\u201c\u201d\'')
+    text = LABEL_PREFIX.sub("", text).strip()
+    text = text.rstrip(".").strip()
+    # A headline that lost its substance to the strippers above is no headline.
+    return text if len(text) >= 12 else None
+
+
 def write_editorial(facts):
     """facts dict -> {'lede','overview','games':{...},'model_note'} or None."""
     if os.environ.get("TCG_REPORT_PROSE", "1") == "0":
@@ -127,9 +157,11 @@ def write_editorial(facts):
         return None
 
     prompt = PROMPT.format(facts=json.dumps(facts, indent=1),
-                           lede=LIMITS["lede"], overview=LIMITS["overview"],
+                           headline=LIMITS["headline"], lede=LIMITS["lede"],
+                           overview=LIMITS["overview"],
                            game=GAME_LIMIT, model_note=LIMITS["model_note"],
-                           model_lede=LIMITS["model_lede"])
+                           model_lede=LIMITS["model_lede"],
+                           model_headline=LIMITS["model_headline"])
     try:
         out = subprocess.run(
             [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],
@@ -159,6 +191,11 @@ def write_editorial(facts):
         return None
 
     prose = {k: _clean(data.get(k), cap) for k, cap in LIMITS.items()}
+    # Headlines double as <title> and link text: strip the wrapping quotes and
+    # trailing period models like to add, and the label prefixes the prompt
+    # forbids but which still slip through ("Market report: ...").
+    for k in ("headline", "model_headline"):
+        prose[k] = _headline(prose.get(k))
     games = data.get("games")
     prose["games"] = ({g: t for g, t in
                        ((g, _clean(v, GAME_LIMIT)) for g, v in games.items())

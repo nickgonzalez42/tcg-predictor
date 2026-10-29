@@ -979,11 +979,13 @@ def build_report(force=False, as_of=None):
     breadth = "a gainers' week" if ups > downs else \
               "a losers' week" if downs > ups else "a dead-even week"
 
-    title = f"Weekly Market Report: {today.strftime('%B %-d, %Y')}"
+    # Slugs stay date-keyed (they are the permanent URLs); the TITLES are
+    # descriptive headlines written further down, once the facts and the
+    # editorial are in (2026-10-29, user request: "give the articles a
+    # descriptive title"). The published date carries the week.
     slug = f"weekly-market-report-{today.isoformat()}"
     # The model's record is its own article now (2026-10-28, user request):
     # written in the same run from the same facts, published side by side.
-    model_title = f"Model Report: {today.strftime('%B %-d, %Y')}"
     model_slug = f"model-report-{today.isoformat()}"
     # Fallback lede when the editorial call fails (docs/VOICE.md: cold-open
     # with the numbers, prices in motion). Doubles as the meta description.
@@ -1074,6 +1076,29 @@ def build_report(force=False, as_of=None):
     prose = write_editorial(facts) or {}
     if prose.get("lede"):
         summary = prose["lede"]   # index card + meta description too
+
+    # Headlines (2026-10-29). Claude writes them from the same facts pack;
+    # when that field is missing the templated fallback still names the
+    # week's biggest move instead of repeating the date. A name long enough
+    # to swamp the headline (some Pokemon printings run 60 characters) drops
+    # back to the breadth sentence.
+    top = max(all_moves, key=lambda m: abs(m[5]))
+    title = (f"{top[2]} {'jumped' if top[5] > 0 else 'slid'} "
+             f"{abs(top[5]):.0f}% in {breadth}")
+    if len(title) > 80:
+        title = (f"{ups:,} cards up, {downs:,} down: {breadth} across the market")
+    if live:
+        _l0, _n0, _mae0, _b0, _hit0, _dn0, _da0, _flat0 = live[0]
+        model_title = (f"Our one-month forecasts "
+                       f"{'beat' if _mae0 < _flat0 else 'trailed'} a flat guess, with "
+                       f"{_hit0 * 100:.0f}% of prices inside the range")
+    else:
+        model_title = "What the forecasts got right, and where they missed"
+    if prose.get("headline"):
+        title = prose["headline"]
+    if prose.get("model_headline"):
+        model_title = prose["model_headline"]
+    print(f"titles: {title!r} / {model_title!r}")
 
     body = [f"<p class='report-lede'>{esc(summary)} Price window: {baseline} to {latest}, "
             f"ungraded market prices.</p>",

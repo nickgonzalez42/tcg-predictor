@@ -1,16 +1,42 @@
-import { Link } from "react-router-dom";
+import { useMemo } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useFetchReportsQuery } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { reportKind, longDate, type ReportKind } from "./reportKind";
 
 // Index of the weekly reports (newest first): every Friday a market report
 // (what moved) and a model report (how the forecasts have done). The kind
 // comes from the slug prefix, so no schema change was needed (2026-10-28).
-const kindOf = (slug: string) => slug.startsWith('model-report') ? 'Model' : 'Market';
+// 2026-10-29: the per-article kind label became a filter at the top of the
+// page, and each article carries its own descriptive headline + date instead.
+const TABS: { key: ReportKind | 'all'; label: string }[] = [
+    { key: 'all', label: 'All reports' },
+    { key: 'market', label: 'Market' },
+    { key: 'model', label: 'Model' },
+];
+
 export default function ReportsPage() {
     usePageMeta("Reports",
-        "Weekly trading card reports: what moved, where the price model sees movement next, and how its forecasts have actually done.");
+        "Weekly trading card reports: what moved, where the price model sees movement next, and how its forecasts have actually done.",
+        { canonical: "/reports" });
     const { data: reports, isLoading } = useFetchReportsQuery();
+    // The filter lives in the URL (?type=model), like the catalog's: a
+    // filtered view can be shared and the back button steps through it.
+    const [params, setParams] = useSearchParams();
+    const asked = params.get('type');
+    const kind: ReportKind | 'all' = asked === 'model' || asked === 'market' ? asked : 'all';
+    const setKind = (next: ReportKind | 'all') =>
+        setParams(next === 'all' ? {} : { type: next }, { replace: true });
+
+    const counts = useMemo(() => {
+        const c = { all: reports?.length ?? 0, market: 0, model: 0 };
+        for (const r of reports ?? []) c[reportKind(r.slug)]++;
+        return c;
+    }, [reports]);
+    const shown = useMemo(
+        () => (reports ?? []).filter(r => kind === 'all' || reportKind(r.slug) === kind),
+        [reports, kind]);
 
     if (isLoading) return <CardLoader />;
 
@@ -24,17 +50,35 @@ export default function ReportsPage() {
             {!reports?.length ? (
                 <p className="est-note">The first weekly report lands this Friday.</p>
             ) : (
-                <ul className="reports__list">
-                    {reports.map(r => (
-                        <li key={r.slug} className="panel reports__item">
-                            <span className={`mono reports__kind reports__kind--${kindOf(r.slug).toLowerCase()}`}>{kindOf(r.slug)}</span>
-                            <Link to={`/reports/${r.slug}`} className="reports__item-title">
-                                {r.title}
-                            </Link>
-                            <p className="reports__summary">{r.summary}</p>
-                        </li>
-                    ))}
-                </ul>
+                <>
+                    <div className="reports__filter" role="group" aria-label="Report type">
+                        {TABS.map(t => (
+                            <button key={t.key}
+                                className={`btn btn--outline reports__filter-btn${kind === t.key ? ' btn--active' : ''}`}
+                                onClick={() => setKind(t.key)}
+                                aria-pressed={kind === t.key}
+                                disabled={!counts[t.key]}
+                            >
+                                {t.label} <span className="mono reports__filter-count">{counts[t.key]}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <ul className="reports__list">
+                        {shown.map(r => (
+                            <li key={r.slug} className="panel reports__item">
+                                <Link to={`/reports/${r.slug}`} className="reports__item-title">
+                                    {r.title}
+                                </Link>
+                                <p className="reports__summary">{r.summary}</p>
+                                {/* Date only: the kind used to sit above every
+                                    title as an all-caps MARKET / MODEL chip
+                                    (removed 2026-10-29, user request) and the
+                                    filter above the list carries it now. */}
+                                <p className="reports__meta mono">{longDate(r.publishedAt)}</p>
+                            </li>
+                        ))}
+                    </ul>
+                </>
             )}
         </div>
     );

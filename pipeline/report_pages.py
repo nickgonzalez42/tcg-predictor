@@ -24,6 +24,7 @@ import os
 import sqlite3
 import sys
 import urllib.request
+from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
@@ -219,9 +220,41 @@ JS = """
 """
 
 
+def long_date(iso):
+    """2026-10-23 -> October 23, 2026 (the byline's human form)."""
+    try:
+        return date.fromisoformat(iso[:10]).strftime("%B %-d, %Y")
+    except ValueError:
+        return iso
+
+
 def page(slug, title, published_at, summary, body_html):
     t, s = html.escape(title), html.escape(summary)
-    kind = "CardStock model report" if slug.startswith("model-report") else "CardStock weekly market report"
+    # Article type (2026-10-29): it tags the page for crawlers and share
+    # cards, but no longer prints above the headline. The headline is
+    # descriptive now and the /reports filter carries the type.
+    section = "Model report" if slug.startswith("model-report") else "Market report"
+    url = f"{SITE}/reports/{slug}"
+    # One NewsArticle block per report: Google's article rich results need the
+    # headline, the dates and a publisher, none of which it can infer from a
+    # body of tables and inline SVG.
+    schema = json.dumps({
+        "@context": "https://schema.org",
+        "@type": "NewsArticle",
+        "headline": title,
+        "description": summary,
+        "datePublished": published_at[:10],
+        "dateModified": published_at[:10],
+        "articleSection": section,
+        "mainEntityOfPage": {"@type": "WebPage", "@id": url},
+        "url": url,
+        "isAccessibleForFree": True,
+        "author": {"@type": "Organization", "name": "CardStock", "url": SITE},
+        "publisher": {"@type": "Organization", "name": "CardStock",
+                      "url": SITE,
+                      "logo": {"@type": "ImageObject",
+                               "url": f"{SITE}/og-image.png"}},
+    })
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -229,12 +262,28 @@ def page(slug, title, published_at, summary, body_html):
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>{t} | CardStock</title>
 <meta name="description" content="{s}">
-<link rel="canonical" href="{SITE}/reports/{slug}">
+<link rel="canonical" href="{url}">
+<meta name="author" content="CardStock">
+<meta name="robots" content="max-image-preview:large">
 <meta property="og:type" content="article">
 <meta property="og:title" content="{t}">
 <meta property="og:description" content="{s}">
-<meta property="og:url" content="{SITE}/reports/{slug}">
+<meta property="og:url" content="{url}">
 <meta property="og:site_name" content="CardStock">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="{SITE}/og-image.png?v=3">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="CardStock: the stock market for trading cards">
+<meta property="article:published_time" content="{published_at[:10]}">
+<meta property="article:modified_time" content="{published_at[:10]}">
+<meta property="article:section" content="{section}">
+<meta property="article:publisher" content="{SITE}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{t}">
+<meta name="twitter:description" content="{s}">
+<meta name="twitter:image" content="{SITE}/og-image.png?v=3">
+<script type="application/ld+json">{schema}</script>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3270328826867583" crossorigin="anonymous"></script>
 <style>{CSS}</style>
 </head>
@@ -247,7 +296,7 @@ def page(slug, title, published_at, summary, body_html):
 </header>
 <article>
 <h1>{t}</h1>
-<p class="published">Published {html.escape(published_at)} · {kind}</p>
+<p class="published">Published {html.escape(long_date(published_at))}</p>
 {body_html}
 </article>
 <footer class="site">

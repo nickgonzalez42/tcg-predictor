@@ -270,7 +270,7 @@ def main():
 
     report_rows = "".join(
         f"<li><a href='{SITE}/reports/{html.escape(slug)}'>{html.escape(title)}</a>"
-        f"<div class='muted'>{html.escape(published)} — {html.escape(summary or '')}</div></li>"
+        f"<div class='muted'>{html.escape(published)} · {html.escape(summary or '')}</div></li>"
         for slug, title, published, summary in reports[:40])
     write(out_new, "reports.html", page(
         "/reports", "Weekly reports",
