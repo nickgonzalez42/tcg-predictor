@@ -65,6 +65,8 @@ padding-left:10px}
 .report-table th{text-align:left;color:var(--text-muted);font-weight:600;font-size:13px}
 .report-table th,.report-table td{padding:6px 10px 6px 0;border-bottom:1px solid var(--border)}
 .report-chart{display:block;margin:20px 0}
+.report-hero{display:block;width:100%;height:auto;border-radius:12px;margin:0 0 18px;
+border:1px solid var(--border)}
 .report-game-sec{border:1px solid var(--border);border-radius:10px;padding:0 15px;margin:10px 0}
 .report-game-sec summary{display:flex;align-items:center;gap:10px;min-height:38px;
 cursor:pointer;list-style:none;font-size:16.5px}
@@ -235,13 +237,39 @@ def long_date(iso):
         return iso
 
 
-def page(slug, title, published_at, summary, body_html):
+def thumbnail(slug, thumb_json, title, published_at, out_dir):
+    """Draw this report's picture next to its page. Returns its URL path, or
+    None when the report carries nothing to draw from or the draw fails — a
+    missing picture must never cost the article its page."""
+    if not thumb_json:
+        return None
+    try:
+        import json as _json
+        from report_thumbnail import render
+        t = _json.loads(thumb_json)
+        render(os.path.join(out_dir, f"{slug}.jpg"),
+               t.get("kind", "market"), title, long_date(published_at),
+               stats=[tuple(x) for x in t.get("stats", [])],
+               cards=[tuple(x) for x in t.get("cards", [])],
+               spark=[tuple(x) for x in t.get("spark", [])])
+        return f"/reports/{slug}.jpg"
+    except Exception as e:
+        print(f"  thumbnail for {slug} skipped: {type(e).__name__}: {e}")
+        return None
+
+
+def page(slug, title, published_at, summary, body_html, thumb_url=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
     # cards, but no longer prints above the headline. The headline is
     # descriptive now and the /reports filter carries the type.
     section = "Model report" if slug.startswith("model-report") else "Market report"
     url = f"{SITE}/reports/{slug}"
+    # The report's own picture is its share card; the site card is the
+    # fallback for reports written before thumbnails existed.
+    image = f"{SITE}{thumb_url}" if thumb_url else f"{SITE}/og-image.png?v=3"
+    hero = (f'<img class="report-hero" src="{thumb_url}" alt="" width="1200" height="630">'
+            if thumb_url else "")
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.
@@ -278,7 +306,7 @@ def page(slug, title, published_at, summary, body_html):
 <meta property="og:url" content="{url}">
 <meta property="og:site_name" content="CardStock">
 <meta property="og:locale" content="en_US">
-<meta property="og:image" content="{SITE}/og-image.png?v=3">
+<meta property="og:image" content="{image}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="CardStock: the stock market for trading cards">
@@ -289,7 +317,7 @@ def page(slug, title, published_at, summary, body_html):
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{t}">
 <meta name="twitter:description" content="{s}">
-<meta name="twitter:image" content="{SITE}/og-image.png?v=3">
+<meta name="twitter:image" content="{image}">
 <script type="application/ld+json">{schema}</script>
 {ADS}
 <style>{CSS}</style>
@@ -302,6 +330,7 @@ def page(slug, title, published_at, summary, body_html):
   <a href="{SITE}/about">About</a><a href="{SITE}/guides/how-to-read-price-charts">Guides</a></nav>
 </header>
 <article>
+{hero}
 <h1>{t}</h1>
 <p class="published">Published {html.escape(long_date(published_at))}</p>
 {body_html}
@@ -323,8 +352,13 @@ def page(slug, title, published_at, summary, body_html):
 def from_db(path):
     conn = sqlite3.connect(path)
     try:
-        rows = conn.execute(
-            "SELECT slug, title, published_at, summary, body_html FROM reports").fetchall()
+        try:
+            rows = conn.execute(
+                "SELECT slug, title, published_at, summary, body_html, thumb "
+                "FROM reports").fetchall()
+        except sqlite3.OperationalError:
+            rows = [(*r, None) for r in conn.execute(
+                "SELECT slug, title, published_at, summary, body_html FROM reports")]
     except sqlite3.OperationalError:
         rows = []
     conn.close()
@@ -341,7 +375,7 @@ def from_api():
     for item in get(f"{SITE}/api/market-reports"):
         full = get(f"{SITE}/api/market-reports/{item['slug']}")
         rows.append((full["slug"], full["title"], full["publishedAt"],
-                     full["summary"], full["bodyHtml"]))
+                     full["summary"], full["bodyHtml"], None))
     return rows
 
 
@@ -356,9 +390,10 @@ def main():
 
     rows = from_api() if args.api else from_db(args.db or PRED_DB)
     os.makedirs(args.out, exist_ok=True)
-    for slug, title, published_at, summary, body_html in rows:
+    for slug, title, published_at, summary, body_html, thumb in rows:
+        thumb_url = thumbnail(slug, thumb, title, published_at[:10], args.out)
         with open(os.path.join(args.out, f"{slug}.html"), "w", encoding="utf-8") as f:
-            f.write(page(slug, title, published_at[:10], summary, body_html))
+            f.write(page(slug, title, published_at[:10], summary, body_html, thumb_url))
     print(f"wrote {len(rows)} report page(s) -> {args.out}")
 
 

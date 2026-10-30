@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { useFetchReportsQuery } from "./reportsApi";
+import { useFetchReportsQuery, type ReportSummary } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
 import {
@@ -8,17 +8,40 @@ import {
     REPORT_KINDS, REPORT_KIND_ORDER, type ReportKind,
 } from "./reportKind";
 
-// Index of the weekly reports (newest first): every Friday a market report
-// (what moved) and a model report (how the forecasts have done). The kind
-// comes from the slug prefix, so no schema change was needed (2026-10-28).
-// 2026-10-29: the per-article kind label became a filter at the top of the
-// page, and each article carries its own descriptive headline + date instead.
-// Filter row: everything, then one chip per kind, in the order the kinds
-// are declared. A new kind shows up here on its own.
+// Index of the weekly reports. Each kind leads with its newest article as a
+// full card; everything older sits in a dropdown under it as a horizontal
+// rail (2026-10-30, user request), so the page stays one screen tall however
+// many Fridays accumulate.
 const TABS: { key: ReportKind | 'all'; label: string }[] = [
     { key: 'all', label: 'All reports' },
     ...REPORT_KIND_ORDER.map(k => ({ key: k, label: REPORT_KINDS[k].label })),
 ];
+
+// One article as a card: its picture, headline, the opening of its lede, and
+// the date beside its type. The whole card is the link.
+function ReportCard({ report, compact }: { report: ReportSummary; compact?: boolean }) {
+    const kind = reportKind(report.slug);
+    return (
+        <li className={`panel reports__item${compact ? ' reports__item--compact' : ''}`}>
+            <Link to={`/reports/${report.slug}`} className="reports__card">
+                {/* Drawn beside the article by the pipeline and served from the
+                    same path; a report without a picture simply drops it. */}
+                <img className="reports__thumb" loading="lazy" alt=""
+                    width={1200} height={630}
+                    src={`/reports/${report.slug}.jpg`}
+                    onError={e => { e.currentTarget.style.display = 'none'; }} />
+                <span className="reports__item-title">{report.title}</span>
+                <span className="reports__summary">{report.summary}</span>
+                <span className="reports__meta mono">
+                    <span className="reports__date">{longDate(report.publishedAt)}</span>
+                    <span className="reports__chip" style={reportChipStyle(kind)}>
+                        {reportKindLabel(report.slug, true)}
+                    </span>
+                </span>
+            </Link>
+        </li>
+    );
+}
 
 export default function ReportsPage() {
     usePageMeta("Reports",
@@ -33,18 +56,22 @@ export default function ReportsPage() {
     const setKind = (next: ReportKind | 'all') =>
         setParams(next === 'all' ? {} : { type: next }, { replace: true });
 
-    const counts = useMemo(() => {
-        const c = Object.fromEntries(REPORT_KIND_ORDER.map(k => [k, 0])) as
-            Record<ReportKind | 'all', number>;
-        c.all = reports?.length ?? 0;
-        for (const r of reports ?? []) c[reportKind(r.slug)]++;
-        return c;
+    // Newest first from the API, so the first of each kind is its latest.
+    const byKind = useMemo(() => {
+        const out = Object.fromEntries(REPORT_KIND_ORDER.map(k => [k, [] as ReportSummary[]])) as
+            Record<ReportKind, ReportSummary[]>;
+        for (const r of reports ?? []) out[reportKind(r.slug)].push(r);
+        return out;
     }, [reports]);
-    const shown = useMemo(
-        () => (reports ?? []).filter(r => kind === 'all' || reportKind(r.slug) === kind),
-        [reports, kind]);
+    const counts = useMemo(() => {
+        const c = { all: reports?.length ?? 0 } as Record<ReportKind | 'all', number>;
+        for (const k of REPORT_KIND_ORDER) c[k] = byKind[k].length;
+        return c;
+    }, [reports, byKind]);
 
     if (isLoading) return <CardLoader />;
+
+    const shownKinds = REPORT_KIND_ORDER.filter(k => kind === 'all' || k === kind);
 
     return (
         <div className="reports full-span">
@@ -69,25 +96,33 @@ export default function ReportsPage() {
                             </button>
                         ))}
                     </div>
-                    <ul className="reports__list">
-                        {shown.map(r => (
-                            <li key={r.slug} className="panel reports__item">
-                                <Link to={`/reports/${r.slug}`} className="reports__item-title">
-                                    {r.title}
-                                </Link>
-                                <p className="reports__summary">{r.summary}</p>
-                                {/* Tag line: the date in plain type, then
-                                    the kind of article in its own colour. */}
-                                <p className="reports__meta mono">
-                                    <span className="reports__date">{longDate(r.publishedAt)}</span>
-                                    <span className="reports__chip"
-                                        style={reportChipStyle(reportKind(r.slug))}>
-                                        {reportKindLabel(r.slug, true)}
-                                    </span>
-                                </p>
-                            </li>
-                        ))}
-                    </ul>
+                    {shownKinds.map(k => {
+                        const [latest, ...older] = byKind[k];
+                        if (!latest) return null;
+                        return (
+                            <section key={k} className="reports__section">
+                                <div className="band">
+                                    <span className="band__title">Latest {REPORT_KINDS[k].label.toLowerCase()} report</span>
+                                </div>
+                                <ul className="reports__list">
+                                    <ReportCard report={latest} />
+                                </ul>
+                                {older.length > 0 && (
+                                    <details className="reports__archive">
+                                        <summary>
+                                            Earlier {REPORT_KINDS[k].label.toLowerCase()} reports
+                                            <span className="mono reports__filter-count">{older.length}</span>
+                                        </summary>
+                                        {/* A rail rather than a wall: the archive
+                                            scrolls sideways and keeps the page short. */}
+                                        <ul className="reports__rail">
+                                            {older.map(r => <ReportCard key={r.slug} report={r} compact />)}
+                                        </ul>
+                                    </details>
+                                )}
+                            </section>
+                        );
+                    })}
                 </>
             )}
         </div>

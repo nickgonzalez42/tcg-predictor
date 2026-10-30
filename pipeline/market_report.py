@@ -1366,18 +1366,54 @@ def build_report(force=False, as_of=None):
         title TEXT NOT NULL,
         published_at TEXT NOT NULL,
         summary TEXT NOT NULL,
-        body_html TEXT NOT NULL)""")
+        body_html TEXT NOT NULL,
+        thumb TEXT)""")
+    # `thumb` (2026-10-30) carries what the report's picture is drawn from:
+    # its stats, the games' moves and the cards it singled out. report_pages.py
+    # renders the PNG from it, so the facts are captured here where they are
+    # already computed and the drawing happens where the files are written.
+    try:
+        pred.execute("ALTER TABLE reports ADD COLUMN thumb TEXT")
+    except sqlite3.OperationalError:
+        pass   # already there
     # A per-game `tags` column lived here for a few hours on 2026-10-29; the
     # reports index tags articles by TYPE only (user: "I just want different
     # colors for Market/Model"), and the type is the slug prefix. Columns are
     # named explicitly so an older database that still has the column writes
     # cleanly.
-    cols = "(slug, title, published_at, summary, body_html)"
-    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?)",
-                 (slug, title, today.isoformat(), summary, "".join(body)))
-    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?)",
+    # One card per game from the week's biggest movers, so the picture's fan
+    # is a mix rather than three cards from whichever game sorted first.
+    mover_cards, seen_g = [], set()
+    for m in sorted(all_moves, key=lambda m: -abs(m[5])):
+        if m[0] in seen_g:
+            continue
+        seen_g.add(m[0])
+        mover_cards.append([m[0], int(m[1])])
+    market_thumb = {
+        "kind": "market",
+        "stats": [[f"{downs:,}", "cards fell", "down"],
+                  [f"{ups:,}", "cards rose", "up"],
+                  [f"±{(avg_gain + abs(avg_loss)) / 2:.1f}%", "typical move", None],
+                  [f"{len(per_game)}", "games tracked", None]],
+        "spark": [[GAMES[g]["label"], r1(drift.get(g, 0.0))] for g in game_order],
+        "cards": mover_cards[:6],
+    }
+    model_thumb = {
+        "kind": "model",
+        "stats": ([[f"{live[0][1]:,}", "forecasts checked", None],
+                   [f"{live[0][5] * 100:.0f}%", "inside the range", "up"],
+                   [f"±{(exp(live[0][2]) - 1) * 100:.1f}%", "typical miss", None]]
+                  if live else []),
+        "spark": [],
+        "cards": [[g, int(pid)] for g, pid, _n, _b, _f, _pr in picks[:6]],
+    }
+    cols = "(slug, title, published_at, summary, body_html, thumb)"
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?)",
+                 (slug, title, today.isoformat(), summary, "".join(body),
+                  json.dumps(market_thumb)))
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?)",
                  (model_slug, model_title, today.isoformat(), model_summary,
-                  "".join(model_body)))
+                  "".join(model_body), json.dumps(model_thumb)))
     pred.commit()
     pc.close()
     pred.close()

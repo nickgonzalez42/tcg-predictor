@@ -12,17 +12,156 @@
   margin: 0 0 var(--space-25);
 }
 
+/* Each kind leads with one full card; the rest live in the archive rail
+   below it (2026-10-30). */
+.reports__section {
+  margin-bottom: var(--space-30);
+}
+
 .reports__list {
   list-style: none;
   margin: 0;
   padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-20);
+}
+
+/* The archive: a dropdown holding a sideways rail of narrower cards. */
+.reports__archive {
+  margin-top: var(--space-15);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.reports__archive > summary {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: var(--space-10);
+  min-height: 44px;
+  padding: 0 var(--space-20);
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.reports__archive > summary::-webkit-details-marker {
+  display: none;
+}
+
+.reports__archive > summary::before {
+  content: "▸";
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+}
+
+.reports__archive[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.reports__rail {
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-20) var(--space-20);
+  display: flex;
   gap: var(--space-15);
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+
+.reports__rail > .reports__item {
+  flex: 0 0 300px;
+  scroll-snap-align: start;
+}
+
+@media (max-width: 767px) {
+  .reports__rail > .reports__item {
+    flex-basis: 260px;
+  }
+}
+
+/* Archive cards carry a shorter teaser than the featured one. */
+.reports__item--compact .reports__item-title {
+  font-size: 15.5px;
+}
+
+.reports__item--compact .reports__summary {
+  -webkit-line-clamp: 2;
+  font-size: 13.5px;
 }
 
 .reports__item {
-  padding: var(--space-15) var(--space-20);
+  padding: 0;
+  overflow: hidden;
+}
+
+/* The whole item is one link: picture on top, then headline, summary and the
+   tag line (2026-10-30). Block, not flex, so the text keeps normal flow. */
+.reports__card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 0 0 var(--space-15);
+  color: inherit;
+  text-decoration: none;
+}
+
+
+
+.reports__item:hover .reports__item-title {
+  color: var(--brand);
+}
+
+.reports__thumb,
+.report__hero {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1200 / 630;
+  object-fit: cover;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.report__hero {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: var(--space-15);
+}
+
+.reports__card > .reports__item-title,
+.reports__card > .reports__summary,
+.reports__card > .reports__meta {
+  padding-left: var(--space-20);
+  padding-right: var(--space-20);
+}
+
+.reports__card > .reports__item-title {
+  display: block;
+}
+
+.reports__card > .reports__item-title {
+  margin-top: var(--space-15);
+}
+
+/* The summary is a teaser on a card, not the whole lede. */
+.reports__card > .reports__summary {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  flex: 1 0 auto;
+}
+
+.reports__card > .reports__meta {
+  display: flex;
+  margin-top: var(--space-15);
 }
 
 .reports__item-title {

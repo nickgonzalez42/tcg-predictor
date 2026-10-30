@@ -205,6 +205,9 @@ export default function ReportPage() {
                 MODEL chip (removed 2026-10-29, user request): the headline
                 says what the article is about, and the type is in the page's
                 article:section tag and the filter on /reports. */}
+            <img className="report__hero" alt="" width={1200} height={630}
+                src={`/reports/${report.slug}.jpg`}
+                onError={e => { e.currentTarget.style.display = 'none'; }} />
             <h1 className="reports__title">{report.title}</h1>
             <p className="reports__meta mono">
                 Published {longDate(report.publishedAt)}
