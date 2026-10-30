@@ -67,10 +67,17 @@ padding-left:10px}
 .report-chart{display:block;margin:20px 0}
 .report-hero-svg{display:block;width:100%;height:auto;border-radius:12px;margin:0 0 18px;
 border:1px solid var(--border)}
-.report-hero-card{cursor:pointer}
-.report-hero-card:hover{opacity:.85}
-.report-hero-bar{cursor:pointer}
-a:hover .report-hero-bar{opacity:.75}
+/* Hero interactivity: the pointed-at card lifts out of the fan, the rest
+   step back, and whatever is hovered names itself in the picture. */
+.report-hero-card,.report-hero-bar{cursor:pointer}
+.report-hero-cardname,.report-hero-barvalue{opacity:0;transition:opacity .15s ease}
+.report-hero-svg .report-hero-card{transition:opacity .15s ease,filter .15s ease}
+.report-hero-svg:hover .report-hero-card{opacity:.4}
+.report-hero-svg .report-hero-card:hover{opacity:1;
+filter:drop-shadow(0 8px 20px rgba(255,203,5,.45))}
+.report-hero-card:hover .report-hero-cardname{opacity:1}
+.report-hero-svg a:hover .report-hero-bar{opacity:.8}
+.report-hero-svg a:hover .report-hero-barvalue{opacity:1}
 .report-game-sec{border:1px solid var(--border);border-radius:10px;padding:0 15px;margin:10px 0}
 .report-game-sec summary{display:flex;align-items:center;gap:10px;min-height:38px;
 cursor:pointer;list-style:none;font-size:16.5px}
@@ -199,7 +206,10 @@ JS = """
     peek.style.top = y + 'px';
   }
   function linkOf(t) {
-    return t && t.closest ? t.closest('a[href*="/catalog/"]') : null;
+    var a = t && t.closest ? t.closest('a[href*="/catalog/"]') : null;
+    // The hero shows the card full size and names it already; a floating
+    // copy on top of it is just clutter.
+    return a && a.closest('.report-hero-svg') ? null : a;
   }
   document.addEventListener('mouseover', function (e) {
     var a = linkOf(e.target);
@@ -262,7 +272,7 @@ def thumbnail(slug, thumb_json, title, published_at, out_dir):
         return None
 
 
-def page(slug, title, published_at, summary, body_html, thumb_url=None):
+def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
     # cards, but no longer prints above the headline. The headline is
@@ -272,10 +282,9 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None):
     # The report's own picture is its share card; the site card is the
     # fallback for reports written before thumbnails existed.
     image = f"{SITE}{thumb_url}" if thumb_url else f"{SITE}/og-image.png?v=3"
-    # No <img> hero: the body opens with the interactive SVG twin
-    # (report_thumbnail.render_svg), which the JPEG only stands in for when a
+    # The interactive hero leads the article; the JPEG only stands in when a
     # link preview is doing the rendering.
-    hero = ""
+    hero = hero_svg or ""
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.
@@ -360,10 +369,10 @@ def from_db(path):
     try:
         try:
             rows = conn.execute(
-                "SELECT slug, title, published_at, summary, body_html, thumb "
+                "SELECT slug, title, published_at, summary, body_html, thumb, hero "
                 "FROM reports").fetchall()
         except sqlite3.OperationalError:
-            rows = [(*r, None) for r in conn.execute(
+            rows = [(*r, None, None) for r in conn.execute(
                 "SELECT slug, title, published_at, summary, body_html FROM reports")]
     except sqlite3.OperationalError:
         rows = []
@@ -381,7 +390,7 @@ def from_api():
     for item in get(f"{SITE}/api/market-reports"):
         full = get(f"{SITE}/api/market-reports/{item['slug']}")
         rows.append((full["slug"], full["title"], full["publishedAt"],
-                     full["summary"], full["bodyHtml"], None))
+                     full["summary"], full["bodyHtml"], None, full.get("hero")))
     return rows
 
 
@@ -396,10 +405,11 @@ def main():
 
     rows = from_api() if args.api else from_db(args.db or PRED_DB)
     os.makedirs(args.out, exist_ok=True)
-    for slug, title, published_at, summary, body_html, thumb in rows:
+    for slug, title, published_at, summary, body_html, thumb, hero in rows:
         thumb_url = thumbnail(slug, thumb, title, published_at[:10], args.out)
         with open(os.path.join(args.out, f"{slug}.html"), "w", encoding="utf-8") as f:
-            f.write(page(slug, title, published_at[:10], summary, body_html, thumb_url))
+            f.write(page(slug, title, published_at[:10], summary, body_html,
+                         thumb_url, hero))
     print(f"wrote {len(rows)} report page(s) -> {args.out}")
 
 

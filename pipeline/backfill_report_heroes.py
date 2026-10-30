@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """
-Put the interactive hero at the head of every stored report body
+Fill every report's `hero` column with its interactive picture
 (2026-10-30). New reports get one when they are written (market_report.py);
-this gives the archive the same opening without regenerating a word of it.
+this gives the archive the same one without regenerating a word of it.
 
-It only ever replaces a hero it finds at the very start of the body, or
-inserts one where there is none, so nothing a report actually says is
-touched. Re-running it is safe: the hero is rebuilt from the report's own
-stored `thumb` facts, and the old one is dropped first.
+The hero lived at the head of body_html for a few hours; it is a column of
+its own now, so the reports index can show it on each card without
+fetching bodies. This also strips that leading copy out of any body that
+still carries it. Nothing a report actually says is touched, and re-running
+is safe: the hero is rebuilt from the report's own stored `thumb` facts.
 
     backfill_report_heroes.py            # dry run
     backfill_report_heroes.py --apply
@@ -44,6 +45,12 @@ def main():
     args = ap.parse_args()
 
     conn = sqlite3.connect(args.db, timeout=60)
+    for col in ("thumb", "hero"):
+        try:
+            conn.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
+            print(f"added the {col} column")
+        except sqlite3.OperationalError:
+            pass
     rows = conn.execute("SELECT slug, title, published_at, body_html, thumb FROM reports "
                         "ORDER BY published_at DESC").fetchall()
     updates = []
@@ -57,19 +64,16 @@ def main():
                          cards=[tuple(x) for x in t.get("cards", [])],
                          spark=[tuple(x) for x in t.get("spark", [])])
         stripped = LEADING_HERO.sub("", body or "", count=1)
-        had = len(stripped) != len(body or "")
-        new_body = svg + stripped
-        if new_body == body:
-            print(f"  {slug:36s} unchanged")
-            continue
-        updates.append((new_body, slug))
-        print(f"  {slug:36s} {'replaced' if had else 'added'} "
-              f"({len(t.get('cards', []))} cards, {len(t.get('spark', []))} bars)")
+        moved = len(stripped) != len(body or "")
+        updates.append((svg, stripped, slug))
+        print(f"  {slug:36s} hero set ({len(t.get('cards', []))} cards, "
+              f"{len(t.get('spark', []))} bars)"
+              + ("; removed the copy from the body" if moved else ""))
     print(f"\n{len(updates)} report(s) to update")
     if not args.apply:
         print("dry run: pass --apply to write")
         return
-    conn.executemany("UPDATE reports SET body_html = ? WHERE slug = ?", updates)
+    conn.executemany("UPDATE reports SET hero = ?, body_html = ? WHERE slug = ?", updates)
     conn.commit()
     conn.close()
     print(f"wrote {len(updates)} -> {os.path.normpath(args.db)}")

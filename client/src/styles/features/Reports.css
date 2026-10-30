@@ -145,19 +145,26 @@
   text-underline-offset: 4px;
 }
 
+/* The picture sits above the card's link, not inside it. */
 .reports__thumb {
   display: block;
-  width: 100%;
-  height: auto;
-  aspect-ratio: 1200 / 630;
-  object-fit: cover;
+  cursor: pointer;
   background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
-/* The article's hero is an SVG inside the body: every card and game bar in
-   it is a link that names itself on hover (2026-10-30). */
-.report__body .report-hero-svg {
+.reports__thumb .report-hero-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+/* The article's hero: every card and game bar in it is a link that names
+   itself on hover (2026-10-30). */
+.report__hero .report-hero-svg {
   display: block;
   width: 100%;
   height: auto;
@@ -166,15 +173,50 @@
   border: 1px solid var(--border);
 }
 
-.report__body .report-hero-card,
-.report__body .report-hero-bar {
+/* Hero interactivity: the pointed-at card lifts out of the fan, the rest
+   step back, and whatever is hovered names itself inside the picture. */
+.report-hero-card,
+.report-hero-bar {
   cursor: pointer;
+}
+
+.report-hero-cardname,
+.report-hero-barvalue {
+  opacity: 0;
   transition: opacity 0.15s ease;
 }
 
-.report__body .report-hero-card:hover,
-.report__body a:hover .report-hero-bar {
+.report-hero-svg .report-hero-card {
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+
+.report-hero-svg:hover .report-hero-card {
+  opacity: 0.4;
+}
+
+.report-hero-svg .report-hero-card:hover {
+  opacity: 1;
+  filter: drop-shadow(0 8px 20px rgba(255, 203, 5, 0.45));
+}
+
+.report-hero-card:hover .report-hero-cardname {
+  opacity: 1;
+}
+
+.report-hero-svg a:hover .report-hero-bar {
   opacity: 0.8;
+}
+
+.report-hero-svg a:hover .report-hero-barvalue {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .report-hero-cardname,
+  .report-hero-barvalue,
+  .report-hero-svg .report-hero-card {
+    transition: none;
+  }
 }
 
 .reports__card > .reports__item-title,

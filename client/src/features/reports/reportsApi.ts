@@ -8,6 +8,8 @@ export type ReportSummary = {
     title: string;
     publishedAt: string;   // yyyy-MM-dd
     summary: string;
+    /** The report's picture as inline SVG, sanitized before it is shown. */
+    hero?: string;
 }
 
 export type MarketReport = ReportSummary & { bodyHtml: string };

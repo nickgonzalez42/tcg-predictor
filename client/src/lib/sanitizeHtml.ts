@@ -29,6 +29,7 @@ const SVG_ATTRS = new Set([
     'text-anchor', 'font-size', 'role', 'xmlns',
     // The hero's type and geometry.
     'font-family', 'font-weight', 'transform', 'preserveaspectratio', 'opacity',
+    'paint-order', 'stroke-linejoin',
 ]);
 const SVG_VALUE = /^[\w\s.,#()%:/+-]*$/;
 

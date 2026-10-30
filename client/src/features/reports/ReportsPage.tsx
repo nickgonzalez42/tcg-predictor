@@ -1,8 +1,9 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useFetchReportsQuery, type ReportSummary } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { sanitizeReportHtml } from "../../lib/sanitizeHtml";
 import {
     reportKind, reportKindLabel, reportChipStyle, longDate,
     REPORT_KINDS, REPORT_KIND_ORDER, type ReportKind,
@@ -18,15 +19,23 @@ import {
 // the date beside its type. The whole card is the link.
 function ReportCard({ report, compact }: { report: ReportSummary; compact?: boolean }) {
     const kind = reportKind(report.slug);
+    const navigate = useNavigate();
     return (
         <li className={`panel reports__item${compact ? ' reports__item--compact' : ''}`}>
+            {/* The same interactive picture the article leads with. Its cards
+                and game bars are links of their own, so it sits OUTSIDE the
+                card's link rather than nested inside it, which is invalid and
+                would swallow them. Clicking anywhere else on the picture still
+                opens the article; the headline below is the keyboard path. A
+                report written before heroes existed simply has none. */}
+            {report.hero && (
+                <span className="reports__thumb"
+                    onClick={e => {
+                        if (!(e.target as Element).closest('a')) navigate(`/reports/${report.slug}`);
+                    }}
+                    dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(report.hero) }} />
+            )}
             <Link to={`/reports/${report.slug}`} className="reports__card">
-                {/* Drawn beside the article by the pipeline and served from the
-                    same path; a report without a picture simply drops it. */}
-                <img className="reports__thumb" loading="lazy" alt=""
-                    width={1200} height={630}
-                    src={`/reports/${report.slug}.jpg`}
-                    onError={e => { e.currentTarget.style.display = 'none'; }} />
                 <span className="reports__item-title">{report.title}</span>
                 <span className="reports__summary">{report.summary}</span>
                 <span className="reports__meta mono">

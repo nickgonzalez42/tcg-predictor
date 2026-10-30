@@ -1379,15 +1379,17 @@ def build_report(force=False, as_of=None):
         published_at TEXT NOT NULL,
         summary TEXT NOT NULL,
         body_html TEXT NOT NULL,
-        thumb TEXT)""")
+        thumb TEXT,
+        hero TEXT)""")
     # `thumb` (2026-10-30) carries what the report's picture is drawn from:
     # its stats, the games' moves and the cards it singled out. report_pages.py
     # renders the PNG from it, so the facts are captured here where they are
     # already computed and the drawing happens where the files are written.
-    try:
-        pred.execute("ALTER TABLE reports ADD COLUMN thumb TEXT")
-    except sqlite3.OperationalError:
-        pass   # already there
+    for col in ("thumb", "hero"):
+        try:
+            pred.execute(f"ALTER TABLE reports ADD COLUMN {col} TEXT")
+        except sqlite3.OperationalError:
+            pass   # already there
     # A per-game `tags` column lived here for a few hours on 2026-10-29; the
     # reports index tags articles by TYPE only (user: "I just want different
     # colors for Market/Model"), and the type is the slug prefix. Columns are
@@ -1420,21 +1422,22 @@ def build_report(force=False, as_of=None):
         "spark": [],
         "cards": [[g, int(pid), n] for g, pid, n, _b, _f, _pr in picks[:6]],
     }
-    # The article opens with the interactive hero; the JPEG twin that
-    # report_pages.py renders is only for link previews.
+    # The interactive hero is its own field, not part of the body: the index
+    # shows it on each card, where the body is never fetched. The JPEG twin
+    # that report_pages.py renders is only for link previews.
     from report_thumbnail import render_svg
     pub = today.strftime("%B %-d, %Y")
-    body.insert(0, render_svg("market", title, pub, market_thumb["stats"],
-                              market_thumb["cards"], market_thumb["spark"]))
-    model_body.insert(0, render_svg("model", model_title, pub, model_thumb["stats"],
-                                    model_thumb["cards"], model_thumb["spark"]))
-    cols = "(slug, title, published_at, summary, body_html, thumb)"
-    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?)",
+    market_hero = render_svg("market", title, pub, market_thumb["stats"],
+                             market_thumb["cards"], market_thumb["spark"])
+    model_hero = render_svg("model", model_title, pub, model_thumb["stats"],
+                            model_thumb["cards"], model_thumb["spark"])
+    cols = "(slug, title, published_at, summary, body_html, thumb, hero)"
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?,?)",
                  (slug, title, today.isoformat(), summary, "".join(body),
-                  json.dumps(market_thumb)))
-    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?)",
+                  json.dumps(market_thumb), market_hero))
+    pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?,?)",
                  (model_slug, model_title, today.isoformat(), model_summary,
-                  "".join(model_body), json.dumps(model_thumb)))
+                  "".join(model_body), json.dumps(model_thumb), model_hero))
     pred.commit()
     pc.close()
     pred.close()

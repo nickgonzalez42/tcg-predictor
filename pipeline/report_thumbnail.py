@@ -31,6 +31,8 @@ W, H = 1200, 630
 BG = (16, 22, 35)
 TEXT = (232, 236, 244)
 MUTED = (139, 150, 173)
+LABEL = (178, 188, 206)   # labels under bars and stats: brighter than MUTED,
+                          # because the picture is shown at under half size
 BRAND = (255, 203, 5)
 UP = (63, 217, 138)
 DOWN = (255, 122, 122)
@@ -117,7 +119,7 @@ def _spark(draw, xy, series, width=600, height=74):
     slot = width / len(series)
     bar = min(26, slot * 0.6)
     draw.line([x0, mid, x0 + width, mid], fill=(46, 58, 82), width=1)
-    f = _font(MONO, 12, index=0)
+    f = _font(MONO, 18, index=0)
     for i, item in enumerate(series):
         label, value = item[0], item[1]
         cx = x0 + slot * (i + 0.5)
@@ -126,8 +128,8 @@ def _spark(draw, xy, series, width=600, height=74):
         draw.rounded_rectangle([cx - bar / 2, top, cx + bar / 2, bottom], radius=3,
                                fill=UP if value >= 0 else DOWN)
         name = label[:3].upper()
-        draw.text((cx - draw.textlength(name, font=f) / 2, y0 + height + 6), name,
-                  font=f, fill=MUTED)
+        draw.text((cx - draw.textlength(name, font=f) / 2, y0 + height + 8), name,
+                  font=f, fill=LABEL)
 
 
 def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
@@ -144,9 +146,9 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
 
     f_head = _font(DISPLAY, 66)
     f_mono = _font(MONO, 19, index=1)
-    f_small = _font(MONO, 16, index=0)
+    f_small = _font(MONO, 20, index=0)
     f_stat = _font(DISPLAY, 46)
-    f_label = _font(MONO, 15, index=0)
+    f_label = _font(MONO, 20, index=0)
 
     # Card art first: it sits behind the text column's right edge.
     art, used = [], []
@@ -191,10 +193,11 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
         if not lines[-1].endswith("…") or size == 44:
             break
     for line in lines:
-        draw.text((64, y), line, font=f_head, fill=TEXT)
+        draw.text((64, y), line, font=f_head, fill=TEXT,
+                  stroke_width=3, stroke_fill=(10, 14, 24))
         y += step
     y += 6
-    draw.text((64, y), published.upper(), font=f_small, fill=MUTED)
+    draw.text((64, y), published.upper(), font=f_small, fill=LABEL)
 
     if spark:
         _spark(draw, (64, 392), list(spark)[:12])
@@ -216,11 +219,11 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
     for value, slabel, tone in shown[:3]:
         colour = UP if tone == "up" else DOWN if tone == "down" else BRAND
         draw.text((x, H - 136), str(value), font=f_stat, fill=colour)
-        draw.text((x, H - 78), slabel.upper(), font=f_label, fill=MUTED)
+        draw.text((x, H - 80), slabel.upper(), font=f_label, fill=LABEL)
         x += max(draw.textlength(str(value), font=f_stat),
                  draw.textlength(slabel.upper(), font=f_label)) + 56
 
-    draw.text((W - 230, H - 48), "CARDSTOCK.GUIDE", font=f_small, fill=MUTED)
+    draw.text((W - 250, H - 46), "CARDSTOCK.GUIDE", font=f_small, fill=MUTED)
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     img.convert("RGB").save(out_path, "JPEG", quality=72, optimize=True,
@@ -264,6 +267,9 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
         card = cards[n]
         game, pid = card[0], int(card[1])
         name = card[2] if len(card) > 2 and card[2] else "Open this card"
+        # The visible label is trimmed to fit the canvas; the tooltip keeps
+        # the whole name.
+        shown_name = name if len(name) <= 30 else name[:29].rstrip(" ·-") + "\u2026"
         cx, cy, angle = spots[n]
         cw, ch = 228, 319
         out.append(
@@ -272,7 +278,13 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
             f'<image href="{CDN}/{_esc(game)}/{pid}.jpg" x="{cx - cw // 2}" '
             f'y="{cy - ch // 2}" width="{cw}" height="{ch}" '
             f'preserveAspectRatio="xMidYMid slice" '
-            f'transform="rotate({angle} {cx} {cy})"/></a>')
+            f'transform="rotate({angle} {cx} {cy})"/>'
+            # Named in the picture itself while the pointer is on it; the
+            # stylesheet fades this in, so it costs nothing at rest.
+            f'<text class="report-hero-cardname" x="920" y="{H - 40}" '
+            f'font-family="{SVG_MONO}" font-size="21" fill="#e8ecf4" '
+            f'stroke="#0a0e18" stroke-width="4" stroke-linejoin="round" '
+            f'paint-order="stroke" text-anchor="middle">{_esc(shown_name)}</text></a>')
 
     chip_w = int(measure.textlength(label, font=_font(MONO, 19, index=1))) + 28
     out.append(f'<rect x="64" y="56" width="{chip_w}" height="36" rx="18" fill="none" '
@@ -287,10 +299,12 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
             break
     for line in lines:
         out.append(f'<text x="64" y="{y}" font-family="{SVG_FONT}" font-weight="900" '
-                   f'font-size="{size}" fill="#e8ecf4">{_esc(line)}</text>')
+                   f'font-size="{size}" fill="#e8ecf4" stroke="#0a0e18" '
+                   f'stroke-width="5" stroke-linejoin="round" paint-order="stroke">'
+                   f'{_esc(line)}</text>')
         y += step
-    out.append(f'<text x="64" y="{y - step + 30}" font-family="{SVG_MONO}" font-size="16" '
-               f'fill="#8b96ad">{_esc(published.upper())}</text>')
+    out.append(f'<text x="64" y="{y - step + 32}" font-family="{SVG_MONO}" font-size="20" '
+               f'fill="#b2bcce">{_esc(published.upper())}</text>')
 
     series = list(spark)[:12]
     if series:
@@ -308,9 +322,12 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
             body = (f'<title>{_esc(name)} {value:+.1f}% this week</title>'
                     f'<rect class="report-hero-bar" x="{cx - bw / 2:.0f}" y="{top:.0f}" '
                     f'width="{bw:.0f}" height="{h:.0f}" rx="3" fill="{colour}"/>'
-                    f'<text x="{cx:.0f}" y="{mid + 52:.0f}" font-family="{SVG_MONO}" '
-                    f'font-size="12" fill="#8b96ad" text-anchor="middle">'
-                    f'{_esc(name[:3].upper())}</text>')
+                    f'<text x="{cx:.0f}" y="{mid + 56:.0f}" font-family="{SVG_MONO}" '
+                    f'font-size="18" fill="#b2bcce" text-anchor="middle">'
+                    f'{_esc(name[:3].upper())}</text>'
+                    f'<text class="report-hero-barvalue" x="{cx:.0f}" '
+                    f'y="{mid - 40:.0f}" font-family="{SVG_MONO}" font-size="19" '
+                    f'fill="{colour}" text-anchor="middle">{value:+.1f}%</text>')
             out.append(f'<a href="/catalog?game={_esc(key)}">{body}</a>' if key else body)
 
     flat = headline.replace(",", "")
@@ -326,9 +343,9 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
         colour = "#3fd98a" if tone == "up" else "#ff7a7a" if tone == "down" else "#ffcb05"
         out.append(f'<text x="{x:.0f}" y="{H - 96}" font-family="{SVG_FONT}" '
                    f'font-weight="900" font-size="46" fill="{colour}">{_esc(value)}</text>')
-        out.append(f'<text x="{x:.0f}" y="{H - 66}" font-family="{SVG_MONO}" font-size="15" '
-                   f'fill="#8b96ad">{_esc(str(slabel).upper())}</text>')
+        out.append(f'<text x="{x:.0f}" y="{H - 64}" font-family="{SVG_MONO}" font-size="20" '
+                   f'fill="#b2bcce">{_esc(str(slabel).upper())}</text>')
         x += max(measure.textlength(str(value), font=_font(DISPLAY, 46)),
-                 measure.textlength(str(slabel).upper(), font=_font(MONO, 15))) + 56
+                 measure.textlength(str(slabel).upper(), font=_font(MONO, 20))) + 56
     out.append("</svg>")
     return "".join(out)

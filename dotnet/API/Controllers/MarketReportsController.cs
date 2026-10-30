@@ -11,7 +11,8 @@ namespace API.Controllers;
 [ApiController]
 public class MarketReportsController(PredictionsContext predictions) : ControllerBase
 {
-    // Newest first; body omitted (the list page shows title + summary only).
+    // Newest first; the body is omitted, but the hero rides along: the index
+    // draws it on every card.
     [HttpGet]
     public async Task<IActionResult> List()
     {
@@ -19,7 +20,7 @@ public class MarketReportsController(PredictionsContext predictions) : Controlle
         {
             var reports = await predictions.Reports
                 .OrderByDescending(r => r.PublishedAt)
-                .Select(r => new { r.Slug, r.Title, r.PublishedAt, r.Summary })
+                .Select(r => new { r.Slug, r.Title, r.PublishedAt, r.Summary, r.Hero })
                 .ToListAsync();
             return Ok(reports);
         }

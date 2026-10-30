@@ -205,9 +205,12 @@ export default function ReportPage() {
                 MODEL chip (removed 2026-10-29, user request): the headline
                 says what the article is about, and the type is in the page's
                 article:section tag and the filter on /reports. */}
-            {/* The hero is the interactive SVG at the head of the body
-                (report_thumbnail.render_svg); the JPEG twin is only what a
-                link preview shows. */}
+            {/* The interactive hero (report_thumbnail.render_svg); the JPEG
+                twin is only what a link preview shows. */}
+            {report.hero && (
+                <div className="report__hero"
+                    dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(report.hero) }} />
+            )}
             <h1 className="reports__title">{report.title}</h1>
             <p className="reports__meta mono">
                 Published {longDate(report.publishedAt)}

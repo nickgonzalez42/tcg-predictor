@@ -9,4 +9,8 @@ public class MarketReport
     public string PublishedAt { get; set; } = "";   // yyyy-MM-dd
     public string Summary { get; set; } = "";
     public string BodyHtml { get; set; } = "";
+    // The report's picture as inline SVG: the article's hero and the index
+    // card's thumbnail, with every card and game bar in it a link
+    // (pipeline/report_thumbnail.py). Empty for reports written before it.
+    public string Hero { get; set; } = "";
 }
