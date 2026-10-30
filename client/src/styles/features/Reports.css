@@ -370,28 +370,11 @@
 /* Report type filter above the list, and the date byline under each item
    and each article (2026-10-29). The per-article MARKET / MODEL chip these
    replaced is gone: the filter carries the type now. */
-.reports__filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-5);
-  margin: 0 0 var(--space-20);
-}
-
-.reports__filter-btn {
-  min-height: var(--control-h-sm);
-  padding: 0 var(--space-15);
-  font-size: 13px;
-}
-
+/* Count badge beside an archive dropdown's name. */
 .reports__filter-count {
   margin-left: 6px;
   font-size: 11px;
   color: var(--text-muted);
-}
-
-.btn--active .reports__filter-count {
-  color: inherit;
-  opacity: 0.75;
 }
 
 .reports__meta {
@@ -430,9 +413,4 @@
   margin: var(--space-5) 0 var(--space-20);
 }
 
-/* Fingers need bigger targets than cursors (see charts.css). */
-@media (pointer: coarse) {
-  .reports__filter-btn {
-    min-height: 44px;
-  }
-}
+

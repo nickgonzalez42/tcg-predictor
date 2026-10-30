@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { useFetchReportsQuery, type ReportSummary } from "./reportsApi";
 import CardLoader from "../../app/shared/components/CardLoader";
 import { usePageMeta } from "../../lib/usePageMeta";
@@ -11,11 +11,8 @@ import {
 // Index of the weekly reports. Each kind leads with its newest article as a
 // full card; everything older sits in a dropdown under it as a horizontal
 // rail (2026-10-30, user request), so the page stays one screen tall however
-// many Fridays accumulate.
-const TABS: { key: ReportKind | 'all'; label: string }[] = [
-    { key: 'all', label: 'All reports' },
-    ...REPORT_KIND_ORDER.map(k => ({ key: k, label: REPORT_KINDS[k].label })),
-];
+// many Fridays accumulate. There is no type filter: the page is already one
+// section per type (2026-10-30, user request).
 
 // One article as a card: its picture, headline, the opening of its lede, and
 // the date beside its type. The whole card is the link.
@@ -48,13 +45,6 @@ export default function ReportsPage() {
         "Weekly trading card reports: what moved, where the price model sees movement next, and how its forecasts have actually done.",
         { canonical: "/reports" });
     const { data: reports, isLoading } = useFetchReportsQuery();
-    // The filter lives in the URL (?type=model), like the catalog's: a
-    // filtered view can be shared and the back button steps through it.
-    const [params, setParams] = useSearchParams();
-    const asked = params.get('type');
-    const kind: ReportKind | 'all' = asked === 'model' || asked === 'market' ? asked : 'all';
-    const setKind = (next: ReportKind | 'all') =>
-        setParams(next === 'all' ? {} : { type: next }, { replace: true });
 
     // Newest first from the API, so the first of each kind is its latest.
     const byKind = useMemo(() => {
@@ -63,15 +53,7 @@ export default function ReportsPage() {
         for (const r of reports ?? []) out[reportKind(r.slug)].push(r);
         return out;
     }, [reports]);
-    const counts = useMemo(() => {
-        const c = { all: reports?.length ?? 0 } as Record<ReportKind | 'all', number>;
-        for (const k of REPORT_KIND_ORDER) c[k] = byKind[k].length;
-        return c;
-    }, [reports, byKind]);
-
     if (isLoading) return <CardLoader />;
-
-    const shownKinds = REPORT_KIND_ORDER.filter(k => kind === 'all' || k === kind);
 
     return (
         <div className="reports full-span">
@@ -84,19 +66,7 @@ export default function ReportsPage() {
                 <p className="est-note">The first weekly report lands this Friday.</p>
             ) : (
                 <>
-                    <div className="reports__filter" role="group" aria-label="Report type">
-                        {TABS.map(t => (
-                            <button key={t.key}
-                                className={`btn btn--outline reports__filter-btn${kind === t.key ? ' btn--active' : ''}`}
-                                onClick={() => setKind(t.key)}
-                                aria-pressed={kind === t.key}
-                                disabled={!counts[t.key]}
-                            >
-                                {t.label} <span className="mono reports__filter-count">{counts[t.key]}</span>
-                            </button>
-                        ))}
-                    </div>
-                    {shownKinds.map(k => {
+                    {REPORT_KIND_ORDER.map(k => {
                         const [latest, ...older] = byKind[k];
                         if (!latest) return null;
                         return (
