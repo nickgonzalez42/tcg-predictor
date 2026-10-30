@@ -18,7 +18,7 @@
 .grading__table th.sortable { white-space: nowrap; }
 .grading__table td { vertical-align: middle; }
 .grading__nm { white-space: nowrap; }
-.grading__tier, .grading__best { white-space: nowrap; }
+.grading__tier { white-space: nowrap; }
 .grading__price { display: block; font-weight: 600; }
 .grading__gain { display: block; font-size: 11px; color: var(--up); }
 .grading__gain--down { color: var(--down); }

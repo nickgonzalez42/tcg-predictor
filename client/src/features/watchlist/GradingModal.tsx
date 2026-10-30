@@ -19,6 +19,9 @@ const TIERS = [
 ] as const;
 type TierKey = typeof TIERS[number]['key'];
 type Metric = 'usd' | 'pct';
+// 'best' has no column of its own any more (2026-10-30, user request): the
+// winning tier is marked in place on the row. It stays as the opening sort,
+// which puts the cards grading pays for most at the top.
 type SortKey = 'best' | 'nm' | 'name' | TierKey;
 const DEFAULT_FEE = 25;
 
@@ -80,7 +83,6 @@ export default function GradingModal({ onClose }: { onClose: () => void }) {
         g == null ? '' : metric === 'usd'
             ? `${g.usd >= 0 ? '+' : '−'}${currencyFormat(Math.abs(g.usd))}`
             : `${g.pct >= 0 ? '+' : '−'}${Math.abs(g.pct).toFixed(0)}%`;
-    const tierLabel = (k: TierKey) => TIERS.find(t => t.key === k)!.label;
 
     return (
         <Modal title="Recommend grading" onClose={onClose} className="modal--wide">
@@ -124,7 +126,6 @@ export default function GradingModal({ onClose }: { onClose: () => void }) {
                                     {th('Card', 'name', { defaultDir: 'asc', num: false })}
                                     {th('NM', 'nm', { title: 'Raw Near Mint price' })}
                                     {TIERS.map(t => th(t.label, t.key, { title: `Sort by the gain at ${t.label}` }))}
-                                    {th('Best', 'best', { title: 'The grade that adds the most' })}
                                 </tr>
                             </thead>
                             <tbody>
@@ -164,16 +165,6 @@ export default function GradingModal({ onClose }: { onClose: () => void }) {
                                                 </td>
                                             );
                                         })}
-                                        <td className="screener__num grading__best">
-                                            {r.best ? (
-                                                <>
-                                                    <span className="grading__price">{tierLabel(r.best.tier)}</span>
-                                                    <span className={`mono grading__gain${r.best.usd < 0 ? ' grading__gain--down' : ''}`}>
-                                                        {gainText(r.best)}
-                                                    </span>
-                                                </>
-                                            ) : <span className="mono grading__na">—</span>}
-                                        </td>
                                     </tr>
                                 ))}
                             </tbody>
