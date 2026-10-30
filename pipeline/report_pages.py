@@ -65,8 +65,12 @@ padding-left:10px}
 .report-table th{text-align:left;color:var(--text-muted);font-weight:600;font-size:13px}
 .report-table th,.report-table td{padding:6px 10px 6px 0;border-bottom:1px solid var(--border)}
 .report-chart{display:block;margin:20px 0}
-.report-hero{display:block;width:100%;height:auto;border-radius:12px;margin:0 0 18px;
+.report-hero-svg{display:block;width:100%;height:auto;border-radius:12px;margin:0 0 18px;
 border:1px solid var(--border)}
+.report-hero-card{cursor:pointer}
+.report-hero-card:hover{opacity:.85}
+.report-hero-bar{cursor:pointer}
+a:hover .report-hero-bar{opacity:.75}
 .report-game-sec{border:1px solid var(--border);border-radius:10px;padding:0 15px;margin:10px 0}
 .report-game-sec summary{display:flex;align-items:center;gap:10px;min-height:38px;
 cursor:pointer;list-style:none;font-size:16.5px}
@@ -268,8 +272,10 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None):
     # The report's own picture is its share card; the site card is the
     # fallback for reports written before thumbnails existed.
     image = f"{SITE}{thumb_url}" if thumb_url else f"{SITE}/og-image.png?v=3"
-    hero = (f'<img class="report-hero" src="{thumb_url}" alt="" width="1200" height="630">'
-            if thumb_url else "")
+    # No <img> hero: the body opens with the interactive SVG twin
+    # (report_thumbnail.render_svg), which the JPEG only stands in for when a
+    # link preview is doing the rendering.
+    hero = ""
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.

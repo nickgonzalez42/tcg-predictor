@@ -9,7 +9,12 @@ const ALLOWED = new Set(
     ['B', 'STRONG', 'I', 'EM', 'U', 'BR', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI', 'SUB', 'SUP']);
 // Market-report bodies (our own pipeline's HTML) additionally carry headings,
 // tables, internal card links, and inline SVG bar/line charts.
-const REPORT_SVG = new Set(['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE']);
+// IMAGE and TITLE joined for the report hero (2026-10-30): its card art and
+// the tooltips naming each card and game bar.
+const REPORT_SVG = new Set(
+    ['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE', 'IMAGE', 'TITLE']);
+// The only off-site URL any report may reference: the card image CDN.
+const IMAGE_HOST = 'https://d18pzythfo0bgy.cloudfront.net/';
 const REPORT_ALLOWED = new Set(
     [...ALLOWED, 'A', 'H2', 'H3', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD',
      'DETAILS', 'SUMMARY', 'DIV', ...REPORT_SVG]);
@@ -22,6 +27,8 @@ const SVG_ATTRS = new Set([
     'viewbox', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx',
     'width', 'height', 'points', 'fill', 'stroke', 'stroke-width',
     'text-anchor', 'font-size', 'role', 'xmlns',
+    // The hero's type and geometry.
+    'font-family', 'font-weight', 'transform', 'preserveaspectratio', 'opacity',
 ]);
 const SVG_VALUE = /^[\w\s.,#()%:/+-]*$/;
 
@@ -36,6 +43,11 @@ function keptAttrs(el: Element, report: boolean): string {
     const tag = el.tagName.toUpperCase();
     const href = el.getAttribute('href');
     if (tag === 'A' && href && /^\/[^/\\]/.test(href)) out += ` href="${escapeHtml(href)}"`;
+    // An <image> may point at the card CDN and nowhere else; the path after
+    // the host is checked too, so no query or traversal rides along.
+    if (tag === 'IMAGE' && href && href.startsWith(IMAGE_HOST)
+        && /^[\w-]+\/\d+\.(jpg|png|webp)$/.test(href.slice(IMAGE_HOST.length)))
+        out += ` href="${escapeHtml(href)}"`;
     const cls = el.getAttribute('class');
     if (cls && /^[a-z-]+$/.test(cls) && cls.startsWith('report-')) out += ` class="${cls}"`;
     if (REPORT_SVG.has(tag)) {

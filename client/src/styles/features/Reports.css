@@ -145,8 +145,7 @@
   text-underline-offset: 4px;
 }
 
-.reports__thumb,
-.report__hero {
+.reports__thumb {
   display: block;
   width: 100%;
   height: auto;
@@ -156,10 +155,26 @@
   border-bottom: 1px solid var(--border);
 }
 
-.report__hero {
-  border: 1px solid var(--border);
+/* The article's hero is an SVG inside the body: every card and game bar in
+   it is a link that names itself on hover (2026-10-30). */
+.report__body .report-hero-svg {
+  display: block;
+  width: 100%;
+  height: auto;
   border-radius: 12px;
-  margin-bottom: var(--space-15);
+  margin: 0 0 var(--space-25);
+  border: 1px solid var(--border);
+}
+
+.report__body .report-hero-card,
+.report__body .report-hero-bar {
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.report__body .report-hero-card:hover,
+.report__body a:hover .report-hero-bar {
+  opacity: 0.8;
 }
 
 .reports__card > .reports__item-title,

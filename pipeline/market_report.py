@@ -150,14 +150,26 @@ def visible_cards(game):
     return dict(rows)
 
 
+# A series younger than this is listing prices settling, not market movement
+# (2026-08-22: a prerelease set led the report).
+YOUNG_DAYS = 10
+
+
 def young_series(pc):
-    """(game, pid) whose base NM series spans < 2 calendar months — brand-new
-    or freshly-repaired cards. Their first weeks are listing prices settling,
-    not market movement (2026-08-22: a prerelease set led the report), so the
-    movers/trends machinery must not rank them."""
-    return {(g, pid) for g, pid, n in pc.execute(
-        "SELECT game, product_id, COUNT(DISTINCT substr(date,1,7)) "
-        "FROM tcg_nm_history WHERE printing='' GROUP BY game, product_id") if n < 2}
+    """(game, pid) whose base NM series spans fewer than YOUNG_DAYS days.
+
+    Measured as a SPAN, not calendar months (2026-10-30). The month test cut
+    both ways wrongly: a game onboarded mid-month was excluded entirely for
+    weeks however long it had been priced — which is what kept Flesh and
+    Blood, Sorcery, Riftbound and Cyberpunk out of every report since they
+    arrived — while a two-day-old card walked straight in whenever its first
+    prices happened to straddle a month boundary. A sparsely listed old card
+    still counts as old, since the span is first-to-last, not a point count.
+    """
+    return {(g, pid) for g, pid, span in pc.execute(
+        "SELECT game, product_id, julianday(MAX(date)) - julianday(MIN(date)) "
+        "FROM tcg_nm_history WHERE printing='' GROUP BY game, product_id")
+        if span is None or span < YOUNG_DAYS}
 
 
 def game_moves(synth, game, baseline, latest, names, young=frozenset()):
@@ -950,7 +962,7 @@ def build_report(force=False, as_of=None):
     # built once and shared by the movers tables and the per-game line chart.
     synth = synth_series(pc, window_dates)
     young = young_series(pc)
-    print(f"excluding {len(young)} young series (<2 months) from movers/trends")
+    print(f"excluding {len(young)} young series (under {YOUNG_DAYS} days) from movers/trends")
 
     games_live = {}
     per_game = {}
@@ -1383,19 +1395,20 @@ def build_report(force=False, as_of=None):
     # cleanly.
     # One card per game from the week's biggest movers, so the picture's fan
     # is a mix rather than three cards from whichever game sorted first.
+    # (game, product_id, name): the name is the card's tooltip in the SVG twin.
     mover_cards, seen_g = [], set()
     for m in sorted(all_moves, key=lambda m: -abs(m[5])):
         if m[0] in seen_g:
             continue
         seen_g.add(m[0])
-        mover_cards.append([m[0], int(m[1])])
+        mover_cards.append([m[0], int(m[1]), m[2]])
     market_thumb = {
         "kind": "market",
         "stats": [[f"{downs:,}", "cards fell", "down"],
                   [f"{ups:,}", "cards rose", "up"],
                   [f"±{(avg_gain + abs(avg_loss)) / 2:.1f}%", "typical move", None],
                   [f"{len(per_game)}", "games tracked", None]],
-        "spark": [[GAMES[g]["label"], r1(drift.get(g, 0.0))] for g in game_order],
+        "spark": [[GAMES[g]["label"], r1(drift.get(g, 0.0)), g] for g in game_order],
         "cards": mover_cards[:6],
     }
     model_thumb = {
@@ -1405,8 +1418,16 @@ def build_report(force=False, as_of=None):
                    [f"±{(exp(live[0][2]) - 1) * 100:.1f}%", "typical miss", None]]
                   if live else []),
         "spark": [],
-        "cards": [[g, int(pid)] for g, pid, _n, _b, _f, _pr in picks[:6]],
+        "cards": [[g, int(pid), n] for g, pid, n, _b, _f, _pr in picks[:6]],
     }
+    # The article opens with the interactive hero; the JPEG twin that
+    # report_pages.py renders is only for link previews.
+    from report_thumbnail import render_svg
+    pub = today.strftime("%B %-d, %Y")
+    body.insert(0, render_svg("market", title, pub, market_thumb["stats"],
+                              market_thumb["cards"], market_thumb["spark"]))
+    model_body.insert(0, render_svg("model", model_title, pub, model_thumb["stats"],
+                                    model_thumb["cards"], model_thumb["spark"]))
     cols = "(slug, title, published_at, summary, body_html, thumb)"
     pred.execute(f"INSERT OR REPLACE INTO reports {cols} VALUES (?,?,?,?,?,?)",
                  (slug, title, today.isoformat(), summary, "".join(body),

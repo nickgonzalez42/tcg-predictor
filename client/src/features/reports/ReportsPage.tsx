@@ -71,9 +71,9 @@ export default function ReportsPage() {
                         if (!latest) return null;
                         return (
                             <section key={k} className="reports__section">
-                                <div className="band">
-                                    <span className="band__title">Latest {REPORT_KINDS[k].label.toLowerCase()} report</span>
-                                </div>
+                                {/* No section heading: the card's own chip
+                                    already says which kind it is (user
+                                    2026-10-30). */}
                                 <ul className="reports__list">
                                     <ReportCard report={latest} />
                                 </ul>
