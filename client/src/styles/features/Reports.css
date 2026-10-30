@@ -9,13 +9,21 @@
 }
 
 .reports__sub {
-  margin: 0 0 var(--space-25);
+  margin: 0 0 var(--space-40);
 }
 
 /* Each kind leads with one full card; the rest live in the archive rail
-   below it (2026-10-30). */
+   below it (2026-10-30). Sections carry real air between them so the two
+   kinds read as separate shelves rather than one long column. */
 .reports__section {
-  margin-bottom: var(--space-30);
+  margin-bottom: var(--space-50);
+}
+
+/* The band is a section heading here, not a panel's inset header: drop the
+   negative side margins that would otherwise push it wider than the card
+   beneath it, and give it room before the card. */
+.reports__section > .band {
+  margin: 0 0 var(--space-20);
 }
 
 .reports__list {
@@ -29,7 +37,7 @@
 
 /* The archive: a dropdown holding a sideways rail of narrower cards. */
 .reports__archive {
-  margin-top: var(--space-15);
+  margin-top: var(--space-25);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface-2);
@@ -67,7 +75,7 @@
 .reports__rail {
   list-style: none;
   margin: 0;
-  padding: 0 var(--space-20) var(--space-20);
+  padding: 0 var(--space-15) var(--space-20);
   display: flex;
   gap: var(--space-15);
   overflow-x: auto;
@@ -107,15 +115,34 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 0 0 var(--space-15);
+  padding: 0 0 var(--space-20);
   color: inherit;
   text-decoration: none;
 }
 
 
 
-.reports__item:hover .reports__item-title {
-  color: var(--brand);
+/* The whole card is a link, so the global a:hover underline would run under
+   every line of it. Only the headline and the date answer the pointer: the
+   headline in brand yellow, the date in its own grey blue. */
+.reports__card:hover,
+.reports__card:focus-visible {
+  text-decoration: none;
+}
+
+.reports__card:hover .reports__item-title,
+.reports__card:focus-visible .reports__item-title {
+  text-decoration: underline;
+  text-decoration-color: var(--brand);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 4px;
+}
+
+.reports__card:hover .reports__date,
+.reports__card:focus-visible .reports__date {
+  text-decoration: underline;
+  text-decoration-color: var(--text-muted);
+  text-underline-offset: 4px;
 }
 
 .reports__thumb,
@@ -147,7 +174,8 @@
 }
 
 .reports__card > .reports__item-title {
-  margin-top: var(--space-15);
+  margin-top: var(--space-20);
+  line-height: 1.3;
 }
 
 /* The summary is a teaser on a card, not the whole lede. */
@@ -161,7 +189,7 @@
 
 .reports__card > .reports__meta {
   display: flex;
-  margin-top: var(--space-15);
+  margin-top: var(--space-20);
 }
 
 .reports__item-title {
@@ -175,8 +203,9 @@
 }
 
 .reports__summary {
-  margin: var(--space-5) 0 0;
+  margin: var(--space-10) 0 0;
   color: var(--text-muted);
+  line-height: 1.55;
 }
 
 /* Article body (pipeline-generated HTML through the report sanitizer).
