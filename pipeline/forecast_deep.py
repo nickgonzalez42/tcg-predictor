@@ -31,6 +31,11 @@ HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 TARGETS = ["ungraded", "psa10"]
 CUTOFF = "2025-01"      # research-script split; production uses rolling_cutoff()
 IMG_PCA = 24
+# Name + rules text, embedded by the same CLIP's text tower (embed_text.py)
+# and compressed like the art block. Read under TCG_FC_FEAT_TXT, which
+# local_model_run.sh sets; the 2026-11-01 backtest was neutral (+0.2%), so
+# like art it is in because it is part of what a card is.
+TXT_PCA = 16
 TEST_MONTHS = 4         # rolling out-of-sample window (last N matured base months)
 
 
@@ -100,7 +105,7 @@ def art_pids(game):
     return set(z["product_id"].tolist())
 
 
-def static_features(game, pids, include_img=True):
+def static_features(game, pids, include_img=True, include_txt=None):
     """Tabular card features + PCA-compressed CLIP art embedding.
 
     A 2026-07 ablation (full vs no-img vs shuffled-img on 3 segments) showed
@@ -130,9 +135,23 @@ def static_features(game, pids, include_img=True):
     pcs = PCA(n_components=n, random_state=42).fit_transform(z["emb"])
     img = pd.DataFrame(pcs, columns=[f"img{i}" for i in range(n)])
     img["product_id"] = z["product_id"]
+    feat = tab.merge(img, on="product_id", how="left")
 
-    feat = tab.merge(img, on="product_id", how="left").set_index("product_id").reindex(pids).reset_index(drop=True)
-    return feat
+    # Text block: what the card says it is (name + rules text through the
+    # same CLIP's text tower). A card with no vector on file gets NaN here,
+    # which the tree model treats as its own category.
+    if include_txt is None:
+        include_txt = bool(os.environ.get("TCG_FC_FEAT_TXT"))
+    tpath = os.path.join(DATA, f"{game}_txt_emb.npz")
+    if include_txt and os.path.exists(tpath):
+        zt = np.load(tpath)
+        nt = min(TXT_PCA, zt["emb"].shape[1])
+        tpcs = PCA(n_components=nt, random_state=42).fit_transform(zt["emb"])
+        txt = pd.DataFrame(tpcs, columns=[f"txt{i}" for i in range(nt)])
+        txt["product_id"] = zt["product_id"]
+        feat = feat.merge(txt, on="product_id", how="left")
+
+    return feat.set_index("product_id").reindex(pids).reset_index(drop=True)
 
 
 _SET_LABELS_CACHE = {}
@@ -240,36 +259,67 @@ def market_features(game, dates):
             "gameret12": game12, "gamerel12": game12 - mkt12}
 
 
-def extra_signal_matrices(game, pids, dates):
+def signal_files(game):
+    """The signal CSVs the model reads for a game, in load order. The error
+    feedback file is always on; sales volume and listing supply
+    (build_market_signals.py) join under flags that local_model_run.sh sets
+    (2026-11-01), so a backtest can switch either off with one env var."""
+    files = [f"{game}_extra_signals.csv"]
+    if os.environ.get("TCG_FC_FEAT_VOL"):
+        files.append(f"{game}_volume_signals.csv")
+    if os.environ.get("TCG_FC_FEAT_SUPPLY"):
+        files.append(f"{game}_supply_signals.csv")
+    return [os.path.join(DATA, f) for f in files]
+
+
+def extra_signal_matrices(game, pids, dates, prints=None):
     """Optional external signals -> {name: cards x months matrix}.
 
-    Drop a CSV at ml_data/{game}_extra_signals.csv with columns
-    (product_id, month YYYY-MM, <numeric signal columns...>) — e.g. tournament
-    play rates or news/hype scores — and every column joins the model as a
-    monthly feature (sig_<name>) with no code change. Absent file = no-op.
+    A CSV with columns (product_id, month YYYY-MM, <numeric signal
+    columns...>) joins the model as monthly features (sig_<name>) with no
+    code change; see signal_files() for which files are read. Absent file =
+    no-op.
+
+    A pid can appear on several rows (one per printing). A signal WITHOUT a
+    `printing` column lands on ALL of them, not just the last (dict-keyed
+    indexing once dropped the base row's fcerr when labeled rows joined the
+    matrix). A signal WITH a `printing` column (sales volume is measured per
+    printing) lands only on the matching row, '' being the base row; this
+    needs `prints`, the per-row printing array from load_matrix_all. Without
+    it the column is ignored and the signal lands on every row of the card.
     """
-    path = os.path.join(DATA, f"{game}_extra_signals.csv")
-    if not os.path.exists(path):
-        return {}
-    df = pd.read_csv(path)
     didx = {d: i for i, d in enumerate(dates)}
-    # A pid can appear on several rows (one per printing) — a signal must land
-    # on ALL of them, not just the last (dict-keyed indexing dropped the base
-    # row's fcerr once labeled rows joined the matrix).
-    pidx = {}
+    pidx = {}      # pid -> every row of the card
+    pridx = {}     # (pid, printing) -> that one row
     for i, p in enumerate(pids):
         pidx.setdefault(int(p), []).append(i)
+        if prints is not None:
+            pr = prints[i]
+            pridx[(int(p), "" if pr is None or (isinstance(pr, float) and np.isnan(pr)) else str(pr))] = i
     out = {}
-    for col in df.columns:
-        if col in ("product_id", "month"):
+    for path in signal_files(game):
+        if not os.path.exists(path):
             continue
-        M = np.full((len(pids), len(dates)), np.nan)
-        for pid, m, v in zip(df["product_id"], df["month"], df[col]):
-            ii, j = pidx.get(int(pid)), didx.get(str(m)[:7])
-            if ii is not None and j is not None:
-                for i in ii:
-                    M[i, j] = v
-        out[col] = M
+        df = pd.read_csv(path)
+        per_print = "printing" in df.columns and prints is not None
+        prs = df["printing"].fillna("").astype(str) if per_print else None
+        for col in df.columns:
+            if col in ("product_id", "month", "printing"):
+                continue
+            vals = pd.to_numeric(df[col], errors="coerce").to_numpy()
+            M = np.full((len(pids), len(dates)), np.nan)
+            if per_print:
+                for pid, pr, m, v in zip(df["product_id"], prs, df["month"], vals):
+                    i, j = pridx.get((int(pid), pr)), didx.get(str(m)[:7])
+                    if i is not None and j is not None and np.isfinite(v):
+                        M[i, j] = v
+            else:
+                for pid, m, v in zip(df["product_id"], df["month"], vals):
+                    ii, j = pidx.get(int(pid)), didx.get(str(m)[:7])
+                    if ii is not None and j is not None and np.isfinite(v):
+                        for i in ii:
+                            M[i, j] = v
+            out[col] = M
     return out
 
 

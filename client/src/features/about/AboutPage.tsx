@@ -497,8 +497,9 @@ export default function AboutPage() {
                         <h3>The forecast</h3>
                         <p>
                             For each game, condition and timeframe, a model learns from a card's price history, its
-                            set, its game, the hobby as a whole, its rarity, its printed stats and its artwork, plus its
-                            own past misses, to predict where the price goes next. Two companion models sketch the
+                            set, its game, the hobby as a whole, its rarity, its name and text, its printed stats and
+                            its artwork, how many copies sell each week and how many are listed for sale, plus its own
+                            past misses, to predict where the price goes next. Two companion models sketch the
                             optimistic and pessimistic cases, and that low-to-high range is stretched on past errors
                             until it catches about 8 outcomes in 10.
                         </p>

@@ -38,6 +38,12 @@ MODEL_VERSION = "forecast-deep-v4.5"  # v4.5 (2026-10-10 review): absolute-error
 # loss, steeper price weights, label guards, publish-time per-direction shrink
 # and width-stratified conformal bands (see forecast_calib). The archive keeps
 # every version's rows and the site never filters on this tag.
+# 2026-11-01: sales volume, listing supply and card-text features joined
+# under TCG_FC_FEAT_VOL / _SUPPLY / _TXT (see forecast_deep.signal_files and
+# static_features). The tag is deliberately NOT bumped: _rolling_live_shrink
+# only learns from same-version graded rows, and a new tag would switch the
+# live shrink off for a month. New inputs do not rescale the loss, which is
+# what the tag exists to fence.
 # v4.4: art embedding PCA back in; cards
                                       # with no artwork on file are not forecast
                                       # v4.3: rolling OOS cutoff, log-price sample
@@ -811,7 +817,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     # the earlier volume A/B showed no accuracy gain, so the feature is dropped.
     V = None
     S = set_matrix(game, pids, P)
-    EXTRA = extra_signal_matrices(game, pids, dates)
+    EXTRA = extra_signal_matrices(game, pids, dates, prints)   # per-printing signals land on their own row
     EXTRA.update(premium_matrices(game, pids, dates))   # graded/raw premium context
     EXTRA.update(liquidity_matrices(game, target, pids, dates))  # slice 4b, flag-gated
     MKT = market_features(game, dates)   # cross-game market context (level-1 blend)

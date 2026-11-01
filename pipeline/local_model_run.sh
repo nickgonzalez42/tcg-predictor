@@ -41,8 +41,26 @@ if [ "${TCG_CRAWL_NIGHT:-0}" != "1" ] || [ "$(date +%d)" -gt 7 ]; then
   export TCG_FC_HORIZONS=1m
 fi
 
+# Card attributes the model reads beyond price history (2026-11-01, user:
+# name, text, art, stat line, set, printing, price, sales volume, rarity,
+# age, track record, supply). Sales volume and listing supply arrive as
+# monthly signal files from build_market_signals.py; the flags let
+# forecast_deep read them. Backtest 2026-11-01 (pokemon + onepiece, 1m,
+# origins 2026-07/08): volume 8 of 8 cells better, mean -0.7% error; card
+# text neutral (mean +0.2%, inside the noise floor) and kept on the same
+# footing as the art block, a product decision; supply has history only
+# from 2026-10-16, so it is inert in training until those months mature.
+# Re-backtest all three around 2027-02 (backtest_forecast.py, runs attr_*).
+export TCG_FC_FEAT_VOL=1
+export TCG_FC_FEAT_SUPPLY=1
+export TCG_FC_FEAT_TXT=1
+
 echo "=== LOCAL model block — $(date '+%F %T') ==="
-for step in forecast_scorecard forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
+# build_market_signals (2026-11-01) turns the sales-volume and listing-depth
+# tables into the monthly signal CSVs forecast_predict reads under
+# TCG_FC_FEAT_VOL / TCG_FC_FEAT_SUPPLY; it runs after the scorecard so
+# the forecast step sees every signal file fresh.
+for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
   echo "--- $step $(date '+%T') ---"
   t0=$SECONDS
   "$PY" "$DIR/$step.py"

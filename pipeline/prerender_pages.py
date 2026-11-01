@@ -348,8 +348,9 @@ with fresh sales elsewhere gets flagged, reviewed, and switched to the sales-bac
 neither source has defensible data, the card shows no price at all.</p>
 <h2>What the model weighs</h2>
 <p>Price momentum and volatility, the card's set and its price relative to set-mates, game-wide
-and hobby-wide trends, the card's printed characteristics and artwork, and the model's own
-trailing forecast errors per card and per set. Under the hood: gradient-boosted decision trees
+and hobby-wide trends, the card's name and text, its printed characteristics and artwork, how
+many copies sell each week and how many are listed for sale, and the model's own trailing
+forecast errors per card and per set. Under the hood: gradient-boosted decision trees
 per game, tier, and horizon, trained on historical outcomes with held-out validation.</p>
 <h2>How we keep it honest</h2>
 <p>Every published forecast is saved, and once its date arrives it is checked against what the

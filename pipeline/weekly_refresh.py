@@ -421,6 +421,7 @@ STEPS = [
     ("card-trends",   ["build_card_trends.py"]),
     ("ml-export",     ["export_for_ml.py"]),
     ("ml-embed",      ["embed_images.py"]),
+    ("ml-embed-text", ["embed_text.py"]),
     # Scanner / search-by-photo index (2026-10-24): new cards' embeddings
     # join card-index.bin (PCA basis persisted, so it's an append); the
     # data push ships Data/clip/ to prod.
