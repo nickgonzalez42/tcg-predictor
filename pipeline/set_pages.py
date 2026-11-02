@@ -90,6 +90,15 @@ def slugify(name):
     return s[:80] or "set"
 
 
+# Favicon set (2026-11-02). Google Search reads the icon from the HOME page
+# only, and crawlers get THIS prerendered copy, which used to declare no
+# icon at all; Google then fell back to /favicon.ico and got the SPA shell.
+# Search supports ICO/PNG but not SVG, so the raster files come first.
+ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
+
 def page(path, title, desc, body, og_image=None):
     t, d = esc(title), esc(desc)
     og_img = (f'<meta property="og:image" content="{esc(og_image)}">'
@@ -101,6 +110,7 @@ def page(path, title, desc, body, og_image=None):
 <title>{t} | CardStock</title>
 <meta name="description" content="{d}">
 <link rel="canonical" href="{SITE}{path}">
+{ICONS}
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}">
 <meta property="og:url" content="{SITE}{path}"><meta property="og:site_name" content="CardStock">
 {og_img}

@@ -272,6 +272,15 @@ def thumbnail(slug, thumb_json, title, published_at, out_dir):
         return None
 
 
+# Favicon set (2026-11-02). Google Search reads the icon from the HOME page
+# only, and crawlers get THIS prerendered copy, which used to declare no
+# icon at all; Google then fell back to /favicon.ico and got the SPA shell.
+# Search supports ICO/PNG but not SVG, so the raster files come first.
+ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" type="image/png" sizes="96x96" href="/favicon-96.png">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
+
 def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
@@ -313,6 +322,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <title>{t} | CardStock</title>
 <meta name="description" content="{s}">
 <link rel="canonical" href="{url}">
+{ICONS}
 <meta name="author" content="CardStock">
 <meta name="robots" content="max-image-preview:large">
 <meta property="og:type" content="article">
