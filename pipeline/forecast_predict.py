@@ -116,6 +116,18 @@ UNGRADED_RET = {}     # game -> horizon -> {(pid, printing): published ret}, thi
 FLAT_SEGMENTS = []    # "game/target/horizon" left flat for want of a donor
 DB_PATH = None        # set by main(); the standing-rows donor lookups read it
 PRESERVED = {}        # game -> standing graded rows kept as-is this run (no new price)
+# Persisted long-horizon models (2026-11-02, user: "make sure they at least
+# run on the first run of the card"). The 6m/12m segments retrain once a
+# month (local_model_run.sh), and until now a card that gained its second
+# price bucket, or a graded ladder that gained a fresh crawl, waited up to a
+# month for its first 6m/12m call (150k card-tiers were waiting on
+# 2026-11-02 — every newly priced set opened blank on the catalog's 6M
+# view). Each long-horizon fit now saves its point + quantile models and
+# calibration under MODEL_DIR, and every 1m-only night loads them to issue
+# 6m/12m rows for the cards that have none: the FILL pass. Standing rows
+# are never touched by a fill; the monthly retrain still replaces them all.
+MODEL_DIR = os.path.join(BASE, "ml_data", "models")
+ARTIFACT_MAX_DAYS = 45   # a fill never runs off a model older than the monthly cadence allows
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -711,8 +723,78 @@ def _borrow_returns(game, target, hname, k, pids_k, prints_k):
     return None
 
 
-def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None):
+def _artifact_path(game, target, hname):
+    return os.path.join(MODEL_DIR, f"{game}_{target}_{hname}.joblib")
+
+
+def _typical_frame(X):
+    """One row holding each training column's 'typical card' value (median,
+    or the mode for a categorical, dtype kept): all bucket_deltas needs from
+    the training frame, so a fill can attribute exactly like the fit did."""
+    data = {}
+    for c in X.columns:
+        s = X[c]
+        if isinstance(s.dtype, pd.CategoricalDtype):
+            mode = s.mode(dropna=True)
+            data[c] = pd.Series([mode.iloc[0] if len(mode) else None], dtype=s.dtype)
+        else:
+            data[c] = pd.Series([float(s.median())])
+    return pd.DataFrame(data)
+
+
+def _save_artifact(game, target, hname, version, now, payload):
+    """Persist a long-horizon fit for the nightly fill pass. Non-fatal: a
+    segment that cannot save simply waits for the next retrain to fill."""
+    try:
+        import joblib
+        os.makedirs(MODEL_DIR, exist_ok=True)
+        path = _artifact_path(game, target, hname)
+        tmp = path + ".tmp"
+        joblib.dump({**payload, "version": version, "trained_at": now,
+                     "game": game, "target": target, "horizon": hname}, tmp, compress=3)
+        os.replace(tmp, path)
+        print(f"  [{game}/{target}/{hname}] model saved for nightly fills "
+              f"({os.path.getsize(path) // 1024} KB)", flush=True)
+    except Exception as e:
+        print(f"  [{game}/{target}/{hname}] model NOT saved ({type(e).__name__}: {e}) "
+              f"— fills wait for the next retrain", flush=True)
+
+
+def _load_artifact(game, target, hname, version):
+    """The saved fit for a segment/horizon, or None (with a log line saying
+    why) when there is none, it is from another model version, or it is
+    older than ARTIFACT_MAX_DAYS."""
+    path = _artifact_path(game, target, hname)
+    if not os.path.exists(path):
+        return None
+    try:
+        import joblib
+        art = joblib.load(path)
+    except Exception as e:
+        print(f"  [{game}/{target}/{hname}] saved model unreadable ({type(e).__name__}: {e}) "
+              f"— no fill", flush=True)
+        return None
+    if art.get("version") != version:
+        print(f"  [{game}/{target}/{hname}] saved model is {art.get('version')}, this run is "
+              f"{version} — no fill until the next retrain", flush=True)
+        return None
+    try:
+        age = (datetime.now(timezone.utc) - datetime.fromisoformat(art["trained_at"])).days
+    except (KeyError, ValueError, TypeError):
+        age = ARTIFACT_MAX_DAYS + 1
+    if age > ARTIFACT_MAX_DAYS:
+        print(f"  [{game}/{target}/{hname}] saved model is {age} days old — no fill until "
+              f"the next retrain", flush=True)
+        return None
+    return art
+
+
+def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None,
+                         fill=None):
     horizons = horizons or HORIZONS
+    # Horizons this run does not train but may FILL from the saved monthly
+    # models (see MODEL_DIR); 1m trains every night and is never filled.
+    fill = {h: k for h, k in (fill or {}).items() if h not in horizons and h != "1m"}
     # Calibration flags (2026-08-11) — validated by backtest_forecast.py before
     # being switched on; both transforms are fit on the segment's rolling OOS
     # window each run, so they track the current model, not stale cohorts.
@@ -866,6 +948,204 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         blk = traj_block(P, R, int(tv), V, S, EXTRA, CUM, MKT)
         sel = last_idx == tv
         traj_now.loc[sel] = blk.loc[sel].to_numpy()
+
+    # Publish one horizon's rows for the cards in `keep`: predict, band,
+    # gate, explain. Shared by the trained horizons below and the FILL
+    # pass after them (a saved model standing in for a fresh fit). `cols`
+    # is the fit's feature list; `Xref` holds its typical-card values for
+    # the attribution text (the training frame, or its one-row summary).
+    def _emit(hname, k, keep, model, q10, q90, cols, Xref, use_debias, use_cqr, bias,
+              shrink, conf_widen, calib, wcal, unreliable, weak_point):
+        Xnow = pd.concat([traj_now.loc[keep].reset_index(drop=True),
+                          static.loc[keep].reset_index(drop=True)], axis=1)[cols]
+
+        base = P[keep, last_idx[keep]]
+        pred_now = model.predict(Xnow)
+        q10_now = q10.predict(Xnow)
+        q90_now = q90.predict(Xnow)
+        # Per-card widening under CQR (each card gets its price stratum's
+        # widening); the classic scalar otherwise. Debias shifts point + band.
+        if wcal is not None:
+            widen = fcal.width_widen_for(q10_now, q90_now, base, wcal)
+        elif use_cqr and calib is not None:
+            widen = fcal.bucket_widen_for(base, calib)
+        else:
+            widen = conf_widen
+        # Publish-time shrink on the (debiased) point; bands stay anchored on
+        # the scenario quantiles. Raw values ride along to the archive so the
+        # live refit never compounds a shrink on an already-shrunk number.
+        b_ = bias if use_debias else 0.0
+        bolded = {k: (v if v > 0 else MIN_SHRINK) for k, v in shrink.items()}
+        if bolded != shrink:
+            print(f"  [{game}/{target}/{hname}] bold minimum: shrink "
+                  f"up x{shrink['up']:g}->x{bolded['up']:g} "
+                  f"down x{shrink['down']:g}->x{bolded['down']:g}", flush=True)
+            shrink = bolded
+        pred_pub = fcal.apply_shrink(pred_now - b_, shrink) + b_
+        raw_ret_now = np.clip(pred_now - b_, -RET_CLIP, RET_CLIP)
+        raw_width_now = q90_now - q10_now
+        # quantile crossings happen at the tails — emit_bands enforces
+        # lo <= ret <= hi and applies the conformal adjustment measured above.
+        ret, lo_ret, hi_ret = fcal.emit_bands(pred_pub, q10_now, q90_now, widen,
+                                              b_, RET_CLIP)
+        width = hi_ret - lo_ret   # 80% interval width in log-return
+        conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
+        if unreliable or weak_point:
+            conf = np.full(len(ret), "low", dtype=object)
+
+        # Flat-segment guard — see FLAT_SEGMENT_SHARE. Live runs only:
+        # backtests must score the model's own output.
+        borrowed = np.zeros(len(ret), dtype=bool)
+        borrow_label = ""
+        if not as_of and len(ret):
+            flat_share = float(np.mean(np.round(base * np.exp(ret), 2) == np.round(base, 2)))
+            if flat_share >= FLAT_SEGMENT_SHARE:
+                donor = _borrow_returns(game, target, hname, k, pids[keep], prints[keep])
+                if donor is not None:
+                    borrow_label, pred_b = donor
+                    has = np.isfinite(pred_b)
+                    ret, lo_ret, hi_ret = fcal.emit_bands(np.where(has, pred_b, pred_pub),
+                                                          q10_now, q90_now, widen, b_, RET_CLIP)
+                    borrowed = has
+                    conf = np.where(has, "low", conf).astype(object)
+                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of its "
+                          f"own calls round to 0% — {int(has.sum())}/{len(ret)} rows follow "
+                          f"{borrow_label}", flush=True)
+                else:
+                    FLAT_SEGMENTS.append(f"{game}/{target}/{hname}")
+                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of calls "
+                          f"round to 0% and no donor call exists — published flat", flush=True)
+        if target == "ungraded" and not as_of:
+            UNGRADED_RET.setdefault(game, {})[hname] = {
+                (int(p), str(pr)): float(r) for p, pr, r in zip(pids[keep], prints[keep], ret)}
+
+        if debug is not None and hname in debug:
+            debug[hname]["emit"] = {
+                "pids": pids[keep].copy(), "prints": prints[keep].copy(),
+                "base": base.copy(), "pred_now": pred_now, "q10_now": q10_now,
+                "q90_now": q90_now, "last_idx": last_idx[keep].copy(),
+                "Xnow": Xnow if debug.get("capture_frames") else None,
+            }
+
+        deltas = bucket_deltas(model, Xnow, Xref)   # per-card trait attribution
+        comps = art_comps(game)
+        traits = card_traits(game)
+        fc = np.round(base * np.exp(ret), 2)
+        low = np.round(base * np.exp(lo_ret), 2)
+        high = np.round(base * np.exp(hi_ret), 2)
+        asof = [dates[i] + "-01" for i in last_idx[keep]]
+
+        # trajectory signals the model saw, for per-card reasoning
+        tn = traj_now.loc[keep].reset_index(drop=True)
+        mom3, trend12, vol6 = tn["ret3"].to_numpy(), tn["ret12"].to_numpy(), tn["vol6"].to_numpy()
+        vol_now = np.expm1(tn["logvol"].to_numpy()) if "logvol" in tn else np.full(len(tn), np.nan)
+        volchg = tn["volchg"].to_numpy() if "volchg" in tn else np.full(len(tn), np.nan)
+        set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
+
+        # Stale-anchor gate (live runs only): a card whose newest REAL price for
+        # this tier is months old would still "forecast" off that stale anchor,
+        # and its junk % change can top the catalog's movers sorts (2026-08-01:
+        # Chopper Treasure Cup, ungraded frozen at June 1, ranked page 1 of the
+        # 1m list). Ungraded is crawled nightly so 45 days is generous; graded
+        # rotates ~monthly on month-bucketed charts, so 75. Training above is
+        # unaffected — this only suppresses publishing. Backtests (as_of) keep
+        # every card: their anchors are historical by construction.
+        stale_cut = (datetime.now(timezone.utc)
+                     - timedelta(days=45 if target == "ungraded" else 75)).strftime("%Y-%m-%d")
+
+        # Minimum-history gate (2026-08-19): a card whose tier series has a
+        # single monthly bucket has never shown the model one realized return —
+        # its "forecast" is a pure trait guess (the 2026-08-18 wipe left
+        # 1-bucket cards that promptly emitted 1m/6m/12m rows off one fresh
+        # point). Require >= 2 buckets. Surgical: ~1.2k ungraded cards sit at
+        # 1 bucket vs ~59k at 2, and a young card graduates at its second
+        # month boundary. Live runs only — backtests keep every card.
+        hist_k = np.isfinite(P[keep]).sum(axis=1)
+
+        prints_k = prints[keep]
+        for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
+            pr = str(prints_k[i])
+            if not as_of and real_dates.get((int(pid), pr), a) < stale_cut:
+                stale_pids.add((int(pid), pr))
+                continue
+            # Graded: also require a recent crawl (see crawl_cut above). The
+            # price-date gate alone can pass a card whose chart simply has no
+            # new bucket; this one says whether WE have looked lately.
+            if not as_of and target != "ungraded" and crawled_at.get(int(pid), "") < crawl_cut:
+                stale_pids.add((int(pid), pr))
+                continue
+            # Graded: no new price since the standing forecast -> keep it.
+            if standing:
+                st = standing.get((int(pid), pr, "launch1m" if hist_k[i] < 2 else hname))
+                if st is not None and real_dates.get((int(pid), pr), a) <= (st[14] or "")[:10]:
+                    PRESERVED.setdefault(game, []).append(st)
+                    kept_pids.add((int(pid), pr))
+                    continue
+            # EARLY tier (2026-10-23): a single-bucket card's 1m call is no
+            # longer dropped — it publishes under horizon 'launch1m' (the
+            # tier the card page already badges EARLY), forced low confidence,
+            # version '-early', with its own note. The 2026-10-23 backtest
+            # (notes/young_bt_2026-10-23.db) showed the model's top decile
+            # beating a new set by +18 log-pts at $5+ over PriceCharting-era
+            # launches and +33 over TCGplayer-era ones, where the launch
+            # tier's rarity prior sat at or below flat. Longer horizons still
+            # wait for a second bucket. forecast_launch.py skips cards that
+            # carry one of these rows.
+            early = False
+            if not as_of and hist_k[i] < 2:
+                if hname != "1m":
+                    thin_pids.add((int(pid), pr))
+                    continue
+                early = True
+            comp = comps.get(int(pid))
+            # resolve up to two look-alike cards by name, skipping self-references
+            examples = []
+            if comp:
+                own = _txt((traits.get(int(pid)) or {}).get("name"))
+                for cid in comp[2]:
+                    nm = _txt((traits.get(int(cid)) or {}).get("name"))
+                    if nm and nm != own and nm not in examples:
+                        examples.append(nm)
+                    if len(examples) == 2:
+                        break
+            reason = make_reason(r, mom3[i], trend12[i], vol6[i], hname,
+                                 vol_now[i], volchg[i],
+                                 comp=comp,
+                                 deltas_i={bkt: d[i] for bkt, d in deltas.items()},
+                                 traits=traits.get(int(pid)), pid=int(pid),
+                                 set12=set12[i], comp_examples=examples)
+            # Honesty caveats replace the old suppression gates: flagged, not hidden.
+            if unreliable:
+                reason += (" Heads up: our recent forecasts for this game and timeframe"
+                           " have been rough, so treat this one as a guess.")
+            if early:
+                reason = ("Early estimate: this card has only a month of prices, so this is a "
+                          "first guess from its set, rarity and art. Use it to compare new cards, "
+                          "not as a price target. " + reason)
+            if weak_point:
+                reason += (f" One more thing: for {span_of(hname)} forecasts in this game and"
+                           " condition we haven't beaten simply assuming the price stays put,"
+                           " so we've toned this one down. Use it to compare cards, not as a"
+                           " price target.")
+            if borrowed[i]:
+                reason += (f" One more thing: we have no separate read on this condition over"
+                           f" {span_of(hname)}, so this follows {borrow_label}. Use it to compare"
+                           " cards, not as a price target.")
+            if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
+                reason += (" This is a big swing and we aren't confident in it; calls like"
+                           " this have often been wrong.")
+            hz_pub = "launch1m" if early else hname
+            conf_pub = "low" if early else str(conf[i])
+            ver_pub = f"{version}-early" if early else version
+            RAW_EXTRA[(game, int(pid), pr, target, hz_pub)] = (
+                float(raw_ret_now[i]), float(raw_width_now[i]))
+            rows.append((game, int(pid), target, hz_pub, a, round(float(b), 2),
+                         float(f), float(lo), float(hi), round(float(r), 4), reason,
+                         conf_pub, ver_pub, now, real_dates.get((int(pid), pr), a),
+                         pr))
+            # (1w rows removed 2026-08-14: they were the 1-month forecast
+            # pro-rated to 7 days — synthetic, and retired ahead of the true
+            # weekly model planned once daily data matures, ~Oct 2026.)
 
     rows = []
     for hname, k in horizons.items():
@@ -1095,197 +1375,61 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         q10 = model_quantile(0.10).fit(X, y, sample_weight=w)
         q90 = model_quantile(0.90).fit(X, y, sample_weight=w)
 
-        Xnow = pd.concat([traj_now.loc[keep].reset_index(drop=True),
-                          static.loc[keep].reset_index(drop=True)], axis=1)[X.columns]
-
-        base = P[keep, last_idx[keep]]
-        pred_now = model.predict(Xnow)
-        q10_now = q10.predict(Xnow)
-        q90_now = q90.predict(Xnow)
-        # Per-card widening under CQR (each card gets its price stratum's
-        # widening); the classic scalar otherwise. Debias shifts point + band.
-        if wcal is not None:
-            widen = fcal.width_widen_for(q10_now, q90_now, base, wcal)
-        elif use_cqr and calib is not None:
-            widen = fcal.bucket_widen_for(base, calib)
-        else:
-            widen = conf_widen
-        # Publish-time shrink on the (debiased) point; bands stay anchored on
-        # the scenario quantiles. Raw values ride along to the archive so the
-        # live refit never compounds a shrink on an already-shrunk number.
-        b_ = bias if use_debias else 0.0
-        bolded = {k: (v if v > 0 else MIN_SHRINK) for k, v in shrink.items()}
-        if bolded != shrink:
-            print(f"  [{game}/{target}/{hname}] bold minimum: shrink "
-                  f"up x{shrink['up']:g}->x{bolded['up']:g} "
-                  f"down x{shrink['down']:g}->x{bolded['down']:g}", flush=True)
-            shrink = bolded
-        pred_pub = fcal.apply_shrink(pred_now - b_, shrink) + b_
-        raw_ret_now = np.clip(pred_now - b_, -RET_CLIP, RET_CLIP)
-        raw_width_now = q90_now - q10_now
-        # quantile crossings happen at the tails — emit_bands enforces
-        # lo <= ret <= hi and applies the conformal adjustment measured above.
-        ret, lo_ret, hi_ret = fcal.emit_bands(pred_pub, q10_now, q90_now, widen,
-                                              b_, RET_CLIP)
-        width = hi_ret - lo_ret   # 80% interval width in log-return
-        conf = np.where(width <= 0.40, "high", np.where(width <= 0.90, "med", "low"))
-        if unreliable or weak_point:
-            conf = np.full(len(ret), "low", dtype=object)
-
-        # Flat-segment guard — see FLAT_SEGMENT_SHARE. Live runs only:
-        # backtests must score the model's own output.
-        borrowed = np.zeros(len(ret), dtype=bool)
-        borrow_label = ""
-        if not as_of and len(ret):
-            flat_share = float(np.mean(np.round(base * np.exp(ret), 2) == np.round(base, 2)))
-            if flat_share >= FLAT_SEGMENT_SHARE:
-                donor = _borrow_returns(game, target, hname, k, pids[keep], prints[keep])
-                if donor is not None:
-                    borrow_label, pred_b = donor
-                    has = np.isfinite(pred_b)
-                    ret, lo_ret, hi_ret = fcal.emit_bands(np.where(has, pred_b, pred_pub),
-                                                          q10_now, q90_now, widen, b_, RET_CLIP)
-                    borrowed = has
-                    conf = np.where(has, "low", conf).astype(object)
-                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of its "
-                          f"own calls round to 0% — {int(has.sum())}/{len(ret)} rows follow "
-                          f"{borrow_label}", flush=True)
-                else:
-                    FLAT_SEGMENTS.append(f"{game}/{target}/{hname}")
-                    print(f"  [{game}/{target}/{hname}] FLAT SEGMENT: {flat_share:.0%} of calls "
-                          f"round to 0% and no donor call exists — published flat", flush=True)
-        if target == "ungraded" and not as_of:
-            UNGRADED_RET.setdefault(game, {})[hname] = {
-                (int(p), str(pr)): float(r) for p, pr, r in zip(pids[keep], prints[keep], ret)}
-
-        if debug is not None and hname in debug:
-            debug[hname]["emit"] = {
-                "pids": pids[keep].copy(), "prints": prints[keep].copy(),
-                "base": base.copy(), "pred_now": pred_now, "q10_now": q10_now,
-                "q90_now": q90_now, "last_idx": last_idx[keep].copy(),
-                "Xnow": Xnow if debug.get("capture_frames") else None,
-            }
-
-        deltas = bucket_deltas(model, Xnow, X)   # per-card trait attribution
-        comps = art_comps(game)
-        traits = card_traits(game)
-        fc = np.round(base * np.exp(ret), 2)
-        low = np.round(base * np.exp(lo_ret), 2)
-        high = np.round(base * np.exp(hi_ret), 2)
-        asof = [dates[i] + "-01" for i in last_idx[keep]]
-
-        # trajectory signals the model saw, for per-card reasoning
-        tn = traj_now.loc[keep].reset_index(drop=True)
-        mom3, trend12, vol6 = tn["ret3"].to_numpy(), tn["ret12"].to_numpy(), tn["vol6"].to_numpy()
-        vol_now = np.expm1(tn["logvol"].to_numpy()) if "logvol" in tn else np.full(len(tn), np.nan)
-        volchg = tn["volchg"].to_numpy() if "volchg" in tn else np.full(len(tn), np.nan)
-        set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
-
-        # Stale-anchor gate (live runs only): a card whose newest REAL price for
-        # this tier is months old would still "forecast" off that stale anchor,
-        # and its junk % change can top the catalog's movers sorts (2026-08-01:
-        # Chopper Treasure Cup, ungraded frozen at June 1, ranked page 1 of the
-        # 1m list). Ungraded is crawled nightly so 45 days is generous; graded
-        # rotates ~monthly on month-bucketed charts, so 75. Training above is
-        # unaffected — this only suppresses publishing. Backtests (as_of) keep
-        # every card: their anchors are historical by construction.
-        stale_cut = (datetime.now(timezone.utc)
-                     - timedelta(days=45 if target == "ungraded" else 75)).strftime("%Y-%m-%d")
-
-        # Minimum-history gate (2026-08-19): a card whose tier series has a
-        # single monthly bucket has never shown the model one realized return —
-        # its "forecast" is a pure trait guess (the 2026-08-18 wipe left
-        # 1-bucket cards that promptly emitted 1m/6m/12m rows off one fresh
-        # point). Require >= 2 buckets. Surgical: ~1.2k ungraded cards sit at
-        # 1 bucket vs ~59k at 2, and a young card graduates at its second
-        # month boundary. Live runs only — backtests keep every card.
-        hist_k = np.isfinite(P[keep]).sum(axis=1)
-
-        prints_k = prints[keep]
-        for i, (pid, a, b, r, f, lo, hi) in enumerate(zip(pids[keep], asof, base, ret, fc, low, high)):
-            pr = str(prints_k[i])
-            if not as_of and real_dates.get((int(pid), pr), a) < stale_cut:
-                stale_pids.add((int(pid), pr))
+        # Long horizons retrain monthly: keep this fit so the nights between
+        # can issue rows for cards that gain their first eligible bucket.
+        if not as_of and hname != "1m" and debug is None:
+            _save_artifact(game, target, hname, version, now, dict(
+                columns=list(X.columns), typical=_typical_frame(X),
+                model=model, q10=q10, q90=q90, use_debias=use_debias,
+                use_cqr=use_cqr, bias=bias, shrink=shrink, conf_widen=conf_widen,
+                calib=calib, wcal=wcal, band=band, unreliable=unreliable,
+                weak_point=weak_point, n_train=int(len(y))))
+        _emit(hname, k, keep, model, q10, q90, list(X.columns), X, use_debias, use_cqr,
+              bias, shrink, conf_widen, calib, wcal, unreliable, weak_point)
+    # FILL pass: horizons this run did not train. Only the cards of this
+    # segment with NO standing row at that horizon get one, from the saved
+    # monthly fit; everything already standing is left exactly as it was.
+    # A failure here must never cost the segment its trained rows.
+    filled = 0
+    if fill and not as_of and DB_PATH:
+        for hname, k in fill.items():
+            try:
+                have = {(int(p), str(pr or "")) for p, pr in sqlite3.connect(DB_PATH, timeout=60).execute(
+                    "SELECT product_id, printing FROM forecasts WHERE game=? AND target=? AND horizon=?",
+                    (game, target, hname))}
+            except sqlite3.OperationalError as e:
+                print(f"  [{game}/{target}/{hname}] fill skipped: {e}", flush=True)
                 continue
-            # Graded: also require a recent crawl (see crawl_cut above). The
-            # price-date gate alone can pass a card whose chart simply has no
-            # new bucket; this one says whether WE have looked lately.
-            if not as_of and target != "ungraded" and crawled_at.get(int(pid), "") < crawl_cut:
-                stale_pids.add((int(pid), pr))
+            kp = keep & np.fromiter(((int(p), str(pr)) not in have for p, pr in zip(pids, prints)),
+                                    dtype=bool, count=len(pids))
+            if not kp.any():
                 continue
-            # Graded: no new price since the standing forecast -> keep it.
-            if standing:
-                st = standing.get((int(pid), pr, "launch1m" if hist_k[i] < 2 else hname))
-                if st is not None and real_dates.get((int(pid), pr), a) <= (st[14] or "")[:10]:
-                    PRESERVED.setdefault(game, []).append(st)
-                    kept_pids.add((int(pid), pr))
-                    continue
-            # EARLY tier (2026-10-23): a single-bucket card's 1m call is no
-            # longer dropped — it publishes under horizon 'launch1m' (the
-            # tier the card page already badges EARLY), forced low confidence,
-            # version '-early', with its own note. The 2026-10-23 backtest
-            # (notes/young_bt_2026-10-23.db) showed the model's top decile
-            # beating a new set by +18 log-pts at $5+ over PriceCharting-era
-            # launches and +33 over TCGplayer-era ones, where the launch
-            # tier's rarity prior sat at or below flat. Longer horizons still
-            # wait for a second bucket. forecast_launch.py skips cards that
-            # carry one of these rows.
-            early = False
-            if not as_of and hist_k[i] < 2:
-                if hname != "1m":
-                    thin_pids.add((int(pid), pr))
-                    continue
-                early = True
-            comp = comps.get(int(pid))
-            # resolve up to two look-alike cards by name, skipping self-references
-            examples = []
-            if comp:
-                own = _txt((traits.get(int(pid)) or {}).get("name"))
-                for cid in comp[2]:
-                    nm = _txt((traits.get(int(cid)) or {}).get("name"))
-                    if nm and nm != own and nm not in examples:
-                        examples.append(nm)
-                    if len(examples) == 2:
-                        break
-            reason = make_reason(r, mom3[i], trend12[i], vol6[i], hname,
-                                 vol_now[i], volchg[i],
-                                 comp=comp,
-                                 deltas_i={bkt: d[i] for bkt, d in deltas.items()},
-                                 traits=traits.get(int(pid)), pid=int(pid),
-                                 set12=set12[i], comp_examples=examples)
-            # Honesty caveats replace the old suppression gates: flagged, not hidden.
-            if unreliable:
-                reason += (" Heads up: our recent forecasts for this game and timeframe"
-                           " have been rough, so treat this one as a guess.")
-            if early:
-                reason = ("Early estimate: this card has only a month of prices, so this is a "
-                          "first guess from its set, rarity and art. Use it to compare new cards, "
-                          "not as a price target. " + reason)
-            if weak_point:
-                reason += (f" One more thing: for {span_of(hname)} forecasts in this game and"
-                           " condition we haven't beaten simply assuming the price stays put,"
-                           " so we've toned this one down. Use it to compare cards, not as a"
-                           " price target.")
-            if borrowed[i]:
-                reason += (f" One more thing: we have no separate read on this condition over"
-                           f" {span_of(hname)}, so this follows {borrow_label}. Use it to compare"
-                           " cards, not as a price target.")
-            if conf[i] == "low" and abs(float(r)) > EXTREME_LOW_CONF_RET:
-                reason += (" This is a big swing and we aren't confident in it; calls like"
-                           " this have often been wrong.")
-            hz_pub = "launch1m" if early else hname
-            conf_pub = "low" if early else str(conf[i])
-            ver_pub = f"{version}-early" if early else version
-            RAW_EXTRA[(game, int(pid), pr, target, hz_pub)] = (
-                float(raw_ret_now[i]), float(raw_width_now[i]))
-            rows.append((game, int(pid), target, hz_pub, a, round(float(b), 2),
-                         float(f), float(lo), float(hi), round(float(r), 4), reason,
-                         conf_pub, ver_pub, now, real_dates.get((int(pid), pr), a),
-                         pr))
-            # (1w rows removed 2026-08-14: they were the 1-month forecast
-            # pro-rated to 7 days — synthetic, and retired ahead of the true
-            # weekly model planned once daily data matures, ~Oct 2026.)
+            art = _load_artifact(game, target, hname, version)
+            if art is None:
+                continue
+            avail = set(traj_now.columns) | set(static.columns)
+            lost = [c for c in art["columns"] if c not in avail]
+            if lost:
+                print(f"  [{game}/{target}/{hname}] fill skipped: the saved model wants feature(s) "
+                      f"this run lacks: {', '.join(lost[:5])}", flush=True)
+                continue
+            print(f"  [{game}/{target}/{hname}] FILL: {int(kp.sum())} card(s) with no standing row, "
+                  f"from the {str(art['trained_at'])[:10]} fit", flush=True)
+            before = len(rows)
+            try:
+                _emit(hname, k, kp, art["model"], art["q10"], art["q90"], art["columns"],
+                      art["typical"], art["use_debias"], art["use_cqr"], art["bias"],
+                      art["shrink"], art["conf_widen"], art["calib"], art["wcal"],
+                      art["unreliable"], art["weak_point"])
+            except Exception as e:
+                import traceback
+                tb = traceback.extract_tb(e.__traceback__)
+                where = f" at line {tb[-1].lineno}" if tb else ""
+                print(f"  [{game}/{target}/{hname}] FILL FAILED: {type(e).__name__}: {e}{where} "
+                      f"({len(rows) - before} row(s) issued before the error are kept)", flush=True)
+            filled += len(rows) - before
     print(f"[{game}/{target}] {len(rows)} rows"
+          + (f" ({filled} filled from the saved long-horizon models)" if filled else "")
           + (f" ({len(stale_pids)} stale-anchored card(s) not published)" if stale_pids else "")
           + (f" ({len(thin_pids)} single-bucket card(s) not published)" if thin_pids else "")
           + (f" ({len(kept_pids)} card(s) kept their standing forecast: no new price)"
@@ -1399,6 +1543,13 @@ def main():
     else:
         horizons = None
     subset = horizons is not None and set(horizons) != set(HORIZONS)
+    # 1m-only nights FILL the other horizons for cards that have no standing
+    # row there, from the saved monthly fits (MODEL_DIR). TCG_FC_FILL=0 disables.
+    fill = None
+    if subset and not args.as_of and os.environ.get("TCG_FC_FILL", "1") != "0":
+        fill = {h: k for h, k in HORIZONS.items() if h not in horizons}
+        print(f"[forecast] fill pass: cards lacking a standing {'/'.join(sorted(fill))} row get "
+              f"one from the saved long-horizon models (TCG_FC_FILL=0 disables)", flush=True)
     if subset:
         print(f"[forecast] horizon-limited run: {sorted(horizons)} only "
               f"(other horizons' standing forecasts untouched)", flush=True)
@@ -1462,7 +1613,7 @@ def main():
         for target in run_targets:
             done_seg += 1
             try:
-                rows += forecast_game_target(game, target, now, args.as_of, horizons)
+                rows += forecast_game_target(game, target, now, args.as_of, horizons, fill=fill)
             except Exception as e:
                 # Name the failing line: a bare "database is locked" (a read
                 # colliding with a crawl's write, 2026-10-24) says nothing
@@ -1504,6 +1655,8 @@ def main():
         if checked:
             new_counts = {}
             for r in rows + PRESERVED.get(game, []):
+                if fill and r[3] in fill:
+                    continue   # filled rows sit outside the horizons `prev` counted
                 k = (r[0], r[2])
                 new_counts[k] = new_counts.get(k, 0) + 1
             gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
@@ -1522,6 +1675,8 @@ def main():
         write_game(conn, game, rows, subset, horizons, args.target)
         wrote += len(rows)
         print(f"[forecast] [{game}] published {len(rows)} rows"
+              + (f" (+{sum(1 for r in rows if r[3] in fill)} filled at {'/'.join(sorted(fill))})"
+                 if fill and any(r[3] in fill for r in rows) else "")
               + (f" (+{kept_n} standing graded row(s) kept, no new price)" if kept_n else ""),
               flush=True)
         UNGRADED_RET.pop(game, None)   # donor calls are per game; free them

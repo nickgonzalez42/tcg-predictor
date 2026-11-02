@@ -37,7 +37,16 @@ export TCG_FC_PRERELEASE=1
 # They are unvalidated until 2027 and barely move between runs; that one
 # night is ~27 h, every other night trains 1m only and keeps serving the
 # standing 6m/12m rows (horizon-scoped delete in forecast_predict.py).
-if [ "${TCG_CRAWL_NIGHT:-0}" != "1" ] || [ "$(date +%d)" -gt 7 ]; then
+# Between retrains, forecast_predict's FILL pass issues 6m/12m rows for the
+# cards that have none, from the models each retrain saves (2026-11-02).
+# One-shot override: touch one-piece/ml_data/.long_horizons_tonight and the
+# next model block trains every horizon whatever the night (used 2026-11-02,
+# user: "make sure any that don't have a 6M and 1Y get them tonight").
+FORCE_LONG="$DIR/../../one-piece/ml_data/.long_horizons_tonight"
+if [ -f "$FORCE_LONG" ]; then
+  echo "=== .long_horizons_tonight present: training 6m/12m tonight (one-shot) ==="
+  rm -f "$FORCE_LONG"
+elif [ "${TCG_CRAWL_NIGHT:-0}" != "1" ] || [ "$(date +%d)" -gt 7 ]; then
   export TCG_FC_HORIZONS=1m
 fi
 
