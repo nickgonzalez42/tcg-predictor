@@ -16,6 +16,9 @@ public abstract class CardBase
     public string? ImageUrl { get; set; }    // image_url (remote TCGplayer image)
     public string? ImagePath { get; set; }   // image_path — local art on disk; NULL = art pending,
                                              // and the card is stored but served nowhere on the site
+    public string? ReleaseDate { get; set; } // release_date — ISO timestamp the scraper took from
+                                             // TCGplayer; NULL where unknown. One Piece's older
+                                             // schema has no such column: its context ignores it.
 }
 
 // Card from any game added after the original two (yugioh, magic, lorcana,

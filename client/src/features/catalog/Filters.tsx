@@ -41,7 +41,7 @@ type Props = {
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, rarities, printings, confidence, grade, minPrice, maxPrice, view, market } = useAppSelector(state => state.catalog);
+    const { game, orderBy, sets, setsDecided, rarities, printings, confidence, grade, minPrice, maxPrice, view, market } = useAppSelector(state => state.catalog);
     const mode = market ?? '';
     const pre = mode === 'without';
     const dispatch = useAppDispatch();
@@ -163,6 +163,13 @@ export default function Filters({ filtersData: data }: Props) {
                                     checked={sets}
                                     onChange={(items: string[]) => dispatch(setSets(items))}
                                 />
+                                {/* The catalog opens on the newest set (2026-11-02); say so,
+                                    or "where did every other card go" is the first question. */}
+                                {setsDecided === 'default' && sets.length > 0 && (
+                                    <p className="est-note filters__note">
+                                        Showing the newest set. Clear it to browse every set.
+                                    </p>
+                                )}
                             </div>
                             <div className="panel">
                                 <label htmlFor="sort-select" className="field-label">Sort by</label>

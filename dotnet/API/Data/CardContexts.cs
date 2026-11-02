@@ -23,6 +23,7 @@ public class OnePieceContext(DbContextOptions<OnePieceContext> options) : DbCont
         {
             card.ToTable("cards");
             CardMapping.MapBase(card);
+            card.Ignore(x => x.ReleaseDate);   // onepiece_cards.db predates the column
             card.Property(x => x.Color).HasColumnName("color");
             card.Property(x => x.Subtypes).HasColumnName("subtypes");
             card.Property(x => x.Life).HasColumnName("life");
@@ -46,6 +47,7 @@ public class PokemonContext(DbContextOptions<PokemonContext> options) : DbContex
         {
             card.ToTable("cards");
             CardMapping.MapBase(card);
+            card.Property(x => x.ReleaseDate).HasColumnName("release_date");
             card.Property(x => x.Hp).HasColumnName("hp");
             card.Property(x => x.Stage).HasColumnName("stage");
             card.Property(x => x.EnergyType).HasColumnName("energy_type");
@@ -75,6 +77,7 @@ public abstract class GenericCardContext(DbContextOptions options) : DbContext(o
         {
             card.ToTable("cards");
             CardMapping.MapBase(card);
+            card.Property(x => x.ReleaseDate).HasColumnName("release_date");
             card.Property(x => x.CustomAttributes).HasColumnName("custom_attributes");
         });
     }

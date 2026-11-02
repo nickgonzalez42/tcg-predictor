@@ -19,6 +19,10 @@ export type CardParams = {
     quickAdd?: boolean;   // client-only: catalog quick-add mode (one-click +1 on every card)
     gameInitialized?: boolean;  // client-only: the default game has been decided
                                 // (URL param, user choice, or portfolio majority)
+    setsDecided?: 'default' | 'user';  // client-only: how the set filter was settled —
+                                       // 'default' = the newest set applied for the
+                                       // visitor, 'user' = their own pick or clear;
+                                       // unset = waiting on the game's facets
 }
 
 export type CatalogView = 'cards' | 'rows';

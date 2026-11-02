@@ -60,8 +60,11 @@ export const catalogApi = createApi({
         // estimate population's sets/rarities; 'all' merges both lists;
         // prereleaseCount rides every response so the client offers the
         // mode only when there is something to show.
+        // latestSet (2026-11-02): the newest released set with enough priced
+        // cards to be a real set; the catalog opens on it. Null when the mode
+        // has no sensible "newest" (pre-release) or the game has no such set.
         fetchFilters: builder.query<
-            { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number },
+            { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number, latestSet?: string | null },
             { game: string; market?: string }
         >({
             query: ({ game, market }) =>

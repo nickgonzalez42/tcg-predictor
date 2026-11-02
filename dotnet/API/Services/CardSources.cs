@@ -15,21 +15,37 @@ public class CardSources(
     FleshAndBloodContext fleshAndBlood, SorceryContext sorcery,
     RiftboundContext riftbound, CyberpunkContext cyberpunk)
 {
-    public IQueryable<CardBase> Cards(string game) => game switch
+    private DbContext Context(string game) => game switch
     {
-        "pokemon" => pokemon.Cards,
-        "yugioh" => yugioh.Cards,
-        "magic" => magic.Cards,
-        "lorcana" => lorcana.Cards,
-        "digimon" => digimon.Cards,
-        "gundam" => gundam.Cards,
-        "starwars" => starwars.Cards,
-        "fleshandblood" => fleshAndBlood.Cards,
-        "sorcery" => sorcery.Cards,
-        "riftbound" => riftbound.Cards,
-        "cyberpunk" => cyberpunk.Cards,
-        _ => onePiece.Cards,
+        "pokemon" => pokemon,
+        "yugioh" => yugioh,
+        "magic" => magic,
+        "lorcana" => lorcana,
+        "digimon" => digimon,
+        "gundam" => gundam,
+        "starwars" => starwars,
+        "fleshandblood" => fleshAndBlood,
+        "sorcery" => sorcery,
+        "riftbound" => riftbound,
+        "cyberpunk" => cyberpunk,
+        _ => onePiece,
     };
+
+    public IQueryable<CardBase> Cards(string game) => Context(game) switch
+    {
+        PokemonContext p => p.Cards,
+        OnePieceContext o => o.Cards,
+        GenericCardContext g => g.Cards,
+        var other => throw new InvalidOperationException($"no card set on {other.GetType().Name}"),
+    };
+
+    // Whether this game's card table carries release_date. One Piece's older
+    // scraper schema does not (its entity ignores the property), so anything
+    // that ranks sets by date needs a fallback there. Read from the EF model
+    // rather than a game list, so a schema catch-up switches it on by itself.
+    public bool HasReleaseDates(string game) =>
+        Context(game).Model.GetEntityTypes()
+            .Any(t => t.FindProperty(nameof(CardBase.ReleaseDate)) != null);
 
     public async Task<CardBase?> Find(string game, int id) =>
         await Cards(GameRegistry.KeyOrDefault(game)).FirstOrDefaultAsync(c => c.Id == id);

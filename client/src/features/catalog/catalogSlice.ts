@@ -12,13 +12,12 @@ import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 // chips follow the sort via trendForSort.
 export const DEFAULT_ORDER = 'chgPct6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
-// Default price floor (2026-10-26). Sorting by PERCENT puts penny cards on
-// top — a $0.01 card called at $0.05 is +400%, and the opening screen filled
-// with them (one $0.15 card read +31,453%). A $1 floor is enough to clear
-// that and still keeps genuinely cheap cards. It shows in the Min $ box, so
-// it is visible and a visitor can clear it; clearing writes minPrice=0 to
-// the URL, the sentinel the parser already understands.
-export const DEFAULT_MIN_PRICE = '1';
+// No default price floor (2026-11-02, user decision). A $1 floor stood here
+// from 2026-10-26 because a PERCENT sort over a whole game put penny cards on
+// top; the catalog now opens on a single set (the newest, see
+// applyDefaultSets), where the ranking reads fine without one. A floor the
+// visitor types is still honoured, and old links carrying minPrice=0 (the
+// cleared-floor sentinel of that era) still parse.
 // The trend window the opening sort implies; the chips follow the sort.
 export const DEFAULT_TREND = trendForSort('chgPct6Desc') ?? '6m';
 
@@ -33,6 +32,8 @@ const initialState: CardParams = {
     gameInitialized: false,
     pageNumber: 1,
     pageSize: DEFAULT_PAGE_SIZE,
+    // Sets start undecided: the newest set is applied once the game's facets
+    // arrive (applyDefaultSets), unless a URL or the visitor settles it first.
     sets: [],
     rarities: [],
     // No confidence filter by default (2026-08-02): the catalog opens on the
@@ -42,7 +43,7 @@ const initialState: CardParams = {
     searchTerm: '',
     orderBy: DEFAULT_ORDER,
     grade: '',
-    minPrice: DEFAULT_MIN_PRICE,
+    minPrice: '',
     maxPrice: '',
     // Derived from the default sort so the tiles' window always matches the
     // opening sort (2026-08-22: a hardcoded '1y' here survived the switch to
@@ -75,6 +76,7 @@ export const catalogSlice = createSlice({
             // Switching games invalidates the previous game's set/rarity/printing filters.
             state.game = action.payload;
             state.sets = [];
+            state.setsDecided = undefined;   // the new game's newest set applies once its facets arrive
             state.rarities = [];
             state.printings = [];   // 2026-08-28: was silently filtering across game switches
             state.searchTerm = '';
@@ -95,6 +97,18 @@ export const catalogSlice = createSlice({
         },
         setSets(state, action) {
             state.sets = action.payload;
+            state.setsDecided = 'user';
+            state.pageNumber = 1;
+        },
+        // The opening set (2026-11-02, user: "automatically select the most
+        // recent set for each game"): once the game's facets arrive, the
+        // newest set the API names becomes the filter, unless the visitor has
+        // already settled it (URL, a pick, a clear). Null = no default for
+        // this mode, so the list stays open.
+        applyDefaultSets(state, action) {
+            if (state.setsDecided) return;
+            state.sets = action.payload ? [action.payload] : [];
+            state.setsDecided = 'default';
             state.pageNumber = 1;
         },
         setRarities(state, action) {
@@ -114,6 +128,13 @@ export const catalogSlice = createSlice({
         setSearchTerm(state, action) {
             state.searchTerm = action.payload;
             state.pageNumber = 1;
+            // A search is for a card, not a set: the newest-set default would
+            // hide every other printing of it, so it steps aside. A set the
+            // visitor chose themselves stays.
+            if (action.payload && state.setsDecided === 'default') {
+                state.sets = [];
+                state.setsDecided = 'user';
+            }
         },
         setGrade(state, action) {
             state.grade = action.payload;
@@ -152,6 +173,7 @@ export const catalogSlice = createSlice({
             if (mode === (state.market ?? '')) return;
             state.market = mode;
             state.sets = [];
+            state.setsDecided = undefined;   // re-decided for the new mode's facets
             state.rarities = [];
             state.pageNumber = 1;
             if (mode === 'without') {
@@ -179,4 +201,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, setGrade, setMinPrice, setMaxPrice, setTrend, setMarket, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, applyDefaultSets, setGrade, setMinPrice, setMaxPrice, setTrend, setMarket, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

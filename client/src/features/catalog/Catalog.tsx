@@ -6,7 +6,7 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_MIN_PRICE, DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, applyDefaultSets, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
 import { yearSortTo6m } from "./sortOptions";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
@@ -22,8 +22,10 @@ export default function Catalog() {
   const cardParams = useAppSelector(state => state.catalog);
   const marketMode = cardParams.market ?? '';
   const pre = marketMode === 'without';
-  const { data: filtersData, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, market: marketMode || undefined });
-  const { data, isLoading } = useFetchCardsQuery(cardParams);
+  const { data: filtersData, currentData: filtersNow, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, market: marketMode || undefined });
+  // The list waits until the set filter is settled (the newest set by
+  // default, see below), so a visitor never sees every set flash past first.
+  const { data, isLoading } = useFetchCardsQuery(cardParams, { skip: !cardParams.setsDecided });
   const dispatch = useAppDispatch();
   // Games without year-deep data (no 12m forecasts, <12mo history) lose the
   // 1Y views: the trend chip disables and any active 1Y selection snaps to 6M.
@@ -52,15 +54,18 @@ export default function Catalog() {
     if (get('game')) { p.game = get('game')!; p.gameInitialized = true; }
     if (get('orderBy')) p.orderBy = get('orderBy')!;
     if (get('searchTerm')) p.searchTerm = get('searchTerm')!;
-    if (get('sets')) p.sets = get('sets')!.split(',');
+    // sets=all is the "every set" mark: with the newest set as the default, a
+    // cleared filter needs a sign of its own to survive a reload.
+    if (get('sets')) { p.sets = get('sets') === 'all' ? [] : get('sets')!.split(','); p.setsDecided = 'user'; }
     if (get('rarities')) p.rarities = get('rarities')!.split(',');
     // 'any' was the filter-cleared sentinel while High was the default; it now
     // equals the default but old shared links still carry it.
     if (get('confidence')) p.confidence = get('confidence') === 'any' ? [] : get('confidence')!.split(',');
     if (get('printings')) p.printings = get('printings')!.split(',');
     if (get('grade')) p.grade = get('grade')!;
-    // minPrice=0 was the floor-cleared sentinel while $10 was the default; it
-    // now equals the default but old shared links still carry it.
+    // minPrice=0 was the floor-cleared sentinel while a default floor existed
+    // ($10, then $1 until 2026-11-02); there is no floor now, but old shared
+    // links still carry it.
     if (get('minPrice')) p.minPrice = get('minPrice') === '0' ? '' : get('minPrice')!;
     if (get('maxPrice')) p.maxPrice = get('maxPrice')!;
     if (get('pageNumber')) p.pageNumber = +get('pageNumber')!;
@@ -95,21 +100,29 @@ export default function Catalog() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, userLoading, watchlist, watchlistLoading, cardParams.gameInitialized]);
 
+  // Opening set (2026-11-02): once THIS game's facets are in (currentData, so
+  // a stale game's answer can't apply), the newest set becomes the filter
+  // unless the visitor already settled it. Pre-release mode has no "newest"
+  // that means anything, so it stays open.
+  useEffect(() => {
+    if (cardParams.setsDecided || !filtersNow) return;
+    dispatch(applyDefaultSets(pre ? null : (filtersNow.latestSet ?? null)));
+  }, [cardParams.setsDecided, filtersNow, pre, dispatch]);
+
   // Reflect catalog state in the URL whenever it changes.
   useEffect(() => {
     const sp: Record<string, string> = { game: cardParams.game };
     if (cardParams.orderBy && cardParams.orderBy !== DEFAULT_ORDER) sp.orderBy = cardParams.orderBy;
     if (cardParams.searchTerm) sp.searchTerm = cardParams.searchTerm;
-    if (cardParams.sets.length) sp.sets = cardParams.sets.join(',');
+    // Sets: only the visitor's own choice goes in the URL ('all' when they
+    // cleared the default), so a shared bare link opens on whatever set is
+    // newest at the time, like the catalog itself.
+    if (cardParams.setsDecided === 'user') sp.sets = cardParams.sets.length ? cardParams.sets.join(',') : 'all';
     if (cardParams.rarities.length) sp.rarities = cardParams.rarities.join(',');
     if (cardParams.confidence.length) sp.confidence = cardParams.confidence.join(',');
     if (cardParams.printings.length) sp.printings = cardParams.printings.join(',');
     if (cardParams.grade) sp.grade = cardParams.grade;
-    // minPrice: only when it differs from the default floor, and '0' when the
-    // visitor has cleared it (the sentinel the reader above understands), so a
-    // cleared floor survives a reload.
-    if (cardParams.minPrice && cardParams.minPrice !== DEFAULT_MIN_PRICE) sp.minPrice = cardParams.minPrice;
-    else if (!cardParams.minPrice) sp.minPrice = '0';
+    if (cardParams.minPrice) sp.minPrice = cardParams.minPrice;
     if (cardParams.maxPrice) sp.maxPrice = cardParams.maxPrice;
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);

@@ -209,11 +209,13 @@ public partial class CardsController(
                 hasYear = true,
                 printings = new List<string>(),
                 prereleaseCount = unpriced.Count,
+                latestSet = (string?)null,   // no "newest" means anything before release
             };
         }
         var prereleaseCount = unpriced.Count;
 
         var (sets, rarities) = await Facets(sources.Cards(key).VisibleInCatalog());
+        var latestSet = await LatestSet(key, sources.Cards(key).VisibleInCatalog());
         // "All" mode: the facet lists cover both populations, so an upcoming
         // set is pickable alongside the priced ones.
         if (mode == "all" && unpriced.Count > 0)
@@ -256,7 +258,68 @@ public partial class CardsController(
             .OrderBy(p => p)
             .ToList();
 
-        return new { sets, rarities, hasYear, printings, prereleaseCount };
+        return new { sets, rarities, hasYear, printings, prereleaseCount, latestSet };
+    }
+
+    // The catalog's opening set (2026-11-02, user: "automatically select the
+    // most recent set for each game"): the newest RELEASED set that is big
+    // enough to be a real set. Promo drops of a few cards and pre-sale sets
+    // with a handful of prices would otherwise win every time. A set's date
+    // is the one most of its priced cards carry: promo sets keep gaining
+    // cards with their own dates, so a max would make them look newest. Same
+    // date, bigger set wins (the main set over its Commander / Art Series /
+    // promo-pack siblings). A game without release dates (One Piece's older
+    // schema) ranks sets by their middle product id instead: TCGplayer
+    // numbers products as they are created, so a set's median id follows
+    // release order even while promo sets keep taking fresh ids.
+    private const int LatestSetMinCards = 20;
+
+    private async Task<string?> LatestSet(string key, IQueryable<CardBase> cards)
+    {
+        var sizes = (await cards.Where(c => c.SetName != null)
+                .GroupBy(c => c.SetName!)
+                .Select(g => new { Set = g.Key, N = g.Count() })
+                .ToListAsync())
+            .Where(s => s.N >= LatestSetMinCards)
+            .ToDictionary(s => s.Set, s => s.N);
+        if (sizes.Count == 0) return null;
+
+        if (sources.HasReleaseDates(key))
+        {
+            var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+            var dated = await cards
+                .Where(c => c.SetName != null && c.ReleaseDate != null && c.ReleaseDate != "")
+                .GroupBy(c => new { c.SetName, c.ReleaseDate })
+                .Select(g => new { g.Key.SetName, g.Key.ReleaseDate, N = g.Count() })
+                .ToListAsync();
+            var pick = dated
+                .Where(d => sizes.ContainsKey(d.SetName!))
+                .GroupBy(d => d.SetName!)
+                .Select(g =>
+                {
+                    var common = g.OrderByDescending(x => x.N).First().ReleaseDate!;
+                    return new { Set = g.Key, Date = common.Length > 10 ? common[..10] : common, N = sizes[g.Key] };
+                })
+                .Where(s => string.CompareOrdinal(s.Date, today) <= 0)
+                .OrderByDescending(s => s.Date).ThenByDescending(s => s.N)
+                .FirstOrDefault();
+            if (pick != null) return pick.Set;
+        }
+
+        var ids = await cards.Where(c => c.SetName != null)
+            .Select(c => new { c.SetName, c.Id })
+            .ToListAsync();
+        return ids
+            .Where(x => sizes.ContainsKey(x.SetName!))
+            .GroupBy(x => x.SetName!)
+            .Select(g =>
+            {
+                var sorted = g.Select(x => x.Id).OrderBy(i => i).ToList();
+                return new { Set = g.Key, Median = sorted[sorted.Count / 2] };
+            })
+            .OrderByDescending(s => s.Median)
+            .Select(s => s.Set)
+            .FirstOrDefault();
     }
 
     // ----- Pre-release paging (2026-10-10) -----
