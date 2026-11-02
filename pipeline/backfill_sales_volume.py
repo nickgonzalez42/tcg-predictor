@@ -37,6 +37,8 @@ from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                      "pricecharting.db")
 BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
+LOCK_RETRIES = 5     # write attempts when another connection holds the database
+LOCK_WAIT_S = 10     # pause between those attempts (on top of the busy timeout)
 COOL_OFF_S = 1800    # breaker trip: rest, then resume (transient outages heal)
 MAX_TRIPS = 4        # consecutive cool-offs with no success between: give up
 
@@ -142,7 +144,9 @@ def main():
         return
 
     games = priced_games() if args.game == "all" else [args.game]
-    conn = sqlite3.connect(PC_DB, timeout=60)
+    # 600 s busy timeout (2026-11-02, was 60): the graded crawl writes to this
+    # database all day and a transaction of its could outlast a minute.
+    conn = sqlite3.connect(PC_DB, timeout=600)
     # A 50-card batch (~13k bucket rows) spilled SQLite's 2 MB page cache,
     # which escalates the transaction to an EXCLUSIVE lock for the rest of
     # the batch — readers saw "database is locked" ~90% of the time
@@ -220,13 +224,29 @@ def main():
                 streak = 0
             continue
         streak = trips = 0
-        n = record_sales(conn, game, pid, h)
+        # Write + commit per card, retrying a lock (2026-11-02): the graded
+        # crawl shares this database all day, and a write that met its open
+        # transaction used to wait 60 s, raise "database is locked" and kill
+        # the process — 189 crash-relaunches between 10-29 and 11-02, each
+        # discarding up to 19 fetched-but-uncommitted cards. Now the busy
+        # wait is retried, and our own transaction never spans a fetch.
+        n = None
+        for attempt in range(1, LOCK_RETRIES + 1):
+            try:
+                n = record_sales(conn, game, pid, h)
+                conn.commit()
+                break
+            except sqlite3.OperationalError as e:
+                if "locked" not in str(e).lower() or attempt == LOCK_RETRIES:
+                    raise
+                conn.rollback()
+                print(f"  database locked on write (attempt {attempt}/{LOCK_RETRIES}) — "
+                      f"retrying in {LOCK_WAIT_S}s", flush=True)
+                time.sleep(LOCK_WAIT_S)
         rows_total += n
         ok += 1
         if n == 0:
             empty += 1          # scanned + marked; no sales buckets to keep
-        if ok % 20 == 0:
-            conn.commit()
         if i % 500 == 0:
             print(f"  {i}/{len(targets)} ok={ok} empty={empty} fail={fail} "
                   f"rows={rows_total} ({datetime.now(timezone.utc):%m-%d %H:%M} UTC)",

@@ -263,8 +263,12 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
                         (game, product_id, datetime.now(timezone.utc).isoformat()))
                     ok += 1
                     g["ok"] += 1
-                    if ok % 50 == 0:
-                        conn.commit()
+                    # Commit every page (2026-11-02). Every 50 pages at ~0.2/s
+                    # held a write transaction open for ~4 minutes, and the
+                    # sales-volume crawl sharing this database gave up after
+                    # 60 s: 189 "database is locked" crash-relaunches between
+                    # 10-29 and 11-02. A commit is one fsync per page here.
+                    conn.commit()
                 if i % 200 == 0:
                     rate = i / (time.time() - t0)
                     eta = (len(targets) - i) / rate / 3600 if rate else 0
