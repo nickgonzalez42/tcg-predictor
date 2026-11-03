@@ -22,10 +22,15 @@ export default function Catalog() {
   const cardParams = useAppSelector(state => state.catalog);
   const marketMode = cardParams.market ?? '';
   const pre = marketMode === 'without';
-  const { data: filtersData, currentData: filtersNow, isLoading: filtersLoading } = useFetchFiltersQuery({ game: cardParams.game, market: marketMode || undefined });
+  // Nothing is fetched for the placeholder game: both queries wait for the
+  // session's game decision (URL, a click, or the portfolio majority below),
+  // so no facets or cards for the wrong game are ever requested or shown.
+  const { data: filtersData, currentData: filtersNow, isLoading: filtersLoading } = useFetchFiltersQuery(
+    { game: cardParams.game, market: marketMode || undefined }, { skip: !cardParams.gameInitialized });
   // The list waits until the set filter is settled (the newest set by
   // default, see below), so a visitor never sees every set flash past first.
-  const { data, isLoading } = useFetchCardsQuery(cardParams, { skip: !cardParams.setsDecided });
+  const { data, isLoading } = useFetchCardsQuery(cardParams,
+    { skip: !cardParams.gameInitialized || !cardParams.setsDecided });
   const dispatch = useAppDispatch();
   // Games without year-deep data (no 12m forecasts, <12mo history) lose the
   // 1Y views: the trend chip disables and any active 1Y selection snaps to 6M.
@@ -106,8 +111,8 @@ export default function Catalog() {
   // that means anything, so it stays open.
   useEffect(() => {
     if (cardParams.setsDecided || !filtersNow) return;
-    dispatch(applyDefaultSets(pre ? null : (filtersNow.latestSet ?? null)));
-  }, [cardParams.setsDecided, filtersNow, pre, dispatch]);
+    dispatch(applyDefaultSets({ game: cardParams.game, set: pre ? null : (filtersNow.latestSet ?? null) }));
+  }, [cardParams.setsDecided, cardParams.game, filtersNow, pre, dispatch]);
 
   // Reflect catalog state in the URL whenever it changes.
   useEffect(() => {

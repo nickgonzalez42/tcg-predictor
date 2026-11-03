@@ -1,4 +1,4 @@
-import { createSlice } from "@reduxjs/toolkit";
+import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
@@ -54,6 +54,18 @@ const initialState: CardParams = {
     quickAdd: getInitialQuickAdd()
 }
 
+// Filters that only mean something within one game. Cleared whenever the
+// game changes, by a click (setGame) or by the session default
+// (initDefaultGame); the newest set is then re-decided for the new game.
+const forgetGameFilters = (state: CardParams) => {
+    state.sets = [];
+    state.setsDecided = undefined;   // the new game's newest set applies once its facets arrive
+    state.rarities = [];
+    state.printings = [];   // 2026-08-28: was silently filtering across game switches
+    state.searchTerm = '';
+    state.pageNumber = 1;
+};
+
 export const catalogSlice = createSlice({
     name: 'catalogSlice',
     initialState,
@@ -75,12 +87,7 @@ export const catalogSlice = createSlice({
         setGame(state, action) {
             // Switching games invalidates the previous game's set/rarity/printing filters.
             state.game = action.payload;
-            state.sets = [];
-            state.setsDecided = undefined;   // the new game's newest set applies once its facets arrive
-            state.rarities = [];
-            state.printings = [];   // 2026-08-28: was silently filtering across game switches
-            state.searchTerm = '';
-            state.pageNumber = 1;
+            forgetGameFilters(state);
             state.gameInitialized = true;   // an explicit choice wins over defaults
             // Re-sync the trend window to the active sort, so the time-frame
             // chips always match the current filter after a game switch (a
@@ -92,7 +99,16 @@ export const catalogSlice = createSlice({
         // (Pokémon when signed out or the portfolio is empty). A no-op once any
         // decision — URL, user click, or this — has been made.
         initDefaultGame(state, action) {
-            if (!state.gameInitialized) state.game = action.payload;
+            if (!state.gameInitialized && state.game !== action.payload) {
+                // The placeholder game's facets may already have decided a
+                // set (2026-11-03: a signed-in One Piece collector opened
+                // /catalog, Pokémon's newest set was applied while the
+                // watchlist loaded, then the game flipped and the list asked
+                // One Piece for a Pokémon set: "no results"). Forget what was
+                // decided for the placeholder, exactly as setGame does.
+                state.game = action.payload;
+                forgetGameFilters(state);
+            }
             state.gameInitialized = true;
         },
         setSets(state, action) {
@@ -105,9 +121,11 @@ export const catalogSlice = createSlice({
         // newest set the API names becomes the filter, unless the visitor has
         // already settled it (URL, a pick, a clear). Null = no default for
         // this mode, so the list stays open.
-        applyDefaultSets(state, action) {
-            if (state.setsDecided) return;
-            state.sets = action.payload ? [action.payload] : [];
+        applyDefaultSets(state, action: PayloadAction<{ game: string; set: string | null }>) {
+            // The facets that named this set must be the current game's: a
+            // decision made for another game would hide every card.
+            if (state.setsDecided || action.payload.game !== state.game) return;
+            state.sets = action.payload.set ? [action.payload.set] : [];
             state.setsDecided = 'default';
             state.pageNumber = 1;
         },
