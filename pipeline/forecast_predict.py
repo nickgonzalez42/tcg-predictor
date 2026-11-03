@@ -1593,10 +1593,16 @@ def main():
     # Horizon-limited runs compare like for like: a 1m-only night produces a
     # quarter of a full run's rows, which would trip the collapse ratio
     # against an all-horizons baseline.
-    h_where, h_args = "", ()
-    if subset:
-        h_where = f" WHERE horizon IN ({','.join('?' * len(horizons))})"
-        h_args = tuple(horizons)
+    # Compare the horizons THIS run trains, every night, never launch1m:
+    # those rows belong to the launch tier (forecast_launch.py writes them
+    # for the catalog-only games, which have no priced tier to train).
+    # 2026-11-03 the first all-horizons night since those games arrived
+    # counted their early-estimate rows as the baseline, found no trained
+    # rows to match, tripped on all four, and failed the night with every
+    # priced game already written and nothing pushed.
+    gate_h = tuple(horizons) if horizons else tuple(HORIZONS)
+    h_where = f" WHERE horizon IN ({','.join('?' * len(gate_h))})"
+    h_args = gate_h
     prev = {}
     if not args.as_of:
         try:
@@ -1655,8 +1661,8 @@ def main():
         if checked:
             new_counts = {}
             for r in rows + PRESERVED.get(game, []):
-                if fill and r[3] in fill:
-                    continue   # filled rows sit outside the horizons `prev` counted
+                if r[3] not in gate_h:
+                    continue   # fill + launch rows sit outside the horizons `prev` counted
                 k = (r[0], r[2])
                 new_counts[k] = new_counts.get(k, 0) + 1
             gone = [k for k, n in checked.items() if n >= 1000 and not new_counts.get(k)]
@@ -1671,6 +1677,13 @@ def main():
                 PRESERVED.pop(game, None)
                 continue
 
+        if not rows and not PRESERVED.get(game):
+            # Nothing trained (a catalog-only game, no priced tier yet): leave
+            # its rows alone. On an all-horizons night write_game's DELETE
+            # would clear the launch tier's early estimates for nothing.
+            print(f"[forecast] [{game}] no priced tier to publish — existing rows left untouched",
+                  flush=True)
+            continue
         kept_n = len(PRESERVED.get(game, []))
         write_game(conn, game, rows, subset, horizons, args.target)
         wrote += len(rows)
