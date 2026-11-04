@@ -368,10 +368,13 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             From: basePrice,
             To: fcst);
         // Keep only the row for the printing this card is being SHOWN as.
-        // EARLY rows (2026-10-23) join a 1m sort only for cards that have no
-        // standard 1m row: collected apart and merged last.
+        // EARLY rows (2026-10-23) join the sort only for cards that have no
+        // standard row at this horizon: collected apart and merged last. Until
+        // 2026-11-04 they joined the 1m sort alone, so a game with no 6m/12m
+        // rows at all (the four CSV-only games) came back in id order under
+        // the default "6 months, % gain" sort while every tile showed its
+        // EARLY call — ApplyMarket falls back to that row for ANY window.
         var early = new Dictionary<int, (double B, double F)>();
-        var useEarly = horizon == "1m";
         void Take(int pid, string pr, string hz, double b, double f)
         {
             var want = printing == null || (baseIsSelected?.Contains(pid) ?? false) ? "" : printing;
@@ -399,7 +402,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             var idSet = ids.ToHashSet();
             var rows = await Fc(printing)
                 .Where(f => f.Game == game && f.Target == target
-                            && (f.Horizon == horizon || (useEarly && f.Horizon == "launch1m"))
+                            && (f.Horizon == horizon || f.Horizon == "launch1m")
                             && f.BasePrice > 0)
                 .Select(f => new { f.ProductId, f.Printing, f.Horizon, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
@@ -413,7 +416,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         {
             var rows = await Fc(printing)
                 .Where(f => f.Game == game && f.Target == target
-                            && (f.Horizon == horizon || (useEarly && f.Horizon == "launch1m"))
+                            && (f.Horizon == horizon || f.Horizon == "launch1m")
                             && f.BasePrice > 0 && batch.Contains(f.ProductId))
                 .Select(f => new { f.ProductId, f.Printing, f.Horizon, f.BasePrice, f.ForecastPrice })
                 .ToListAsync();
