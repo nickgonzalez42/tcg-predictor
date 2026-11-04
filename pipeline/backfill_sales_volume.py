@@ -30,7 +30,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
-from games import db_path, priced_games
+from games import db_path, market_games
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
@@ -143,7 +143,7 @@ def main():
         print("another sales crawl is running — exiting", flush=True)
         return
 
-    games = priced_games() if args.game == "all" else [args.game]
+    games = market_games() if args.game == "all" else [args.game]   # 2026-11-04: CSV-only games too
     # 600 s busy timeout (2026-11-02, was 60): the graded crawl writes to this
     # database all day and a transaction of its could outlast a minute.
     conn = sqlite3.connect(PC_DB, timeout=600)
