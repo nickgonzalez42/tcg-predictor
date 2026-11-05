@@ -22,6 +22,7 @@ import SoldTable from "./SoldTable";
 import GradingModal from "./GradingModal";
 import CollectionAnalysisModal from "./CollectionAnalysisModal";
 import ToolsMenu from "./ToolsMenu";
+import OutlookModal from "./OutlookModal";
 
 export default function Portfolio() {
     usePageMeta("Portfolio");
@@ -31,6 +32,9 @@ export default function Portfolio() {
     // gain most from PSA grading) and "Collection analysis" (infographics).
     const [showGrading, setShowGrading] = useState(false);
     const [showAnalysis, setShowAnalysis] = useState(false);
+    // "Value outlook" (2026-11-05): what the collection could be worth at
+    // 1 month, 6 months and 1 year by the model's calls.
+    const [showOutlook, setShowOutlook] = useState(false);
     // Positions (what you hold) vs the Sold track (what you've sold, with
     // realized P/L) — two tabs over the same table area (2026-10-24).
     const [view, setView] = useState<'positions' | 'sold'>('positions');
@@ -154,6 +158,8 @@ export default function Portfolio() {
                         <ToolsMenu items={[
                             { label: 'Collection analysis', hint: 'Infographics about everything you hold',
                               onSelect: () => setShowAnalysis(true) },
+                            { label: 'Value outlook', hint: 'What your cards could be worth in 1 month, 6 months and 1 year',
+                              onSelect: () => setShowOutlook(true) },
                             { label: 'Recommend grading', hint: 'Near Mint cards that gain most from PSA grading',
                               onSelect: () => setShowGrading(true) },
                         ]} />
@@ -164,6 +170,7 @@ export default function Portfolio() {
                 {showImport && <ImportModal onClose={() => setShowImport(false)} />}
                 {showGrading && <GradingModal onClose={() => setShowGrading(false)} />}
                 {showAnalysis && <CollectionAnalysisModal onClose={() => setShowAnalysis(false)} />}
+                {showOutlook && <OutlookModal includePacks={includePacks} onClose={() => setShowOutlook(false)} />}
                 {showPaidHelp && <PaidHelpModal onClose={() => setShowPaidHelp(false)} />}
 
                 {view === 'sold' ? (

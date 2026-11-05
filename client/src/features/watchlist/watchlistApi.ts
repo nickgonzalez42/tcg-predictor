@@ -39,6 +39,26 @@ export type CollectionAnalysis = {
     topCards: { game: string; id: number; name?: string; setName?: string; pictureUrl: string; value: number; copies: number; pct: number }[];
 };
 
+// Value outlook (portfolio/outlook, 2026-11-05): the collection's value
+// today and at 1 month / 6 months / 1 year, every copy moved by the model's
+// call for its card and condition; past a copy's longest call it holds that
+// value, and a copy with no call stays at today's price.
+export type OutlookWindow = {
+    value: number; changeUsd: number; changePct: number;
+    called: number;   // copies moved by their own call at this window
+    held: number;     // copies holding an earlier value
+    up: number; down: number;
+};
+export type OutlookLongest = '12m' | '6m' | '1m' | 'early' | 'none';
+export type CollectionOutlook = {
+    copies: number; priced: number; now: number;
+    windows: Record<'1m' | '6m' | '12m', OutlookWindow>;
+    coverage: { key: OutlookLongest; copies: number; value: number; pct: number }[];
+    byGame: { game: string; label: string; copies: number; now: number; v1m: number; v6m: number; v12m: number }[];
+    movers: { game: string; id: number; name?: string; setName?: string; pictureUrl: string; copies: number;
+        now: number; value: number; changeUsd: number; changePct: number; longest: OutlookLongest }[];
+};
+
 export type TrackedCard = {
     printing?: string           // '' / absent = base printing
     id: number;
@@ -248,6 +268,12 @@ export const watchlistApi = createApi({
             query: () => 'portfolio/grading',
             providesTags: ['Owned'],
         }),
+        // The collection's projected value for the "Value outlook" modal;
+        // includePacks follows the page toggle so "Today" matches the headline.
+        fetchCollectionOutlook: builder.query<CollectionOutlook, { includePacks: boolean }>({
+            query: ({ includePacks }) => `portfolio/outlook?includePacks=${includePacks}`,
+            providesTags: ['Owned', 'Summary'],
+        }),
         removeOwnedCopy: builder.mutation<void, { id: number }>({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
@@ -308,7 +334,7 @@ export const {
     useSetOwnedQuantityMutation,
     useImportOwnedMutation,
     useUpdateOwnedCopyMutation,
-    useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery, useFetchCollectionAnalysisQuery,
+    useRemoveOwnedCopyMutation, useFetchGradingCandidatesQuery, useFetchCollectionAnalysisQuery, useFetchCollectionOutlookQuery,
     useClearOwnedMutation,
     useFetchPortfolioSummaryQuery,
     useSellCopiesMutation,

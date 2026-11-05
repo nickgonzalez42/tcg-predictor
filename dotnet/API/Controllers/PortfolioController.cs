@@ -303,6 +303,167 @@ public class PortfolioController(
         });
     }
 
+    // ----- Value outlook (2026-11-05) -----
+    // User: "a tool on the portfolio page that shows the predicted value of
+    // your collection in 1M, 6M and 1Y; if a card doesn't carry a prediction,
+    // its value stagnates at the longest forecast." Every owned copy starts
+    // at today's price at its own condition (the figure the headline uses)
+    // and moves by the model's call for that card, condition and printing at
+    // each window. A window the card has no call for keeps the value of its
+    // longest shorter call (1m only: 6m and 1y sit at the 1m value; 6m only:
+    // 1m stays at today, 1y sits at the 6m value); a card with no call at all
+    // stays at today's price throughout. The EARLY call (launch1m) stands in
+    // for 1m when the standard model has none for the card. Graded copies use
+    // their own tier's calls only: a PSA 10 with no PSA 10 call is held, not
+    // moved by the raw card's call.
+    private sealed record OutlookPath(TrackedCard Copy, double Now, double V1, double V6, double V12,
+                                      string Longest, bool Own1, bool Own6, bool Own12);
+    private static readonly string[] LongestOrder = ["12m", "6m", "1m", "early", "none"];
+
+    [HttpGet("outlook")]
+    public async Task<IActionResult> GetOutlook([FromQuery] bool includePacks = true)
+    {
+        var user = User.Identity!.Name!;
+        var copies = await store.TrackedCards
+            .Where(x => x.UserName == user && x.Kind == TrackKind.Owned)
+            .ToListAsync();
+        if (!includePacks) copies = copies.Where(c => c.Source == AcquireSource.Paid).ToList();
+        if (copies.Count == 0) return Ok(new { copies = 0 });
+
+        // Today's price per (game, product, tier): the base-printing series the
+        // headline values copies with. Calls per (game, product, printing,
+        // target, horizon) as (move, anchor price).
+        var latest = new Dictionary<(string Game, int Id, string Tier), double>();
+        var calls = new Dictionary<(string Game, int Id, string Printing, string Target, string Horizon), (double Move, double Base)>();
+        var meta = new Dictionary<(string Game, int Id), CardBase>();
+        var horizons = new[] { "1m", "6m", "12m", "launch1m" };
+        foreach (var g in copies.GroupBy(c => c.Game))
+        {
+            var ids = g.Select(c => c.ProductId).Distinct().ToList();
+            var tiers = g.Select(c => GradeTiers.PriceTier(c.Grade)).Distinct().ToList();
+            var rows = await priceCharting.History
+                .Where(h => h.Game == g.Key && ids.Contains(h.ProductId) && tiers.Contains(h.Grade))
+                .Select(h => new { h.ProductId, h.Grade, h.Date, h.Price })
+                .ToListAsync();
+            foreach (var s in rows.GroupBy(r => (r.ProductId, r.Grade)))
+            {
+                var last = s.OrderByDescending(r => r.Date).First();
+                if (last.Price > 0) latest[(g.Key, s.Key.ProductId, s.Key.Grade)] = last.Price;
+            }
+            var targets = g.Select(c => GradeTiers.ForecastTarget(c.Grade)).Distinct().ToList();
+            var printings = g.Select(c => c.Printing ?? "").Where(x => x != "").Distinct().ToList();
+            var fc = await predictions.Forecasts.IgnoreQueryFilters()
+                .Where(f => f.Game == g.Key && ids.Contains(f.ProductId)
+                            && (f.Printing == "" || printings.Contains(f.Printing))
+                            && targets.Contains(f.Target) && horizons.Contains(f.Horizon) && f.BasePrice > 0)
+                .Select(f => new { f.ProductId, f.Printing, f.Target, f.Horizon, f.BasePrice, f.ForecastPrice })
+                .ToListAsync();
+            foreach (var f in fc)
+                calls[(g.Key, f.ProductId, f.Printing, f.Target, f.Horizon)] = (f.ForecastPrice / f.BasePrice, f.BasePrice);
+            foreach (var card in await sources.Cards(g.Key).Where(c => ids.Contains(c.Id)).ToListAsync())
+                meta[(g.Key, card.Id)] = card;
+        }
+
+        (double Move, double Base)? CallAt(TrackedCard c, string printing, string horizon) =>
+            calls.TryGetValue((c.Game, c.ProductId, printing, GradeTiers.ForecastTarget(c.Grade), horizon), out var v)
+                ? v : null;
+
+        OutlookPath PathOf(TrackedCard c)
+        {
+            var now = latest.GetValueOrDefault((c.Game, c.ProductId, GradeTiers.PriceTier(c.Grade)));
+            // The copy's own printing when the model covers it, else the base.
+            double? m1 = null, m6 = null, m12 = null, early = null;
+            double anchor = 0;
+            foreach (var pr in string.IsNullOrEmpty(c.Printing) ? new[] { "" } : new[] { c.Printing, "" })
+            {
+                var r1 = CallAt(c, pr, "1m"); var r6 = CallAt(c, pr, "6m");
+                var r12 = CallAt(c, pr, "12m"); var re = CallAt(c, pr, "launch1m");
+                var any = r1 ?? r6 ?? r12 ?? re;
+                if (any == null) continue;
+                m1 = r1?.Move; m6 = r6?.Move; m12 = r12?.Move; early = re?.Move;
+                anchor = any.Value.Base;
+                break;
+            }
+            if (now <= 0) now = anchor;   // unpriced at this tier: the call's own anchor
+            var usesEarly = m1 == null && early != null;
+            if (usesEarly) m1 = early;
+            var longest = m12 != null ? "12m" : m6 != null ? "6m" : usesEarly ? "early" : m1 != null ? "1m" : "none";
+            return new OutlookPath(c, now,
+                now * (m1 ?? 1), now * (m6 ?? m1 ?? 1), now * (m12 ?? m6 ?? m1 ?? 1),
+                longest, m1 != null, m6 != null, m12 != null);
+        }
+
+        // Only priced copies can be projected; the rest are reported as the
+        // gap between `copies` and `priced` and sit out of every figure.
+        var paths = copies.Select(PathOf).Where(p => p.Now > 0).ToList();
+        var now = paths.Sum(p => p.Now);
+        static double R(double v, int d = 2) => Math.Round(v, d);
+        object Window(Func<OutlookPath, double> at, Func<OutlookPath, bool> own)
+        {
+            var value = paths.Sum(at);
+            return new
+            {
+                value = R(value),
+                changeUsd = R(value - now),
+                changePct = now > 0 ? R((value / now - 1) * 100, 1) : 0,
+                called = paths.Count(own),       // copies moved by their own call at this window
+                held = paths.Count(p => !own(p)), // copies holding an earlier value
+                up = paths.Count(p => at(p) > p.Now * 1.005),
+                down = paths.Count(p => at(p) < p.Now * 0.995),
+            };
+        }
+        var windows = new Dictionary<string, object>
+        {
+            ["1m"] = Window(p => p.V1, p => p.Own1),
+            ["6m"] = Window(p => p.V6, p => p.Own6),
+            ["12m"] = Window(p => p.V12, p => p.Own12),
+        };
+        // Today's value by the longest call each copy carries (what the
+        // 1-year figure actually rests on).
+        var coverage = LongestOrder.Select(k =>
+        {
+            var inK = paths.Where(p => p.Longest == k).ToList();
+            var v = inK.Sum(p => p.Now);
+            return new { key = k, copies = inK.Count, value = R(v), pct = now > 0 ? R(v / now * 100, 1) : 0 };
+        }).ToList();
+        var byGame = paths.GroupBy(p => p.Copy.Game)
+            .Select(g => new
+            {
+                game = g.Key, label = GameRegistry.Label(g.Key), copies = g.Count(),
+                now = R(g.Sum(p => p.Now)), v1m = R(g.Sum(p => p.V1)),
+                v6m = R(g.Sum(p => p.V6)), v12m = R(g.Sum(p => p.V12)),
+            })
+            .OrderByDescending(g => g.now).ToList();
+        // The cards moving the 1-year figure most, copies combined.
+        var movers = paths
+            .Where(p => meta.ContainsKey((p.Copy.Game, p.Copy.ProductId)))
+            .GroupBy(p => (p.Copy.Game, p.Copy.ProductId))
+            .Select(g => new
+            {
+                g.Key.Game, Id = g.Key.ProductId, Copies = g.Count(),
+                Now = g.Sum(p => p.Now), V12 = g.Sum(p => p.V12),
+                Longest = g.Select(p => p.Longest).OrderBy(l => Array.IndexOf(LongestOrder, l)).First(),
+            })
+            .Where(x => Math.Abs(x.V12 - x.Now) >= 0.005)
+            .OrderByDescending(x => Math.Abs(x.V12 - x.Now)).Take(8)
+            .Select(x => new
+            {
+                game = x.Game, id = x.Id, name = meta[(x.Game, x.Id)].Name, setName = meta[(x.Game, x.Id)].SetName,
+                pictureUrl = CardImageUrl(x.Game, x.Id), copies = x.Copies,
+                now = R(x.Now), value = R(x.V12), changeUsd = R(x.V12 - x.Now),
+                changePct = R((x.V12 / x.Now - 1) * 100, 1), longest = x.Longest,
+            })
+            .ToList();
+
+        return Ok(new
+        {
+            copies = copies.Count,
+            priced = paths.Count,
+            now = R(now),
+            windows, coverage, byGame, movers,
+        });
+    }
+
     [HttpGet("summary")]
     public async Task<IActionResult> GetSummary(
         [FromQuery] string? game = null, [FromQuery] bool includePacks = true)

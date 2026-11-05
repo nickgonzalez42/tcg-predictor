@@ -112,3 +112,32 @@
     .an-bar { grid-template-columns: 96px minmax(0, 1fr) auto; }
     .an-cols { height: 110px; }
 }
+
+/* ----- value outlook modal (2026-11-05) ----- */
+.ol-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-10); }
+.ol-tile--today { border-color: var(--brand-border); }
+/* Value today by the longest call each copy carries: the deeper the call,
+   the stronger the brand tint; no call at all is grey. */
+.ol-cov { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.ol-cov__seg { display: block; min-width: 0; background: var(--brand); }
+.ol-cov__seg--6m, .ol-dot--6m { opacity: .72; }
+.ol-cov__seg--1m, .ol-dot--1m { opacity: .48; }
+.ol-cov__seg--early, .ol-dot--early { opacity: .28; }
+.ol-cov__seg--none, .ol-dot--none { background: #8b96ad; opacity: .6; }
+.ol-dot--12m, .ol-dot--6m, .ol-dot--1m, .ol-dot--early { background: var(--brand); }
+.ol-legend { flex-wrap: wrap; row-gap: 4px; }
+.ol-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.ol-table th {
+    font: 600 10.5px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted);
+    text-align: right; padding: 0 0 6px 10px; white-space: nowrap;
+}
+.ol-table td { padding: 6px 0 6px 10px; border-top: 1px solid var(--border); text-align: right; white-space: nowrap; vertical-align: top; }
+.ol-table th:first-child, .ol-table td:first-child { text-align: left; padding-left: 0; }
+.ol-table td:first-child { max-width: 140px; overflow: hidden; text-overflow: ellipsis; }
+.ol-table__pill { display: block; margin-top: 3px; font-size: 11px; }
+.ol-muted { color: var(--text-muted); font-size: 11px; }
+@media (max-width: 767px) {
+    .ol-tiles { grid-template-columns: 1fr 1fr; }
+    .ol-table { font-size: 11.5px; }
+    .ol-table td:first-child { max-width: 90px; }
+}
