@@ -86,8 +86,8 @@ public partial class HomeController
                             long? DirN, double? DirHit, long? N10, double? BandHit10, double? Mae10, double? FlatMae10);
     public record MonthScore(string Game, string Label, string Target, string Horizon, string Month,
                              long N, double? BandHit, double? Mae, double? Bias);
-    public record Scorecard(List<ModelScore> Models, List<WeekScore> Weekly, List<MonthScore> Monthly,
-                            string? UpdatedAt);
+    public record Scorecard(List<ModelScore> Models, List<WeekScore> Weekly, List<WeekScore> WeeklyEarly,
+                            List<MonthScore> Monthly, string? UpdatedAt);
 
     // Every model's public record for the About page (2026-10-24): one row
     // per (game, tier, horizon) from forecast_accuracy, the full-cohort
@@ -125,6 +125,18 @@ public partial class HomeController
             }
             catch (Microsoft.Data.Sqlite.SqliteException) { /* table not pushed yet */ }
 
+            // The same series for the EARLY estimates (2026-11-05), from its
+            // own table; absent until the first push that carries it.
+            List<WeekScore> weeklyEarly = [];
+            try
+            {
+                weeklyEarly = (await predictions.AccuracyWeeklyEarly.OrderBy(w => w.Week).ToListAsync())
+                    .Select(w => new WeekScore(w.Week, w.N, w.BandHitRate, w.RetMae, w.FlatMae, w.DirN,
+                                               w.DirHitRate, w.N10, w.BandHitRate10, w.RetMae10, w.FlatMae10))
+                    .ToList();
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException) { /* table not pushed yet */ }
+
             List<MonthScore> monthly = [];
             try
             {
@@ -138,7 +150,7 @@ public partial class HomeController
             catch (Microsoft.Data.Sqlite.SqliteException) { }
 
             var updated = models.Select(m => m.GradedThrough).Where(d => d != null).Max();
-            return new Scorecard(models, weekly, monthly, updated);
+            return new Scorecard(models, weekly, weeklyEarly, monthly, updated);
         });
         return Ok(card);
     }

@@ -34,7 +34,11 @@ export type MonthScore = {
     game: string; label: string; target: string; horizon: string; month: string;
     n: number; bandHit?: number | null; mae?: number | null; bias?: number | null;
 };
-export type Scorecard = { models: ModelScore[]; weekly: WeekScore[]; monthly: MonthScore[]; updatedAt?: string | null };
+export type Scorecard = {
+    models: ModelScore[]; weekly: WeekScore[];
+    weeklyEarly?: WeekScore[];   // the early estimates' own weekly record (2026-11-05)
+    monthly: MonthScore[]; updatedAt?: string | null;
+};
 
 export const homeApi = createApi({
     reducerPath: 'homeApi',

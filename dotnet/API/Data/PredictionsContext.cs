@@ -17,6 +17,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     public DbSet<ForecastAccuracy> Accuracy => Set<ForecastAccuracy>();
     public DbSet<CardTrend> CardTrends => Set<CardTrend>();
     public DbSet<ForecastAccuracyWeekly> AccuracyWeekly => Set<ForecastAccuracyWeekly>();
+    public DbSet<ForecastAccuracyWeeklyEarly> AccuracyWeeklyEarly => Set<ForecastAccuracyWeeklyEarly>();
     public DbSet<ForecastAccuracyMonthly> AccuracyMonthly => Set<ForecastAccuracyMonthly>();
 
     protected override void OnModelCreating(ModelBuilder builder)
@@ -107,6 +108,23 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
         builder.Entity<ForecastAccuracyWeekly>(w =>
         {
             w.ToTable("forecast_accuracy_weekly");
+            w.HasNoKey();
+            w.Property(x => x.Week).HasColumnName("week");
+            w.Property(x => x.N).HasColumnName("n");
+            w.Property(x => x.BandHitRate).HasColumnName("band_hit_rate");
+            w.Property(x => x.RetMae).HasColumnName("ret_mae");
+            w.Property(x => x.FlatMae).HasColumnName("flat_mae");
+            w.Property(x => x.DirN).HasColumnName("dir_n");
+            w.Property(x => x.DirHitRate).HasColumnName("dir_hit_rate");
+            w.Property(x => x.N10).HasColumnName("n10");
+            w.Property(x => x.BandHitRate10).HasColumnName("band_hit_rate10");
+            w.Property(x => x.RetMae10).HasColumnName("ret_mae10");
+            w.Property(x => x.FlatMae10).HasColumnName("flat_mae10");
+        });
+
+        builder.Entity<ForecastAccuracyWeeklyEarly>(w =>
+        {
+            w.ToTable("forecast_accuracy_weekly_early");
             w.HasNoKey();
             w.Property(x => x.Week).HasColumnName("week");
             w.Property(x => x.N).HasColumnName("n");

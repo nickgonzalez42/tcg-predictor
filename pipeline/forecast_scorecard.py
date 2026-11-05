@@ -440,7 +440,7 @@ def rebuild_accuracy(conn, now_iso):
          for (g, t, h), s in stats.items() if s[0]])
 
 
-def write_weekly_accuracy(conn):
+def write_weekly_accuracy(conn, horizon="1m", table="forecast_accuracy_weekly", banked=True):
     """forecast_accuracy_weekly (2026-10-24): the FULL-cohort week-over-week
     record of the nightly dated 1-month Near Mint cohorts, by the Friday-
     starting week they came due — the series the About page's "accuracy
@@ -448,12 +448,17 @@ def write_weekly_accuracy(conn):
     (market_report.weekly_coverage): live archive rows PLUS the tallies
     compact_1m banked for the rows it deleted. Rebuilt from scratch each run,
     so it is always the whole record. Day-01 landings (month-bucket
-    stragglers) are excluded, as in the report."""
-    ensure_weekly_coverage(conn)
+    stragglers) are excluded, as in the report.
+    The EARLY tier (2026-11-05, user: "add an early chart to the accuracy
+    over time on the about page"): the same series for the early estimates
+    (horizon launch1m) lands in forecast_accuracy_weekly_early. Early rows
+    are never compacted, so there are no banked tallies to merge."""
+    if banked:
+        ensure_weekly_coverage(conn)
     conn.executescript(
-        """
-        DROP TABLE IF EXISTS forecast_accuracy_weekly;
-        CREATE TABLE forecast_accuracy_weekly (
+        f"""
+        DROP TABLE IF EXISTS {table};
+        CREATE TABLE {table} (
             week TEXT PRIMARY KEY,      -- Friday the landing week starts
             n INTEGER NOT NULL,
             band_hit_rate REAL,         -- share inside the 80% band
@@ -483,16 +488,16 @@ def write_weekly_accuracy(conn):
             "  SUM(CASE WHEN base_price >= 10 THEN ABS(COALESCE(ret, 0) - realized_ret) ELSE 0 END), "
             "  SUM(CASE WHEN base_price >= 10 THEN ABS(realized_ret) ELSE 0 END) "
             "FROM forecast_archive "
-            "WHERE horizon='1m' AND target='ungraded' AND printing='' "
+            f"WHERE horizon='{horizon}' AND target='ungraded' AND printing='' "
             "  AND realized_ret IS NOT NULL AND substr(model_version, 1, 2) != '__' "
             "  AND strftime('%d', substr(realized_at, 1, 10)) != '01' "
             f"GROUP BY {WEEK_FRI}"):
         agg[wk] = [n_, hits or 0, errs or 0.0, dn or 0, dh or 0, reals or 0.0,
                    n10 or 0, hits10 or 0, errs10 or 0.0, reals10 or 0.0]
     for (wk, n_, hits, errs, dn, dh, reals,
-         n10, hits10, errs10, reals10) in conn.execute(
+         n10, hits10, errs10, reals10) in (conn.execute(
             "SELECT week, n, band_hits, abs_err_sum, dir_n, dir_hits, abs_real_sum, "
-            "  n10, band_hits10, abs_err10, abs_real10 FROM forecast_coverage_weekly"):
+            "  n10, band_hits10, abs_err10, abs_real10 FROM forecast_coverage_weekly") if banked else ()):
         a = agg.setdefault(wk, [0, 0, 0.0, 0, 0, 0.0, 0, 0, 0.0, 0.0])
         for i, v in enumerate((n_, hits, errs, dn, dh, reals, n10, hits10, errs10, reals10)):
             a[i] += v or 0
@@ -505,7 +510,7 @@ def write_weekly_accuracy(conn):
                      n10, round(hits10 / n10, 4) if n10 else None,
                      round(errs10 / n10, 4) if n10 else None,
                      round(reals10 / n10, 4) if n10 else None))
-    conn.executemany("INSERT INTO forecast_accuracy_weekly VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    conn.executemany(f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
     return len(rows)
 
 
@@ -584,8 +589,9 @@ def main():
     # no compaction) — for a backfill between nightly runs.
     if "--weekly-only" in sys.argv[1:]:
         n = write_weekly_accuracy(conn)
+        ne = write_weekly_accuracy(conn, "launch1m", "forecast_accuracy_weekly_early", banked=False)
         conn.commit()
-        print(f"forecast_accuracy_weekly: {n} week(s)")
+        print(f"forecast_accuracy_weekly: {n} week(s); early {ne} week(s)")
         conn.close()
         return
 
@@ -673,7 +679,8 @@ def main():
               f"median-error forecast; full-month stats persisted")
     rebuild_accuracy(conn, now_iso)
     weeks = write_weekly_accuracy(conn)
-    print(f"forecast_accuracy_weekly: {weeks} week(s)")
+    weeks_early = write_weekly_accuracy(conn, "launch1m", "forecast_accuracy_weekly_early", banked=False)
+    print(f"forecast_accuracy_weekly: {weeks} week(s); early {weeks_early} week(s)")
     conn.commit()
 
     total, done = conn.execute(

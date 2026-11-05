@@ -30,6 +30,9 @@ const hzLabel = (h: string) => HORIZONS.find(x => x.key === h)?.label ?? h;
 const MIN_N = 100;
 // Weeks thinner than this stay off the trend lines (cohorts land in lumps).
 const MIN_WEEK = 1000;
+// Early estimates are a far smaller cohort (cards too new for the standard
+// model), so their weekly lines accept smaller landing weeks.
+const MIN_WEEK_EARLY = 250;
 
 const fmtDate = (d?: string | null) =>
     d ? new Date(d + (d.length === 10 ? 'T12:00:00Z' : '')).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '';
@@ -223,13 +226,22 @@ function WeeklyChart({ pts }: { pts: Pt[] }) {
     );
 }
 
-function OverTime({ weekly }: { weekly: WeekScore[] }) {
+const toPts = (weekly: WeekScore[], slice: 'all' | '10', min: number): Pt[] => weekly
+    .map(w => slice === 'all'
+        ? { week: w.week, n: w.n, hit: w.bandHit ?? 0, mae: w.mae ?? 0, flat: w.flatMae ?? 0, dir: w.dirHit }
+        : { week: w.week, n: w.n10 ?? 0, hit: w.bandHit10 ?? 0, mae: w.mae10 ?? 0, flat: w.flatMae10 ?? 0, dir: w.dirHit })
+    .filter(p => p.n >= min);
+
+function OverTime({ weekly, weeklyEarly = [] }: { weekly: WeekScore[]; weeklyEarly?: WeekScore[] }) {
     const [slice, setSlice] = useState<'all' | '10'>('all');
-    const pts: Pt[] = useMemo(() => weekly
-        .map(w => slice === 'all'
-            ? { week: w.week, n: w.n, hit: w.bandHit ?? 0, mae: w.mae ?? 0, flat: w.flatMae ?? 0, dir: w.dirHit }
-            : { week: w.week, n: w.n10 ?? 0, hit: w.bandHit10 ?? 0, mae: w.mae10 ?? 0, flat: w.flatMae10 ?? 0, dir: w.dirHit })
-        .filter(p => p.n >= MIN_WEEK), [weekly, slice]);
+    const pts: Pt[] = useMemo(() => toPts(weekly, slice, MIN_WEEK), [weekly, slice]);
+    // Early estimates (2026-11-05, user: "add an early chart to the accuracy
+    // over time"): the same charts for the early tier, under the standard
+    // ones, so each line stays one series. The $10+ toggle applies to both.
+    const earlyPts: Pt[] = useMemo(() => toPts(weeklyEarly, slice, MIN_WEEK_EARLY), [weeklyEarly, slice]);
+    const earlyLatest = earlyPts[earlyPts.length - 1];
+    const earlyAllFlat = earlyPts.length > 0 && earlyPts.every(p => Math.abs(p.mae - p.flat) < 1e-6);
+    const earlyBeatsFlat = earlyPts.filter(p => p.mae < p.flat).length;
     const latest = pts[pts.length - 1];
     const beatsFlat = pts.filter(p => p.mae < p.flat).length;
     const gap = pts.length ? pts.reduce((s, p) => s + Math.abs(pct(p.mae) - pct(p.flat)), 0) / pts.length : 0;
@@ -261,6 +273,32 @@ function OverTime({ weekly }: { weekly: WeekScore[] }) {
                     model's edge is weak, so the two track closely; the ranges, graded above, are where the model
                     earns its keep. Weeks with fewer than {MIN_WEEK.toLocaleString()} landed calls are left off the lines.
                 </div>
+            )}
+
+            <div className="band score-band--sub">
+                <span className="band__title">Early estimates</span>
+                <span className="mono">cards too new for the standard model · checked the same way</span>
+            </div>
+            <p className="glance__text">
+                A card with only a few weeks of prices gets an early estimate instead of a standard forecast:
+                a first guess from its set, rarity, art and the recent drift of cards like it, inside a wide
+                range taken from how new cards have moved before. Each one is checked against the real price
+                28 days later, exactly like the forecasts above.
+                {earlyLatest && ` Latest full week: ${(earlyLatest.hit * 100).toFixed(0)}% inside the range across ${earlyLatest.n.toLocaleString()} estimates.`}
+            </p>
+            {earlyPts.length > 1 ? (
+                <>
+                    <WeeklyChart pts={earlyPts} />
+                    <div className="glance__foot">
+                        {earlyAllFlat
+                            ? "Every early estimate graded so far sat at today's price, so its typical miss is the same as holding flat. "
+                              + "Newer estimates lean on the recent drift of similar cards and come due a month after they are issued. "
+                            : `Across the weeks shown the early estimates beat holding flat in ${earlyBeatsFlat} of ${earlyPts.length}. `}
+                        Weeks with fewer than {MIN_WEEK_EARLY} landed estimates are left off the lines.
+                    </div>
+                </>
+            ) : (
+                <div className="glance__text">No early estimates have come due yet. Check back after the next refresh.</div>
             )}
         </section>
     );
@@ -477,7 +515,7 @@ export default function AboutPage() {
                 <>
                     <Headline models={models} updatedAt={data.updatedAt} />
                     <RangeExplainer />
-                    <OverTime weekly={data.weekly} />
+                    <OverTime weekly={data.weekly} weeklyEarly={data.weeklyEarly} />
                     <Heatmap models={models} />
                     <div className="score-pair">
                         <ByTier models={models} />

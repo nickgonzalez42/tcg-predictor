@@ -623,3 +623,7 @@
     transition: none;
   }
 }
+
+/* A second band inside the accuracy-over-time section (the early estimates'
+   charts, 2026-11-05) sits a little apart from the charts above it. */
+.score-band--sub { margin-top: var(--space-20); }
