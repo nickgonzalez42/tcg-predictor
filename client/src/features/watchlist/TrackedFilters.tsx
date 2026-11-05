@@ -115,6 +115,7 @@ export default function TrackedFilters({ params, actions, sortGroups, showGrade 
                                     items={filtersData?.sets ?? []}
                                     checked={params.sets}
                                     onChange={(items: string[]) => dispatch(actions.setSets(items))}
+                                    showSelected
                                 />
                             </div>
                         </div>

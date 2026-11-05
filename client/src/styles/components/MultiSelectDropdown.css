@@ -39,6 +39,55 @@
   padding: var(--space-5);
 }
 
+/* The selection as removable chips under the toggle (2026-11-05, user:
+   "under the sets dropdown, show which sets are selected"). Click a chip to
+   drop that one item; the picker's "Clear" still drops them all. */
+.msd__chips {
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.msd__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 3px 9px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.3;
+  cursor: pointer;
+}
+
+.msd__chip:hover,
+.msd__chip:focus-visible {
+  border-color: var(--link);
+  outline: none;
+}
+
+.msd__chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msd__chip-x {
+  flex: none;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.msd__chip:hover .msd__chip-x {
+  color: var(--text);
+}
+
 .msd__list {
   max-height: 260px;
   overflow-y: auto;
@@ -91,6 +140,11 @@
 
   .msd__list {
     max-height: 40vh;
+  }
+
+  .msd__chip {
+    padding: 5px 11px;
+    font-size: 13px;
   }
 
   /* In the modal the list gets the dialog's own scroll area, so let it grow

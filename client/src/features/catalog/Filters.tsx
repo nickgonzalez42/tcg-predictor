@@ -167,6 +167,7 @@ export default function Filters({ filtersData: data }: Props) {
                                     items={data.sets}
                                     checked={sets}
                                     onChange={(items: string[]) => dispatch(setSets(items))}
+                                    showSelected
                                 />
                                 {/* The catalog opens on the newest set (2026-11-02); say so,
                                     or "where did every other card go" is the first question. */}
