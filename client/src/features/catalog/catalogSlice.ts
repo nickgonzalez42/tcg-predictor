@@ -2,15 +2,15 @@ import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 
-// 6M % growth: desc + the 6M trend view (2026-10-26, user decision). Six
+// 6M $ growth: desc + the 6M trend view (2026-11-05, user decision). Six
 // months is the horizon the catalog opens on: far enough out that the v4.5
 // calibration still calls real growth (a 1M default opened on a wall of
 // ~0% calls), near enough that the number means something to a reader.
-// Percent rather than dollars, so a cheap card with a big call can lead
-// instead of only the expensive ones. Was 6M $ growth earlier the same
-// day, 1Y $ growth from 2026-10-11, 1M $ growth before that. The trend
-// chips follow the sort via trendForSort.
-export const DEFAULT_ORDER = 'chgPct6Desc';
+// Dollars rather than percent (user decision 2026-11-05). Was 6M % growth
+// from 2026-10-26, 6M $ growth earlier that day, 1Y $ growth from
+// 2026-10-11, 1M $ growth before that. The trend chips follow the sort via
+// trendForSort.
+export const DEFAULT_ORDER = 'chgUsd6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
 // No default price floor (2026-11-02, user decision). A $1 floor stood here
 // from 2026-10-26 because a PERCENT sort over a whole game put penny cards on
@@ -19,7 +19,7 @@ export const DEFAULT_PAGE_SIZE = 30;
 // visitor types is still honoured, and old links carrying minPrice=0 (the
 // cleared-floor sentinel of that era) still parse.
 // The trend window the opening sort implies; the chips follow the sort.
-export const DEFAULT_TREND = trendForSort('chgPct6Desc') ?? '6m';
+export const DEFAULT_TREND = trendForSort(DEFAULT_ORDER) ?? '6m';
 
 const getInitialView = (): CatalogView =>
     localStorage.getItem('catalogView') === 'rows' ? 'rows' : 'cards';
