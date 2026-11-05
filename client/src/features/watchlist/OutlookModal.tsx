@@ -1,8 +1,11 @@
+import { useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
+import { createChart, AreaSeries, LineSeries, LineStyle, ColorType } from "lightweight-charts";
 import Modal from "../../app/shared/components/Modal";
 import CardLoader from "../../app/shared/components/CardLoader";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchCollectionOutlookQuery, type CollectionOutlook, type OutlookLongest } from "./watchlistApi";
+import { fade } from "./ValueChart";
 import { currencyFormat, gameKey } from "../../lib/util";
 import { fallbackToCardBack } from "../../lib/cardImages";
 
@@ -14,6 +17,9 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 // call it holds that value, and a card with no call at all stays at today's
 // price. All figures come from portfolio/outlook in one call; includePacks
 // follows the page toggle so "Today" matches the headline number.
+// Same-day feedback: the value path is drawn as a chart, every window and
+// mover carries its percentage, and the coverage bar became a sentence (a
+// solid single-colour bar said nothing when every copy had a 1-year call).
 export default function OutlookModal({ includePacks, onClose }: { includePacks: boolean; onClose: () => void }) {
     const { data, isLoading } = useFetchCollectionOutlookQuery({ includePacks });
     return (
@@ -36,9 +42,25 @@ const LONGEST: Record<OutlookLongest, string> = {
 const copies = (n: number) => `${n.toLocaleString('en-US')} cop${n === 1 ? 'y' : 'ies'}`;
 const pct = (v: number, base: number) => base > 0 ? (v / base - 1) * 100 : null;
 
+// What the figures rest on, as one sentence: "All 114 copies carry a 1-year
+// call." or "98 copies carry a 1-year call, 12 a 6-month call only, 2 no
+// call yet (held at today's price, $340.00)."
+function coverageSentence(o: CollectionOutlook): string {
+    const phrase: Record<OutlookLongest, (value: number) => string> = {
+        '12m': () => 'a 1-year call',
+        '6m': () => 'a 6-month call only',
+        '1m': () => 'a 1-month call only',
+        early: () => 'an early estimate only',
+        none: value => `no call yet (held at today's price, ${currencyFormat(value)})`,
+    };
+    const buckets = o.coverage.filter(c => c.copies > 0);
+    if (buckets.length === 1) return `All ${copies(buckets[0].copies)} carry ${phrase[buckets[0].key](buckets[0].value)}.`;
+    return buckets
+        .map((c, i) => i === 0 ? `${copies(c.copies)} carry ${phrase[c.key](c.value)}` : `${c.copies} ${phrase[c.key](c.value)}`)
+        .join(', ') + '.';
+}
+
 function Outlook({ o, onClose }: { o: CollectionOutlook; onClose: () => void }) {
-    const covered = o.coverage.filter(c => c.copies > 0);
-    const held = o.coverage.find(c => c.key === 'none');
     return (
         <div className="an">
             {/* ----- today and the three windows ----- */}
@@ -68,26 +90,14 @@ function Outlook({ o, onClose }: { o: CollectionOutlook; onClose: () => void }) 
                 })}
             </div>
 
-            {/* ----- what the figures rest on ----- */}
+            {/* ----- the value path ----- */}
             <section className="an-section">
-                <h4 className="an-h">What's behind it</h4>
-                <div className="ol-cov" role="img"
-                    aria-label={covered.map(c => `${LONGEST[c.key]}: ${c.pct}% of today's value`).join(', ')}>
-                    {covered.map(c => (
-                        <span key={c.key} className={`ol-cov__seg ol-cov__seg--${c.key}`} style={{ flex: c.value }}
-                            title={`${LONGEST[c.key]}: ${copies(c.copies)}, ${currencyFormat(c.value)} today`} />
-                    ))}
-                </div>
-                <div className="an-legend mono ol-legend">
-                    {covered.map(c => (
-                        <span key={c.key}><i className={`an-dot ol-dot--${c.key}`} />{c.copies} · {LONGEST[c.key]}</span>
-                    ))}
-                </div>
+                <h4 className="an-h">Where it's headed</h4>
+                <OutlookChart o={o} />
                 <p className="est-note an-note">
-                    Each copy moves by the model's call for its card, condition and printing. Past its longest call
-                    it holds that value, and a card with no call at all stays at today's price
-                    {held && held.copies > 0 ? ` (${copies(held.copies)}, ${currencyFormat(held.value)})` : ''}.
-                    A direction signal, not a promise.
+                    {coverageSentence(o)} Each copy moves by the model's call for its card, condition and printing.
+                    Past its longest call it holds that value, and a card with no call at all stays at today's price.
+                    The dashed line is today's value. A direction signal, not a promise.
                 </p>
             </section>
 
@@ -104,12 +114,12 @@ function Outlook({ o, onClose }: { o: CollectionOutlook; onClose: () => void }) 
                                 <tr key={g.game}>
                                     <td>{g.label} <span className="ol-muted">×{g.copies}</span></td>
                                     <td className="mono">{currencyFormat(g.now)}</td>
-                                    <td className="mono">{currencyFormat(g.v1m)}</td>
-                                    <td className="mono">{currencyFormat(g.v6m)}</td>
-                                    <td className="mono">
-                                        {currencyFormat(g.v12m)}
-                                        <span className="ol-table__pill"><ChangePill value={pct(g.v12m, g.now)} /></span>
-                                    </td>
+                                    {([g.v1m, g.v6m, g.v12m] as const).map((v, i) => (
+                                        <td className="mono" key={i}>
+                                            {currencyFormat(v)}
+                                            <span className="ol-table__pill"><ChangePill value={pct(v, g.now)} /></span>
+                                        </td>
+                                    ))}
                                 </tr>
                             ))}
                         </tbody>
@@ -133,7 +143,10 @@ function Outlook({ o, onClose }: { o: CollectionOutlook; onClose: () => void }) 
                                     </span>
                                     <span className="an-top__side mono">
                                         <span>{currencyFormat(c.value)} <span className="an-top__pct">in 1 year</span></span>
-                                        <ChangePill value={c.changeUsd} unit="usd" title={`${currencyFormat(c.now)} today`} />
+                                        <span className="an-tile__pills">
+                                            <ChangePill value={c.changeUsd} unit="usd" title={`${currencyFormat(c.now)} today`} />
+                                            <ChangePill value={c.changePct} />
+                                        </span>
                                     </span>
                                 </li>
                             ))}
@@ -143,4 +156,72 @@ function Outlook({ o, onClose }: { o: CollectionOutlook; onClose: () => void }) 
             </section>
         </div>
     );
+}
+
+// The collection's value from today to a year out, on a real date axis so
+// the month between today and the first call is a month wide and the six
+// after it are six. One series (the total), markers on the four points the
+// tiles already name, a dashed reference at today's value so a dip or a
+// climb reads at a glance, and the library's crosshair as the hover layer.
+// Colours come from the theme variables, like the portfolio value chart.
+function OutlookChart({ o }: { o: CollectionOutlook }) {
+    const ref = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const css = getComputedStyle(el);
+        const v = (name: string, fallback: string) => css.getPropertyValue(name).trim() || fallback;
+        const line = v('--link', '#7fb0ea');
+        const textMuted = v('--text-muted', '#8b96ad');
+        const border = v('--border', '#2e3a52');
+
+        const today = new Date();
+        const at = (months: number) => {
+            const d = new Date(today);
+            d.setMonth(d.getMonth() + months);
+            return d.toISOString().slice(0, 10);
+        };
+        const points = [
+            { time: at(0), value: o.now },
+            { time: at(1), value: o.windows['1m'].value },
+            { time: at(6), value: o.windows['6m'].value },
+            { time: at(12), value: o.windows['12m'].value },
+        ];
+
+        const chart = createChart(el, {
+            height: 220,
+            autoSize: true,
+            layout: { background: { type: ColorType.Solid, color: 'transparent' }, textColor: textMuted },
+            grid: { vertLines: { color: border }, horzLines: { color: border } },
+            rightPriceScale: { borderColor: border },
+            timeScale: { borderColor: border, fixLeftEdge: true, fixRightEdge: true },
+            handleScroll: false,
+            handleScale: false,
+        });
+        const path = chart.addSeries(AreaSeries, {
+            lineColor: line,
+            topColor: fade(line, 0.22),
+            bottomColor: fade(line, 0.02),
+            lineWidth: 2,
+            pointMarkersVisible: true,
+            pointMarkersRadius: 4,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
+        });
+        path.setData(points);
+        const base = chart.addSeries(LineSeries, {
+            color: textMuted,
+            lineWidth: 1,
+            lineStyle: LineStyle.Dashed,
+            priceLineVisible: false,
+            lastValueVisible: false,
+            crosshairMarkerVisible: false,
+        });
+        base.setData(points.map(p => ({ time: p.time, value: o.now })));
+        chart.timeScale().fitContent();
+        return () => chart.remove();
+    }, [o]);
+    return <div ref={ref} className="ol-chart" role="img"
+        aria-label={`Value today ${currencyFormat(o.now)}, in 1 month ${currencyFormat(o.windows['1m'].value)}, in 6 months ${currencyFormat(o.windows['6m'].value)}, in 1 year ${currencyFormat(o.windows['12m'].value)}`} />;
 }

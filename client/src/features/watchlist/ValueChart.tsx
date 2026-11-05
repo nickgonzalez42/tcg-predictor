@@ -13,7 +13,8 @@ const RANGES: { key: string; label: string; months?: number }[] = [
 ];
 
 // "#rrggbb" -> rgba() at the given opacity (non-hex values pass through).
-const fade = (hex: string, alpha: number) => {
+// Shared with the Value outlook chart.
+export const fade = (hex: string, alpha: number) => {
     const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
     if (!m) return hex;
     const n = parseInt(m[1], 16);
