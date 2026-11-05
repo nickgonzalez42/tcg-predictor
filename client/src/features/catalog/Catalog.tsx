@@ -6,8 +6,8 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, applyDefaultSets, initDefaultGame, resetToDefaults, setOrderBy, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
-import { yearSortTo6m } from "./sortOptions";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, applyDefaultSets, fitWindows, initDefaultGame, resetToDefaults, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
+import { WINDOW_LABEL, windowsFor } from "./windows";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -32,15 +32,16 @@ export default function Catalog() {
   const { data, isLoading } = useFetchCardsQuery(cardParams,
     { skip: !cardParams.gameInitialized || !cardParams.setsDecided });
   const dispatch = useAppDispatch();
-  // Games without year-deep data (no 12m forecasts, <12mo history) lose the
-  // 1Y views: the trend chip disables and any active 1Y selection snaps to 6M.
-  const hasYear = filtersData?.hasYear ?? true;
+  // Windows the game can't serve (no 6m/12m rows yet, or under a year of
+  // history) lose their chip and their sorts; the active sort and trend step
+  // down to a window it has and come back on their own once THIS game's
+  // facets (currentData, never a stale game's) say the rows exist. Pre-release
+  // mode sorts on the estimate alone and is left alone.
+  const windows = windowsFor(filtersNow);
   useEffect(() => {
-    if (hasYear) return;
-    if ((cardParams.trend ?? '1m') === '1y') dispatch(setTrend('6m'));
-    const snapped = yearSortTo6m(cardParams.orderBy ?? '');
-    if (snapped !== (cardParams.orderBy ?? '')) dispatch(setOrderBy(snapped));
-  }, [hasYear, cardParams.trend, cardParams.orderBy, dispatch]);
+    if (pre || !filtersNow) return;
+    dispatch(fitWindows(windowsFor(filtersNow)));
+  }, [pre, filtersNow, cardParams.orderBy, cardParams.trend, dispatch]);
   const [searchParams, setSearchParams] = useSearchParams();
 
   // On mount, decide from the URL:
@@ -117,7 +118,11 @@ export default function Catalog() {
   // Reflect catalog state in the URL whenever it changes.
   useEffect(() => {
     const sp: Record<string, string> = { game: cardParams.game };
-    if (cardParams.orderBy && cardParams.orderBy !== DEFAULT_ORDER) sp.orderBy = cardParams.orderBy;
+    // The sort and window the visitor ASKED for go in the URL, not the ones
+    // the catalog stepped down to: a link shared from a game with 1M rows only
+    // opens on 6M by itself once the game has them.
+    const orderOut = cardParams.orderWish ?? cardParams.orderBy;
+    if (orderOut && orderOut !== DEFAULT_ORDER) sp.orderBy = orderOut;
     if (cardParams.searchTerm) sp.searchTerm = cardParams.searchTerm;
     // Sets: only the visitor's own choice goes in the URL ('all' when they
     // cleared the default), so a shared bare link opens on whatever set is
@@ -131,7 +136,8 @@ export default function Catalog() {
     if (cardParams.maxPrice) sp.maxPrice = cardParams.maxPrice;
     if (cardParams.pageNumber > 1) sp.pageNumber = String(cardParams.pageNumber);
     if (cardParams.pageSize !== DEFAULT_PAGE_SIZE) sp.pageSize = String(cardParams.pageSize);
-    if (cardParams.trend && cardParams.trend !== DEFAULT_TREND) sp.trend = cardParams.trend;
+    const trendOut = cardParams.trendWish ?? cardParams.trend;
+    if (trendOut && trendOut !== DEFAULT_TREND) sp.trend = trendOut;
     if (cardParams.market) sp.market = cardParams.market;
     if (cardParams.view === 'rows') sp.view = 'rows';
     setSearchParams(sp, { replace: true });
@@ -170,8 +176,12 @@ export default function Catalog() {
                   className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}
                   onClick={() => dispatch(setTrend(t))}
                   aria-pressed={(cardParams.trend ?? '1m') === t}
-                  disabled={t === '1y' && !hasYear}
-                  title={t === '1y' && !hasYear ? 'This game has under a year of price data' : undefined}
+                  disabled={!windows[t]}
+                  title={!windows[t]
+                    ? (t === '1y' && filtersNow?.hasYear === false
+                        ? 'This game has under a year of price data'
+                        : `No ${WINDOW_LABEL[t]} calls for this game yet`)
+                    : undefined}
                 >
                   {t.toUpperCase()}
                 </button>

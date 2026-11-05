@@ -586,4 +586,29 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
             }
         }
     }
+
+    // Which forecast horizons the model publishes for a game (2026-11-05, user:
+    // "if the game is missing any model predictions, show those aren't
+    // available"): standard rows at 1m / 6m / 12m, plus whether EARLY
+    // (launch1m) rows exist. A game with no 6m rows yet (the four TCGplayer-
+    // only games until their first monthly retrain; a brand-new game until
+    // its first night) can't serve the catalog's 6M view, so the client
+    // disables that window's chip and hides its sorts instead of letting the
+    // tiles fall back to the early row. Cached for the process lifetime like
+    // the facets: the nightly push restarts the API.
+    public async Task<(List<string> Horizons, bool HasEarly)> ForecastHorizons(string game)
+    {
+        return await cache.GetOrCreateAsync($"horizons:{game}", async entry =>
+        {
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);
+            entry.Priority = CacheItemPriority.NeverRemove;
+            var horizons = new List<string>();
+            foreach (var h in new[] { "1m", "6m", "12m" })
+                if (await predictions.Forecasts.AnyAsync(f => f.Game == game && f.Horizon == h))
+                    horizons.Add(h);
+            var hasEarly = await predictions.Forecasts
+                .AnyAsync(f => f.Game == game && f.Horizon == "launch1m");
+            return (horizons, hasEarly);
+        });
+    }
 }

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery } from "./catalogApi";
+import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery, useFetchFiltersQuery } from "./catalogApi";
+import { WINDOW_LABEL, windowsFor, type Window } from "./windows";
 import {
     useFetchWatchlistQuery,
     useAddToWatchlistMutation,
@@ -112,6 +113,12 @@ function ForecastSection({ forecasts, game, id }: {
     // One "why" button per grade row opens a modal with every horizon's detail
     // (prices, change, range, reason) for that tier, each horizon its own block.
     const [why, setWhy] = useState<{ tier: string; forecasts: Forecast[] } | null>(null);
+    // Which windows the game serves at all (2026-11-05): an empty slot reads
+    // "Not yet" when the whole game lacks that horizon, "n/a" when only this
+    // card or tier does.
+    const { data: facets } = useFetchFiltersQuery({ game });
+    const served = windowsFor(facets);
+    const WINDOW: Record<string, Window> = { '1m': '1m', '6m': '6m', '12m': '1y' };
     if (forecasts.length === 0) return null;
 
     return (
@@ -177,7 +184,11 @@ function ForecastSection({ forecasts, game, id }: {
                                         ?? (h === '1m'
                                             ? tierForecasts.find(x => x.horizon === 'launch1m')
                                             : undefined);
-                                    if (!f) return <td key={h}>n/a</td>;
+                                    if (!f) {
+                                        return served[WINDOW[h]]
+                                            ? <td key={h}>n/a</td>
+                                            : <td key={h} title={`No ${WINDOW_LABEL[WINDOW[h]]} calls for this game yet`}>Not yet</td>;
+                                    }
                                     const early = f.horizon === 'launch1m';
                                     const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                     return (

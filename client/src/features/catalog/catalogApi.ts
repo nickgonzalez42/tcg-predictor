@@ -63,8 +63,12 @@ export const catalogApi = createApi({
         // latestSet (2026-11-02): the newest released set with enough priced
         // cards to be a real set; the catalog opens on it. Null when the mode
         // has no sensible "newest" (pre-release) or the game has no such set.
+        // forecastHorizons / hasEarly (2026-11-05): the horizons the model
+        // publishes for the game, so the catalog can disable the windows it
+        // can't serve (see windows.ts).
         fetchFilters: builder.query<
-            { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number, latestSet?: string | null },
+            { sets: string[], rarities: string[], hasYear?: boolean, forecastHorizons?: string[], hasEarly?: boolean,
+              printings?: string[], prereleaseCount?: number, latestSet?: string | null },
             { game: string; market?: string }
         >({
             query: ({ game, market }) =>

@@ -23,6 +23,10 @@ export type CardParams = {
                                        // 'default' = the newest set applied for the
                                        // visitor, 'user' = their own pick or clear;
                                        // unset = waiting on the game's facets
+    orderWish?: string;   // client-only: the sort asked for while the game can't serve
+                          // its window (orderBy stepped down to one it can); fitWindows
+                          // restores it once the facets say the rows exist
+    trendWish?: string;   // client-only: the same for the trend window
 }
 
 export type CatalogView = 'cards' | 'rows';

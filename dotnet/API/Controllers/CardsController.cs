@@ -207,6 +207,10 @@ public partial class CardsController(
                 rarities = unpriced.Where(r => r.Rarity != null).Select(r => r.Rarity!)
                     .Distinct().OrderBy(s => s).ToList(),
                 hasYear = true,
+                // Pre-release mode sorts on the estimate alone, so every
+                // window counts as served and nothing steps down.
+                forecastHorizons = new List<string> { "1m", "6m", "12m" },
+                hasEarly = false,
                 printings = new List<string>(),
                 prereleaseCount = unpriced.Count,
                 latestSet = (string?)null,   // no "newest" means anything before release
@@ -238,6 +242,11 @@ public partial class CardsController(
             hasYear = await priceCharting.History
                 .AnyAsync(h => h.Game == key && string.Compare(h.Date, yearAgo) <= 0);
         }
+        // Which windows the model can serve at all (2026-11-05): the 6M and
+        // 1Y chips and sorts need rows at that horizon, and the client steps
+        // the default 6M sort down to 1M until they exist. hasEarly says the
+        // 1M window still works for a game that has only early estimates.
+        var (forecastHorizons, hasEarly) = await market.ForecastHorizons(key);
 
         // The game's actual printing vocabulary (2026-08-28): the client only
         // shows the Printing filter when a game genuinely has variants, and
@@ -258,7 +267,7 @@ public partial class CardsController(
             .OrderBy(p => p)
             .ToList();
 
-        return new { sets, rarities, hasYear, printings, prereleaseCount, latestSet };
+        return new { sets, rarities, hasYear, forecastHorizons, hasEarly, printings, prereleaseCount, latestSet };
     }
 
     // The catalog's opening set (2026-11-02, user: "automatically select the

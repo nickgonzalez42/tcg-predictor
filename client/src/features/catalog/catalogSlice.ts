@@ -1,6 +1,7 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
+import { snapSort, snapTrend, type Windows } from "./windows";
 
 // 6M $ growth: desc + the 6M trend view (2026-11-05, user decision). Six
 // months is the horizon the catalog opens on: far enough out that the v4.5
@@ -9,7 +10,8 @@ import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
 // Dollars rather than percent (user decision 2026-11-05). Was 6M % growth
 // from 2026-10-26, 6M $ growth earlier that day, 1Y $ growth from
 // 2026-10-11, 1M $ growth before that. The trend chips follow the sort via
-// trendForSort.
+// trendForSort. A game with no 6M rows yet steps down to 1M (fitWindows)
+// and comes back to this on its own once the rows exist.
 export const DEFAULT_ORDER = 'chgUsd6Desc';
 export const DEFAULT_PAGE_SIZE = 30;
 // No default price floor (2026-11-02, user decision). A $1 floor stood here
@@ -78,6 +80,8 @@ export const catalogSlice = createSlice({
         },
         setOrderBy(state, action) {
             state.orderBy = action.payload;
+            state.orderWish = undefined;   // a fresh pick replaces anything stepped down
+            state.trendWish = undefined;
             state.pageNumber = 1;
             // A forecast sort also drives the tiles' trend window, so the
             // sparkline/movement period always matches what's being sorted.
@@ -178,6 +182,23 @@ export const catalogSlice = createSlice({
         },
         setTrend(state, action) {
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
+            state.trendWish = undefined;
+        },
+        // Fit the sort and trend to the windows the game can serve (facets
+        // arrived, a game switch, or the model gained a horizon overnight),
+        // remembering what the visitor asked for so it comes back the moment
+        // the game can serve it: the 6M default on a game with 1M rows only
+        // shows 1M today and 6M after the retrain, with no one touching it.
+        fitWindows(state, action: PayloadAction<Windows>) {
+            const w = action.payload;
+            const wantOrder = state.orderWish ?? state.orderBy;
+            const fitOrder = snapSort(wantOrder, w);
+            state.orderWish = fitOrder === wantOrder ? undefined : wantOrder;
+            state.orderBy = fitOrder;
+            const wantTrend = state.trendWish ?? state.trend;
+            const fitTrend = snapTrend(wantTrend, w);
+            state.trendWish = fitTrend === wantTrend ? undefined : wantTrend;
+            state.trend = fitTrend;
         },
         // Cards shown (2026-10-11): '' = with market price (default),
         // 'without' = predicted-price cards only, 'all' = both at once.
@@ -196,6 +217,8 @@ export const catalogSlice = createSlice({
             state.pageNumber = 1;
             if (mode === 'without') {
                 if (!PRERELEASE_SORTS.includes(state.orderBy)) state.orderBy = 'priceDesc';
+                state.orderWish = undefined;   // the estimate sorts serve every game
+                state.trendWish = undefined;
                 state.grade = '';
                 state.confidence = [];
             }
@@ -219,4 +242,4 @@ export const catalogSlice = createSlice({
     }
 });
 
-export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, applyDefaultSets, setGrade, setMinPrice, setMaxPrice, setTrend, setMarket, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;
+export const { setGame, setOrderBy, setPageNumber, setPageSize, setRarities, setPrintings, setConfidence, setSearchTerm, setSets, applyDefaultSets, setGrade, setMinPrice, setMaxPrice, setTrend, fitWindows, setMarket, setView, setQuickAdd, resetParams, resetToDefaults, setParams, initDefaultGame } = catalogSlice.actions;

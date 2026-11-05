@@ -9,7 +9,9 @@ import { useDebouncedSearch } from "../../lib/useDebouncedSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import CheckBoxButtons from "../../app/shared/components/CheckBoxButtons";
 import MultiSelectDropdown from "../../app/shared/components/MultiSelectDropdown";
-import { catalogSortGroups, prereleaseSortGroups, withoutYearSorts } from "./sortOptions";
+import { catalogSortGroups, prereleaseSortGroups } from "./sortOptions";
+import { missingWindowsNote, windowsFor, withoutUnavailableSorts } from "./windows";
+import { GAME_LABEL } from "../../lib/games";
 import { PRICE_TIER_OPTIONS } from "../watchlist/grades";
 
 
@@ -37,11 +39,11 @@ const MARKET_OPTIONS = [
 ];
 
 type Props = {
-    filtersData: { sets: string[], rarities: string[], hasYear?: boolean, printings?: string[], prereleaseCount?: number }
+    filtersData: { sets: string[], rarities: string[], hasYear?: boolean, forecastHorizons?: string[], hasEarly?: boolean, printings?: string[], prereleaseCount?: number }
 }
 
 export default function Filters({ filtersData: data }: Props) {
-    const { game, orderBy, sets, setsDecided, rarities, printings, confidence, grade, minPrice, maxPrice, view, market } = useAppSelector(state => state.catalog);
+    const { game, orderBy, orderWish, sets, setsDecided, rarities, printings, confidence, grade, minPrice, maxPrice, view, market } = useAppSelector(state => state.catalog);
     const mode = market ?? '';
     const pre = mode === 'without';
     const dispatch = useAppDispatch();
@@ -69,10 +71,13 @@ export default function Filters({ filtersData: data }: Props) {
     const min = useDebouncedSearch(minPrice ?? '', v => dispatch(setMinPrice(capPrice(v))));
     const max = useDebouncedSearch(maxPrice ?? '', v => dispatch(setMaxPrice(capPrice(v))));
 
-    // Young games (no 12m forecasts, <12mo history) don't offer 1Y sorts.
-    // Pre-release mode has only the estimate to sort on.
+    // Windows the game can't serve yet (no 6m/12m rows, under a year of
+    // history) are not offered; the rail says which, and that the sort
+    // stepped down meanwhile. Pre-release mode has only the estimate to sort on.
     const sortGroups = pre ? prereleaseSortGroups
-        : (data.hasYear ?? true) ? catalogSortGroups : withoutYearSorts(catalogSortGroups);
+        : withoutUnavailableSorts(catalogSortGroups, windowsFor(data));
+    const windowNote = pre ? null
+        : missingWindowsNote(GAME_LABEL[game] ?? game, data, orderWish ? orderBy : undefined);
 
     return (
         <div className={`filters${dropdown ? ' filters--dropdown' : ''}`}>
@@ -181,6 +186,9 @@ export default function Filters({ filtersData: data }: Props) {
                                         </optgroup>
                                     ))}
                                 </select>
+                                {windowNote && (
+                                    <p className="est-note filters__note">{windowNote}</p>
+                                )}
                             </div>
                             {!pre && (
                                 <div className="panel">
