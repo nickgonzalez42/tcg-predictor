@@ -240,6 +240,15 @@ def main():
     covered = standard | {(g, pid) for g, pid in out.execute(
         "SELECT game, product_id FROM forecasts WHERE horizon='launch1m' "
         "AND printing='' AND model_version LIKE '%-early'")}
+    # Rows this tier issued for cards the model has since taken over are
+    # stale the day the standard row lands (frozen at an old anchor, always
+    # flat) and only ever surfaced where a window had no standard row -- the
+    # 6M/1Y tiles of a 1M-only game (2026-11-05). Drop them.
+    n_stale = out.execute(
+        "DELETE FROM forecasts WHERE horizon='launch1m' AND model_version='launch-v1' "
+        "AND EXISTS (SELECT 1 FROM forecasts s WHERE s.game=forecasts.game "
+        "AND s.product_id=forecasts.product_id AND s.printing='' AND s.target='ungraded' "
+        "AND s.horizon IN ('1m','6m','12m'))").rowcount
     rows = []
     for (g, pid), (s, rar) in attrs.items():
         if (g, pid) in covered:
@@ -289,7 +298,8 @@ def main():
     n_bold = sum(1 for r in rows if abs(r[9]) >= 0.0005)
     print(f"forecast_launch: {len(rows)} early estimate(s) issued "
           f"({len(priors)} graded cohort keys, {len(cohort_drift)} cohorts with live drift, "
-          f"{n_dem} demoted to flat, {n_bold} non-flat calls)")
+          f"{n_dem} demoted to flat, {n_bold} non-flat calls); "
+          f"{n_stale} stale row(s) of model-covered cards dropped")
     out.close()
 
 
