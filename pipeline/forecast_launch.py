@@ -15,6 +15,17 @@ Self-healing loop:
   issue (here) -> archive -> scorecard grades at +28d (dated, same as 1m)
   -> next night's priors/demotions read those grades -> issue again.
 
+Live drift (2026-11-05, user: "I want it to be at least a little bold"):
+a cohort with no graded record used to sit at exactly flat until its first
+calls came due (a whole new game, Cyberpunk, showed 0% on every card for a
+month). The point now starts from the cohort's OWN movement over the last
+LIVE_DAYS days (median log return of cards like it: game / rarity / price
+band, falling back to game / rarity and then the game), shrunk by
+LIVE_SHRINK, plus CARD_SHRINK of the card's deviation from that cohort,
+each capped. The graded record blends in with weight n/(n+K_SHRINK) as it
+accrues, so the live drift fades as the record grows, and the demotion gate
+still forces any cohort that loses to flat back to flat.
+
 Rollout: rows are written under horizon='launch1m', which the API's trend
 windows do not serve — the track record accrues silently until the UI grows
 an explicitly-labeled "early estimate" display. Separate scorecard row; never
@@ -46,6 +57,16 @@ K_SHRINK = 50         # prior weight n/(n+K): 50 graded rows = half strength
 MIN_DEMOTE = 40       # graded rows needed before the demotion gate can rule
 MIN_COHORT = 8        # historical launch cohort size for the dispersion seed
 SEED_Q = (-0.40, -0.03, 0.35)   # q10/med/q90 fallback (backtest dispersion)
+LIVE_DAYS = 28        # live drift: the newest TCG price vs the last one >= this old
+LIVE_SHRINK = 0.5     # weight of the cohort's live drift where the graded record is thin
+CARD_SHRINK = 0.25    # weight of the card's own deviation from its cohort
+LIVE_CAP = 0.15       # caps (log return): cohort part, card part, whole prior
+CARD_CAP = 0.10
+PRIOR_CAP = 0.20
+
+
+def clamp(x, c):
+    return max(-c, min(c, x))
 
 
 def band_of(p):
@@ -101,7 +122,9 @@ def launch_seed_quantiles(conn):
 
 
 def graded_priors(pred_conn, attrs):
-    """Shrunk cohort priors + demotions from THIS system's graded record."""
+    """(n graded, median realized return) per cohort key + demotions from THIS
+    system's graded record. The caller blends the median in with weight
+    n/(n+K_SHRINK); a demoted key is (n, 0.0) and overrides everything."""
     try:
         rows = pred_conn.execute(
             "SELECT game, product_id, ret, realized_ret, base_price FROM forecast_archive "
@@ -123,10 +146,42 @@ def graded_priors(pred_conn, attrs):
             mae_flat = sum(abs(r) for _, r in lst) / n
             if mae_pred >= mae_flat:
                 demoted.add(key)      # the live record says: predict flat
-                priors[key] = 0.0
+                priors[key] = (n, 0.0)
                 continue
-        priors[key] = (n / (n + K_SHRINK)) * reals[n // 2]
+        priors[key] = (n, reals[n // 2])
     return priors, demoted
+
+
+def live_drift(pc, newest, attrs, today):
+    """Each card's log return over the last LIVE_DAYS days (its newest TCGplayer
+    price vs the last one at least that old, within twice the window), and the
+    median of that over every cohort key with >= MIN_COHORT cards."""
+    since = (today - timedelta(days=LIVE_DAYS * 2)).isoformat()
+    until = (today - timedelta(days=LIVE_DAYS)).isoformat()
+    past = {}
+    for g, pid, _d, p in pc.execute(
+            "SELECT game, product_id, MAX(date), price FROM tcg_nm_history "
+            "WHERE printing='' AND date BETWEEN ? AND ? AND price > 0 "
+            "GROUP BY game, product_id", (since, until)):
+        past[(g, pid)] = p
+    card = {}
+    for key, (_d, p) in newest.items():
+        q = past.get(key)
+        if q and p and p > 0 and key in attrs:
+            r = math.log(p / q)
+            if abs(r) <= 2.5:
+                card[key] = r
+    by_key = collections.defaultdict(list)
+    for (g, pid), r in card.items():
+        rar, bd = attrs[(g, pid)][1], band_of(newest[(g, pid)][1])
+        for k in ((g, rar, bd), (g, rar), (g,)):
+            by_key[k].append(r)
+    cohort = {}
+    for k, rs in by_key.items():
+        if len(rs) >= MIN_COHORT:
+            rs.sort()
+            cohort[k] = rs[len(rs) // 2]
+    return card, cohort
 
 
 def main():
@@ -149,7 +204,6 @@ def main():
             "SELECT game, product_id, MAX(date), price FROM tcg_nm_history "
             "WHERE printing='' GROUP BY game, product_id"):
         newest[(g, pid)] = (d, p)
-    pc.close()
 
     attrs = {}
     for g in market_games():
@@ -159,6 +213,8 @@ def main():
             if nm is not None and img:
                 attrs[(g, pid)] = (s or "?", r or "?")
         c.close()
+    card_drift, cohort_drift = live_drift(pc, newest, attrs, now.date())
+    pc.close()
 
     out = sqlite3.connect(OUT_DB, timeout=120)
     priors, demoted = graded_priors(out, attrs)
@@ -195,15 +251,25 @@ def main():
             continue                      # no fresh TCG anchor -> stay blank
         base = float(d_p[1])
         bd = band_of(base)
-        prior = next((priors[k] for k in ((g, rar, bd), (g, rar), (g,)) if k in priors), 0.0)
+        keys = ((g, rar, bd), (g, rar), (g,))
+        key = next((k for k in keys if k in priors), None)
+        n, med = priors[key] if key else (0, 0.0)
+        live = next((cohort_drift[k] for k in keys if k in cohort_drift), 0.0)
+        own = card_drift.get((g, pid))
+        if key in demoted:
+            prior, basis = 0.0, "cohort demoted to flat by its graded record"
+        else:
+            w = n / (n + K_SHRINK)
+            cohort_part = w * med + (1 - w) * LIVE_SHRINK * clamp(live, LIVE_CAP)
+            card_part = CARD_SHRINK * clamp(own - live, CARD_CAP) if own is not None else 0.0
+            prior = clamp(cohort_part + card_part, PRIOR_CAP)
+            basis = (f"graded record n={n} median {med:+.3f}; cohort drift {live:+.3f} "
+                     f"over {LIVE_DAYS}d" + (f"; this card {own:+.3f}" if own is not None else ""))
         q10, _, q90 = seeds.get(g, SEED_Q)
         lo, hi = base * math.exp(min(q10, prior - 0.05)), base * math.exp(max(q90, prior + 0.05))
         why = (f"Early estimate: young price series (new card or repaired "
-               f"data); cohort {g}/{rar}/{bd} "
-               f"prior {prior:+.3f} (self-healing vs graded record"
-               + ("; cohort demoted to flat" if any(
-                    k in demoted for k in ((g, rar, bd), (g, rar), (g,))) else "")
-               + f"); bands = historical launch dispersion")
+               f"data); cohort {g}/{rar}/{bd} prior {prior:+.3f} ({basis}; "
+               f"self-healing vs graded record); bands = historical launch dispersion")
         rows.append((g, pid, "ungraded", "launch1m", today, round(base, 2),
                      round(base * math.exp(prior), 2), round(lo, 2), round(hi, 2),
                      round(prior, 4), why, "low", "launch-v1", now_iso, d_p[0], ""))
@@ -220,8 +286,10 @@ def main():
           r[13], r[15]) for r in rows])
     out.commit()
     n_dem = len(demoted)
+    n_bold = sum(1 for r in rows if abs(r[9]) >= 0.0005)
     print(f"forecast_launch: {len(rows)} early estimate(s) issued "
-          f"({len(priors)} live cohort priors, {n_dem} demoted to flat)")
+          f"({len(priors)} graded cohort keys, {len(cohort_drift)} cohorts with live drift, "
+          f"{n_dem} demoted to flat, {n_bold} non-flat calls)")
     out.close()
 
 

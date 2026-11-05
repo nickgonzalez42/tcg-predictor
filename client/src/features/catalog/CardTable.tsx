@@ -92,7 +92,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                                             <ChangePill value={fcstPct} title={`${fcstLabel} model forecast`} />
                                             {card.fcstHorizon === 'launch1m' && (
                                                 <span className="early-badge"
-                                                    title="Early estimate: this card has a single month of price history, so this is a first guess from its set, rarity and art. Good for comparing new cards, rough as a price.">
+                                                    title="Early estimate: this card is too new for our usual forecast, so this is a first guess from its set, rarity, art and the recent drift of cards like it. Good for comparing new cards, rough as a price.">
                                                     EARLY
                                                 </span>
                                             )}

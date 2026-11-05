@@ -196,7 +196,7 @@ function ForecastSection({ forecasts, game, id }: {
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             {early && (
                                                 <span className="early-badge"
-                                                    title="Early estimate: this card is too new for our usual forecast, so this is a first guess from its set, rarity and art. Expect it to be rough; it is best for comparing new cards with each other.">
+                                                    title="Early estimate: this card is too new for our usual forecast, so this is a first guess from its set, rarity, art and the recent drift of cards like it. Expect it to be rough; it is best for comparing new cards with each other.">
                                                     EARLY
                                                 </span>
                                             )}
