@@ -132,13 +132,14 @@ def _spark(draw, xy, series, width=600, height=74):
                   font=f, fill=LABEL)
 
 
-def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
+def render(out_path, kind, headline, published, stats=(), cards=(), spark=(), label=None):
     """Write one report's thumbnail.
 
     kind      'market' | 'model'
     stats     (value, label, tone) triples, tone 'up' | 'down' | None
     cards     (game, product_id) candidates; the first three with art are used
     spark     (label, value) pairs drawn as a diverging bar per game
+    label     chip text; defaults to the report kind
     """
     img = Image.new("RGBA", (W, H), BG + (255,))
     _dots(img)
@@ -181,7 +182,9 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=()):
     draw.rectangle([0, 0, W, 6], fill=BRAND)
 
     y = 56
-    label = "MARKET REPORT" if kind == "market" else "MODEL REPORT"
+    # `label` (2026-11-06) lets a promo picture name a set or a game in the
+    # chip instead of the report kind; the colour still follows `kind`.
+    label = label or ("MARKET REPORT" if kind == "market" else "MODEL REPORT")
     y = _chip(draw, (64, y), label, KIND_COLOR.get(kind, MUTED), f_mono) + 26
 
     # 640 keeps the longest line clear of the card fan, which starts at ~728.
