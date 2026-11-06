@@ -20,8 +20,8 @@ export type Card = {
     expectedChange?: number     // set only when sorting by forecast: the sorted metric's value
     expectedUnit?: 'percent' | 'usd'
     expectedHorizon?: string    //// '1m' | '6m' | '12m' ('1w' legacy)| '12m'
-    expectedFrom?: number       // current (forecast base) price
-    expectedTo?: number         // forecast price
+    expectedFrom?: number       // the shown price
+    expectedTo?: number         // the model's call applied to the shown price
     // Market context for tiles / screener rows, computed for the shown condition
     // tier over the requested trend window (1w|1m|6m|1y).
     priceAsOf?: string          // date of the shown price's latest history point
@@ -69,7 +69,8 @@ export type Forecast = {
     target: string
     horizon: string
     asOf?: string
-    basePrice: number
+    basePrice: number      // what the card costs now; forecastPrice/low/high apply the model's call to it
+    anchorPrice?: number   // what the card cost when the model made the call (2026-11-06)
     forecastPrice: number
     low: number
     high: number

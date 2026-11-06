@@ -188,7 +188,9 @@ def main():
                 if base_f and base_f[0]:
                     imp = (base_f[1] / base_f[0] - 1) * 100
                     cls = "up" if imp > 0 else "down"
-                    fcell = (f"<td class='num'>{money(base_f[1])}</td>"
+                    # The call applied to the card's price today, not the
+                    # dollar target set at the model's anchor (2026-11-06).
+                    fcell = (f"<td class='num'>{money(nm * base_f[1] / base_f[0] if nm else base_f[1])}</td>"
                              f"<td class='num {cls}'>{imp:+.1f}%</td>")
                 else:
                     fcell = "<td class='num'>—</td><td class='num'>—</td>"

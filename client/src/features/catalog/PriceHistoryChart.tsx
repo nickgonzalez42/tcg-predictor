@@ -883,7 +883,10 @@ function ForecastPointModal({ item, onClose }: { item: FocusModal; onClose: () =
                     <dt>Forecast</dt><dd><strong>{money(f.forecastPrice)}</strong>{pct != null && <span className={`chart-modal__pct ${pct >= 0 ? 'up' : 'down'}`}>{signedPct(pct)}</span>}</dd>
                     <dt>For</dt><dd>{fmtLongDate(item.time)}</dd>
                     <dt>Likely range</dt><dd>{money(f.low)} to {money(f.high)}</dd>
-                    <dt>Starting from</dt><dd>{money(f.basePrice)} on {fmtLongDate(f.asOf ?? item.baseDate)}</dd>
+                    <dt>Starting from</dt><dd>{money(f.basePrice)} now</dd>
+                    {f.anchorPrice != null && f.basePrice > 0 && Math.abs(f.anchorPrice / f.basePrice - 1) > 0.01 && (
+                        <><dt>Call made</dt><dd>{fmtLongDate(f.asOf ?? item.baseDate)} at {money(f.anchorPrice)}</dd></>
+                    )}
                     {f.confidence && <><dt>Confidence</dt><dd>{CONF_LABEL[f.confidence] ?? f.confidence}</dd></>}
                 </dl>
                 {f.reason && (

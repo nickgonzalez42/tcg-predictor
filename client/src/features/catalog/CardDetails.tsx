@@ -119,6 +119,14 @@ function ForecastSection({ forecasts, game, id }: {
     const { data: facets } = useFetchFiltersQuery({ game });
     const served = windowsFor(facets);
     const WINDOW: Record<string, Window> = { '1m': '1m', '6m': '6m', '12m': '1y' };
+    // A call the model made at a noticeably different price (the 6-month and
+    // 1-year rows re-anchor monthly, the price moves daily): the figures apply
+    // the call to today's price, and the cell says when and from what it was
+    // made (2026-11-06, after a week in which crashed cards read as rebounds).
+    const madeElsewhere = (f: Forecast) =>
+        f.anchorPrice != null && f.basePrice > 0 && Math.abs(f.anchorPrice / f.basePrice - 1) > 0.01;
+    const madeNote = (f: Forecast) =>
+        `call made ${f.asOf ? shortDate(f.asOf) + ' ' : ''}at ${currencyFormat(f.anchorPrice)}`;
     if (forecasts.length === 0) return null;
 
     return (
@@ -171,9 +179,6 @@ function ForecastSection({ forecasts, game, id }: {
                                 </td>
                                 <td>
                                     <strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong>
-                                    {tierForecasts[0]?.asOf && (
-                                        <div className="mono price-asof">{shortDate(tierForecasts[0].asOf)}</div>
-                                    )}
                                 </td>
                                 {HORIZONS.map(h => {
                                     // Launch-tier fallback (2026-10-09): a card too
@@ -203,6 +208,12 @@ function ForecastSection({ forecasts, game, id }: {
                                             <div className="forecast-chg">
                                                 <ChangePill value={chg} digits={h === '1m' ? 1 : 0} />
                                             </div>
+                                            {madeElsewhere(f) && (
+                                                <div className="mono price-asof"
+                                                    title="The price has moved since the model made this call. The figures apply its call to today's price.">
+                                                    {madeNote(f)}
+                                                </div>
+                                            )}
                                         </td>
                                     );
                                 })}
@@ -247,6 +258,12 @@ function ForecastSection({ forecasts, game, id }: {
                                         </span>
                                     </div>
                                 </div>
+                                {madeElsewhere(f) && (
+                                    <p className="est-note">
+                                        The model made this call {f.asOf ? `on ${shortDate(f.asOf)} ` : ''}when the card
+                                        was {currencyFormat(f.anchorPrice)}. The figures above apply that call to today's price.
+                                    </p>
+                                )}
                                 {f.reason && <p>{reasonBody(f.reason)}</p>}
                             </div>
                         );

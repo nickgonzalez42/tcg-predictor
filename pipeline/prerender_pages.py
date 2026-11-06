@@ -190,11 +190,11 @@ def main():
     fcs = {}
     reasons = {}
     try:
-        for g, pid, h, fp, lo, hi, why in pred.execute(
-                "SELECT game, product_id, horizon, forecast_price, low, high, reason "
+        for g, pid, h, base, fp, lo, hi, why in pred.execute(
+                "SELECT game, product_id, horizon, base_price, forecast_price, low, high, reason "
                 "FROM forecasts "
                 "WHERE target='ungraded' AND printing='' AND horizon IN ('1m','6m','12m')"):
-            fcs.setdefault((g, pid), []).append((h, fp, lo, hi))
+            fcs.setdefault((g, pid), []).append((h, base, fp, lo, hi))
             if why:
                 reasons.setdefault((g, pid), {})[h] = why
         top = pred.execute(
@@ -221,7 +221,13 @@ def main():
                 "near_mint_price FROM cards "
                 "WHERE near_mint_price IS NOT NULL AND image_path IS NOT NULL AND name IS NOT NULL"):
             pid, name = r[0], r[1]
-            fc = sorted(fcs.get((game, pid), []), key=lambda x: {"1m": 0, "6m": 1, "12m": 2}[x[0]])
+            # The model's call is a return from the price it saw; the page
+            # applies it to today's price, as the app does (2026-11-06).
+            fc = []
+            for h, base, fp, lo, hi in sorted(fcs.get((game, pid), []),
+                                              key=lambda x: {"1m": 0, "6m": 1, "12m": 2}[x[0]]):
+                k = r[6] / base if r[6] and base else 1.0
+                fc.append((h, fp * k, lo * k, hi * k))
             body = card_body(game, r, ladders.get((game, pid)), fc, reasons.get((game, pid)))
             # Forecast in the description = the hook in a link preview.
             fc_bit = ""

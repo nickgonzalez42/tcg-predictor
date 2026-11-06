@@ -464,13 +464,9 @@ public partial class CardsController(
             if (prRows.Count == 0)
                 return Ok(new { game = key, productId = id,
                                 forecasts = Array.Empty<object>(), printingCovered = false });
-            var prForecasts = prRows.Select(f => new
-            {
-                f.Target, f.Horizon,
-                AsOf = f.AnchorDate ?? f.AsOf,
-                f.BasePrice, f.ForecastPrice, f.Low, f.High, f.Ret, f.Reason, f.Confidence,
-                Months = 0,
-            });
+            var prNow = (await market.LatestPrintingPrices(key, printing!, [id]))
+                .TryGetValue(id, out var prPrice) && prPrice > 0 ? prPrice : (double?)null;
+            var prForecasts = prRows.Select(f => Rebased(f, f.Target == "ungraded" ? prNow : null, 0));
             return Ok(new { game = key, productId = id, forecasts = prForecasts,
                             printingCovered = true });
         }
@@ -489,18 +485,42 @@ public partial class CardsController(
             .Select(g => new { Grade = g.Key, Months = g.Count() })
             .ToDictionaryAsync(x => x.Grade, x => x.Months);
 
-        var forecasts = rows.Select(f => new
+        // Today's price per tier, so every row reads against what the card
+        // costs now (2026-11-06): the 6-month and 1-year rows re-anchor monthly
+        // while the price moves daily, and a stored dollar target shown next
+        // to a price that has since fallen read as a rebound the model never
+        // called. The anchor the model saw stays on the row.
+        var nowByTier = new Dictionary<string, double>();
+        foreach (var tier in rows.Select(f => f.Target).Distinct())
+            if ((await market.LatestTierPrices(key, tier, [id])).TryGetValue(id, out var now) && now > 0)
+                nowByTier[tier] = now;
+
+        var forecasts = rows.Select(f => Rebased(f,
+            nowByTier.TryGetValue(f.Target, out var now) ? now : null,
+            monthsByTier.GetValueOrDefault(f.Target, 0)));
+
+        return Ok(new { game = key, productId = id, forecasts });
+    }
+
+    // One forecast row for the page: the model's call (a return from the
+    // price it saw, AnchorPrice) applied to today's price (BasePrice), the
+    // range scaled the same way. With no price today the row reads exactly
+    // as the model issued it.
+    private static object Rebased(Forecast f, double? now, int months)
+    {
+        var k = now is double p && f.BasePrice > 0 ? p / f.BasePrice : 1.0;
+        return new
         {
             f.Target, f.Horizon,
             // Display date: the REAL date of the anchor price when the pipeline
             // recorded it; AsOf (its month bucket, stamped the 1st) as fallback.
             AsOf = f.AnchorDate ?? f.AsOf,
-            f.BasePrice,
-            f.ForecastPrice, f.Low, f.High, f.Ret, f.Reason, f.Confidence,
-            Months = monthsByTier.GetValueOrDefault(f.Target, 0),
-        });
-
-        return Ok(new { game = key, productId = id, forecasts });
+            BasePrice = f.BasePrice * k,
+            AnchorPrice = f.BasePrice,
+            ForecastPrice = f.ForecastPrice * k, Low = f.Low * k, High = f.High * k,
+            f.Ret, f.Reason, f.Confidence,
+            Months = months,
+        };
     }
 
     // Past forecasts whose horizon has elapsed, for drawing "what the model

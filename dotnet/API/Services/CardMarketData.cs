@@ -349,12 +349,13 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     // `printing` (2026-10-20) selects a labeled series instead of the base one;
     // ids in `baseIsSelected` are cards whose OWN base printing is the
     // selection, so their numbers live under '' — see SelectedPrinting.
-    // `shownBase` (2026-10-20) re-bases the metric on the price the catalog is
-    // DISPLAYING instead of the forecast's own anchor. They disagree for about
-    // a third of cards (magic 33,429 of 109,494) because the anchor is the
-    // price at model time and the column updates nightly — so a row could rank
-    // at +150% while plainly reading $0.03 -> $0.05 (+66.7%). Expected growth
-    // is only meaningful against what you would pay today.
+    // `shownBase` (2026-10-20) is the price the catalog is DISPLAYING, which
+    // differs from the forecast's own anchor for about a third of cards
+    // (magic 33,429 of 109,494): the anchor is the price at model time and
+    // the column updates nightly. The metric is the model's RETURN, and the
+    // dollar pair applies that return to the shown price, so the rank and
+    // the row always agree (2026-11-06; see Add below for what went wrong
+    // when the percentage was instead the stored target over the shown price).
     public async Task<Dictionary<int, ForecastChange>> ForecastChanges(
         string game, string target, string horizon, List<int> ids,
         string? printing = null, HashSet<int>? baseIsSelected = null,
@@ -362,11 +363,21 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     {
         if (ids.Count == 0) return [];
         var changes = new Dictionary<int, ForecastChange>();
-        void Add(int pid, double basePrice, double fcst) => changes[pid] = new ForecastChange(
-            Pct: basePrice > 0 ? (fcst / basePrice - 1) * 100 : 0.0,
-            Usd: fcst - basePrice,
-            From: basePrice,
-            To: fcst);
+        // The model's call is a RETURN from the price it saw (its anchor).
+        // Against the shown price, the percentage IS that return and the
+        // dollar figures apply it to the shown price. Until 2026-11-06 the
+        // percentage divided the stored dollar target by the shown price, so
+        // a card that fell 30% in the days after its 6-month call was made
+        // ranked as a +43% "rebound" toward a target set at the old price,
+        // while its own page showed the model's flat call (Hibari, Treasure
+        // Cup August 2025, in the One Piece slide of that week).
+        void Add(int pid, double shown, double anchor, double fcst)
+        {
+            var ratio = anchor > 0 ? fcst / anchor : 1.0;
+            var from = shown > 0 ? shown : anchor;
+            changes[pid] = new ForecastChange(
+                Pct: (ratio - 1) * 100, Usd: from * (ratio - 1), From: from, To: from * ratio);
+        }
         // Keep only the row for the printing this card is being SHOWN as.
         // EARLY rows (2026-10-23) join the sort only for cards that have no
         // standard row at this horizon: collected apart and merged last. Until
@@ -374,22 +385,22 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         // rows at all (the four CSV-only games) came back in id order under
         // the default "6 months, % gain" sort while every tile showed its
         // EARLY call — ApplyMarket falls back to that row for ANY window.
-        var early = new Dictionary<int, (double B, double F)>();
+        var early = new Dictionary<int, (double S, double B, double F)>();
         void Take(int pid, string pr, string hz, double b, double f)
         {
             var want = printing == null || (baseIsSelected?.Contains(pid) ?? false) ? "" : printing;
             if (pr != want) return;
-            // Fall back to the forecast's own anchor when the card has no shown
-            // price (it then sorts on the same basis it always did).
-            var basis = shownBase != null && shownBase.TryGetValue(pid, out var sp) && sp > 0
+            // The shown price when the card has one; the forecast's own anchor
+            // otherwise (the figures then read exactly as the model issued them).
+            var shown = shownBase != null && shownBase.TryGetValue(pid, out var sp) && sp > 0
                 ? sp : b;
-            if (hz == "launch1m") early[pid] = (basis, f);
-            else Add(pid, basis, f);
+            if (hz == "launch1m") early[pid] = (shown, b, f);
+            else Add(pid, shown, b, f);
         }
         Dictionary<int, ForecastChange> Finish()
         {
-            foreach (var (pid, (b, f)) in early)
-                if (!changes.ContainsKey(pid)) Add(pid, b, f);
+            foreach (var (pid, (sh, b, f)) in early)
+                if (!changes.ContainsKey(pid)) Add(pid, sh, b, f);
             return changes;
         }
 
@@ -556,6 +567,12 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                 }
             }
             var rowsFor = fcById[(card.Id, Pr(card))];
+            // Forecast dollars apply the model's return to the SHOWN price, the
+            // basis ForecastChanges ranks on (2026-11-06): a target the model
+            // set before this week's drop is not a rebound call, and the tile's
+            // percentage (forecast over price) must equal the model's own.
+            double Scaled(double anchor, double fcst) =>
+                card.Price is double shown && shown > 0 && anchor > 0 ? shown * fcst / anchor : fcst;
             foreach (var f in rowsFor)
             {
                 var pct = f.BasePrice > 0 ? (f.ForecastPrice / f.BasePrice - 1) * 100 : 0;
@@ -563,11 +580,11 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                 else if (f.Horizon == "12m")
                 {
                     card.Fcst12Pct = pct;
-                    card.Fcst12To = f.ForecastPrice;
+                    card.Fcst12To = Scaled(f.BasePrice, f.ForecastPrice);
                 }
                 if (f.Horizon == fcstHorizon)
                 {
-                    card.FcstTo = f.ForecastPrice;
+                    card.FcstTo = Scaled(f.BasePrice, f.ForecastPrice);
                     card.FcstHorizon = fcstHorizon;
                     card.FcstConfidence = f.Confidence;
                 }
@@ -579,7 +596,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                 var early = rowsFor.FirstOrDefault(f => f.Horizon == "launch1m");
                 if (early != null)
                 {
-                    card.FcstTo = early.ForecastPrice;
+                    card.FcstTo = Scaled(early.BasePrice, early.ForecastPrice);
                     card.FcstHorizon = "launch1m";
                     card.FcstConfidence = early.Confidence;
                 }
