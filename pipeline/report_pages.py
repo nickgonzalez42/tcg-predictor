@@ -110,6 +110,18 @@ color:var(--text-muted);font-size:13.5px}
 # IntersectionObserver instead of scroll math: a chart inside a closed
 # <details> has no boxes so it simply never intersects until opened, and
 # page-length changes from toggling dropdowns can't leave positions stale.
+# First-party page-view beacon, the same ping the app sends from
+# client/src/lib/pageview.ts (2026-11-06): these static pages are what a
+# shared link lands on (Caddy serves them file-first), and without the ping
+# every click from a Reddit post or a search result was invisible to
+# deploy/traffic.sh. Caddy answers /px itself with 204; the path, the outside
+# referrer and any utm tags ride along, nothing else.
+PX = ('<script>(function(){try{var q=new URLSearchParams({p:location.pathname});'
+      'var r=document.referrer;if(r&&r.indexOf(location.host)<0)q.set("r",r);'
+      'var u=location.search.match(/utm_[a-z]+=[^&]+/g);if(u)q.set("u",u.join("&"));'
+      'fetch("/px?"+q.toString(),{method:"GET",keepalive:true,cache:"no-store"})'
+      '.catch(function(){})}catch(e){}})()</script>')
+
 JS = """
 (function () {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -368,6 +380,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
   <a href="{SITE}/privacy">Privacy</a> · <a href="{SITE}/terms">Terms</a></p>
 </footer>
 </div>
+{PX}
 <script>{JS}</script>
 </body>
 </html>

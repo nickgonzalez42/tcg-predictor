@@ -99,6 +99,19 @@ ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
 
+# First-party page-view beacon, the same ping the app sends from
+# client/src/lib/pageview.ts (2026-11-06): these static pages are what a
+# shared link lands on (Caddy serves them file-first), and without the ping
+# every click from a Reddit post or a search result was invisible to
+# deploy/traffic.sh. Caddy answers /px itself with 204; the path, the outside
+# referrer and any utm tags ride along, nothing else.
+PX = ('<script>(function(){try{var q=new URLSearchParams({p:location.pathname});'
+      'var r=document.referrer;if(r&&r.indexOf(location.host)<0)q.set("r",r);'
+      'var u=location.search.match(/utm_[a-z]+=[^&]+/g);if(u)q.set("u",u.join("&"));'
+      'fetch("/px?"+q.toString(),{method:"GET",keepalive:true,cache:"no-store"})'
+      '.catch(function(){})}catch(e){}})()</script>')
+
+
 def page(path, title, desc, body, og_image=None):
     t, d = esc(title), esc(desc)
     og_img = (f'<meta property="og:image" content="{esc(og_image)}">'
@@ -116,7 +129,7 @@ def page(path, title, desc, body, og_image=None):
 {og_img}
 {ADS}
 <style>{CSS}</style></head>
-<body><div class="wrap">{NAV}{body}{FOOT}</div></body></html>"""
+<body><div class="wrap">{NAV}{body}{FOOT}</div>{PX}</body></html>"""
 
 
 def write(out, rel, content):
