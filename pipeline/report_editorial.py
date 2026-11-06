@@ -92,16 +92,21 @@ must be present.
 - "model_note": one sentence on the forecast model's live record given the \
 "model" facts, honest about weak spots (max {model_note} words).
 - "model_headline": the model article's title, max {model_headline} words: \
-what the record actually shows this week, in plain words a collector \
-understands. No date, no label like "Model Report", no colon prefix, no \
-quotation marks, no final period, and never the words "graded", \
-"calibration" or "cohort". Example shape: "Our one-month forecasts beat a \
-flat guess in five games".
+what the model got RIGHT this week, in plain words a collector understands: \
+how often it called the direction, the share of prices that landed inside \
+its range, any game where it beat a flat guess. The title never leads with \
+a miss; the weak spots belong in the lede and the note. No date, no label \
+like "Model Report", no colon prefix, no quotation marks, no final period, \
+and never the words "graded", "calibration" or "cohort". Example shapes: \
+"Direction right 65% of the time, 78% of prices inside the range", \
+"Our one-month forecasts beat a flat guess in five games".
 - "model_lede": 2 sentences opening a separate article about the model's \
 record: the headline numbers from the "model" facts in plain words, for a \
 collector who has never heard of a calibration band (max {model_lede} words). \
-Say "forecasts" and "checked", never "calls", "graded" or "calibration"; \
-"we" is the site, "the model" is fine.
+Open with what went right (the direction record, the share inside the \
+range), then the typical miss against the flat baseline as a plain fact, \
+not a verdict. Say "forecasts" and "checked", never "calls", "graded" or \
+"calibration"; "we" is the site, "the model" is fine.
 
 FACTS:
 {facts}

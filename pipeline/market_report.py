@@ -1095,11 +1095,21 @@ def build_report(force=False, as_of=None):
     # 2026-10-29: "I want it to describe overall market conditions") -- the
     # body is where individual cards and games get their say.
     title = f"{ups:,} cards up, {downs:,} down: {breadth} across the market"
+    # The model title leads with what the model got RIGHT (user 2026-11-06:
+    # "make this less negative, highlight the good things we did in the
+    # title"): beating a flat guess when it did, otherwise the direction
+    # record and the share inside the range. The miss against the flat
+    # baseline is still in the lede and the report card, just not the title.
     if live:
         _l0, _n0, _mae0, _b0, _hit0, _dn0, _da0, _flat0 = live[0]
-        model_title = (f"Our one-month forecasts "
-                       f"{'beat' if _mae0 < _flat0 else 'trailed'} a flat guess, with "
-                       f"{_hit0 * 100:.0f}% of prices inside the range")
+        if _mae0 < _flat0:
+            model_title = (f"Our one-month forecasts beat a flat guess, with "
+                           f"{_hit0 * 100:.0f}% of prices inside the range")
+        elif _da0 is not None:
+            model_title = (f"Direction right {_da0 * 100:.0f}% of the time, "
+                           f"{_hit0 * 100:.0f}% of prices inside the range")
+        else:
+            model_title = f"{_hit0 * 100:.0f}% of prices landed inside the forecast range"
     else:
         model_title = "What the forecasts got right, and where they missed"
     if prose.get("headline"):
@@ -1413,12 +1423,22 @@ def build_report(force=False, as_of=None):
         "spark": [[GAMES[g]["label"], r1(drift.get(g, 0.0)), g] for g in game_order],
         "cards": mover_cards[:6],
     }
+    # Unpacked by name: a positional live[0][5] here printed the decisive-
+    # direction COUNT as "176841000% inside the range" on 2026-11-06. The
+    # picture shows three stats, strengths first; typical miss only comes in
+    # when the headline already quotes one of the others (render_svg drops
+    # repeated figures).
+    model_stats = []
+    if live:
+        _lbl, n_l, mae_l, _bias_l, hit_l, _dn_l, da_l, _flat_l = live[0]
+        model_stats = [[f"{n_l:,}", "forecasts checked", None],
+                       [f"{hit_l * 100:.0f}%", "inside the range", "up"]]
+        if da_l is not None:
+            model_stats.append([f"{da_l * 100:.0f}%", "direction right", "up"])
+        model_stats.append([f"±{(exp(mae_l) - 1) * 100:.1f}%", "typical miss", None])
     model_thumb = {
         "kind": "model",
-        "stats": ([[f"{live[0][1]:,}", "forecasts checked", None],
-                   [f"{live[0][5] * 100:.0f}%", "inside the range", "up"],
-                   [f"±{(exp(live[0][2]) - 1) * 100:.1f}%", "typical miss", None]]
-                  if live else []),
+        "stats": model_stats,
         "spark": [],
         "cards": [[g, int(pid), n] for g, pid, n, _b, _f, _pr in picks[:6]],
     }
