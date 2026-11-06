@@ -132,8 +132,11 @@
   min-width: 0;
 }
 
+/* Flush with the card's top and sides (user 2026-11-06): the base .band
+   already pulls out by the panel's --space-20 padding; this only drops the
+   bottom margin, since the section's flex gap spaces what follows. */
 .score-section .band {
-  margin: 0 calc(-1 * var(--space-15)) 0;
+  margin: calc(-1 * var(--space-20)) calc(-1 * var(--space-20)) 0;
 }
 
 .score-section__intro {
@@ -625,5 +628,9 @@
 }
 
 /* A second band inside the accuracy-over-time section (the early estimates'
-   charts, 2026-11-05) sits a little apart from the charts above it. */
-.score-band--sub { margin-top: var(--space-20); }
+   charts, 2026-11-05) sits a little apart from the charts above it. Mid-card,
+   so it runs edge to edge with square corners. */
+.score-section .score-band--sub {
+  margin-top: var(--space-20);
+  border-radius: 0;
+}
