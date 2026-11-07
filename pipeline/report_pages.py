@@ -96,6 +96,17 @@ opacity:0;transition:opacity .12s ease}
 border:1px solid var(--border);background:var(--panel);
 box-shadow:0 12px 30px rgba(0,0,0,.5)}
 svg{max-width:100%;height:auto}
+/* Per-game articles (2026-11-06): card-art tiles and picture captions. */
+.report-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:20px 0 10px}
+.report-card{display:flex;flex-direction:column;gap:6px;color:var(--text);text-decoration:none}
+.report-card:hover{text-decoration:none}.report-card:hover .report-card-name{text-decoration:underline}
+.report-card img{display:block;width:100%;aspect-ratio:5/7;object-fit:cover;border-radius:10px;
+border:1px solid var(--border);background:var(--panel)}
+.report-card-name{font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;
+-webkit-box-orient:vertical;overflow:hidden}
+.report-card-meta{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text-muted)}
+.report-caption{margin:-6px 0 24px;color:var(--text-muted);font-size:13px}
+@media (max-width:540px){.report-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:480px){.report-table{font-size:12px}
 .report-table th,.report-table td{padding-right:5px}}
 footer.site{border-top:1px solid var(--border);margin-top:36px;padding-top:14px;
@@ -263,7 +274,7 @@ def long_date(iso):
         return iso
 
 
-def thumbnail(slug, thumb_json, title, published_at, out_dir):
+def thumbnail(slug, thumb_json, title, published_at, out_dir, base="reports"):
     """Draw this report's picture next to its page. Returns its URL path, or
     None when the report carries nothing to draw from or the draw fails — a
     missing picture must never cost the article its page."""
@@ -277,8 +288,9 @@ def thumbnail(slug, thumb_json, title, published_at, out_dir):
                t.get("kind", "market"), title, long_date(published_at),
                stats=[tuple(x) for x in t.get("stats", [])],
                cards=[tuple(x) for x in t.get("cards", [])],
-               spark=[tuple(x) for x in t.get("spark", [])])
-        return f"/reports/{slug}.jpg"
+               spark=[tuple(x) for x in t.get("spark", [])],
+               label=t.get("label"))
+        return f"/{base}/{slug}.jpg"
     except Exception as e:
         print(f"  thumbnail for {slug} skipped: {type(e).__name__}: {e}")
         return None
@@ -293,13 +305,16 @@ ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
 
-def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None):
+def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None,
+         base="reports", section=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
     # cards, but no longer prints above the headline. The headline is
     # descriptive now and the /reports filter carries the type.
-    section = "Model report" if slug.startswith("model-report") else "Market report"
-    url = f"{SITE}/reports/{slug}"
+    # `base` + `section` (2026-11-06): the per-game articles reuse this
+    # template at /articles/{slug} (article_pages.py).
+    section = section or ("Model report" if slug.startswith("model-report") else "Market report")
+    url = f"{SITE}/{base}/{slug}"
     # The report's own picture is its share card; the site card is the
     # fallback for reports written before thumbnails existed.
     image = f"{SITE}{thumb_url}" if thumb_url else f"{SITE}/og-image.png?v=3"
@@ -364,7 +379,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <header class="site">
   <a class="logo" href="{SITE}/">CardStock</a>
   <nav><a href="{SITE}/catalog">Catalog</a><a href="{SITE}/reports">Reports</a>
-  <a href="{SITE}/about">About</a><a href="{SITE}/guides/how-to-read-price-charts">Guides</a></nav>
+  <a href="{SITE}/articles">Articles</a><a href="{SITE}/about">About</a><a href="{SITE}/guides/how-to-read-price-charts">Guides</a></nav>
 </header>
 <article>
 {hero}
@@ -377,6 +392,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
   public track record. Not financial advice.
   <a href="{SITE}/about">How the forecasts work</a> ·
   <a href="{SITE}/reports">All reports</a> ·
+  <a href="{SITE}/articles">Game articles</a> ·
   <a href="{SITE}/privacy">Privacy</a> · <a href="{SITE}/terms">Terms</a></p>
 </footer>
 </div>

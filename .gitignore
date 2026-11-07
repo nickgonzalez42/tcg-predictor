@@ -32,3 +32,6 @@ __pycache__/
 
 # transient one-off model jobs (see local_model_run.sh)
 pipeline/oneoff_model_job.sh
+
+# Per-game article pages are regenerated weekly (article_pages.py); the nightly ships them from ~/tcg-backups.
+static-content/articles/

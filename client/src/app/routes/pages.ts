@@ -22,3 +22,5 @@ export const ScanPage = lazy(() => import("../../features/scan/ScanPage"));
 export const Wishlist = lazy(() => import("../../features/watchlist/Wishlist"));
 export const ReportsPage = lazy(() => import("../../features/reports/ReportsPage"));
 export const ReportPage = lazy(() => import("../../features/reports/ReportPage"));
+export const ArticlesPage = lazy(() => import("../../features/articles/ArticlesPage"));
+export const ArticlePage = lazy(() => import("../../features/articles/ArticlePage"));

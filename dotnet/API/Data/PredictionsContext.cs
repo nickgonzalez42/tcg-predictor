@@ -9,6 +9,9 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     public DbSet<Forecast> Forecasts => Set<Forecast>();
     public DbSet<ArchivedForecast> ForecastArchive => Set<ArchivedForecast>();
     public DbSet<MarketReport> Reports => Set<MarketReport>();
+    // Per-game articles (2026-11-06): the table appears with the first
+    // game_articles.py run; ArticlesController guards every read.
+    public DbSet<Article> Articles => Set<Article>();
     // Pre-release estimates (2026-10-10). The table is created by the first
     // model run that includes forecast_prerelease.py; CardMarketData guards
     // every read so an older predictions.db simply serves none.
@@ -164,6 +167,21 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             r.Property(x => x.Summary).HasColumnName("summary");
             r.Property(x => x.BodyHtml).HasColumnName("body_html");
             r.Property(x => x.Hero).HasColumnName("hero");
+        });
+
+        builder.Entity<Article>(a =>
+        {
+            a.ToTable("articles");
+            a.HasKey(x => x.Slug);
+            a.Property(x => x.Slug).HasColumnName("slug");
+            a.Property(x => x.Kind).HasColumnName("kind");
+            a.Property(x => x.Game).HasColumnName("game");
+            a.Property(x => x.SetName).HasColumnName("set_name");
+            a.Property(x => x.Title).HasColumnName("title");
+            a.Property(x => x.PublishedAt).HasColumnName("published_at");
+            a.Property(x => x.Summary).HasColumnName("summary");
+            a.Property(x => x.BodyHtml).HasColumnName("body_html");
+            a.Property(x => x.Hero).HasColumnName("hero");
         });
 
         builder.Entity<Forecast>(f =>

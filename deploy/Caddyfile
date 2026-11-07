@@ -48,7 +48,7 @@ cardstock.guide {
 	# served file-first, so /reports/{slug} and /guides/{name} work without
 	# JavaScript. Anything without a file falls through to the SPA.
 	@static-pages {
-		path /reports/* /guides/* /sets /sets/*
+		path /reports/* /articles/* /guides/* /sets /sets/*
 		file {
 			root /srv/tcg/static
 			try_files {path}.html {path}
@@ -66,7 +66,7 @@ cardstock.guide {
 	# the SPA. Pages without a prerender file fall through to the SPA.
 	@bots {
 		header_regexp ua User-Agent (?i)(googlebot|adsbot|mediapartners|apis-google|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|gptbot|ccbot|claudebot|perplexitybot|discordbot|slackbot|telegrambot|whatsapp|redditbot|pinterestbot)
-		path / /about /privacy /terms /contact /catalog /catalog/* /reports /guides
+		path / /about /privacy /terms /contact /catalog /catalog/* /reports /articles /guides
 		file {
 			root /srv/tcg/static
 			try_files /prerender{path}.html /prerender{path}index.html

@@ -59,6 +59,7 @@ color:var(--muted);font-size:13.5px}
 NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
        f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
        f'<a href="{SITE}/reports">Reports</a> '
+       f'<a href="{SITE}/articles">Articles</a> '
        f'<a href="{SITE}/guides/how-to-read-price-charts">Guides</a> '
        f'<a href="{SITE}/about">About</a></nav></header>')
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
@@ -209,6 +210,12 @@ def main():
             "ORDER BY published_at DESC").fetchall()
     except sqlite3.Error:
         reports = []
+    try:   # per-game articles (2026-11-06); the table appears with the first run
+        articles = pred.execute(
+            "SELECT slug, title, published_at, summary FROM articles "
+            "ORDER BY published_at DESC, slug").fetchall()
+    except sqlite3.Error:
+        articles = []
     pred.close()
 
     n_cards = 0
@@ -304,6 +311,22 @@ def main():
         f"archive below goes back to the first report.</p>"
         f"<ul>{report_rows}</ul>" if reports else
         f"<h1>Weekly reports</h1><p>The first weekly report lands this Friday.</p>"))
+
+    article_rows = "".join(
+        f"<li><a href='{SITE}/articles/{html.escape(slug)}'>{html.escape(title)}</a>"
+        f"<div class='muted'>{html.escape(published)} · {html.escape(summary or '')}</div></li>"
+        for slug, title, published, summary in articles[:60])
+    write(out_new, "articles.html", page(
+        "/articles", "Game articles",
+        "Two articles per game every week: how its newest set is doing and how the "
+        "whole game traded, with the cards, the charts and the model's outlook.",
+        f"<h1>Game articles</h1>"
+        f"<p>Every game we track gets two articles a week: one on its newest set (the "
+        f"chase cards, the movers, the rarities, its path since release) and one on the "
+        f"whole game (the week's drift, which sets moved, the biggest movers and how our "
+        f"model has been doing on it).</p>"
+        f"<ul>{article_rows}</ul>" if articles else
+        f"<h1>Game articles</h1><p>The first game articles land this week.</p>"))
 
     guides = []
     for gp in sorted(glob.glob(os.path.join(args.root, "static", "guides", "*.html"))):

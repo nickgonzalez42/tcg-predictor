@@ -69,7 +69,9 @@ echo "=== LOCAL model block — $(date '+%F %T') ==="
 # tables into the monthly signal CSVs forecast_predict reads under
 # TCG_FC_FEAT_VOL / TCG_FC_FEAT_SUPPLY; it runs after the scorecard so
 # the forecast step sees every signal file fresh.
-for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
+# game_articles (2026-11-06): two per-game articles a day on a Mon-Sat
+# rotation (schedule in game_articles.py); never fatal on its own.
+for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report game_articles; do
   echo "--- $step $(date '+%T') ---"
   t0=$SECONDS
   "$PY" "$DIR/$step.py"
@@ -114,6 +116,13 @@ done
        "ubuntu@$SERVER_IP:/srv/tcg/static/reports/" \
   && echo "static report pages shipped" \
   || echo "(static report pages ship failed — non-fatal)"
+
+# Per-game article pages (2026-11-06) ride along the same way.
+"$PY" "$DIR/article_pages.py" --db --out "$HOME/tcg-backups/article_pages" \
+  && $RSYNC -az -e "$SSH" "$HOME/tcg-backups/article_pages/" \
+       "ubuntu@$SERVER_IP:/srv/tcg/static/articles/" \
+  && echo "article pages shipped" \
+  || echo "(article pages ship failed — non-fatal)"
 
 # Per-set SEO pages: fresh prices + forecasts every run; the manifest the
 # API's /sitemap-sets.xml reads ships with them.

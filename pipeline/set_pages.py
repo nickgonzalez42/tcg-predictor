@@ -70,7 +70,8 @@ color:var(--muted);font-size:13.5px}
 
 NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
        f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
-       f'<a href="{SITE}/reports">Reports</a> <a href="{SITE}/about">About</a></nav></header>')
+       f'<a href="{SITE}/reports">Reports</a> <a href="{SITE}/articles">Articles</a> '
+       f'<a href="{SITE}/about">About</a></nav></header>')
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
         f'with a public track record. Not financial advice. '
         f'<a href="{SITE}/about">How the forecasts work</a> · '

@@ -15,10 +15,12 @@ const REPORT_SVG = new Set(
     ['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE', 'IMAGE', 'TITLE']);
 // The only off-site URL any report may reference: the card image CDN.
 const IMAGE_HOST = 'https://d18pzythfo0bgy.cloudfront.net/';
+// IMG (2026-11-06): the per-game articles carry card art in their body,
+// CDN-only like the hero's <image>.
 const REPORT_ALLOWED = new Set(
     [...ALLOWED, 'A', 'H2', 'H3', 'TABLE', 'THEAD', 'TBODY', 'TR', 'TH', 'TD',
-     'DETAILS', 'SUMMARY', 'DIV', ...REPORT_SVG]);
-const VOID = new Set(['BR']);
+     'DETAILS', 'SUMMARY', 'DIV', 'IMG', ...REPORT_SVG]);
+const VOID = new Set(['BR', 'IMG']);
 const DROP_CONTENT = new Set(['SCRIPT', 'STYLE']);
 
 // Geometry/paint attributes the report charts use. Values are pattern-checked
@@ -49,6 +51,13 @@ function keptAttrs(el: Element, report: boolean): string {
     if (tag === 'IMAGE' && href && href.startsWith(IMAGE_HOST)
         && /^[\w-]+\/\d+\.(jpg|png|webp)$/.test(href.slice(IMAGE_HOST.length)))
         out += ` href="${escapeHtml(href)}"`;
+    if (tag === 'IMG') {
+        const src = el.getAttribute('src');
+        if (src && src.startsWith(IMAGE_HOST)
+            && /^[\w-]+\/\d+\.(jpg|png|webp)$/.test(src.slice(IMAGE_HOST.length)))
+            out += ` src="${escapeHtml(src)}" alt="${escapeHtml(el.getAttribute('alt') ?? '')}" loading="lazy"`;
+        else return '';   // an image from anywhere else loses its src, so it renders nothing
+    }
     const cls = el.getAttribute('class');
     if (cls && /^[a-z-]+$/.test(cls) && cls.startsWith('report-')) out += ` class="${cls}"`;
     if (REPORT_SVG.has(tag)) {
@@ -73,7 +82,8 @@ function cleanNode(node: Node, report = false): string {
     const inner = Array.from(el.childNodes).map(n => cleanNode(n, report)).join('');
     if (!(report ? REPORT_ALLOWED : ALLOWED).has(tag)) return inner;   // unknown tag: unwrap
     const name = tag.toLowerCase();
-    return VOID.has(tag) ? `<${name}>` : `<${name}${keptAttrs(el, report)}>${inner}</${name}>`;
+    return VOID.has(tag) ? `<${name}${keptAttrs(el, report)}>`
+        : `<${name}${keptAttrs(el, report)}>${inner}</${name}>`;
 }
 
 export function sanitizeHtml(html: string): string {

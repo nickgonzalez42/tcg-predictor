@@ -1,0 +1,143 @@
+/* Per-game articles (2026-11-06): the index grid and the pieces an article
+   body carries that a weekly report does not (card-art tiles, figures and
+   captions). Everything else reuses Reports.css. */
+
+/* Index: two cards across on wide screens, one on phones. */
+.articles__list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 767px) {
+  .articles__list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.articles__game {
+  color: var(--text-muted);
+}
+
+a.articles__game:hover {
+  color: var(--brand);
+}
+
+/* Filter row: game chips, then kind chips, wrapping on phones. */
+.articles__filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  margin: 0 0 var(--space-25);
+}
+
+.articles__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.articles__chip {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.articles__chip:hover {
+  color: var(--text);
+  border-color: var(--text-muted);
+}
+
+.articles__chip--on {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--brand);
+}
+
+.articles__more {
+  margin: var(--space-25) auto 0;
+  display: block;
+}
+
+.article__foot {
+  margin-top: var(--space-40);
+}
+
+/* Card-art tiles inside an article body: a row of cards with the name and
+   the week's move under each. Four across, two on phones. */
+.report__body .report-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-15);
+  margin: var(--space-20) 0 var(--space-10);
+}
+
+@media (max-width: 767px) {
+  .report__body .report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.report__body .report-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.report__body .report-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.report__body .report-card:hover img {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.report__body .report-card:hover {
+  text-decoration: none;
+}
+
+.report__body .report-card:hover .report-card-name {
+  text-decoration: underline;
+  text-decoration-color: var(--brand);
+  text-underline-offset: 3px;
+}
+
+.report__body .report-card-name {
+  font-size: 13px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.report__body .report-card-meta {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* The caption under a picture or chart: the article's second voice. */
+.report__body .report-caption {
+  margin: calc(-1 * var(--space-10)) 0 var(--space-25);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.report__body .report-chart + .report-caption {
+  margin-top: calc(-1 * var(--space-10));
+}

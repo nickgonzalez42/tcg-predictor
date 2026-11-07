@@ -28,7 +28,7 @@ public class SitemapController(
     private const string XmlNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
     private static readonly string[] StaticPaths =
-        ["/", "/catalog", "/reports", "/about", "/privacy", "/terms", "/contact",
+        ["/", "/catalog", "/reports", "/articles", "/about", "/privacy", "/terms", "/contact",
          "/guides/how-to-read-price-charts", "/guides/how-grading-affects-value",
          "/guides/where-card-prices-come-from", "/guides/tcg-glossary"];
 
@@ -61,6 +61,8 @@ public class SitemapController(
             sb.Append($"  <sitemap><loc>{Origin}/sitemap-reports.xml</loc></sitemap>\n");
         if (SetPaths().Count > 0)
             sb.Append($"  <sitemap><loc>{Origin}/sitemap-sets.xml</loc></sitemap>\n");
+        if ((await ArticleSlugs()).Count > 0)
+            sb.Append($"  <sitemap><loc>{Origin}/sitemap-articles.xml</loc></sitemap>\n");
         foreach (var game in GameRegistry.Keys)
             if (await sources.Cards(game).VisibleInCatalog().AnyAsync())
                 sb.Append($"  <sitemap><loc>{Origin}/sitemap-{game}.xml</loc></sitemap>\n");
@@ -145,6 +147,19 @@ public class SitemapController(
         return CloseUrlset(sb).ToString();
     });
 
+    // Per-game articles (2026-11-06), one URL per article page.
+    [HttpGet("/sitemap-articles.xml")]
+    public Task<IActionResult> Articles() => Cached("sitemap:articles", async () =>
+    {
+        var slugs = await ArticleSlugs();
+        if (slugs.Count == 0) return null;
+
+        var sb = OpenUrlset();
+        foreach (var slug in slugs)
+            sb.Append($"  <url><loc>{Origin}/articles/{slug}</loc></url>\n");
+        return CloseUrlset(sb).ToString();
+    });
+
     // Serve one sitemap from the cache, building it on a miss. A null build
     // means "no such sitemap right now" (no cards, no reports yet) — answered
     // 404 and NOT cached, so the sitemap appears as soon as the data does.
@@ -163,6 +178,13 @@ public class SitemapController(
     private async Task<List<string>> ReportSlugs()
     {
         try { return await predictions.Reports.Select(r => r.Slug).ToListAsync(); }
+        catch (SqliteException) { return []; }
+    }
+
+    // Empty until the first game_articles.py run creates the articles table.
+    private async Task<List<string>> ArticleSlugs()
+    {
+        try { return await predictions.Articles.Select(a => a.Slug).ToListAsync(); }
         catch (SqliteException) { return []; }
     }
 

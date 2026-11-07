@@ -36,7 +36,9 @@ LABEL = (178, 188, 206)   # labels under bars and stats: brighter than MUTED,
 BRAND = (255, 203, 5)
 UP = (63, 217, 138)
 DOWN = (255, 122, 122)
-KIND_COLOR = {"market": (127, 176, 234), "model": (198, 120, 221)}
+# Article kinds (2026-11-06): the per-game set and game reports.
+KIND_COLOR = {"market": (127, 176, 234), "model": (198, 120, 221),
+              "set": (77, 208, 225), "game": (255, 158, 100)}
 
 DISPLAY = "/System/Library/Fonts/Supplemental/Impact.ttf"
 MONO = "/System/Library/Fonts/Menlo.ttc"
@@ -253,12 +255,14 @@ def _esc(t):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
-    """Inline SVG twin of the thumbnail. `cards` are (game, pid[, name])."""
+def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=None):
+    """Inline SVG twin of the thumbnail. `cards` are (game, pid[, name]);
+    `label` overrides the chip text (an article names its game and kind)."""
     from PIL import Image as _I, ImageDraw
     measure = ImageDraw.Draw(_I.new("RGB", (1, 1)))
-    kind_colour = {"market": "#7fb0ea", "model": "#c678dd"}.get(kind, "#8b96ad")
-    label = "MARKET REPORT" if kind == "market" else "MODEL REPORT"
+    kind_colour = {"market": "#7fb0ea", "model": "#c678dd", "set": "#4dd0e1",
+                   "game": "#ff9e64"}.get(kind, "#8b96ad")
+    label = label or ("MARKET REPORT" if kind == "market" else "MODEL REPORT")
     out = [f'<svg class="report-hero-svg" viewBox="0 0 {W} {H}" role="img" '
            f'xmlns="http://www.w3.org/2000/svg">',
            f'<title>{_esc(headline)}</title>',
@@ -318,11 +322,14 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=()):
         for i, item in enumerate(series):
             name, value = item[0], item[1]
             key = item[2] if len(item) > 2 else ""
+            # A 4th element is the full name behind a short label (an
+            # article's set strip, 2026-11-06); the tooltip shows it.
+            full = item[3] if len(item) > 3 and item[3] else name
             cx = 64 + slot * (i + 0.5)
             h = max((abs(value) / peak) * 27, 2)
             top = mid - h if value >= 0 else mid
             colour = "#3fd98a" if value >= 0 else "#ff7a7a"
-            body = (f'<title>{_esc(name)} {value:+.1f}% this week</title>'
+            body = (f'<title>{_esc(full)} {value:+.1f}% this week</title>'
                     f'<rect class="report-hero-bar" x="{cx - bw / 2:.0f}" y="{top:.0f}" '
                     f'width="{bw:.0f}" height="{h:.0f}" rx="3" fill="{colour}"/>'
                     f'<text x="{cx:.0f}" y="{mid + 56:.0f}" font-family="{SVG_MONO}" '

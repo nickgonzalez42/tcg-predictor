@@ -6,7 +6,7 @@ import RequireAuth from "./RequireAuth";
 import {
     Catalog, CardDetails, PrivacyPage, AccountSettingsPage, AboutPage, ContactPage,
     TermsPage, ServerError, NotFound, LoginForm, RegisterForm, Portfolio, ScanPage,
-    Wishlist, ReportsPage, ReportPage,
+    Wishlist, ReportsPage, ReportPage, ArticlesPage, ArticlePage,
 } from "./pages";
 
 export const router = createBrowserRouter([
@@ -31,6 +31,8 @@ export const router = createBrowserRouter([
             {path: '/catalog/:game/:id', element: <CardDetails />},
             {path: '/reports', element: <ReportsPage />},
             {path: '/reports/:slug', element: <ReportPage />},
+            {path: '/articles', element: <ArticlesPage />},
+            {path: '/articles/:slug', element: <ArticlePage />},
             {path: '/about', element: <AboutPage />},
             {path: '/privacy', element: <PrivacyPage />},
             {path: '/terms', element: <TermsPage />},

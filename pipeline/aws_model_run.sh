@@ -132,7 +132,7 @@ EOF
 }
 
 echo "=== AWS model run $(date -u '+%F %T UTC') (push=$PUSH auto-stop=$AUTO_STOP) ==="
-for step in forecast_scorecard forecast_predict forecast_launch sealed_prices forecast_prerelease market_report; do
+for step in forecast_scorecard forecast_predict forecast_launch sealed_prices forecast_prerelease market_report game_articles; do
   echo "--- $step $(date -u '+%T') ---"
   t0=$(date +%s)
   "$PY" "$PIPE/$step.py"; rc=$?
@@ -160,6 +160,10 @@ if [ $PUSH -eq 1 ]; then
     && rsync -az -e "$PROD_SSH" "$H/report_pages/" "ubuntu@$PROD_IP:/srv/tcg/static/reports/" \
     && echo "static report pages shipped" \
     || echo "(static report pages ship failed — non-fatal)"
+  "$PY" "$H/parent/tcg-predictor/pipeline/article_pages.py" --db --out "$H/article_pages" \
+    && rsync -az -e "$PROD_SSH" "$H/article_pages/" "ubuntu@$PROD_IP:/srv/tcg/static/articles/" \
+    && echo "article pages shipped" \
+    || echo "(article pages ship failed — non-fatal)"
   # Warm the homepage's hot paths so the morning's first visitor doesn't pay
   # the cold-cache recompute (see deploy/push_data.sh, 2026-08-14).
   for ep in \

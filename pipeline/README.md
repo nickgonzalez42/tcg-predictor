@@ -40,6 +40,23 @@ Every step is **idempotent** and every source write is **append-only** (date-key
 `INSERT OR REPLACE`), so a re-run never loses history; derived tables (unified series,
 forecasts) are rebuilt from the sources.
 
+## Per-game articles (2026-11-06)
+
+`game_articles.py` writes two articles per game per week into an `articles` table in
+predictions.db (served at `/api/articles`, pages at `/articles/{slug}`): a **set
+report** on the game's newest set (chase cards, the week's movers, rarities, price
+index since release, price ladder, the model's outlook) and a **game report** on the
+whole game (the week's drift, which sets moved, movers, groups that moved together,
+price ladder, the model's record and picks). `article_editorial.py` writes the prose
+(Claude, house voice) around the computed numbers; `article_pages.py` renders the
+static twins the nightly rsyncs to `/srv/tcg/static/articles/`.
+
+The step runs after `market_report` in `local_model_run.sh` and keys its games off the
+run's UTC weekday: Mon Pokémon + Magic, Tue Yu-Gi-Oh! + One Piece, Wed Lorcana + Digimon,
+Thu Star Wars Unlimited + Flesh and Blood, Fri Gundam + Riftbound, Sat Sorcery +
+Cyberpunk, Sun none. `--all` writes every game at once; `--game X --kind set|game`
+one article; `--no-prose` skips the Claude call.
+
 ## Secrets
 
 `one-piece/.env` holds `PRICECHARTING_TOKEN`. It is git-ignored — never commit it.
