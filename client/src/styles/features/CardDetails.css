@@ -260,7 +260,7 @@
 
 .detail-left__img {
   width: 100%;
-  border-radius: 17px;
+  border-radius: var(--card-corner) / calc(var(--card-corner) * 0.716);
   display: block;
   margin-bottom: var(--space-15);
 }

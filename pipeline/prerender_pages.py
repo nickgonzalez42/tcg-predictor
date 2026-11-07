@@ -51,7 +51,8 @@ h1{font-size:24px;margin:8px 0 4px}h2{font-size:18px;margin:24px 0 8px}
 .muted{color:var(--muted);font-size:14px}
 table{border-collapse:collapse;width:100%;margin:10px 0}
 td,th{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;font-size:14.5px}
-img.card{max-width:240px;border-radius:8px;float:right;margin:0 0 12px 16px}
+img.card{max-width:240px;border-radius:6%/4.3%;float:right;margin:0 0 12px 16px}
+img.card[src*="/sorcery/"]{border-radius:10%/7.2%}
 footer{border-top:1px solid var(--border);margin-top:32px;padding-top:12px;
 color:var(--muted);font-size:13.5px}
 """

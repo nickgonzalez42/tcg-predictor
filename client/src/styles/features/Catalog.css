@@ -109,7 +109,7 @@
 
 .imgsearch__hit img {
   width: 100%;
-  border-radius: 4px;
+  border-radius: var(--card-corner) / calc(var(--card-corner) * 0.716);
 }
 
 .imgsearch__hit-name {

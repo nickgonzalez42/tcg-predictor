@@ -100,8 +100,9 @@ svg{max-width:100%;height:auto}
 .report-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:20px 0 10px}
 .report-card{display:flex;flex-direction:column;gap:6px;color:var(--text);text-decoration:none}
 .report-card:hover{text-decoration:none}.report-card:hover .report-card-name{text-decoration:underline}
-.report-card img{display:block;width:100%;aspect-ratio:5/7;object-fit:cover;border-radius:10px;
+.report-card img{display:block;width:100%;aspect-ratio:5/7;object-fit:cover;border-radius:6%/4.3%;
 border:1px solid var(--border);background:var(--panel)}
+.report-card img[src*="/sorcery/"]{border-radius:10%/7.2%}
 .report-card-name{font-size:13px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;
 -webkit-box-orient:vertical;overflow:hidden}
 .report-card-meta{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text-muted)}

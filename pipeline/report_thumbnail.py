@@ -19,6 +19,7 @@ to Impact in CSS, and the mono face to Menlo, so the picture matches the page
 without vendoring a webfont.
 """
 
+import hashlib
 import io
 import os
 
@@ -39,6 +40,32 @@ DOWN = (255, 122, 122)
 # Article kinds (2026-11-06): the per-game set and game reports.
 KIND_COLOR = {"market": (127, 176, 234), "model": (198, 120, 221),
               "set": (77, 208, 225), "game": (255, 158, 100)}
+
+# Card art corners (2026-11-07, user: never any white showing on the card
+# corners). TCGplayer's scans are a rounded card on a white field, so a card
+# drawn as a rectangle shows white triangles at its corners. Every card is
+# clipped to its own corner arc, as a share of its width so it holds at any
+# size: 6% covers each game's scans (the 90th percentile over 60 cards a game
+# sits at 4-6%); Sorcery's are cut deeper, up to 10%, and get their own
+# share. The client (base.css), the static pages and the prerender use the
+# same two numbers. White-bordered cards stay white at the corners: that is
+# the card, not the field.
+CORNER = {"sorcery": 0.10}
+CORNER_DEFAULT = 0.06
+
+
+def corner(game):
+    return CORNER.get(game, CORNER_DEFAULT)
+
+
+def _rounded(card, share):
+    """The card with its corners clipped to the arc at `share` of its width."""
+    mask = Image.new("L", card.size, 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [0, 0, card.width - 1, card.height - 1], radius=int(card.width * share), fill=255)
+    card = card.copy()
+    card.putalpha(mask)
+    return card
 
 DISPLAY = "/System/Library/Fonts/Supplemental/Impact.ttf"
 MONO = "/System/Library/Fonts/Menlo.ttc"
@@ -170,6 +197,7 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=(), la
         (cx, cy), angle = spots[n]
         a = art[n]
         card = a.resize((228, int(228 * a.height / a.width)), Image.LANCZOS)
+        card = _rounded(card, corner(used[n][0]))
         card = card.rotate(angle, expand=True, resample=Image.BICUBIC)
         # The shadow is the card's own silhouette, blurred — a rectangle
         # behind a rotated card reads as a mistake.
@@ -270,6 +298,9 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=No
            f'<rect x="0" y="0" width="{W}" height="6" fill="#ffcb05"/>']
 
     spots = [(842, 296, -9), (948, 332, 0), (1046, 292, 9)]
+    # Clip ids must be unique on a page that shows several heroes (the
+    # indexes do), so they carry a hash of this picture's own identity.
+    uid = hashlib.md5(f"{kind}|{headline}|{published}".encode()).hexdigest()[:8]
     for n in range(min(len(cards), 3) - 1, -1, -1):
         card = cards[n]
         game, pid = card[0], int(card[1])
@@ -279,12 +310,17 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=No
         shown_name = name if len(name) <= 30 else name[:29].rstrip(" ·-") + "\u2026"
         cx, cy, angle = spots[n]
         cw, ch = 228, 319
+        # The clip shares the image's coordinates, so it turns with it.
+        rx = round(cw * corner(game), 1)
+        cid = f"hc-{uid}-{n}"
         out.append(
             f'<a class="report-hero-card" href="/catalog/{_esc(game)}/{pid}">'
             f'<title>{_esc(name)}</title>'
+            f'<clipPath id="{cid}"><rect x="{cx - cw // 2}" y="{cy - ch // 2}" '
+            f'width="{cw}" height="{ch}" rx="{rx}" ry="{rx}"/></clipPath>'
             f'<image href="{CDN}/{_esc(game)}/{pid}.jpg" x="{cx - cw // 2}" '
             f'y="{cy - ch // 2}" width="{cw}" height="{ch}" '
-            f'preserveAspectRatio="xMidYMid slice" '
+            f'preserveAspectRatio="xMidYMid slice" clip-path="url(#{cid})" '
             f'transform="rotate({angle} {cx} {cy})"/>'
             # Named in the picture itself while the pointer is on it; the
             # stylesheet fades this in, so it costs nothing at rest.

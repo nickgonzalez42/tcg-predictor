@@ -92,3 +92,26 @@ h1, h2, h3, h4 {
   font-size: 9.5px;
   margin-top: var(--space-5);
 }
+
+/* Card art corners (2026-11-07). TCGplayer's scans are a rounded card on a
+   white field, so a square or lightly rounded <img> shows white triangles
+   at its corners. Every image from the card art CDN (or the dev route) is
+   clipped to the card's own corner, as a share of its width so it holds at
+   any size: 6% covers each game's scans (the 90th percentile over 60 cards
+   a game sits at 4-6%); Sorcery's are cut deeper, up to 10%. The vertical
+   radius is the same length on a 63:88 card. The pipeline's hero pictures
+   and the static pages use the same two numbers (report_thumbnail.CORNER).
+   White-bordered cards stay white at the corners: that is the card. */
+:root {
+  --card-corner: 6%;
+}
+
+img[src*="d18pzythfo0bgy.cloudfront.net/"],
+img[src*="/card-images/"] {
+  border-radius: var(--card-corner) / calc(var(--card-corner) * 0.716);
+}
+
+img[src*="d18pzythfo0bgy.cloudfront.net/sorcery/"],
+img[src*="/card-images/sorcery/"] {
+  --card-corner: 10%;
+}

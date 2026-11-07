@@ -11,8 +11,12 @@ const ALLOWED = new Set(
 // tables, internal card links, and inline SVG bar/line charts.
 // IMAGE and TITLE joined for the report hero (2026-10-30): its card art and
 // the tooltips naming each card and game bar.
+// CLIPPATH (2026-11-07): the hero clips each card's art to its rounded
+// corners; the clip's id and the image's clip-path reference are matched
+// to the pipeline's own pattern below, nothing else carries an id or a url().
 const REPORT_SVG = new Set(
-    ['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE', 'IMAGE', 'TITLE']);
+    ['SVG', 'G', 'LINE', 'RECT', 'TEXT', 'POLYLINE', 'CIRCLE', 'IMAGE', 'TITLE', 'CLIPPATH']);
+const CLIP_ID = /^hc-[a-f0-9]{8}-\d$/;
 // The only off-site URL any report may reference: the card image CDN.
 const IMAGE_HOST = 'https://d18pzythfo0bgy.cloudfront.net/';
 // IMG (2026-11-06): the per-game articles carry card art in their body,
@@ -26,7 +30,7 @@ const DROP_CONTENT = new Set(['SCRIPT', 'STYLE']);
 // Geometry/paint attributes the report charts use. Values are pattern-checked
 // (colors, numbers, point lists, var() references — never url()/scripts).
 const SVG_ATTRS = new Set([
-    'viewbox', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx',
+    'viewbox', 'x', 'y', 'x1', 'y1', 'x2', 'y2', 'cx', 'cy', 'r', 'rx', 'ry',
     'width', 'height', 'points', 'fill', 'stroke', 'stroke-width',
     'text-anchor', 'font-size', 'role', 'xmlns',
     // The hero's type and geometry.
@@ -51,6 +55,15 @@ function keptAttrs(el: Element, report: boolean): string {
     if (tag === 'IMAGE' && href && href.startsWith(IMAGE_HOST)
         && /^[\w-]+\/\d+\.(jpg|png|webp)$/.test(href.slice(IMAGE_HOST.length)))
         out += ` href="${escapeHtml(href)}"`;
+    if (tag === 'CLIPPATH') {
+        const id = el.getAttribute('id');
+        if (id && CLIP_ID.test(id)) out += ` id="${id}"`;
+    }
+    if (tag === 'IMAGE') {
+        const clip = el.getAttribute('clip-path');
+        const ref = clip?.match(/^url\(#(hc-[a-f0-9]{8}-\d)\)$/);
+        if (ref && CLIP_ID.test(ref[1])) out += ` clip-path="url(#${ref[1]})"`;
+    }
     if (tag === 'IMG') {
         const src = el.getAttribute('src');
         if (src && src.startsWith(IMAGE_HOST)
