@@ -89,6 +89,16 @@ def r1(v):
     return round(v, 1) if v is not None else None
 
 
+def prune(o):
+    """Drop null values from the facts pack: a null invites the writer to
+    remark on what is missing ("no all-games line on the books this week")."""
+    if isinstance(o, dict):
+        return {k: prune(v) for k, v in o.items() if v is not None}
+    if isinstance(o, list):
+        return [prune(v) for v in o]
+    return o
+
+
 STOP = {"the", "of", "a", "an", "and", "in", "on", "to", "edition", "set", "deck", "booster"}
 
 
@@ -453,7 +463,7 @@ def build_set_article(d, today, no_prose=False):
         facts["note"] = (f"The set is too new for a week of market history (under {YOUNG_DAYS} days "
                          "of prices), so there are no week moves yet; write about the chase list, "
                          "the ladder and the outlook.")
-    prose = {} if no_prose else (write_set_article(facts, sections) or {})
+    prose = {} if no_prose else (write_set_article(prune(facts), sections) or {})
 
     # ---- fallbacks ------------------------------------------------------
     if st["tracked"]:
@@ -655,7 +665,7 @@ def build_game_article(d, today, no_prose=False):
                   "record_on_this_game": d["record"]},
         "newest_set": d["newest"],
     }
-    prose = {} if no_prose else (write_game_article(facts, sections) or {})
+    prose = {} if no_prose else (write_game_article(prune(facts), sections) or {})
 
     lede = (f"{label} had {st['rose']:,} of {st['tracked']:,} tracked cards rise this week and "
             f"{st['fell']:,} fall, climbers averaging {st['avg_gain_pct']:+.1f} percent and fallers "
