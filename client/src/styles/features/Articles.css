@@ -21,11 +21,9 @@ a.articles__game:hover {
   color: var(--brand);
 }
 
-/* Filter row: game chips, then kind chips, wrapping on phones. */
+/* Filter row: one game chip per game, wrapping on phones. (The set-report /
+   game-report chips were removed 2026-11-07; the kind shows on each card.) */
 .articles__filters {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-10);
   margin: 0 0 var(--space-25);
 }
 
@@ -58,9 +56,19 @@ a.articles__game:hover {
   border-color: var(--brand);
 }
 
-.articles__more {
-  margin: var(--space-25) auto 0;
-  display: block;
+/* Page numbers under the grid (2026-11-07): the shared control, centred. */
+.articles .pagination {
+  justify-content: center;
+}
+
+.articles .pagination__pages {
+  width: auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.articles__end {
+  text-align: center;
 }
 
 .article__foot {

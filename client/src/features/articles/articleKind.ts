@@ -8,8 +8,6 @@ export const ARTICLE_KINDS: Record<ArticleKind, { label: string; long: string; c
     game: { label: 'Game', long: 'Game report', color: '#ff9e64' },
 };
 
-export const ARTICLE_KIND_ORDER = Object.keys(ARTICLE_KINDS) as ArticleKind[];
-
 export function articleKindLabel(kind: ArticleKind, short = false) {
     const meta = ARTICLE_KINDS[kind] ?? ARTICLE_KINDS.game;
     return short ? meta.label : meta.long;

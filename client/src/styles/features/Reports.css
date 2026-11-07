@@ -104,17 +104,22 @@
   font-size: 13.5px;
 }
 
+/* The picture sits above the link, so the item is a column and the link
+   fills whatever height the row leaves it (2026-11-07). A fixed 100% height
+   here measured the whole item, picture included, which pushed the summary
+   past its three lines and the tag line off the bottom of the card. */
 .reports__item {
+  display: flex;
+  flex-direction: column;
   padding: 0;
   overflow: hidden;
 }
 
-/* The whole item is one link: picture on top, then headline, summary and the
-   tag line (2026-10-30). Block, not flex, so the text keeps normal flow. */
 .reports__card {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1 1 auto;
+  min-height: 0;
   padding: 0 0 var(--space-20);
   color: inherit;
   text-decoration: none;
@@ -235,18 +240,21 @@
   line-height: 1.3;
 }
 
-/* The summary is a teaser on a card, not the whole lede. */
+/* The summary is a teaser on a card, not the whole lede: three lines, never
+   more, however tall the row is. The tag line takes the slack instead and
+   sits on the card's bottom edge. */
 .reports__card > .reports__summary {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  flex: 1 0 auto;
+  flex: 0 0 auto;
 }
 
 .reports__card > .reports__meta {
   display: flex;
-  margin-top: var(--space-20);
+  margin-top: auto;
+  padding-top: var(--space-20);
 }
 
 .reports__item-title {
