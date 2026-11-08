@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "lightweight-charts";
-import type { ISeriesApi, SeriesType, Time } from "lightweight-charts";
+import type { ISeriesApi, SeriesType, Time, ISeriesPrimitive, SeriesAttachedParameter, IPrimitivePaneView, IPrimitivePaneRenderer } from "lightweight-charts";
 import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
 import type { Forecast, PastForecast } from "../../app/models/card";
 import { GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
@@ -12,6 +12,64 @@ const RANGES: { key: string; label: string; months?: number }[] = [
     { key: '1y', label: '1Y', months: 12 },
     { key: 'all', label: 'ALL' },
 ];
+
+// The opening window follows how much history the card has (2026-11-08,
+// user rule): under 4 months of prices -> 1M, under 8 -> 6M, otherwise 1Y.
+// Never ALL: on a young card ALL is the same picture as 1M, and on an old one
+// the forecast chain's year-ahead endpoint stretched the price axis to twice
+// the card's price and squashed the history into the bottom third (the
+// 2026-10-28 phone complaint, which opened phones on 1Y for that reason).
+// Horizon names under the forecast dots (2026-11-08). The dots are spread
+// evenly rather than by time and the dates beneath them are blanked, so each
+// dot names its own horizon. A series primitive, redrawn with every frame;
+// the library's series markers size their text from a visible shape, so a
+// shapeless marker rendered its text tiny in the plot's corner.
+type HorizonLabel = { time: Time; value: number; text: string };
+class HorizonLabelsPrimitive implements ISeriesPrimitive<Time> {
+    private params: SeriesAttachedParameter<Time> | null = null;
+    private readonly view: IPrimitivePaneView;
+    private readonly labels: HorizonLabel[];
+    private readonly color: string;
+    constructor(labels: HorizonLabel[], color: string) {
+        this.labels = labels;
+        this.color = color;
+        const renderer: IPrimitivePaneRenderer = {
+            draw: target => {
+                const p = this.params;
+                if (!p) return;
+                const ts = p.chart.timeScale();
+                const { fontSize, fontFamily } = p.chart.options().layout;
+                target.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+                    ctx.font = `${fontSize}px ${fontFamily}`;
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'top';
+                    ctx.fillStyle = this.color;
+                    for (const l of this.labels) {
+                        const x = ts.timeToCoordinate(l.time);
+                        const y = p.series.priceToCoordinate(l.value);
+                        if (x == null || y == null) continue;
+                        // The last dot sits on the window's right edge, so a
+                        // centred label would be cut in half: keep it inside.
+                        const half = ctx.measureText(l.text).width / 2;
+                        const cx = Math.min(Math.max(x, half + 2), mediaSize.width - half - 2);
+                        ctx.fillText(l.text, cx, y + 8);   // clear of the 3px dot
+                    }
+                });
+            },
+        };
+        this.view = { zOrder: () => 'top', renderer: () => renderer };
+    }
+    attached(params: SeriesAttachedParameter<Time>) { this.params = params; }
+    detached() { this.params = null; }
+    paneViews() { return [this.view]; }
+}
+
+function defaultRange(series?: { date: string }[]): string {
+    if (!series?.length) return '1y';
+    const months = (Date.parse(series[series.length - 1].date) - Date.parse(series[0].date))
+        / (30.4375 * 86400e3);
+    return months < 4 ? '1m' : months < 8 ? '6m' : '1y';
+}
 
 type Props = {
     printing?: string;
@@ -32,7 +90,8 @@ function addDays(date: string, days: number) {
     return d.toISOString().slice(0, 10);
 }
 
-// Where each forecast horizon lands on the time axis, from the last real point.
+// Each forecast horizon's REAL target date, from the last real point (tooltip
+// and modal). Where its dot is DRAWN is decided in the chain builder below.
 // Fixed week-based lengths (4/26/52 weeks): month arithmetic has no answer for
 // "Aug 31 + 1 month" (setUTCMonth would roll it into October). The site serves
 // 1m/6m/12m only (1w is pipeline-internal; the weekly model was retired
@@ -131,11 +190,10 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     const { data: pastData } = useFetchCardForecastHistoryQuery({ game, id, printing });
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
-    // Phones open on the 1Y window (2026-10-28): on ALL the forecast chain's
-    // year-ahead endpoint stretched the price axis to twice the card's price
-    // and squashed the whole history into the bottom third of a small plot.
-    const [range, setRange] = useState(() =>
-        (typeof window !== 'undefined' && window.innerWidth < 520) ? '1y' : 'all');
+    // The tab the user picked, or null for the card's own default (see
+    // defaultRange); derived below once the history is known, so the first
+    // build already uses the right window and nothing flashes.
+    const [pickedRange, setRange] = useState<string | null>(null);
     const [showHint, setShowHint] = useState(() => IS_COARSE && !hintSeen());
     const [hidden, setHidden] = useState<Set<string>>(new Set());
     // 'latest' = most recent matured per horizon; a horizon key = all of that category.
@@ -171,6 +229,14 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     };
 
     const grades = data ? GRADE_TIERS.filter(g => data.series[g]?.length) : [];
+    const range = pickedRange
+        ?? defaultRange(data?.series[grades.includes(grade) ? grade : grades[0] ?? '']);
+
+    // A new card starts from its own default window, not the last card's tab
+    // (state adjusted during render, the React-sanctioned reset-on-prop-change).
+    const cardKey = `${game}/${id}/${printing ?? ''}`;
+    const [rangeCard, setRangeCard] = useState(cardKey);
+    if (rangeCard !== cardKey) { setRangeCard(cardKey); setRange(null); }
 
     // default to the first available tier once data arrives
     useEffect(() => {
@@ -301,7 +367,9 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 // Uniform tick labels (2026-10-01, user request): always
                 // "Sep 29". The library's default mixes "Sep", "29" and
                 // "2027" marks, which read as equal spans side by side.
-                tickMarkFormatter: (t: Time) =>
+                // No dates under the forecast stretch (2026-11-08): its dots
+                // are spread evenly, not by time, and each carries its label.
+                tickMarkFormatter: (t: Time) => String(t) > lastDate ? '' :
                     new Date(String(t) + 'T00:00:00Z').toLocaleDateString('en-US',
                         { month: 'short', day: 'numeric', timeZone: 'UTC' }),
             },
@@ -371,19 +439,33 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         }
 
         // Dashed gold forecast chain: one SEGMENT per period, each continuing
-        // from the previous horizon's endpoint — last real point -> 1w -> 1m
-        // -> 6m -> 12m — with a dot marking each horizon along the way.
+        // from the previous horizon's endpoint — last real point -> 1m -> 6m
+        // -> 12m — with a dot marking each horizon along the way.
         const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
             .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
         const last = points[points.length - 1];
         // Each future point keeps its forecast: it is hoverable (focus +
         // tooltip) and clickable (modal) like the earlier-forecast dots.
-        const chainFc = tierFc
+        // `time` is the REAL target date (tooltip, modal); `slot` is where the
+        // dot is DRAWN. Equal segments (2026-11-08, user: "make the forecast
+        // lengths on the chart equal lengths horizontally"): on the
+        // time-proportional axis the 1M dot sat a hair past today while 6M
+        // and 1Y stretched across the rest, so the dots are now spread evenly
+        // over the same total width the real chain would take. The dates
+        // under that stretch are blanked (tickMarkFormatter) and each dot
+        // carries its horizon label instead, so the axis never implies a
+        // linear scale it no longer has there.
+        const sorted = tierFc
             .map(f => ({ f, time: HORIZON_OFFSET[f.horizon](last.date), value: f.forecastPrice }))
             .sort((a, b) => a.time.localeCompare(b.time));
+        const spanDays = sorted.length
+            ? Math.round((Date.parse(sorted[sorted.length - 1].time) - Date.parse(last.date)) / 86400e3)
+            : 0;
+        const segDays = sorted.length ? Math.max(1, Math.round(spanDays / sorted.length)) : 0;
+        const chainFc = sorted.map((c, i) => ({ ...c, slot: addDays(last.date, segDays * (i + 1)) }));
         const chainPts = [
             { time: last.date, value: last.price },
-            ...chainFc.map(c => ({ time: c.time, value: c.value })),
+            ...chainFc.map(c => ({ time: c.slot, value: c.value })),
         ];
         for (let i = 0; i + 1 < chainPts.length; i++) {
             const seg = chart.addSeries(LineSeries, {
@@ -398,6 +480,10 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             });
             seg.setData([chainPts[i], chainPts[i + 1]]);
             track('forecast', seg);
+            // The horizon names under the dots stand in for the blanked dates.
+            if (i === 0) seg.attachPrimitive(new HorizonLabelsPrimitive(chainFc.map(c => ({
+                time: c.slot as Time, value: c.value, text: HORIZON_LABEL[c.f.horizon] ?? c.f.horizon,
+            })), textMuted));
         }
 
         // Past-forecast review: each matured prediction is a single dot placed
@@ -608,7 +694,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             }
             const scaleSeries = historySeries ?? focus;
             for (const c of chainFc) {
-                const x = ts.timeToCoordinate(c.time as Time);
+                const x = ts.timeToCoordinate(c.slot as Time);   // drawn position, not the real date
                 const y = scaleSeries.priceToCoordinate(c.value);
                 if (x == null || y == null) continue;
                 consider({ kind: 'future', c, d: Math.hypot(x - px, y - py), x, y,
@@ -684,7 +770,9 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         let windowEnd = chainEnd > lastDate ? chainEnd : lastDate;
         // Narrow screens, 1M tab: cap the window ~4 weeks past the last real
         // point so history isn't squeezed into a quarter of the plot by the
-        // year-long forecast chain (pan right to see the rest of it).
+        // year-long forecast chain (pan right to see the rest of it). With
+        // equal segments the 1M dot now sits a third of the way along that
+        // chain, so on this one view the dashed line leaves the frame.
         if (narrow && range === '1m') {
             const cap = addDays(lastDate, 28);
             if (cap < windowEnd) windowEnd = cap;
