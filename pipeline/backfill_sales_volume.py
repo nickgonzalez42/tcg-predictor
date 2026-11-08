@@ -20,6 +20,7 @@ Run:  .venv/bin/python backfill_sales_volume.py --game all --rpm 40 \
 """
 
 import argparse
+import collections
 import fcntl
 import json
 import os
@@ -41,6 +42,7 @@ PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "card
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
 # scraping its volume movement the day before").
 WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
+WATCH_CHECK = 100    # cards between looks at the watch file (~2.5 min at 40 rpm)
 BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
 LOCK_RETRIES = 5     # write attempts when another connection holds the database
 LOCK_WAIT_S = 10     # pause between those attempts (on top of the busy timeout)
@@ -217,16 +219,45 @@ def main():
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
 
     watch = watch_targets(conn, set(games))
-    if watch:
-        wset = {(g, p) for g, p, _m, _e in watch}
-        targets = watch + [t for t in targets if (t[0], t[1]) not in wset]
+    watch_seen = {(g, p) for g, p, _m, _e in watch}
+    queue = collections.deque(watch + [t for t in targets if (t[0], t[1]) not in watch_seen])
+    total = len(queue)
+    try:
+        watch_mtime = os.path.getmtime(WATCH_FILE)
+    except OSError:
+        watch_mtime = None
+
+    def splice_watch():
+        """A new or changed watch list goes to the front of the queue. A run
+        spans days (the 10:00 launch just exits while one is going), and the
+        nightly writes the list at ~07:00, usually while this run is paused
+        for the refresh or hours into its list; without this the list would
+        wait for whichever run happened to start next."""
+        nonlocal watch_mtime, total
+        try:
+            m = os.path.getmtime(WATCH_FILE)
+        except OSError:
+            return
+        if m == watch_mtime:
+            return
+        watch_mtime = m
+        fresh = [t for t in watch_targets(conn, set(games)) if (t[0], t[1]) not in watch_seen]
+        for t in reversed(fresh):
+            queue.appendleft(t)
+        watch_seen.update((t[0], t[1]) for t in fresh)
+        total += len(fresh)
 
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
     session = tp.make_session()
     ok = empty = fail = rows_total = 0
     streak = trips = 0
     skip = set()
-    for i, (game, pid, _mp, _ever) in enumerate(targets, 1):
+    i = 0
+    while queue:
+        game, pid, _mp, _ever = queue.popleft()
+        i += 1
+        if i % WATCH_CHECK == 0:
+            splice_watch()
         if (game, pid) in skip:
             continue
         # Yield to the nightly refresh (checked every 10 cards, ~15 s at
@@ -245,6 +276,7 @@ def main():
                 "SELECT game, product_id FROM tcg_sales_scan WHERE fetched_at > ?",
                 (cutoff,)))
             print(f"  refresh finished — resuming ({len(skip):,} now fresh)", flush=True)
+            splice_watch()
         try:
             h = tp.fetch_price_history(session, pid, args.delay)
         except Exception as e:
@@ -254,7 +286,7 @@ def main():
                 trips += 1
                 if trips >= MAX_TRIPS:
                     print(f"{MAX_TRIPS} cool-offs with no success between — giving up; "
-                          f"{len(targets) - i:,} stay due for the next run.", flush=True)
+                          f"{len(queue):,} stay due for the next run.", flush=True)
                     break
                 print(f"{BLOCK_LIMIT} consecutive failures ({type(e).__name__}) — "
                       f"cooling off {COOL_OFF_S // 60} min "
@@ -288,7 +320,7 @@ def main():
         if n == 0:
             empty += 1          # scanned + marked; no sales buckets to keep
         if i % 500 == 0:
-            print(f"  {i}/{len(targets)} ok={ok} empty={empty} fail={fail} "
+            print(f"  {i}/{total} ok={ok} empty={empty} fail={fail} "
                   f"rows={rows_total} ({datetime.now(timezone.utc):%m-%d %H:%M} UTC)",
                   flush=True)
     conn.commit()
