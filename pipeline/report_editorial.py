@@ -42,6 +42,25 @@ LIMITS = {"headline": 12, "lede": 70, "overview": 140, "model_note": 50,
           "model_lede": 60, "model_headline": 12}
 GAME_LIMIT = 55
 
+# Lore (2026-11-07, user: "Can we mix in some of the character's lore into
+# what's discussed about the card? Sparingly."). Shared with the per-game
+# articles (article_editorial.py imports it).
+LORE = """\
+Lore, sparingly: a card is usually a character, a creature, a machine or a \
+place from the game's own fiction (the anime, the films, the novels, the \
+game's story). You may draw on that lore for colour next to a card's \
+number: who the character is, what they are known for, one well-known \
+line or moment, read against what the price did. At most two or three \
+such touches in the whole piece, never two in one paragraph, one clause or \
+sentence each; the number stays the point. Use only lore you are certain \
+of and most fans would recognise; when you are not sure who a card \
+depicts, or two characters share a name, skip it. Never present lore as \
+the reason a price moved, never invent or stretch a detail to fit the \
+joke, never describe what the art shows unless the card's name says it. \
+Where a card carries an "about" line in the facts (its type, crew, source \
+series, traits), that is the universe and the incarnation you are looking at.\
+"""
+
 PROMPT = """You are the editor of CardStock's weekly trading-card market \
 report, read by collectors. Below is this week's complete, machine-computed \
 facts pack (JSON). Write the editorial prose around those numbers.
@@ -60,6 +79,8 @@ of weakness where it isn't.
 - No hype, no buy/sell advice, no exclamation points, no urgency.
 - NEVER use an em dash or en dash anywhere. Use a period, comma, colon, \
 semicolon, or parentheses instead.
+
+{lore}
 
 Hard rules:
 - Use ONLY numbers present in the facts pack, rounded exactly as given. \
@@ -164,7 +185,7 @@ def write_editorial(facts):
         print("report_editorial: claude CLI not found — keeping templated text")
         return None
 
-    prompt = PROMPT.format(facts=json.dumps(facts, indent=1),
+    prompt = PROMPT.format(lore=LORE, facts=json.dumps(facts, indent=1),
                            headline=LIMITS["headline"], lede=LIMITS["lede"],
                            overview=LIMITS["overview"],
                            game=GAME_LIMIT, model_note=LIMITS["model_note"],

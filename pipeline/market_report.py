@@ -863,9 +863,12 @@ def game_week_series(synth, game, names, dates):
     return out
 
 
-def line_chart(dates, series, title=None):
+def line_chart(dates, series, title=None, xfmt=None):
     """Multi-line SVG: series = [(label, [pct-or-None per date], color)], each
-    line tagged at its right edge with the label and closing value."""
+    line tagged at its right edge with the label and closing value. `dates`
+    are the x positions' labels (ISO dates by default, printed MM-DD; xfmt
+    formats them otherwise, e.g. an age axis in days)."""
+    fmt = xfmt or (lambda s: s[5:])
     W, H, PADT, PADB, LX = 640, 250, 12, 22, 46
     if title:
         PADT += 20
@@ -895,7 +898,7 @@ def line_chart(dates, series, title=None):
                      f"fill='var(--text-muted, #8b96ad)'>{v:+.1f}%</text>")
     for i, anchor in ((0, "start"), (len(dates) - 1, "end")):
         parts.append(f"<text x='{X(i):.1f}' y='{H - 6}' text-anchor='{anchor}' font-size='10' "
-                     f"fill='var(--text-muted, #8b96ad)'>{dates[i][5:]}</text>")
+                     f"fill='var(--text-muted, #8b96ad)'>{esc(fmt(dates[i]))}</text>")
     # lines, then right-edge labels nudged apart so converging lines stay legible
     labels = []
     for label, ys, color in series:

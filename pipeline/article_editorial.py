@@ -27,7 +27,7 @@ import re
 import subprocess
 import sys
 
-from report_editorial import _clean, _find_cli, _headline
+from report_editorial import LORE, _clean, _find_cli, _headline
 
 LIMITS = {"headline": 12, "lede": 85, "closer": 32}
 SECTION_LIMIT = 95
@@ -84,6 +84,8 @@ article for collectors. Below is the complete, machine-computed facts pack \
 
 {rules}
 
+{lore}
+
 The article is a {kind_desc}. Its sections, in order, each with a picture \
 or a chart the caption goes under:
 {sections}
@@ -136,7 +138,7 @@ def _write(kind, facts, sections, headline_names):
         print("article_editorial: claude CLI not found, keeping templated text")
         return None
     prompt = PROMPT.format(
-        voice=VOICE, rules=RULES, kind_desc=KIND_DESC[kind],
+        voice=VOICE, rules=RULES, lore=LORE, kind_desc=KIND_DESC[kind],
         sections="\n".join(f'- "{k}": {d}' for k, d in sections),
         headline=LIMITS["headline"], lede=LIMITS["lede"], section=SECTION_LIMIT,
         header=HEADER_LIMIT, caption=CAPTION_LIMIT, closer=LIMITS["closer"],
@@ -144,7 +146,8 @@ def _write(kind, facts, sections, headline_names):
     try:
         out = subprocess.run(
             [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],
-            input=prompt, capture_output=True, text=True, timeout=420)
+            input=prompt, capture_output=True, text=True,
+            timeout=int(os.environ.get("TCG_PROSE_TIMEOUT", "600")))
     except (subprocess.TimeoutExpired, OSError) as e:
         print(f"article_editorial: CLI failed ({type(e).__name__}), keeping templated text",
               file=sys.stderr)
