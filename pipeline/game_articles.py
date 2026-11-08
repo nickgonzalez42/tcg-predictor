@@ -25,22 +25,29 @@ an `articles` table in predictions.db, so they ship with the nightly push
 and the API serves them read-only at /api/articles; article_pages.py
 renders the crawler-visible static copies.
 
-Schedule (the run's nominal day is the UTC date, like market_report.py: the
-Sunday-night refresh IS Monday in UTC, so Monday's games go live Monday
-morning). Two games a day, Monday to Saturday, so every game gets its two
-articles once a week and the index has something new every day:
+Schedule (2026-11-07, user rules; the run's nominal day is the UTC date, like
+market_report.py: the Sunday-night refresh IS Monday in UTC). No fixed
+weekday any more. Every night the planner looks at each (game, kind) slot's
+last article and writes the slot if it is due (never written, or
+FORCE_GAP_DAYS since the last one) or if a seeded coin toss (DAILY_ODDS)
+says so, never inside MIN_GAP_DAYS of the last one and never more than
+MAX_PER_NIGHT a night; see plan(). The promise: every slot at least once
+every two weeks, on a random day.
 
-  Monday     Pokémon, Magic
-  Tuesday    Yu-Gi-Oh!, One Piece
-  Wednesday  Lorcana, Digimon
-  Thursday   Star Wars Unlimited, Flesh and Blood
-  Friday     Gundam, Riftbound        (alongside the market + model reports)
-  Saturday   Sorcery, Cyberpunk
-  Sunday     none
+Two more rules from the same request:
+  * the set article waits until the set is SET_MIN_AGE_DAYS old (a week of
+    prices before it is written up); a younger newest set is skipped and the
+    set before it is covered instead, see pick_set()
+  * the set slot alternates between two focuses: the newest set itself and
+    the game's OTHER recent releases, every priced card released inside
+    RECENT_DAYS that is not in that set (promos, starter decks, side
+    products, the set before it), slug new-releases-{game}-{date}, column
+    focus = 'recent'; a pool under RECENT_MIN_CARDS runs the set focus again
 
-Run:  game_articles.py                 # today's scheduled games (no-op on Sunday)
+Run:  game_articles.py                 # tonight's plan
+      game_articles.py --plan          # print tonight's plan, write nothing
       game_articles.py --all           # every game, both kinds, right now
-      game_articles.py --game onepiece --kind set
+      game_articles.py --game onepiece --kind set [--focus recent]
       game_articles.py --all --no-prose   # templated text only (no Claude call)
 """
 
@@ -48,11 +55,12 @@ import argparse
 import collections
 import json
 import os
+import random
 import re
 import sqlite3
 import statistics
 import sys
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from math import exp
 from urllib.parse import quote
 
@@ -65,14 +73,23 @@ from market_report import (                               # noqa: E402
     find_trends, pick_trends, trend_phrase, live_accuracy,
     bar_chart, line_chart, esc, card_link, money, pct, short_label,
 )
-from article_editorial import write_set_article, write_game_article   # noqa: E402
+from article_editorial import write_set_article, write_game_article, write_recent_article   # noqa: E402
 
 CDN = "https://d18pzythfo0bgy.cloudfront.net"
 SITE = "https://cardstock.guide"
 
-SCHEDULE = {0: ["pokemon", "magic"], 1: ["yugioh", "onepiece"],
-            2: ["lorcana", "digimon"], 3: ["starwars", "fleshandblood"],
-            4: ["gundam", "riftbound"], 5: ["sorcery", "cyberpunk"], 6: []}
+# Planner (2026-11-07): "Randomize the release of each article for each game
+# but each type for each game should release at least once every two weeks."
+# Expected gap about 9 days, about 2.7 articles a night at ~6.5 min of prose
+# each; FORCE sits a day inside the two-week promise so a night where more
+# than MAX_PER_NIGHT slots fall due can slip one by a day and still keep it.
+MIN_GAP_DAYS = 5          # never the same slot twice inside a working week
+FORCE_GAP_DAYS = 13       # due: written tonight, longest wait first
+DAILY_ODDS = 0.22         # between the two: tonight's chance, seeded by date|game|kind
+MAX_PER_NIGHT = 4         # the refresh must still end by 7 AM
+SET_MIN_AGE_DAYS = 7      # "let the set at least be a week old"
+RECENT_DAYS = 90          # the other focus: cards released inside this window ...
+RECENT_MIN_CARDS = 8      # ... outside the set; fewer and the set focus runs instead
 
 LATEST_SET_MIN_CARDS = 20     # the API's own floor for "newest set"
 SET_INDEX_MIN_CARDS = 8       # a set-index point needs this many priced cards
@@ -82,7 +99,7 @@ PICKS_N = 5
 MIN_SET_TRACKED = 6           # a set earns a bar on the game chart with this many
 LADDER = [("under $1", 0, 1), ("$1 to $5", 1, 5), ("$5 to $20", 5, 20),
           ("$20 to $50", 20, 50), ("$50 to $100", 50, 100), ("$100 and up", 100, None)]
-KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT"}
+KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASES"}
 
 
 def r1(v):
@@ -127,7 +144,10 @@ def slugify(name):
 def catalog(game):
     """pid -> {name, set, rarity, price, release} for priced, named cards.
     Older per-game schemas (One Piece) have no release_date column."""
-    con = sqlite3.connect(os.path.join(BASE, GAMES[game]["db"]))
+    path = os.path.join(BASE, GAMES[game]["db"])
+    if not os.path.exists(path):          # a game without a catalog yet
+        return {}
+    con = sqlite3.connect(path)
     con.execute("PRAGMA busy_timeout=30000")
     have = {r[1] for r in con.execute("PRAGMA table_info(cards)")}
     rel = "release_date" if "release_date" in have else "NULL"
@@ -145,39 +165,99 @@ def catalog(game):
     return out
 
 
-def newest_set(cat, today):
-    """The game's newest set, the way the catalog's default view picks it
-    (CardsController.LatestSet): sets with 20+ priced cards, the most common
-    release date per set, newest not-in-the-future date wins; a game whose
-    schema carries no release dates ranks sets by median product id."""
+def ranked_sets(cat, today):
+    """The game's sets newest first, the way the catalog's default view picks
+    its newest (CardsController.LatestSet): sets with 20+ priced cards, the
+    most common release date per set, newest not-in-the-future date first
+    (ties: the bigger set); a game whose schema carries no release dates
+    ranks sets by median product id."""
     sizes = collections.Counter(c["set"] for c in cat.values() if c["set"])
     big = {s for s, n in sizes.items() if n >= LATEST_SET_MIN_CARDS}
     if not big:
-        return None
+        return []
     dated = collections.defaultdict(collections.Counter)
     for c in cat.values():
         if c["set"] in big and c["release"]:
             dated[c["set"]][c["release"]] += 1
     if dated:
         iso = today.isoformat()
-        best = None
+        keyed = []
         for s, dates in dated.items():
             common = dates.most_common(1)[0][0]
-            if common <= iso and (best is None or (common, sizes[s]) > (best[1], sizes[best[0]])):
-                best = (s, common)
-        if best:
-            return best[0]
+            if common <= iso:
+                keyed.append(((common, sizes[s]), s))
+        if keyed:
+            return [s for _k, s in sorted(keyed, reverse=True)]
     ids = collections.defaultdict(list)
     for pid, c in cat.items():
         if c["set"] in big:
             ids[c["set"]].append(pid)
-    return max(ids, key=lambda s: sorted(ids[s])[len(ids[s]) // 2])
+    return sorted(ids, key=lambda s: -sorted(ids[s])[len(ids[s]) // 2])
+
+
+def newest_set(cat, today):
+    ranked = ranked_sets(cat, today)
+    return ranked[0] if ranked else None
 
 
 def set_release(cat, set_name):
     dates = collections.Counter(c["release"] for c in cat.values()
                                 if c["set"] == set_name and c["release"])
     return dates.most_common(1)[0][0] if dates else None
+
+
+def set_history(pc, game, pids):
+    """{date: {pid: price}}: the cards' TCGplayer NM base-printing history."""
+    pids = list(pids)
+    if not pids:
+        return {}
+    try:
+        rows = pc.execute(
+            f"SELECT date, product_id, price FROM tcg_nm_history WHERE game=? AND printing='' "
+            f"AND price>0 AND product_id IN ({','.join('?' * len(pids))}) ORDER BY date",
+            [game, *pids]).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    by_date = collections.defaultdict(dict)
+    for d, pid, p in rows:
+        by_date[d][pid] = p
+    return by_date
+
+
+def broad_days(by_date, n_members):
+    """The dates on which enough of the set was priced to call it on sale."""
+    floor = min(SET_INDEX_MIN_CARDS, max(3, n_members // 3))
+    return [d for d in sorted(by_date) if len(by_date[d]) >= floor]
+
+
+def set_age_days(pc, game, cat, set_name, today, by_date=None):
+    """Days since the set came out: its most common release date, or, for a
+    schema without one (One Piece), its first broadly priced day. None when
+    neither is known."""
+    rel = set_release(cat, set_name)
+    if not rel:
+        pids = [pid for pid, c in cat.items() if c["set"] == set_name]
+        if by_date is None:
+            by_date = set_history(pc, game, pids)
+        days = broad_days(by_date, len(pids))
+        rel = days[0] if days else None
+    return (today - date.fromisoformat(rel)).days if rel else None
+
+
+def pick_set(pc, game, cat, today):
+    """The set the set article covers: the newest one at least SET_MIN_AGE_DAYS
+    old (user rule 2026-11-07: a set gets a week of prices before it is written
+    up), stepping down the ranking past younger ones. Returns (set_name,
+    age_days, [younger sets skipped]) or (None, None, []) ."""
+    skipped = []
+    for s in ranked_sets(cat, today)[:6]:
+        age = set_age_days(pc, game, cat, s, today)
+        if age is not None and age >= SET_MIN_AGE_DAYS:
+            return s, age, skipped
+        skipped.append(s)
+        print(f"{game}: {s} is {age if age is not None else 'an unknown number of'} days old, "
+              f"under {SET_MIN_AGE_DAYS}; looking at the set before it")
+    return None, None, skipped
 
 
 def ladder(prices):
@@ -327,9 +407,9 @@ def model_corner(prose, key, header, body_text, picks, game, record, links):
     return "".join(out)
 
 
-def hero_and_thumb(kind, game, title, today, stats, cards, spark):
+def hero_and_thumb(kind, game, title, today, stats, cards, spark, focus=None):
     from report_thumbnail import render_svg
-    label = f"{GAMES[game]['label'].upper()} · {KIND_LABEL[kind]}"
+    label = f"{GAMES[game]['label'].upper()} · {KIND_LABEL['recent' if focus == 'recent' else kind]}"
     pub = today.strftime("%B %-d, %Y")
     hero = render_svg(kind, title, pub, stats, cards, spark, label=label)
     thumb = {"kind": kind, "label": label, "stats": stats, "spark": spark,
@@ -344,7 +424,7 @@ def window_line(w):
 # ---------------------------------------------------------------------------
 # SET article
 # ---------------------------------------------------------------------------
-def collect_set(pc, pred, game, cat, set_name, synth, window, young, today):
+def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skipped=()):
     label = GAMES[game]["label"]
     baseline, latest, dates = window
     members = {pid: c for pid, c in cat.items() if c["set"] == set_name}
@@ -353,7 +433,11 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today):
     moves = [m for m in moves if not m[5]]            # base printings only
     by_pid = {m[0]: m for m in moves}
     stats = move_stats(moves)
-    release = set_release(cat, set_name)
+    by_date = set_history(pc, game, members)
+    broad = broad_days(by_date, len(members))
+    # A schema without release dates (One Piece) dates the set by its first
+    # broadly priced day, the same day its price index starts.
+    release = set_release(cat, set_name) or (broad[0] if broad else None)
     age = (today - date.fromisoformat(release)).days if release else None
 
     chase = sorted(members.items(), key=lambda kv: -kv[1]["price"])[:CHASE_N * 2]
@@ -378,33 +462,20 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today):
 
     # Price index since the set's first broadly priced day.
     history = None
-    try:
-        pids = list(members)
-        rows = pc.execute(
-            f"SELECT date, product_id, price FROM tcg_nm_history WHERE game=? AND printing='' "
-            f"AND price>0 AND product_id IN ({','.join('?' * len(pids))}) ORDER BY date",
-            [game, *pids]).fetchall()
-    except sqlite3.OperationalError:
-        rows = []
-    if rows:
-        by_date = collections.defaultdict(dict)
-        for d, pid, p in rows:
-            by_date[d][pid] = p
-        broad = [d for d in sorted(by_date) if len(by_date[d]) >= min(SET_INDEX_MIN_CARDS, max(3, len(members) // 3))]
-        if len(broad) >= 3:
-            first = broad[0]
-            base = {pid: p for pid, p in by_date[first].items() if p >= 1.0}
-            pts = []
-            for d in broad:
-                ratios = [by_date[d][pid] / b for pid, b in base.items() if pid in by_date[d]]
-                ratios = [x for x in ratios if 1 / MAX_WEEK_RATIO <= x <= MAX_WEEK_RATIO]
-                if len(ratios) >= max(3, len(base) // 2):
-                    pts.append((d, (statistics.mean(ratios) - 1) * 100))
-            if len(pts) >= 3:
-                if len(pts) > 40:          # keep the chart readable: ~40 points, ends kept
-                    step = len(pts) / 39
-                    pts = [pts[int(i * step)] for i in range(39)] + [pts[-1]]
-                history = {"dates": [p[0] for p in pts], "index": [p[1] for p in pts]}
+    if len(broad) >= 3:
+        first = broad[0]
+        base = {pid: p for pid, p in by_date[first].items() if p >= 1.0}
+        pts = []
+        for d in broad:
+            ratios = [by_date[d][pid] / b for pid, b in base.items() if pid in by_date[d]]
+            ratios = [x for x in ratios if 1 / MAX_WEEK_RATIO <= x <= MAX_WEEK_RATIO]
+            if len(ratios) >= max(3, len(base) // 2):
+                pts.append((d, (statistics.mean(ratios) - 1) * 100))
+        if len(pts) >= 3:
+            if len(pts) > 40:          # keep the chart readable: ~40 points, ends kept
+                step = len(pts) / 39
+                pts = [pts[int(i * step)] for i in range(39)] + [pts[-1]]
+            history = {"dates": [p[0] for p in pts], "index": [p[1] for p in pts]}
 
     calls, picks = forecast_bits(pred, game, cat, pids=set(members), min_pick=MIN_BASE)
     tracked_old = sum(m[2] for m in moves)
@@ -418,6 +489,7 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today):
         "rarities": rarities, "history": history,
         "ladder": ladder([c["price"] for c in members.values()]),
         "calls": calls, "picks": picks, "record": record_for(pred, game),
+        "skipped": list(skipped),
     }
 
 
@@ -463,6 +535,11 @@ def build_set_article(d, today, no_prose=False):
         facts["note"] = (f"The set is too new for a week of market history (under {YOUNG_DAYS} days "
                          "of prices), so there are no week moves yet; write about the chase list, "
                          "the ladder and the outlook.")
+    if d["skipped"]:
+        facts["note_newer"] = (f"{', '.join(d['skipped'])} came out under {SET_MIN_AGE_DAYS} days ago and "
+                               f"gets its own article once it has a week of prices; this one is about "
+                               f"{set_name}. You may say so in one sentence; do not guess at the newer "
+                               "set's prices.")
     prose = {} if no_prose else (write_set_article(prune(facts), sections) or {})
 
     # ---- fallbacks ------------------------------------------------------
@@ -483,6 +560,9 @@ def build_set_article(d, today, no_prose=False):
             "both ends of the week <em>and</em> worth at least $5 at the start; cheaper cards "
             "are left out because a few cents of movement reads as a large, meaningless "
             "percentage.</p>"]
+    if d["skipped"]:
+        body.append(f"<p class='report-note'>{esc(', '.join(d['skipped']))} is under a week old and "
+                    "gets its own article once it has a week of prices.</p>")
 
     # Chase cards
     tiles = []
@@ -584,8 +664,246 @@ def build_set_article(d, today, no_prose=False):
              if r["median_move_pct"] is not None and r["tracked"] >= 2][:8]
     cards = [[game, pid, name] for pid, name, *_ in d["chase"] if has_art(game, pid)][:3]
     hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, spark)
-    return {"slug": f"set-report-{game}-{today.isoformat()}", "kind": "set", "game": game,
-            "set_name": set_name, "title": title, "summary": lede,
+    return {"slug": f"set-report-{game}-{today.isoformat()}", "kind": "set", "focus": "set",
+            "game": game, "set_name": set_name, "title": title, "summary": lede,
+            "body_html": "".join(body), "thumb": thumb, "hero": hero}
+
+
+# ---------------------------------------------------------------------------
+# NEW RELEASES article: the set slot's other focus (2026-11-07, user: "the set
+# analysis should switch back and forth between the set and any cards
+# released recently that aren't in the set")
+# ---------------------------------------------------------------------------
+def released_on(pc, game, cat):
+    """pid -> release date: the catalog's release_date, or, for a schema
+    without one (One Piece), the first day of the card's TCGplayer price
+    series."""
+    if any(c["release"] for c in cat.values()):
+        return {pid: c["release"] for pid, c in cat.items() if c["release"]}
+    try:
+        return dict(pc.execute(
+            "SELECT product_id, MIN(date) FROM tcg_nm_history "
+            "WHERE game=? AND printing='' AND price>0 GROUP BY product_id", (game,)).fetchall())
+    except sqlite3.OperationalError:
+        return {}
+
+
+def recent_pool(released, cat, anchor, today):
+    """Priced cards released inside RECENT_DAYS, at least SET_MIN_AGE_DAYS
+    ago, that are not in the anchor set."""
+    lo = (today - timedelta(days=RECENT_DAYS)).isoformat()
+    hi = (today - timedelta(days=SET_MIN_AGE_DAYS)).isoformat()
+    return {pid: c for pid, c in cat.items()
+            if c["set"] != anchor and lo <= released.get(pid, "") <= hi}
+
+
+def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, young, today):
+    label = GAMES[game]["label"]
+    baseline, latest, dates = window
+    names = {pid: c["name"] for pid, c in pool.items()}
+    moves = game_moves(synth, game, baseline, latest, names, young) if baseline else []
+    moves = [m for m in moves if not m[5]]            # base printings only
+    by_pid = {m[0]: m for m in moves}
+    stats = move_stats(moves)
+
+    chase = sorted(pool.items(), key=lambda kv: -kv[1]["price"])[:CHASE_N * 2]
+    chase = [(pid, c["name"], c["price"], c["set"] or "Other",
+              by_pid[pid][4] if pid in by_pid else None) for pid, c in chase]
+    ups = sorted((m for m in moves if m[4] > 0.5), key=lambda m: -m[4])
+    downs = sorted((m for m in moves if m[4] < -0.5), key=lambda m: m[4])
+
+    prod = collections.defaultdict(lambda: {"prices": [], "moves": [], "dates": collections.Counter()})
+    for pid, c in pool.items():
+        p = prod[c["set"] or "Other"]
+        p["prices"].append(c["price"])
+        p["dates"][released[pid]] += 1
+        if pid in by_pid:
+            p["moves"].append(by_pid[pid][4])
+    products = []
+    for name, p in prod.items():
+        products.append({"product": name, "cards_priced": len(p["prices"]),
+                         "released": p["dates"].most_common(1)[0][0],
+                         "value_usd": round(sum(p["prices"]), 2),
+                         "median_price_usd": round(statistics.median(p["prices"]), 2),
+                         "tracked": len(p["moves"]),
+                         "median_move_pct": r1(statistics.median(p["moves"])) if p["moves"] else None})
+    products.sort(key=lambda x: (-x["cards_priced"], x["product"]))
+
+    calls, picks = forecast_bits(pred, game, cat, pids=set(pool), min_pick=MIN_BASE)
+    tracked_old = sum(m[2] for m in moves)
+    tracked_new = sum(m[3] for m in moves)
+    return {
+        "game": game, "label": label, "anchor": anchor, "week": {"start": baseline, "end": latest},
+        "cards_priced": len(pool), "pool_value": round(sum(c["price"] for c in pool.values()), 2),
+        "tracked_value_change_pct": r1((tracked_new / tracked_old - 1) * 100) if tracked_old else None,
+        "stats": stats, "chase": chase, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
+        "products": products, "ladder": ladder([c["price"] for c in pool.values()]),
+        "calls": calls, "picks": picks, "record": record_for(pred, game),
+    }
+
+
+RECENT_SECTIONS = [
+    ("chase", "the most valuable of these newer cards, with each one's price, the release it came from and its move this week"),
+    ("movers", "this week's biggest risers and fallers among them"),
+    ("products", "the releases they come from (promos, decks, side products, the set before the newest): how many priced cards each has, what they cost and how each moved this week"),
+    ("ladder", "how these cards spread across price bands"),
+    ("outlook", "what the model's one-month calls say about them, and the model's own record on this game"),
+]
+
+
+def build_recent_article(d, today, no_prose=False):
+    game, label, anchor = d["game"], d["label"], d["anchor"]
+    st = d["stats"]
+    sections = [s for s in RECENT_SECTIONS if not (s[0] == "movers" and st["tracked"] == 0)]
+    n_prod = len(d["products"])
+    facts = {
+        "game": label, "newest_set": anchor,
+        "scope": (f"every priced {label} card released in the last {RECENT_DAYS} days that is NOT in "
+                  f"{anchor}, the newest set (which has its own article): promos, starter decks, side "
+                  f"products and the set before it; cards under {SET_MIN_AGE_DAYS} days old are left out"),
+        "week": d["week"],
+        "totals": {"cards_priced": d["cards_priced"], "releases": n_prod, "value_usd": d["pool_value"],
+                   "tracked_value_change_pct": d["tracked_value_change_pct"], **st},
+        "chase": [{"name": n, "price_usd": round(p, 2), "release": s, "week_pct": r1(w)}
+                  for _pid, n, p, s, w in d["chase"][:CHASE_N]],
+        "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4])}
+                          for m in d["ups"][:MOVERS_N]],
+                   "down": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4])}
+                            for m in d["downs"][:MOVERS_N]]},
+        "releases": d["products"][:10],
+        "ladder": [{"band": b, "cards": n} for b, n in d["ladder"]],
+        "model": {"calls_1m": d["calls"],
+                  "top_climbs": [{"name": n, "current_usd": round(now, 2), "forecast_usd": round(fc, 2),
+                                  "implied_pct": r1(imp)} for _pid, n, now, fc, imp in d["picks"]],
+                  "record_on_this_game": d["record"]},
+    }
+    if st["tracked"] == 0:
+        facts["note"] = ("None of these cards has a week of market history yet, so there are no week "
+                         "moves; write about the chase list, the releases, the ladder and the outlook.")
+    prose = {} if no_prose else (write_recent_article(prune(facts), sections) or {})
+
+    # ---- fallbacks ------------------------------------------------------
+    short_anchor = short_label(anchor, 30)
+    if st["tracked"]:
+        lede = (f"Outside {anchor}, {label}'s other recent releases come to {d['cards_priced']} priced "
+                f"cards from {n_prod} products, and {st['rose']} of the {st['tracked']} tracked ones rose "
+                f"this week while {st['fell']} fell, a median move of {st['median_move_pct']:+.1f} percent.")
+        title = (f"Beyond {short_anchor}: {d['cards_priced']} newer {label} cards, "
+                 f"{st['rose']} up and {st['fell']} down")
+    else:
+        lede = (f"Outside {anchor}, {label} has {d['cards_priced']} priced cards from {n_prod} other recent "
+                f"releases, worth {money(d['pool_value'])} together and too new for a week of market "
+                "history yet.")
+        title = f"Beyond {short_anchor}: {d['cards_priced']} other new {label} cards"
+    lede = prose.get("lede") or lede
+    title = prose.get("headline") or title
+
+    body = [f"<p class='report-lede'>{esc(lede)}{esc(window_line(d['week']))}</p>",
+            f"<p class='report-note'>This article covers every priced {esc(label)} card released in the "
+            f"last {RECENT_DAYS} days that is not in {esc(anchor)}, which has "
+            f"<a href='/articles?game={game}'>its own article</a>: promos, decks, side products and "
+            f"the set before it. Cards under a week old wait for their first week of prices. “Tracked” "
+            "cards are those with a market price on both ends of the week <em>and</em> worth at least "
+            "$5 at the start.</p>"]
+
+    # Chase cards
+    tiles = []
+    for pid, name, price, product, w in d["chase"]:
+        if len(tiles) == CHASE_N:
+            break
+        if not has_art(game, pid):
+            continue
+        meta = (money(price)
+                + (f" · <span class='{'report-up' if w > 0 else 'report-down'}'>{pct(w)}</span>"
+                   if w is not None and abs(w) > 0.5 else "")
+                + f" · {esc(short_label(product, 22))}")
+        tiles.append(card_tile(game, pid, name, meta))
+    top = d["chase"][0] if d["chase"] else None
+    body.append(section(
+        prose, "chase", "The Chase List",
+        (f"The most valuable of them is {top[1]} from {top[3]} at {money(top[2])}." if top else
+         "No priced cards yet."),
+        grid(tiles), f"The priciest {label} cards outside {short_anchor}."))
+
+    # Movers
+    if st["tracked"]:
+        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}")
+                 for m in d["ups"] if has_art(game, m[0])][:MOVERS_N]
+        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}")
+                  for m in d["downs"] if has_art(game, m[0])][:MOVERS_N]
+        bt = d["ups"][0] if d["ups"] else None
+        wt = d["downs"][0] if d["downs"] else None
+        txt = " ".join(filter(None, [
+            f"{bt[1]} led them, up {pct(bt[4])} to {money(bt[3])}." if bt else None,
+            f"{wt[1]} fell furthest, {pct(wt[4])} to {money(wt[3])}." if wt else None])) \
+            or "None of them moved more than half a percent this week."
+        body.append(section(prose, "movers", "This Week's Movers", txt, grid(tiles),
+                            "Risers on the left, fallers on the right."))
+
+    # Releases
+    rows = [(short_label(p["product"], 28), p["median_move_pct"],
+             f"{p['tracked']} cards · median {money(p['median_price_usd'])}")
+            for p in d["products"] if p["median_move_pct"] is not None and p["tracked"] >= 2]
+    rows.sort(key=lambda r: -r[1])
+    chart = bar_chart(rows, title=f"{label}: median move by release") if rows else ""
+    table = ["<table class='report-table'><thead><tr><th>Release</th><th>Out since</th><th>Priced</th>"
+             "<th>Median price</th><th>Tracked</th><th>Median move</th></tr></thead><tbody>"]
+    for p in d["products"][:12]:
+        link = (f"<a href='/catalog?game={game}&amp;sets={quote(p['product'], safe='')}'>{esc(p['product'])}</a>"
+                if "," not in p["product"] else esc(p["product"]))
+        table.append(f"<tr><td>{link}</td><td>{esc(p['released'])}</td><td>{p['cards_priced']}</td>"
+                     f"<td>{money(p['median_price_usd'])}</td><td>{p['tracked']}</td>"
+                     f"<td>{pct(p['median_move_pct']) if p['median_move_pct'] is not None else '–'}</td></tr>")
+    table.append("</tbody></table>")
+    biggest = d["products"][0] if d["products"] else None
+    pricey = max(d["products"], key=lambda p: p["median_price_usd"]) if d["products"] else None
+    txt = " ".join(filter(None, [
+        f"{biggest['product']} is the biggest of them with {biggest['cards_priced']} priced cards." if biggest else None,
+        (f"{pricey['product']} is the priciest at a median {money(pricey['median_price_usd'])}."
+         if pricey and pricey is not biggest else None)])) or "No releases to show."
+    body.append(section(prose, "products", "Where They Came From", txt, chart + "".join(table),
+                        "Each release outside the newest set, by median move this week."))
+
+    # Ladder
+    chart = bar_chart([(b, n, None) for b, n in d["ladder"]], unit=" cards", signed=False,
+                      color="var(--primary, #3d7dca)", decimals=0,
+                      title=f"{label}: newer cards outside {short_label(anchor, 24)} by price band")
+    over5 = sum(n for b, n in d["ladder"][2:])
+    body.append(section(
+        prose, "ladder", "Where the Money Sits",
+        f"{over5} of these {d['cards_priced']} priced cards are worth $5 or more.",
+        chart, "Every one of them, sorted into bands."))
+
+    # Outlook (model corner) + closer
+    c = d["calls"]
+    rec = d["record"]
+    linkable = [p["product"] for p in d["products"] if "," not in p["product"]][:4]
+    links = ((f"<a href='/catalog?game={game}&amp;sets={','.join(quote(p, safe='') for p in linkable)}'>"
+              f"Browse these releases in the catalog</a>; " if linkable else "")
+             + "the About page explains how the forecasts are made.")
+    txt = (f"Of these cards with a one-month call, the model has {c['up']} headed up, "
+           f"{c['down']} headed down and {c['flat']} flat.")
+    if rec:
+        txt += (f" On {label} its one-month forecasts have missed by {rec['typical_miss_pct']} percent "
+                f"on average, against {rec['flat_baseline_miss_pct']} percent for assuming no change.")
+    body.append(model_corner(prose, "outlook", "What the Model Thinks", txt, d["picks"], game, rec, links))
+    closer = prose.get("closer")
+    if closer:
+        body.append(f"<p>{esc(closer)}</p>")
+
+    # Hero: the chase cards fanned, the releases as the bar strip.
+    stats = [[f"{d['cards_priced']:,}", "priced cards", None], [f"{n_prod}", "releases", None],
+             [money(d["pool_value"]), "together", None], [f"{over5:,}", "worth $5+", None]]
+    if st["tracked"]:
+        stats = [[f"{st['rose']:,}", "cards rose", "up"], [f"{st['fell']:,}", "cards fell", "down"],
+                 [f"{st['median_move_pct']:+.1f}%", "median move", None],
+                 [f"{n_prod}", "releases", None]]
+    spark = [[initials(p["product"]), p["median_move_pct"], "", p["product"]] for p in d["products"]
+             if p["median_move_pct"] is not None and p["tracked"] >= 2][:8]
+    cards = [[game, pid, name] for pid, name, *_ in d["chase"] if has_art(game, pid)][:3]
+    hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, spark, focus="recent")
+    return {"slug": f"new-releases-{game}-{today.isoformat()}", "kind": "set", "focus": "recent",
+            "game": game, "set_name": None, "title": title, "summary": lede,
             "body_html": "".join(body), "thumb": thumb, "hero": hero}
 
 
@@ -797,45 +1115,99 @@ def ensure_table(pred):
         summary TEXT NOT NULL,
         body_html TEXT NOT NULL,
         thumb TEXT,
-        hero TEXT)""")
+        hero TEXT,
+        focus TEXT)""")
+    # focus (2026-11-07): a set article is about the newest set ('set') or the
+    # game's other recent releases ('recent'); rows from before are NULL = set.
+    if "focus" not in {r[1] for r in pred.execute("PRAGMA table_info(articles)")}:
+        pred.execute("ALTER TABLE articles ADD COLUMN focus TEXT")
     pred.execute("CREATE INDEX IF NOT EXISTS articles_game_date ON articles (game, published_at)")
 
 
 def store(pred, a, today):
     pred.execute(
         "INSERT OR REPLACE INTO articles (slug, kind, game, set_name, title, published_at, "
-        "summary, body_html, thumb, hero) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "summary, body_html, thumb, hero, focus) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (a["slug"], a["kind"], a["game"], a["set_name"], a["title"], today.isoformat(),
-         a["summary"], a["body_html"], a["thumb"], a["hero"]))
+         a["summary"], a["body_html"], a["thumb"], a["hero"], a.get("focus")))
+
+
+# ---------------------------------------------------------------------------
+# Planner
+# ---------------------------------------------------------------------------
+def last_articles(pred):
+    """{(game, kind): (published_at, focus)} for each slot's newest article;
+    a NULL focus (rows from before 2026-11-07) is the set focus."""
+    rows = pred.execute("SELECT game, kind, published_at, focus FROM articles "
+                        "ORDER BY published_at, slug").fetchall()
+    return {(g, k): (p[:10], f or "set") for g, k, p, f in rows}
+
+
+def plan(today, last, games=None):
+    """Tonight's (game, kind) slots. Due slots (never written, or
+    FORCE_GAP_DAYS since the last one) go first, the longest wait first; then
+    the coin tosses, each seeded by date|game|kind so a re-run the same day
+    plans the same night; cut to MAX_PER_NIGHT. Nothing inside MIN_GAP_DAYS
+    of its last article, which includes a slot already written today.
+    Returns (picks, waiting): waiting counts the slots that wanted a turn
+    tonight and did not get one (they ask again tomorrow)."""
+    due, drawn = [], []
+    for game in games or GAMES:
+        for kind in ("set", "game"):
+            prev = last.get((game, kind))
+            gap = (today - date.fromisoformat(prev[0])).days if prev else None
+            if gap is not None and gap < MIN_GAP_DAYS:
+                continue
+            if gap is None or gap >= FORCE_GAP_DAYS:
+                due.append((gap if gap is not None else 10 ** 6, game, kind))
+            elif random.Random(f"{today}|{game}|{kind}").random() < DAILY_ODDS:
+                drawn.append((gap, game, kind))
+    rnd = random.Random(f"{today}|order")
+    rnd.shuffle(due)
+    due.sort(key=lambda t: -t[0])          # stable: equal waits keep the shuffled order
+    rnd.shuffle(drawn)
+    picks = due + drawn
+    return [(g, k) for _gap, g, k in picks[:MAX_PER_NIGHT]], max(0, len(picks) - MAX_PER_NIGHT)
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Per-game weekly articles")
-    ap.add_argument("--game", action="append", help="game key (repeatable); implies --force")
+    ap = argparse.ArgumentParser(description="Per-game articles")
+    ap.add_argument("--game", action="append", help="game key (repeatable): write it now, whatever the plan says")
     ap.add_argument("--kind", choices=["set", "game"], help="only this kind")
-    ap.add_argument("--all", action="store_true", help="every game, whatever the day")
+    ap.add_argument("--focus", choices=["set", "recent"],
+                    help="set articles: this focus (default: the other one from the game's last set article)")
+    ap.add_argument("--all", action="store_true", help="every game, both kinds, right now")
+    ap.add_argument("--plan", action="store_true", help="print tonight's plan and exit; nothing is written")
     ap.add_argument("--date", help="publish date YYYY-MM-DD (default: today, UTC)")
     ap.add_argument("--no-prose", action="store_true", help="templated text, no Claude call")
     ap.add_argument("--pred-db", default=PRED_DB, help=argparse.SUPPRESS)
     args = ap.parse_args()
 
     today = date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date()
-    if args.game:
-        games = [g for g in args.game if g in GAMES]
-    elif args.all:
-        games = list(GAMES)
-    else:
-        games = SCHEDULE.get(today.weekday(), [])
-        if not games:
-            print(f"game_articles: nothing scheduled for {today:%A}; skipping.")
-            return
     kinds = [args.kind] if args.kind else ["set", "game"]
-
-    pc = sqlite3.connect(PC_DB)
-    pc.execute("PRAGMA busy_timeout=30000")
     pred = sqlite3.connect(args.pred_db)
     pred.execute("PRAGMA busy_timeout=30000")
     ensure_table(pred)
+    last = last_articles(pred)
+    waiting = 0
+    if args.game:
+        slots = [(g, k) for g in args.game if g in GAMES for k in kinds]
+    elif args.all:
+        slots = [(g, k) for g in GAMES for k in kinds]
+    else:
+        slots, waiting = plan(today, last)
+        slots = [(g, k) for g, k in slots if k in kinds]
+    print(f"game_articles plan for {today}: " + (", ".join(f"{g}/{k}" for g, k in slots) or "nothing due")
+          + (f"; {waiting} more slot(s) wait for another night" if waiting else ""))
+    for g, k in slots:
+        prev = last.get((g, k))
+        print(f"  {g}/{k}: last {prev[0]} ({prev[1]})" if prev else f"  {g}/{k}: never written")
+    if args.plan or not slots:
+        pred.close()
+        return
+
+    pc = sqlite3.connect(PC_DB)
+    pc.execute("PRAGMA busy_timeout=30000")
     window = week_window(pc)
     baseline, latest, dates = window
     synth = synth_series(pc, dates) if dates else {}
@@ -843,33 +1215,48 @@ def main():
     if not baseline:
         print("game_articles: no weekly window yet; articles will carry no week moves.")
 
-    cats = {g: catalog(g) for g in games}
-    # The all-games drift line that every game article is drawn against.
+    # Every game's catalog, so the all-games drift line the game articles are
+    # drawn against really is all games, not just tonight's.
+    cats = {g: catalog(g) for g in GAMES}
     market_index = index_series(synth, [(g, pid) for g, cat in cats.items() for pid in cat], dates) \
-        if dates and len(cats) > 1 else []
+        if dates else []
+    anchors = {}
     written = []
-    for game in games:
-        cat = cats[game]
+    for game, kind in slots:
+        cat = cats.get(game) or {}
         if not cat:
             print(f"{game}: no priced cards; skipped")
             continue
-        newest = newest_set(cat, today)
-        if "set" in kinds:
-            if newest:
-                d = collect_set(pc, pred, game, cat, newest, synth, window, young, today)
+        if game not in anchors:
+            anchors[game] = pick_set(pc, game, cat, today)
+        anchor, _age, skipped = anchors[game]
+        if kind == "set":
+            if not anchor:
+                print(f"{game}: no set with {LATEST_SET_MIN_CARDS}+ priced cards and "
+                      f"{SET_MIN_AGE_DAYS}+ days of age; set article skipped")
+                continue
+            prev = last.get((game, "set"))
+            focus = args.focus or ("recent" if prev and prev[1] == "set" else "set")
+            a = None
+            if focus == "recent":
+                released = released_on(pc, game, cat)
+                pool = recent_pool(released, cat, anchor, today)
+                if len(pool) >= RECENT_MIN_CARDS:
+                    d = collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, young, today)
+                    a = build_recent_article(d, today, args.no_prose)
+                else:
+                    print(f"{game}: {len(pool)} priced cards released in the last {RECENT_DAYS} days "
+                          f"outside {anchor}, under {RECENT_MIN_CARDS}; the set focus runs instead")
+            if a is None:
+                d = collect_set(pc, pred, game, cat, anchor, synth, window, young, today, skipped)
                 a = build_set_article(d, today, args.no_prose)
-                store(pred, a, today)
-                written.append(a["slug"])
-                print(f"wrote {a['slug']}: {a['title']!r}")
-            else:
-                print(f"{game}: no set with {LATEST_SET_MIN_CARDS}+ priced cards; set article skipped")
-        if "game" in kinds:
-            d = collect_game(pc, pred, game, cat, synth, window, young, market_index, newest)
+        else:
+            d = collect_game(pc, pred, game, cat, synth, window, young, market_index, anchor)
             a = build_game_article(d, today, args.no_prose)
-            store(pred, a, today)
-            written.append(a["slug"])
-            print(f"wrote {a['slug']}: {a['title']!r}")
+        store(pred, a, today)
         pred.commit()
+        written.append(a["slug"])
+        print(f"wrote {a['slug']}: {a['title']!r}")
     pc.close()
     pred.close()
     print(f"game_articles: {len(written)} article(s) written for {today}")

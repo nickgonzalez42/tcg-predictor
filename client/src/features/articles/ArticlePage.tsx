@@ -20,7 +20,7 @@ export default function ArticlePage() {
         type: "article",
         canonical: slug ? `/articles/${slug}` : undefined,
         publishedAt: article?.publishedAt,
-        section: article ? articleKindLabel(article.kind) : undefined,
+        section: article ? articleKindLabel(article.kind, false, article.focus) : undefined,
     });
     const bodyRef = useRef<HTMLDivElement>(null);
     useReportBodyEffects(bodyRef, article?.slug);
@@ -46,8 +46,8 @@ export default function ArticlePage() {
             <h1 className="reports__title">{article.title}</h1>
             <p className="reports__meta mono">
                 <span className="reports__date">Published {longDate(article.publishedAt)}</span>
-                <span className="reports__chip" style={articleChipStyle(article.kind)}>
-                    {articleKindLabel(article.kind, true)}
+                <span className="reports__chip" style={articleChipStyle(article.kind, article.focus)}>
+                    {articleKindLabel(article.kind, true, article.focus)}
                 </span>
                 <Link className="articles__game" to={`/articles?game=${article.game}`}>{game}</Link>
                 {article.setName && <span className="articles__game">{article.setName}</span>}

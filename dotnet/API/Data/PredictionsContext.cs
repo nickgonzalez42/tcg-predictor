@@ -177,6 +177,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             a.Property(x => x.Kind).HasColumnName("kind");
             a.Property(x => x.Game).HasColumnName("game");
             a.Property(x => x.SetName).HasColumnName("set_name");
+            a.Property(x => x.Focus).HasColumnName("focus");
             a.Property(x => x.Title).HasColumnName("title");
             a.Property(x => x.PublishedAt).HasColumnName("published_at");
             a.Property(x => x.Summary).HasColumnName("summary");

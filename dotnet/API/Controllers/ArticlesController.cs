@@ -6,8 +6,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace API.Controllers;
 
-// Per-game articles (2026-11-06): two a week per game, written by the
-// pipeline's game_articles.py into predictions.db and served read-only.
+// Per-game articles (2026-11-06): a set report and a game report per game,
+// written by the pipeline's game_articles.py into predictions.db on its own
+// schedule and served read-only.
 [Route("api/articles")]
 [ApiController]
 public class ArticlesController(PredictionsContext predictions) : ControllerBase
@@ -31,7 +32,7 @@ public class ArticlesController(PredictionsContext predictions) : ControllerBase
             var items = await q
                 .OrderByDescending(a => a.PublishedAt).ThenBy(a => a.Slug)
                 .Skip(offset).Take(limit)
-                .Select(a => new { a.Slug, a.Kind, a.Game, a.SetName, a.Title, a.PublishedAt, a.Summary, a.Hero })
+                .Select(a => new { a.Slug, a.Kind, a.Focus, a.Game, a.SetName, a.Title, a.PublishedAt, a.Summary, a.Hero })
                 .ToListAsync();
             return Ok(new { total, items });
         }

@@ -319,13 +319,15 @@ def main():
         for slug, title, published, summary in articles[:60])
     write(out_new, "articles.html", page(
         "/articles", "Game articles",
-        "Two articles per game every week: how its newest set is doing and how the "
-        "whole game traded, with the cards, the charts and the model's outlook.",
+        "Articles on every game we track: its newest set, its other new releases and how "
+        "the whole game traded, with the cards, the charts and the model's outlook.",
         f"<h1>Game articles</h1>"
-        f"<p>Every game we track gets two articles a week: one on its newest set (the "
-        f"chase cards, the movers, the rarities, its path since release) and one on the "
-        f"whole game (the week's drift, which sets moved, the biggest movers and how our "
-        f"model has been doing on it).</p>"
+        f"<p>Every game we track gets a set report and a game report at least every two "
+        f"weeks, on no fixed day. The set report takes turns between the newest set (the "
+        f"chase cards, the movers, the rarities, its path since release) and the game's "
+        f"other recent releases (promos, decks, side products); the game report covers "
+        f"the whole game (the week's drift, which sets moved, the biggest movers and how "
+        f"our model has been doing on it).</p>"
         f"<ul>{article_rows}</ul>" if articles else
         f"<h1>Game articles</h1><p>The first game articles land this week.</p>"))
 

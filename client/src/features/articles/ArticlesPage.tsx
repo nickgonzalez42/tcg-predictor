@@ -8,9 +8,10 @@ import { GAMES, GAME_LABEL } from "../../lib/games";
 import { longDate } from "../reports/reportKind";
 import { articleChipStyle, articleKindLabel } from "./articleKind";
 
-// Index of the per-game articles (2026-11-06). Two a week per game: a set
-// report on the game's newest set and a game report on the whole game. One
-// grid, newest first, with a game filter above it and page numbers under it
+// Index of the per-game articles (2026-11-06). Per game, a set report (the
+// newest set, or, every other time, the game's other recent releases) and a
+// game report on the whole game, each at least every two weeks on a random
+// night (2026-11-07). One grid, newest first, with a game filter above it and page numbers under it
 // (2026-11-07: a dozen a page; ?page= lives in the URL so a page can be
 // shared and the back button returns to it). Each card names its kind, so
 // there is no kind filter.
@@ -35,8 +36,8 @@ function ArticleCard({ article }: { article: ArticleSummary }) {
                 <span className="reports__summary">{article.summary}</span>
                 <span className="reports__meta mono">
                     <span className="reports__date">{longDate(article.publishedAt)}</span>
-                    <span className="reports__chip" style={articleChipStyle(article.kind)}>
-                        {articleKindLabel(article.kind, true)}
+                    <span className="reports__chip" style={articleChipStyle(article.kind, article.focus)}>
+                        {articleKindLabel(article.kind, true, article.focus)}
                     </span>
                     <span className="articles__game">{GAME_LABEL[article.game] ?? article.game}</span>
                 </span>
@@ -47,7 +48,7 @@ function ArticleCard({ article }: { article: ArticleSummary }) {
 
 export default function ArticlesPage() {
     usePageMeta("Articles",
-        "Two articles per game every week: how its newest set is doing and how the whole game traded, with the cards, the charts and the model's outlook.",
+        "Articles on every game we track: its newest set, its other new releases and how the whole game traded, with the cards, the charts and the model's outlook.",
         { canonical: "/articles" });
     const [params, setParams] = useSearchParams();
     const game = params.get('game') ?? '';
@@ -80,8 +81,9 @@ export default function ArticlesPage() {
         <div className="reports articles full-span">
             <h1 className="reports__title">Articles</h1>
             <p className="est-note reports__sub">
-                Every game gets two articles a week: one on its newest set and one on the whole
-                game. Two games a day, Monday to Saturday.
+                Every game gets a set report and a game report at least every two weeks, on no
+                fixed day. The set report takes turns between the newest set and the other cards
+                released lately.
             </p>
             <div className="articles__filters" role="group" aria-label="Filter articles by game">
                 <div className="articles__chips">

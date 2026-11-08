@@ -110,8 +110,24 @@ FACTS:
 """
 
 
+KIND_DESC = {
+    "set": ("report on how ONE card set (the game's newest set with at least a week of prices) "
+            "is doing: its chase cards, this week's movers, the rarities, its path since release "
+            "and what the model expects next"),
+    "game": ("weekly report on ONE game's whole market: how the week went, which sets moved, the "
+             "biggest movers, the groups that moved together, where the prices sit, and how the "
+             "model has been doing on this game"),
+    # 2026-11-07: the set slot's other focus, see game_articles.build_recent_article.
+    "recent": ("report on ONE game's OTHER new cards: every priced card released in the last three "
+               "months that is NOT in the newest set (the pack's scope says exactly): promos, "
+               "starter decks, side products and the set before it; their chase cards, this week's "
+               "movers, the releases they come from, where the prices sit and what the model expects "
+               "next. The newest set has its own article; this one is about everything else new"),
+}
+
+
 def _write(kind, facts, sections, headline_names):
-    """kind 'set' | 'game'; sections = [(key, description)]; returns dict or None."""
+    """kind 'set' | 'game' | 'recent'; sections = [(key, description)]; returns dict or None."""
     if os.environ.get("TCG_REPORT_PROSE", "1") == "0":
         print("article_editorial: disabled via TCG_REPORT_PROSE=0")
         return None
@@ -119,14 +135,8 @@ def _write(kind, facts, sections, headline_names):
     if not cli:
         print("article_editorial: claude CLI not found, keeping templated text")
         return None
-    kind_desc = ("report on how ONE card set (the game's newest) is doing: its chase "
-                 "cards, this week's movers, the rarities, its path since release and "
-                 "what the model expects next" if kind == "set" else
-                 "weekly report on ONE game's whole market: how the week went, which "
-                 "sets moved, the biggest movers, the groups that moved together, where "
-                 "the prices sit, and how the model has been doing on this game")
     prompt = PROMPT.format(
-        voice=VOICE, rules=RULES, kind_desc=kind_desc,
+        voice=VOICE, rules=RULES, kind_desc=KIND_DESC[kind],
         sections="\n".join(f'- "{k}": {d}' for k, d in sections),
         headline=LIMITS["headline"], lede=LIMITS["lede"], section=SECTION_LIMIT,
         header=HEADER_LIMIT, caption=CAPTION_LIMIT, closer=LIMITS["closer"],
@@ -181,3 +191,7 @@ def write_set_article(facts, sections):
 
 def write_game_article(facts, sections):
     return _write("game", facts, sections, "the game")
+
+
+def write_recent_article(facts, sections):
+    return _write("recent", facts, sections, "the game (naming one of the releases is fine)")
