@@ -17,6 +17,15 @@
   color: var(--text-muted);
 }
 
+/* On an article page the byline stacks (user, 2026-11-07: "put these on
+   different lines starting with Set"): the date, then the kind chip, the
+   game and the set, each on its own line. */
+.report.article > .reports__meta {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
 a.articles__game:hover {
   color: var(--brand);
 }
