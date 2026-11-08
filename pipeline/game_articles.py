@@ -103,13 +103,23 @@ SITE = "https://cardstock.guide"
 
 # Planner (2026-11-07): "Randomize the release of each article for each game
 # but each type for each game should release at least once every two weeks."
-# Expected gap about 9 days, about 2.7 articles a night at ~6.5 min of prose
-# each; FORCE sits a day inside the two-week promise so a night where more
-# than MAX_PER_NIGHT slots fall due can slip one by a day and still keep it.
+# FORCE sits a day inside the two-week promise so a night where more slots
+# fall due than MAX_PER_NIGHT can slip one by a day and still keep it.
+#
+# MAX_PER_NIGHT went 4 -> 2 on 2026-11-08 ("that's too often, let's just do
+# 1 or 2 each night"). Note what that does to the other two numbers: the 24
+# slots (12 games x 2 kinds) need 24/FORCE_GAP_DAYS = 1.85 articles a night
+# just to keep the two-week promise, so the cap is now the binding rule and
+# the coin toss almost never gets a turn -- measured over 180 nights, 2
+# articles on 98% of nights and a slot gap of 12 to 13 days. Quiet nights
+# and a randomised gap come back only if FORCE_GAP_DAYS is stretched (18
+# days with DAILY_ODDS 0.05 gives 1.5 a night and a 16-day average gap),
+# which gives up the two weeks. Lowering the cap to 1 would put every slot
+# on a 24-day cycle.
 MIN_GAP_DAYS = 5          # never the same slot twice inside a working week
 FORCE_GAP_DAYS = 13       # due: written tonight, longest wait first
 DAILY_ODDS = 0.22         # between the two: tonight's chance, seeded by date|game|kind
-MAX_PER_NIGHT = 4         # the refresh must still end by 7 AM
+MAX_PER_NIGHT = 2         # user's cadence, 2026-11-08; also ~13 min of prose a night
 # Paused games (2026-11-08): the user deleted the two Cyberpunk articles --
 # 66 of its 406 priced cards had a week of moves, and its newest set had 1 --
 # and asked for the game to sit out a week. The planner skips a game until its
