@@ -477,14 +477,17 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const spanDays = sorted.length
             ? Math.round((Date.parse(sorted[sorted.length - 1].time) - Date.parse(last.date)) / 86400e3)
             : 0;
-        // On the 1M tab each segment is one month of axis (user, 2026-11-08:
-        // "make the forecast lines shorter; on 1M view they should each be
-        // equal to 1 month length"), so a month of history keeps a quarter
-        // of the plot instead of an eighth. The other tabs keep the natural
-        // size: equal shares of the real chain's span.
+        // On the 1M tab the WHOLE chain is as wide as the month of history
+        // it follows (user, 2026-11-08, after 28-day segments still read as
+        // too long: "whole forecast = one month"), so history and forecast
+        // split the plot in half and each segment is a third of a month.
+        // The other tabs keep the natural size: equal shares of the real
+        // chain's span.
+        const histDays = cutoff
+            ? Math.round((day0 - Date.parse(cutoff)) / 86400e3)
+            : spanDays;
         const segDays = !sorted.length ? 0
-            : range === '1m' ? 28
-            : Math.max(1, Math.round(spanDays / sorted.length));
+            : Math.max(1, Math.round((range === '1m' ? histDays : spanDays) / sorted.length));
         const chainFc = sorted.map((c, i) => ({ ...c, slot: addDays(last.date, segDays * (i + 1)) }));
         const chainPts = [
             { time: last.date, value: last.price },
@@ -794,7 +797,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // WHOLE forecast chain (user, 2026-11-08: "each view to show the
         // historical timeline and then the full forecast"). The old phone
         // 1M cap at four weeks past the last point went with the year-long
-        // chain it was protecting against: on 1M the chain is three months.
+        // chain it was protecting against: on 1M the chain is one month wide.
         const windowEnd = chainEnd > lastDate ? chainEnd : lastDate;
         if (keep) chart.timeScale().setVisibleRange(keep);
         else if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
