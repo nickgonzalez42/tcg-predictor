@@ -46,6 +46,16 @@ comparison rather than compared from a late start. One Piece's catalog has
 no release dates, so they come from TCGplayer's group list (tcgcsv.com
 mirror), see group_release_dates().
 
+Sales volume (2026-11-07, user: "discuss volume as part of the sales. If
+the card is going to be discussed in an article, make sure to prioritize
+scraping its volume movement the day before"): every article carries Near
+Mint copies sold in the last complete week against the week before, for the
+set (or pool) and for each card it discusses (sales_volume), counting only
+cards whose sales were fetched after that week closed, so the buckets are
+final. The run also writes tomorrow's plan and the cards it will discuss to
+ml_data/article_watch.json (write_watch); the daytime sales crawl
+(backfill_sales_volume.py) fetches those first.
+
 Two more rules from the same request:
   * the set article waits until the set is SET_MIN_AGE_DAYS old (a week of
     prices before it is written up); a younger newest set is skipped and the
@@ -111,6 +121,11 @@ PEER_LOOKBACK_DAYS = 548  # eighteen months of earlier sets
 AGE_TOL_DAYS = 7          # an index "at day N" may come from up to a week before N
 HORIZON_DAYS = {"1m": 30, "6m": 182, "12m": 365}
 HORIZON_LABEL = {"1m": "One month", "6m": "Six months", "12m": "One year"}
+# Sales volume (2026-11-07): the section runs when this share of the cards
+# (and at least 5) have final buckets for the last complete week.
+VOLUME_MIN_COVER = 0.25
+TOP_SELLERS_N = 6
+WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
 
 LATEST_SET_MIN_CARDS = 20     # the API's own floor for "newest set"
 SET_INDEX_MIN_CARDS = 8       # a set-index point needs this many priced cards
@@ -450,6 +465,103 @@ def has_art(game, pid, _cache={}):
 
 
 # ---------------------------------------------------------------------------
+# Sales volume (2026-11-07)
+# ---------------------------------------------------------------------------
+def monday_of(d):
+    return d - timedelta(days=d.weekday())
+
+
+def sales_volume(pc, game, cat, pids, today):
+    """Near Mint copies sold (all printings) for these cards in the last
+    complete Monday-to-Sunday week and the week before, from
+    tcg_sales_history. A card counts only if its sales were fetched after
+    that week closed (tcg_sales_scan), so the bucket is final rather than
+    frozen mid-week at the last visit; that is what the day-before priority
+    crawl (write_watch) is for. None when the tables are missing or nothing
+    is covered."""
+    pids = list(pids)
+    if not pids:
+        return None
+    week_open = monday_of(today)
+    last_week = week_open - timedelta(days=7)
+    prev_week = week_open - timedelta(days=14)
+    try:
+        scans = dict(pc.execute(
+            f"SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=? "
+            f"AND product_id IN ({','.join('?' * len(pids))})", [game, *pids]).fetchall())
+        rows = pc.execute(
+            f"SELECT product_id, bucket_date, quantity_sold, transaction_count FROM tcg_sales_history "
+            f"WHERE game=? AND condition='Near Mint' AND bucket_date IN (?, ?) "
+            f"AND product_id IN ({','.join('?' * len(pids))})",
+            [game, prev_week.isoformat(), last_week.isoformat(), *pids]).fetchall()
+    except sqlite3.OperationalError:
+        return None
+    fresh = {pid for pid, f in scans.items() if f and f[:10] >= week_open.isoformat()}
+    if not fresh:
+        return None
+    units = collections.defaultdict(float)
+    txn = collections.defaultdict(float)
+    for pid, d, q, t in rows:
+        if pid in fresh:
+            units[(pid, d)] += q or 0.0
+            txn[(pid, d)] += t or 0.0
+    lw, pw = last_week.isoformat(), prev_week.isoformat()
+    per_card = {pid: (units.get((pid, lw), 0.0), units.get((pid, pw), 0.0)) for pid in fresh}
+    u_last = sum(v[0] for v in per_card.values())
+    u_prev = sum(v[1] for v in per_card.values())
+    top = sorted(((pid, cat[pid]["name"], v[0], v[1], cat[pid]["price"]) for pid, v in per_card.items()
+                  if pid in cat and v[0] > 0), key=lambda t: -t[2])[:TOP_SELLERS_N]
+    enough = len(fresh) >= max(5, int(VOLUME_MIN_COVER * len(pids))) and (u_last + u_prev) > 0
+    return {"week": lw, "prev_week": pw, "units_last": u_last, "units_prev": u_prev,
+            "txn_last": sum(txn.get((pid, lw), 0.0) for pid in fresh),
+            "change_pct": r1((u_last / u_prev - 1) * 100) if u_prev >= 20 else None,
+            "covered": len(fresh), "of": len(pids), "per_card": per_card, "top": top, "enough": enough}
+
+
+def sold_tag(vc, pid):
+    """Tile suffix: the card's Near Mint copies sold in the last complete week."""
+    v = vc.get(pid)
+    n = v[0] if isinstance(v, tuple) else v
+    return f" · {n:,.0f} sold" if n else ""
+
+
+def sales_facts(vol, scope):
+    return {"meaning": (f"Near Mint copies sold on TCGplayer, all printings, in the last complete "
+                        f"Monday-to-Sunday week ({vol['week']}) against the week before ({vol['prev_week']}); "
+                        f"only the {vol['covered']} of {vol['of']} {scope} whose sales were fetched after "
+                        "that week closed are counted, so these numbers are final"),
+            "copies_sold_last_week": round(vol["units_last"]), "copies_sold_week_before": round(vol["units_prev"]),
+            "change_pct": vol["change_pct"], "separate_sales_last_week": round(vol["txn_last"]),
+            "note": ("first week with sales, there is no week before to compare" if vol["units_prev"] == 0 else None),
+            "top_sellers": [{"name": n, "copies": round(u), "week_before": round(p), "price_usd": round(pr, 2)}
+                            for _pid, n, u, p, pr in vol["top"]]}
+
+
+def sales_block(prose, vol, game, label, scope):
+    """The 'What Actually Sold' section: a bar strip of the top sellers, the
+    table, the fallback sentence."""
+    top = vol["top"]
+    rows = [(short_label(n, 30), u, f"week before {p:,.0f}") for _pid, n, u, p, _pr in top]
+    chart = bar_chart(rows, unit=" sold", signed=False, color="var(--primary, #3d7dca)", decimals=0,
+                      title=f"{label}: Near Mint copies sold, week of {vol['week']}") if rows else ""
+    table = [f"<table class='report-table'><thead><tr><th>Card</th><th>Copies, week of {vol['week']}</th>"
+             "<th>Week before</th><th>Price</th></tr></thead><tbody>"]
+    for pid, n, u, p, pr in top:
+        table.append(f"<tr><td>{card_link(game, pid, n)}</td><td>{u:,.0f}</td><td>{p:,.0f}</td>"
+                     f"<td>{money(pr)}</td></tr>")
+    table.append("</tbody></table>")
+    chg = vol["change_pct"]
+    txt = (f"Across the {vol['covered']} of {vol['of']} {scope} with final sales data, "
+           f"{vol['units_last']:,.0f} Near Mint copies sold in the week of {vol['week']}"
+           + (", their first week with sales." if vol["units_prev"] == 0 else
+              f", against {vol['units_prev']:,.0f} the week before" + (f" ({chg:+.0f} percent)." if chg is not None else ".")))
+    if top:
+        txt += f" {top[0][1]} sold the most, {top[0][2]:,.0f} copies."
+    return section(prose, "sales", "What Actually Sold", txt, chart + "".join(table),
+                   f"Copies sold per card, Near Mint, all printings, week of {vol['week']}.")
+
+
+# ---------------------------------------------------------------------------
 # Shared pieces
 # ---------------------------------------------------------------------------
 def move_stats(moves):
@@ -686,6 +798,7 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
 
     calls, picks = forecast_bits(pred, game, cat, pids=set(members), min_pick=MIN_BASE)
     fc_medians = set_forecast_medians(pred, game, cat, set(members))
+    sales = sales_volume(pc, game, cat, members, today)
     tracked_old = sum(m[2] for m in moves)
     tracked_new = sum(m[3] for m in moves)
     return {
@@ -695,7 +808,7 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
         "tracked_value_change_pct": r1((tracked_new / tracked_old - 1) * 100) if tracked_old else None,
         "stats": stats, "chase": chase, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
         "rarities": rarities, "history": history, "path": path,
-        "peers": peers, "compare": compare, "forecast_median": fc_medians,
+        "peers": peers, "compare": compare, "forecast_median": fc_medians, "sales": sales,
         "ladder": ladder([c["price"] for c in members.values()]),
         "calls": calls, "picks": picks, "record": record_for(pred, game),
         "skipped": list(skipped),
@@ -707,6 +820,7 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
 SET_SECTIONS = [
     ("chase", "the set's most valuable cards (the chase list) with each one's price and its move this week"),
     ("movers", "this week's biggest risers and fallers inside the set"),
+    ("sales", "how many Near Mint copies of the set's cards actually sold in the last complete week against the week before, and which cards sold most"),
     ("rarity", "what each rarity costs and how it moved this week"),
     ("history", "the set's price index since its release day: the average move of its cards from the first day they were broadly priced after release"),
     ("peers", "how this set compares with the game's earlier sets at the same number of days since release (every line on the chart starts on its set's release day), and what those sets did over the month after that age"),
@@ -719,21 +833,29 @@ def build_set_article(d, today, no_prose=False):
     game, label, set_name = d["game"], d["label"], d["set"]
     st = d["stats"]
     ab = d.get("about", {})
+    vol = d.get("sales")
+    vc = vol["per_card"] if vol else {}
     sections = [s for s in SET_SECTIONS
                 if not ((s[0] in ("movers", "rarity") and st["tracked"] == 0)
                         or (s[0] == "history" and not d["history"])
-                        or (s[0] == "peers" and not d["compare"]))]
+                        or (s[0] == "peers" and not d["compare"])
+                        or (s[0] == "sales" and not (d["sales"] and d["sales"]["enough"])))]
     facts = {
         "game": label, "set": set_name, "released": d["release"], "age_days": d["age_days"],
         "week": d["week"],
         "totals": {"cards_priced": d["cards_priced"], "set_value_usd": d["set_value"],
                    "tracked_value_change_pct": d["tracked_value_change_pct"], **st},
-        "chase": [{"name": n, "price_usd": round(p, 2), "rarity": r, "week_pct": r1(w), "about": ab.get(_pid)}
+        "chase": [{"name": n, "price_usd": round(p, 2), "rarity": r, "week_pct": r1(w), "about": ab.get(_pid),
+                   "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
                   for _pid, n, p, r, w in d["chase"][:CHASE_N]],
         "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                           "about": ab.get(m[0])} for m in d["ups"][:MOVERS_N]],
+                           "about": ab.get(m[0]),
+                           "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                          for m in d["ups"][:MOVERS_N]],
                    "down": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                             "about": ab.get(m[0])} for m in d["downs"][:MOVERS_N]]},
+                             "about": ab.get(m[0]),
+                             "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                            for m in d["downs"][:MOVERS_N]]},
         "rarities": d["rarities"],
         "since_release": ({"from": d["history"]["dates"][0], "to": d["history"]["dates"][-1],
                            "index_now_pct": r1(d["history"]["index"][-1]),
@@ -742,10 +864,13 @@ def build_set_article(d, today, no_prose=False):
         "ladder": [{"band": b, "cards": n} for b, n in d["ladder"]],
         "model": {"calls_1m": d["calls"],
                   "top_climbs": [{"name": n, "current_usd": round(now, 2), "forecast_usd": round(fc, 2),
-                                  "implied_pct": r1(imp), "about": ab.get(_pid)}
+                                  "implied_pct": r1(imp), "about": ab.get(_pid),
+                                  "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
                                  for _pid, n, now, fc, imp in d["picks"]],
                   "record_on_this_game": d["record"]},
     }
+    if vol and vol["enough"]:
+        facts["sales"] = sales_facts(vol, "set cards")
     own_at = index_at(d["path"], d["age_days"]) if d["path"] and d["age_days"] is not None else None
     cmp_rows = d["compare"]
     vs = {}
@@ -815,7 +940,7 @@ def build_set_article(d, today, no_prose=False):
         if not has_art(game, pid):
             continue
         meta = money(price) + (f" · <span class='{'report-up' if w > 0 else 'report-down'}'>{pct(w)}</span>"
-                               if w is not None and abs(w) > 0.5 else "")
+                               if w is not None and abs(w) > 0.5 else "") + sold_tag(vc, pid)
         tiles.append(card_tile(game, pid, name, meta))
     top = d["chase"][0] if d["chase"] else None
     body.append(section(
@@ -826,9 +951,9 @@ def build_set_article(d, today, no_prose=False):
 
     # Movers
     if st["tracked"]:
-        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}")
+        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
                  for m in d["ups"] if has_art(game, m[0])][:MOVERS_N]
-        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}")
+        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
                   for m in d["downs"] if has_art(game, m[0])][:MOVERS_N]
         bt = d["ups"][0] if d["ups"] else None
         wt = d["downs"][0] if d["downs"] else None
@@ -857,6 +982,10 @@ def build_set_article(d, today, no_prose=False):
             (f"{pricey['rarity']} is the priciest tier at a median {money(pricey['median_price_usd'])}."
              if pricey else "No rarity data for this set."),
             chart + "".join(table), "Median move this week, by rarity."))
+
+    # What actually sold (2026-11-07)
+    if vol and vol["enough"]:
+        body.append(sales_block(prose, vol, game, label, "set cards"))
 
     # Since release
     if d["history"]:
@@ -1033,6 +1162,7 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
     products.sort(key=lambda x: (-x["cards_priced"], x["product"]))
 
     calls, picks = forecast_bits(pred, game, cat, pids=set(pool), min_pick=MIN_BASE)
+    sales = sales_volume(pc, game, cat, pool, today)
     tracked_old = sum(m[2] for m in moves)
     tracked_new = sum(m[3] for m in moves)
     return {
@@ -1040,7 +1170,7 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
         "cards_priced": len(pool), "pool_value": round(sum(c["price"] for c in pool.values()), 2),
         "tracked_value_change_pct": r1((tracked_new / tracked_old - 1) * 100) if tracked_old else None,
         "stats": stats, "chase": chase, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
-        "products": products, "ladder": ladder([c["price"] for c in pool.values()]),
+        "products": products, "ladder": ladder([c["price"] for c in pool.values()]), "sales": sales,
         "calls": calls, "picks": picks, "record": record_for(pred, game),
         "about": about_lines(attrs, [c[0] for c in chase] + [m[0] for m in ups[:MOVERS_N * 2] + downs[:MOVERS_N * 2]]
                              + [p[0] for p in picks]),
@@ -1050,6 +1180,7 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
 RECENT_SECTIONS = [
     ("chase", "the most valuable of these newer cards, with each one's price, the release it came from and its move this week"),
     ("movers", "this week's biggest risers and fallers among them"),
+    ("sales", "how many Near Mint copies of these cards actually sold in the last complete week against the week before, and which sold most"),
     ("products", "the releases they come from (promos, decks, side products, the set before the newest): how many priced cards each has, what they cost and how each moved this week"),
     ("ladder", "how these cards spread across price bands"),
     ("outlook", "what the model's one-month calls say about them, and the model's own record on this game"),
@@ -1060,7 +1191,11 @@ def build_recent_article(d, today, no_prose=False):
     game, label, anchor = d["game"], d["label"], d["anchor"]
     st = d["stats"]
     ab = d.get("about", {})
-    sections = [s for s in RECENT_SECTIONS if not (s[0] == "movers" and st["tracked"] == 0)]
+    vol = d.get("sales")
+    vc = vol["per_card"] if vol else {}
+    sections = [s for s in RECENT_SECTIONS
+                if not ((s[0] == "movers" and st["tracked"] == 0)
+                        or (s[0] == "sales" and not (d["sales"] and d["sales"]["enough"])))]
     n_prod = len(d["products"])
     facts = {
         "game": label, "newest_set": anchor,
@@ -1070,20 +1205,28 @@ def build_recent_article(d, today, no_prose=False):
         "week": d["week"],
         "totals": {"cards_priced": d["cards_priced"], "releases": n_prod, "value_usd": d["pool_value"],
                    "tracked_value_change_pct": d["tracked_value_change_pct"], **st},
-        "chase": [{"name": n, "price_usd": round(p, 2), "release": s, "week_pct": r1(w), "about": ab.get(_pid)}
+        "chase": [{"name": n, "price_usd": round(p, 2), "release": s, "week_pct": r1(w), "about": ab.get(_pid),
+                   "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
                   for _pid, n, p, s, w in d["chase"][:CHASE_N]],
         "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                           "about": ab.get(m[0])} for m in d["ups"][:MOVERS_N]],
+                           "about": ab.get(m[0]),
+                           "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                          for m in d["ups"][:MOVERS_N]],
                    "down": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                             "about": ab.get(m[0])} for m in d["downs"][:MOVERS_N]]},
+                             "about": ab.get(m[0]),
+                             "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                            for m in d["downs"][:MOVERS_N]]},
         "releases": d["products"][:10],
         "ladder": [{"band": b, "cards": n} for b, n in d["ladder"]],
         "model": {"calls_1m": d["calls"],
                   "top_climbs": [{"name": n, "current_usd": round(now, 2), "forecast_usd": round(fc, 2),
-                                  "implied_pct": r1(imp), "about": ab.get(_pid)}
+                                  "implied_pct": r1(imp), "about": ab.get(_pid),
+                                  "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
                                  for _pid, n, now, fc, imp in d["picks"]],
                   "record_on_this_game": d["record"]},
     }
+    if vol and vol["enough"]:
+        facts["sales"] = sales_facts(vol, "cards")
     if st["tracked"] == 0:
         facts["note"] = ("None of these cards has a week of market history yet, so there are no week "
                          "moves; write about the chase list, the releases, the ladder and the outlook.")
@@ -1123,7 +1266,7 @@ def build_recent_article(d, today, no_prose=False):
         meta = (money(price)
                 + (f" · <span class='{'report-up' if w > 0 else 'report-down'}'>{pct(w)}</span>"
                    if w is not None and abs(w) > 0.5 else "")
-                + f" · {esc(short_label(product, 22))}")
+                + f" · {esc(short_label(product, 22))}" + sold_tag(vc, pid))
         tiles.append(card_tile(game, pid, name, meta))
     top = d["chase"][0] if d["chase"] else None
     body.append(section(
@@ -1134,9 +1277,9 @@ def build_recent_article(d, today, no_prose=False):
 
     # Movers
     if st["tracked"]:
-        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}")
+        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
                  for m in d["ups"] if has_art(game, m[0])][:MOVERS_N]
-        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}")
+        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
                   for m in d["downs"] if has_art(game, m[0])][:MOVERS_N]
         bt = d["ups"][0] if d["ups"] else None
         wt = d["downs"][0] if d["downs"] else None
@@ -1146,6 +1289,10 @@ def build_recent_article(d, today, no_prose=False):
             or "None of them moved more than half a percent this week."
         body.append(section(prose, "movers", "This Week's Movers", txt, grid(tiles),
                             "Risers on the left, fallers on the right."))
+
+    # What actually sold (2026-11-07)
+    if vol and vol["enough"]:
+        body.append(sales_block(prose, vol, game, label, "cards"))
 
     # Releases
     rows = [(short_label(p["product"], 28), p["median_move_pct"],
@@ -1217,8 +1364,9 @@ def build_recent_article(d, today, no_prose=False):
 # ---------------------------------------------------------------------------
 # GAME article
 # ---------------------------------------------------------------------------
-def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest, attrs=None):
+def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest, attrs=None, today=None):
     label = GAMES[game]["label"]
+    today = today or datetime.now(timezone.utc).date()
     baseline, latest, dates = window
     names = {pid: c["name"] for pid, c in cat.items()}
     moves = game_moves(synth, game, baseline, latest, names, young) if baseline else []
@@ -1247,13 +1395,15 @@ def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest
         attrs = card_attrs(game)
     trends = pick_trends(find_trends(game, moves, attrs)) if moves else []
     calls, picks = forecast_bits(pred, game, cat)
+    discussed = [m[0] for m in ups[:MOVERS_N * 2] + downs[:MOVERS_N * 2]] + [p[0] for p in picks]
+    sales = sales_volume(pc, game, cat, discussed, today)
     return {
         "game": game, "label": label, "week": {"start": baseline, "end": latest},
         "dates": dates, "series": series, "market_index": market_index, "drift": r1(drift),
         "cards_priced": len(cat), "catalog_value": round(sum(c["price"] for c in cat.values()), 2),
         "stats": stats, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
         "sets": sets, "trends": trends, "ladder": ladder([c["price"] for c in cat.values()]),
-        "calls": calls, "picks": picks, "record": record_for(pred, game), "newest": newest,
+        "calls": calls, "picks": picks, "record": record_for(pred, game), "newest": newest, "sales": sales,
         "about": about_lines(attrs, [m[0] for m in ups[:MOVERS_N * 2] + downs[:MOVERS_N * 2]] + [p[0] for p in picks]),
     }
 
@@ -1271,6 +1421,8 @@ GAME_SECTIONS = [
 def build_game_article(d, today, no_prose=False):
     game, label, st = d["game"], d["label"], d["stats"]
     ab = d.get("about", {})
+    vol = d.get("sales")
+    vc = vol["per_card"] if vol else {}
     sections = [s for s in GAME_SECTIONS if not (s[0] == "trends" and not d["trends"])]
     mk = next((v for v in reversed(d["market_index"]) if v is not None), None) if d["market_index"] else None
     facts = {
@@ -1279,9 +1431,13 @@ def build_game_article(d, today, no_prose=False):
                    "week_drift_pct": d["drift"], "all_games_drift_pct": r1(mk), **st},
         "sets": d["sets"][:8],
         "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                           "about": ab.get(m[0])} for m in d["ups"][:MOVERS_N]],
+                           "about": ab.get(m[0]),
+                           "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                          for m in d["ups"][:MOVERS_N]],
                    "down": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
-                             "about": ab.get(m[0])} for m in d["downs"][:MOVERS_N]]},
+                             "about": ab.get(m[0]),
+                             "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                            for m in d["downs"][:MOVERS_N]]},
         "trends": [{"group": t["value"], "dimension": DIM_LABELS[t["dim"]].lower(),
                     "moved": t["same"], "of_tracked": t["n"], "median_pct": r1(t["median"]),
                     "examples": [{"name": m[1], "pct": r1(m[4])}
@@ -1290,11 +1446,15 @@ def build_game_article(d, today, no_prose=False):
         "ladder": [{"band": b, "cards": n} for b, n in d["ladder"]],
         "model": {"calls_1m": d["calls"],
                   "top_climbs": [{"name": n, "current_usd": round(now, 2), "forecast_usd": round(fc, 2),
-                                  "implied_pct": r1(imp), "about": ab.get(_pid)}
+                                  "implied_pct": r1(imp), "about": ab.get(_pid),
+                                  "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
                                  for _pid, n, now, fc, imp in d["picks"]],
                   "record_on_this_game": d["record"]},
         "newest_set": d["newest"],
     }
+    if vol and vol["covered"]:
+        facts["sales"] = sales_facts(vol, "movers and picks named here")
+        facts["sales"]["meaning"] += "; the game article has them for the cards it discusses only, not the whole game"
     prose = {} if no_prose else (write_game_article(prune(facts), sections) or {})
 
     lede = (f"{label} had {st['rose']:,} of {st['tracked']:,} tracked cards rise this week and "
@@ -1342,9 +1502,9 @@ def build_game_article(d, today, no_prose=False):
         chart + ("".join(table) if d["sets"] else ""), "Sets ranked by how far their median card moved."))
 
     # Movers
-    tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}")
+    tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
              for m in d["ups"] if has_art(game, m[0])][:MOVERS_N]
-    tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}")
+    tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
               for m in d["downs"] if has_art(game, m[0])][:MOVERS_N]
     bt = d["ups"][0] if d["ups"] else None
     wt = d["downs"][0] if d["downs"] else None
@@ -1445,6 +1605,60 @@ def store(pred, a, today):
 
 
 # ---------------------------------------------------------------------------
+# Tomorrow's cards, for the daytime sales crawl (2026-11-07)
+# ---------------------------------------------------------------------------
+def write_watch(today, last, written, pc, pred, cats, synth, window, young, attrs_by_game):
+    """Plan tomorrow's slots as they will stand after tonight's writes and
+    list every card those articles would discuss (chase list, movers, model
+    picks), so backfill_sales_volume.py can fetch their sales first during
+    the day and the articles find final, fresh buckets. Tomorrow's movers
+    are approximated from tonight's window; the chase list and the picks
+    are the same cards either way."""
+    tomorrow = today + timedelta(days=1)
+    last2 = dict(last)
+    for g, k, f in written:
+        last2[(g, k)] = (today.isoformat(), f or "set")
+    slots, _waiting = plan(tomorrow, last2)
+    cards, seen = [], set()
+    for game, kind in slots:
+        cat = cats.get(game) or {}
+        if not cat:
+            continue
+        try:
+            anchor, _age, skipped = pick_set(pc, game, cat, tomorrow)
+            attrs = attrs_by_game.get(game)
+            if kind == "set":
+                if not anchor:
+                    continue
+                prev = last2.get((game, "set"))
+                d = None
+                if prev and prev[1] == "set":
+                    released = released_on(pc, game, cat)
+                    pool = recent_pool(released, cat, anchor, tomorrow)
+                    if len(pool) >= RECENT_MIN_CARDS:
+                        d = collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, young,
+                                           tomorrow, attrs=attrs)
+                if d is None:
+                    d = collect_set(pc, pred, game, cat, anchor, synth, window, young, tomorrow, skipped, attrs=attrs)
+                pids = [c[0] for c in d["chase"]] + [m[0] for m in d["ups"] + d["downs"]] + [p[0] for p in d["picks"]]
+            else:
+                d = collect_game(pc, pred, game, cat, synth, window, young, [], anchor, attrs=attrs, today=tomorrow)
+                pids = [m[0] for m in d["ups"] + d["downs"]] + [p[0] for p in d["picks"]]
+        except Exception as e:          # the watch list is a courtesy, never fatal
+            print(f"watch: {game}/{kind} skipped ({type(e).__name__}: {e})")
+            continue
+        for pid in pids:
+            if (game, pid) not in seen:
+                seen.add((game, pid))
+                cards.append({"game": game, "pid": pid, "slot": f"{game}/{kind}"})
+    os.makedirs(os.path.dirname(WATCH_FILE), exist_ok=True)
+    with open(WATCH_FILE, "w", encoding="utf-8") as f:
+        json.dump({"for": tomorrow.isoformat(), "made": datetime.now(timezone.utc).isoformat(),
+                   "slots": [f"{g}/{k}" for g, k in slots], "cards": cards}, f)
+    print(f"watch list for {tomorrow}: {len(cards)} card(s) across {len(slots)} slot(s) -> {WATCH_FILE}")
+
+
+# ---------------------------------------------------------------------------
 # Planner
 # ---------------------------------------------------------------------------
 def last_articles(pred):
@@ -1533,7 +1747,7 @@ def main():
     market_index = index_series(synth, [(g, pid) for g, cat in cats.items() for pid in cat], dates) \
         if dates else []
     anchors, attrs_by_game = {}, {}
-    written = []
+    written, written_slots = [], []
     for game, kind in slots:
         cat = cats.get(game) or {}
         if not cat:
@@ -1566,12 +1780,16 @@ def main():
                 d = collect_set(pc, pred, game, cat, anchor, synth, window, young, today, skipped, attrs=attrs)
                 a = build_set_article(d, today, args.no_prose)
         else:
-            d = collect_game(pc, pred, game, cat, synth, window, young, market_index, anchor, attrs=attrs)
+            d = collect_game(pc, pred, game, cat, synth, window, young, market_index, anchor, attrs=attrs,
+                             today=today)
             a = build_game_article(d, today, args.no_prose)
         store(pred, a, today)
         pred.commit()
         written.append(a["slug"])
+        written_slots.append((game, kind, a.get("focus")))
         print(f"wrote {a['slug']}: {a['title']!r}")
+    if not (args.game or args.all):
+        write_watch(today, last, written_slots, pc, pred, cats, synth, window, young, attrs_by_game)
     pc.close()
     pred.close()
     print(f"game_articles: {len(written)} article(s) written for {today}")

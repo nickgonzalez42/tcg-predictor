@@ -21,6 +21,7 @@ Run:  .venv/bin/python backfill_sales_volume.py --game all --rpm 40 \
 
 import argparse
 import fcntl
+import json
 import os
 import sqlite3
 import subprocess
@@ -36,6 +37,10 @@ from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
 PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                      "pricecharting.db")
+# Cards tomorrow's articles will discuss, written by game_articles.write_watch
+# at the end of the nightly; fetched first (2026-11-07, user: "prioritize
+# scraping its volume movement the day before").
+WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
 BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
 LOCK_RETRIES = 5     # write attempts when another connection holds the database
 LOCK_WAIT_S = 10     # pause between those attempts (on top of the busy timeout)
@@ -51,6 +56,36 @@ def refresh_live():
     r = subprocess.run(["pgrep", "-f", "run_daily_refresh.sh|weekly_refresh.py"],
                        capture_output=True)
     return r.returncode == 0
+
+
+def watch_targets(conn, games):
+    """[(game, pid, 0.0, True)] for the article watch list, in its order,
+    minus cards already fetched since the list was made (the hourly
+    relaunches must not refetch them) and minus a list whose article day has
+    passed. Empty when there is no list."""
+    try:
+        with open(WATCH_FILE, encoding="utf-8") as f:
+            w = json.load(f)
+    except (OSError, ValueError):
+        return []
+    made = w.get("made") or ""
+    if (w.get("for") or "") < datetime.now(timezone.utc).date().isoformat():
+        return []
+    cards = [c for c in w.get("cards", []) if c.get("game") in games]
+    fetched = {}
+    for g in {c["game"] for c in cards}:
+        fetched.update({(g, pid): f or "" for pid, f in conn.execute(
+            "SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=?", (g,))})
+    out, seen = [], set()
+    for c in cards:
+        key = (c["game"], int(c["pid"]))
+        if key in seen or fetched.get(key, "") >= made:
+            continue
+        seen.add(key)
+        out.append((c["game"], int(c["pid"]), 0.0, True))
+    if out:
+        print(f"watch list: {len(out)} card(s) for the {w.get('for')} articles go first", flush=True)
+    return out
 
 
 def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
@@ -180,6 +215,11 @@ def main():
         print(f"total budget: {args.total_limit} of {len(targets)} due "
               f"(per-game floor {floor}, remainder by price)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
+
+    watch = watch_targets(conn, set(games))
+    if watch:
+        wset = {(g, p) for g, p, _m, _e in watch}
+        targets = watch + [t for t in targets if (t[0], t[1]) not in wset]
 
     tp.RATE_LIMITER = tp.RateLimiter(rpm=args.rpm, min_interval=args.delay)
     session = tp.make_session()
