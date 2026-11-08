@@ -461,7 +461,14 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const spanDays = sorted.length
             ? Math.round((Date.parse(sorted[sorted.length - 1].time) - Date.parse(last.date)) / 86400e3)
             : 0;
-        const segDays = sorted.length ? Math.max(1, Math.round(spanDays / sorted.length)) : 0;
+        // On the 1M tab each segment is one month of axis (user, 2026-11-08:
+        // "make the forecast lines shorter; on 1M view they should each be
+        // equal to 1 month length"), so a month of history keeps a quarter
+        // of the plot instead of an eighth. The other tabs keep the natural
+        // size: equal shares of the real chain's span.
+        const segDays = !sorted.length ? 0
+            : range === '1m' ? 28
+            : Math.max(1, Math.round(spanDays / sorted.length));
         const chainFc = sorted.map((c, i) => ({ ...c, slot: addDays(last.date, segDays * (i + 1)) }));
         const chainPts = [
             { time: last.date, value: last.price },
