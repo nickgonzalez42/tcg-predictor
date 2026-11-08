@@ -129,6 +129,30 @@ function ForecastSection({ forecasts, game, id }: {
         `call made ${f.asOf ? shortDate(f.asOf) + ' ' : ''}at ${currencyFormat(f.anchorPrice)}`;
     if (forecasts.length === 0) return null;
 
+    // Those notes used to sit inside the cells, where one of them widened
+    // its column and pushed the next window across the panel (2026-11-08).
+    // They live under the table instead, one line per call date and price,
+    // naming the windows (and the condition, when the table has several).
+    const NOTE_WINDOW: Record<string, string> = { '1m': '1-month', '6m': '6-month', '12m': '1-year' };
+    const tiers = GRADE_TIERS.filter(t => forecasts.some(f => f.target === t));
+    const notes: string[] = [];
+    for (const t of tiers) {
+        const groups = new Map<string, Forecast[]>();
+        for (const f of forecasts.filter(x => x.target === t && HORIZONS.includes(x.horizon) && madeElsewhere(x)))
+            groups.set(`${f.asOf ?? ''}|${f.anchorPrice}`, [...(groups.get(`${f.asOf ?? ''}|${f.anchorPrice}`) ?? []), f]);
+        for (const fs of groups.values()) {
+            fs.sort((a, b) => HORIZONS.indexOf(a.horizon) - HORIZONS.indexOf(b.horizon));
+            const windows = fs.map(f => NOTE_WINDOW[f.horizon] ?? f.horizon);
+            const list = windows.length > 1
+                ? `${windows.slice(0, -1).join(', ')} and ${windows[windows.length - 1]}`
+                : windows[0];
+            const f0 = fs[0];
+            notes.push(`${tiers.length > 1 ? `${GRADE_TIER_LABEL[t] ?? t}: ` : ''}`
+                + `${list} ${fs.length > 1 ? 'calls' : 'call'} made ${f0.asOf ? shortDate(f0.asOf) + ' ' : ''}`
+                + `at ${currencyFormat(f0.anchorPrice)}; the figures apply ${fs.length > 1 ? 'them' : 'it'} to today's price.`);
+        }
+    }
+
     return (
         <section className="panel detail-panel">
             <h4 className="mono detail-panel__title">Our forecast</h4>
@@ -153,7 +177,7 @@ function ForecastSection({ forecasts, game, id }: {
                     </tr>
                 </thead>
                 <tbody>
-                    {GRADE_TIERS.filter(t => forecasts.some(f => f.target === t)).map(t => {
+                    {tiers.map(t => {
                         const tierForecasts = forecasts.filter(f => f.target === t);
                         const lead = tierForecasts.find(f => f.horizon === '12m') ?? tierForecasts[0];
                         const conf = confidence(lead?.confidence, lead?.months);
@@ -177,7 +201,7 @@ function ForecastSection({ forecasts, game, id }: {
                                         </span>
                                     </div>
                                 </td>
-                                <td>
+                                <td data-label="Now">
                                     <strong>{currencyFormat(tierForecasts[0]?.basePrice)}</strong>
                                 </td>
                                 {HORIZONS.map(h => {
@@ -191,13 +215,17 @@ function ForecastSection({ forecasts, game, id }: {
                                             : undefined);
                                     if (!f) {
                                         return served[WINDOW[h]]
-                                            ? <td key={h}>n/a</td>
-                                            : <td key={h} title={`No ${WINDOW_LABEL[WINDOW[h]]} calls for this game yet`}>Not yet</td>;
+                                            ? <td key={h} data-label={HORIZON_LABEL[h]}>n/a</td>
+                                            : <td key={h} data-label={HORIZON_LABEL[h]}
+                                                title={`No ${WINDOW_LABEL[WINDOW[h]]} calls for this game yet`}>Not yet</td>;
                                     }
                                     const early = f.horizon === 'launch1m';
                                     const chg = f.basePrice ? (f.forecastPrice / f.basePrice - 1) * 100 : 0;
                                     return (
-                                        <td key={h}>
+                                        <td key={h} data-label={HORIZON_LABEL[h]}
+                                            title={madeElsewhere(f)
+                                                ? `The price has moved since the model made this call (${madeNote(f)}). The figures apply its call to today's price.`
+                                                : undefined}>
                                             <strong>{currencyFormat(f.forecastPrice)}</strong>
                                             {early && (
                                                 <span className="early-badge"
@@ -208,12 +236,6 @@ function ForecastSection({ forecasts, game, id }: {
                                             <div className="forecast-chg">
                                                 <ChangePill value={chg} digits={h === '1m' ? 1 : 0} />
                                             </div>
-                                            {madeElsewhere(f) && (
-                                                <div className="mono price-asof"
-                                                    title="The price has moved since the model made this call. The figures apply its call to today's price.">
-                                                    {madeNote(f)}
-                                                </div>
-                                            )}
                                         </td>
                                     );
                                 })}
@@ -223,6 +245,11 @@ function ForecastSection({ forecasts, game, id }: {
                 </tbody>
             </table>
             </div>
+            {notes.length > 0 && (
+                <ul className="forecast-notes">
+                    {notes.map(n => <li key={n}>{n}</li>)}
+                </ul>
+            )}
             {why && (
                 <Modal title={`${GRADE_TIER_LABEL[why.tier] ?? why.tier} · why we think so`}
                     onClose={() => setWhy(null)}>
@@ -526,15 +553,24 @@ export default function CardDetails() {
                         <table className="detail-table">
                             <tbody>
                                 {cardDetails.map((detail, index) => (
-                                    <tr key={index}>
-                                        <td className="mono">{detail.label}</td>
-                                        <td>
-                                            {detail.label === 'Description' && typeof detail.value === 'string'
-                                                ? <span className="detail-desc"
-                                                    dangerouslySetInnerHTML={{ __html: sanitizeHtml(detail.value) }} />
-                                                : detail.value}
-                                        </td>
-                                    </tr>
+                                    // Long text (the card's rules text) reads as a
+                                    // block under its label, left-aligned and full
+                                    // width, instead of ragged-right beside it.
+                                    detail.label === 'Description' && typeof detail.value === 'string'
+                                        ? (
+                                            <tr key={index} className="detail-row--block">
+                                                <td colSpan={2}>
+                                                    <span className="mono detail-row__label">{detail.label}</span>
+                                                    <div className="detail-desc"
+                                                        dangerouslySetInnerHTML={{ __html: sanitizeHtml(detail.value) }} />
+                                                </td>
+                                            </tr>
+                                        ) : (
+                                            <tr key={index}>
+                                                <td className="mono">{detail.label}</td>
+                                                <td>{detail.value}</td>
+                                            </tr>
+                                        )
                                 ))}
                             </tbody>
                         </table>
