@@ -110,6 +110,12 @@ MIN_GAP_DAYS = 5          # never the same slot twice inside a working week
 FORCE_GAP_DAYS = 13       # due: written tonight, longest wait first
 DAILY_ODDS = 0.22         # between the two: tonight's chance, seeded by date|game|kind
 MAX_PER_NIGHT = 4         # the refresh must still end by 7 AM
+# Paused games (2026-11-08): the user deleted the two Cyberpunk articles --
+# 66 of its 406 priced cards had a week of moves, and its newest set had 1 --
+# and asked for the game to sit out a week. The planner skips a game until its
+# date, so on that date both of its slots fall due at once (deleting the rows
+# left them never-written). An explicit --game / --all run writes it anyway.
+PAUSED_GAMES = {"cyberpunk": "2026-11-15"}
 SET_MIN_AGE_DAYS = 7      # "let the set at least be a week old"
 RECENT_DAYS = 90          # the other focus: cards released inside this window ...
 RECENT_MIN_CARDS = 8      # ... outside the set; fewer and the set focus runs instead
@@ -1676,9 +1682,13 @@ def plan(today, last, games=None):
     plans the same night; cut to MAX_PER_NIGHT. Nothing inside MIN_GAP_DAYS
     of its last article, which includes a slot already written today.
     Returns (picks, waiting): waiting counts the slots that wanted a turn
-    tonight and did not get one (they ask again tomorrow)."""
+    tonight and did not get one (they ask again tomorrow). A game in
+    PAUSED_GAMES sits out entirely until its date."""
     due, drawn = [], []
     for game in games or GAMES:
+        paused = PAUSED_GAMES.get(game)
+        if paused and today < date.fromisoformat(paused):
+            continue
         for kind in ("set", "game"):
             prev = last.get((game, kind))
             gap = (today - date.fromisoformat(prev[0])).days if prev else None
