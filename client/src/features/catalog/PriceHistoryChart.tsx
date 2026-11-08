@@ -30,9 +30,11 @@ class HorizonLabelsPrimitive implements ISeriesPrimitive<Time> {
     private readonly view: IPrimitivePaneView;
     private readonly labels: HorizonLabel[];
     private readonly color: string;
-    constructor(labels: HorizonLabel[], color: string) {
+    private readonly halo: string;
+    constructor(labels: HorizonLabel[], color: string, halo: string) {
         this.labels = labels;
         this.color = color;
+        this.halo = halo;
         const renderer: IPrimitivePaneRenderer = {
             draw: target => {
                 const p = this.params;
@@ -44,6 +46,12 @@ class HorizonLabelsPrimitive implements ISeriesPrimitive<Time> {
                     ctx.textAlign = 'center';
                     ctx.textBaseline = 'top';
                     ctx.fillStyle = this.color;
+                    // A halo in the panel colour keeps a label legible where
+                    // the dashed line runs through it (steep last segment on
+                    // a phone).
+                    ctx.strokeStyle = this.halo;
+                    ctx.lineWidth = 4;
+                    ctx.lineJoin = 'round';
                     for (const l of this.labels) {
                         const x = ts.timeToCoordinate(l.time);
                         const y = p.series.priceToCoordinate(l.value);
@@ -52,6 +60,7 @@ class HorizonLabelsPrimitive implements ISeriesPrimitive<Time> {
                         // centred label would be cut in half: keep it inside.
                         const half = ctx.measureText(l.text).width / 2;
                         const cx = Math.min(Math.max(x, half + 2), mediaSize.width - half - 2);
+                        ctx.strokeText(l.text, cx, y + 8);
                         ctx.fillText(l.text, cx, y + 8);   // clear of the 3px dot
                     }
                 });
@@ -342,6 +351,13 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const history = v('--chart-history', '#3d7dca');
         const forecastColor = v('--chart-forecast', '#e0b000');
         const textMuted = v('--text-muted', '#8b96ad');
+        const panelBg = (() => {
+            for (let n: HTMLElement | null = el; n; n = n.parentElement) {
+                const bg = getComputedStyle(n).backgroundColor;
+                if (bg && bg !== 'transparent' && !/^rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\)$/.test(bg)) return bg;
+            }
+            return '#0f172a';
+        })();
         const border = v('--border', '#2e3a52');
 
         const chart = createChart(el, {
@@ -490,7 +506,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             // The horizon names under the dots stand in for the blanked dates.
             if (i === 0) seg.attachPrimitive(new HorizonLabelsPrimitive(chainFc.map(c => ({
                 time: c.slot as Time, value: c.value, text: HORIZON_LABEL[c.f.horizon] ?? c.f.horizon,
-            })), textMuted));
+            })), textMuted, panelBg));
         }
 
         // Past-forecast review: each matured prediction is a single dot placed
@@ -774,16 +790,12 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             grid.setData(days);
         }
 
-        let windowEnd = chainEnd > lastDate ? chainEnd : lastDate;
-        // Narrow screens, 1M tab: cap the window ~4 weeks past the last real
-        // point so history isn't squeezed into a quarter of the plot by the
-        // year-long forecast chain (pan right to see the rest of it). With
-        // equal segments the 1M dot now sits a third of the way along that
-        // chain, so on this one view the dashed line leaves the frame.
-        if (narrow && range === '1m') {
-            const cap = addDays(lastDate, 28);
-            if (cap < windowEnd) windowEnd = cap;
-        }
+        // Every tab, at every width, shows its slice of history and then the
+        // WHOLE forecast chain (user, 2026-11-08: "each view to show the
+        // historical timeline and then the full forecast"). The old phone
+        // 1M cap at four weeks past the last point went with the year-long
+        // chain it was protecting against: on 1M the chain is three months.
+        const windowEnd = chainEnd > lastDate ? chainEnd : lastDate;
         if (keep) chart.timeScale().setVisibleRange(keep);
         else if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
         else chart.timeScale().fitContent();
