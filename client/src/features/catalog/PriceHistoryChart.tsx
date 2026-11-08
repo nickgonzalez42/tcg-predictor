@@ -723,8 +723,12 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 const x = ts.timeToCoordinate(c.slot as Time);   // drawn position, not the real date
                 const y = scaleSeries.priceToCoordinate(c.value);
                 if (x == null || y == null) continue;
+                // `time` here is where the focus marker is DRAWN, so it is the
+                // slot: the real target date (c.time, for the tooltip and the
+                // modal) lies past the day grid's end and would add a stray
+                // slot to the axis, putting the marker off the dot.
                 consider({ kind: 'future', c, d: Math.hypot(x - px, y - py), x, y,
-                           time: c.time, value: c.value, color: forecastColor });
+                           time: c.slot, value: c.value, color: forecastColor });
             }
             if (historySeries) {
                 for (const p of tiers[tier]) {
