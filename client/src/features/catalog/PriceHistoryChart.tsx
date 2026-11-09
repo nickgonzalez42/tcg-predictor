@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { createChart, AreaSeries, LineSeries, ColorType, LineStyle } from "lightweight-charts";
+import { createChart, AreaSeries, LineSeries, HistogramSeries, ColorType, LineStyle } from "lightweight-charts";
 import type { ISeriesApi, SeriesType, Time, ISeriesPrimitive, SeriesAttachedParameter, IPrimitivePaneView, IPrimitivePaneRenderer } from "lightweight-charts";
-import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery } from "./catalogApi";
-import type { Forecast, PastForecast } from "../../app/models/card";
+import { useFetchCardHistoryQuery, useFetchCardForecastHistoryQuery, useFetchCardSalesQuery } from "./catalogApi";
+import type { Forecast, PastForecast, SalesWeek } from "../../app/models/card";
 import { GRADE_TIERS, GRADE_TIER_LABEL } from "../watchlist/grades";
 import Modal from "../../app/shared/components/Modal";
 
@@ -197,6 +197,9 @@ function pickPastForecasts(past: PastForecast[], grade: string, view: string,
 export default function PriceHistoryChart({ game, id, printing, forecasts }: Props) {
     const { data, isLoading } = useFetchCardHistoryQuery({ game, id, printing });
     const { data: pastData } = useFetchCardForecastHistoryQuery({ game, id, printing });
+    // Weekly TCGplayer sales for the shown printing (2026-11-09): the sold
+    // bars along the bottom of the plot and the "copies sold" tooltip line.
+    const { data: salesData } = useFetchCardSalesQuery({ game, id, printing });
     const containerRef = useRef<HTMLDivElement>(null);
     const [grade, setGrade] = useState('ungraded');
     // The tab the user picked, or null for the card's own default (see
@@ -412,6 +415,45 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             series.setData(points.map(p => ({ time: p.date, value: p.price })));
             track('history', series);
             historySeries = series;
+        }
+
+        // Copies sold per week (2026-11-09, user request): TCGplayer's weekly
+        // Near Mint sales as muted bars along the bottom of the plot, on the
+        // ungraded tier only (graded copies sell elsewhere). Each week's count
+        // is drawn on every day of its week, so the bars read as one block per
+        // week at any zoom and stay time-proportional on the daily grid like
+        // everything else. The price line is lifted clear of them.
+        const soldWeeks: SalesWeek[] = grade === 'ungraded' && !hidden.has('sold')
+            ? (salesData?.weeks ?? []).filter(w => w.weekStart >= all[0].date && w.weekStart <= lastDate)
+            : [];
+        const weekAt = (d: string) => soldWeeks.find(w =>
+            d >= w.weekStart && Date.parse(d) < Date.parse(w.weekStart) + 7 * 86400e3) ?? null;
+        const newestWeek = salesData?.weeks[salesData.weeks.length - 1];
+        // The newest bucket is the week that was still running when the crawl
+        // looked, so its count is partial.
+        const weekRunning = !!(newestWeek && salesData?.asOf
+            && Date.parse(salesData.asOf) < Date.parse(newestWeek.weekStart) + 7 * 86400e3);
+        const soFar = (w: SalesWeek) => w === newestWeek && weekRunning ? ' so far' : '';
+        const soldBars: { time: Time; value: number }[] = [];
+        for (const w of soldWeeks) {
+            const start = Date.parse(w.weekStart);
+            for (let i = 0; i < 7; i++) {
+                const d = new Date(start + i * 86400e3).toISOString().slice(0, 10);
+                if (d > lastDate) break;
+                soldBars.push({ time: d as Time, value: w.sold });
+            }
+        }
+        if (soldBars.length) {
+            const sold = chart.addSeries(HistogramSeries, {
+                priceScaleId: 'sold',
+                color: v('--chart-sold', 'rgba(61, 125, 202, 0.32)'),
+                priceFormat: { type: 'volume' },
+                priceLineVisible: false,
+                lastValueVisible: false,
+            });
+            sold.priceScale().applyOptions({ scaleMargins: { top: 0.78, bottom: 0 }, visible: false });
+            sold.setData(soldBars);
+            chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.08, bottom: 0.26 } });
         }
 
         // Source-era overlay: the stretch of the line that comes from
@@ -688,7 +730,30 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             tip.innerHTML =
                 `<strong>$${price.toFixed(2)}</strong>` +
                 `<span>${fmtDate(time)}</span>` +
-                (src ? `<span>${SOURCE_LABEL[src] ?? src}</span>` : '');
+                (src ? `<span>${SOURCE_LABEL[src] ?? src}</span>` : '') +
+                soldLine(time);
+            tip.style.display = 'flex';
+            if (narrow) return;
+            const left = Math.min(Math.max(x + 12, 4), el.clientWidth - tip.offsetWidth - 4);
+            tip.style.left = `${left}px`;
+            tip.style.top = `${Math.max(y - tip.offsetHeight - 10, 4)}px`;
+        };
+
+        // The week's sales, for the line tooltip and for hovering the bars
+        // themselves (copies and orders, Near Mint; every condition when
+        // that adds anything).
+        const copies = (n: number) => `${n} ${n === 1 ? 'copy' : 'copies'}`;
+        const soldLine = (time: string) => {
+            const w = weekAt(time);
+            return w ? `<span>${copies(w.sold)} sold the week of ${fmtDate(w.weekStart)}${soFar(w)}</span>` : '';
+        };
+        const renderSoldTip = (w: SalesWeek, x: number, y: number) => {
+            tip.innerHTML =
+                `<strong>${copies(w.sold)} sold${soFar(w)}</strong>` +
+                `<span>week of ${fmtDate(w.weekStart)}</span>` +
+                `<span>${w.orders} ${w.orders === 1 ? 'order' : 'orders'}, Near Mint` +
+                (w.soldAllConditions > w.sold ? `; ${copies(w.soldAllConditions)} in every condition` : '') +
+                `</span>`;
             tip.style.display = 'flex';
             if (narrow) return;
             const left = Math.min(Math.max(x + 12, 4), el.clientWidth - tip.offsetWidth - 4);
@@ -746,7 +811,16 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         chart.subscribeCrosshairMove(param => {
             if (!param.point) { tip.style.display = 'none'; showLink(null); setFocus(null, 0, '', 0); return; }
             const hit = nearest(param.point.x, param.point.y);
-            if (!hit) { tip.style.display = 'none'; showLink(null); setFocus(null, 0, '', 0); return; }
+            if (!hit) {
+                showLink(null); setFocus(null, 0, '', 0);
+                // Nothing to point at nearby: over the sold bars' band at the
+                // bottom, the bar under the cursor reads out instead.
+                const w = param.time && soldBars.length && param.point.y >= chart.paneSize().height * 0.76
+                    ? weekAt(String(param.time)) : null;
+                if (w) renderSoldTip(w, param.point.x, param.point.y);
+                else tip.style.display = 'none';
+                return;
+            }
             // Gravity: the marker swells as the cursor closes in on the point.
             const closeness = 1 - hit.d / hitR;
             const base = hit.kind === 'line' ? 3 : dotR;
@@ -886,7 +960,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             tip.remove();
             chart.remove();
         };
-    }, [data, grade, range, forecasts, pastData, hidden, pastView]);
+    }, [data, grade, range, forecasts, pastData, salesData, hidden, pastView]);
 
     if (isLoading) return <div>Loading chart…</div>;
     if (!grades.length) return <div className="est-note">No price history yet for this card.</div>;
@@ -901,6 +975,8 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     const mainKeys = [
         { id: 'history', label: 'History', color: 'var(--chart-history)' },
         ...(hasForecast ? [{ id: 'forecast', label: 'Forecast', color: 'var(--chart-forecast)' }] : []),
+        ...(grade === 'ungraded' && (salesData?.weeks.length ?? 0) > 0
+            ? [{ id: 'sold', label: 'Copies sold', color: 'var(--chart-sold)' }] : []),
     ];
     // One key per horizon that has any plotted dot (not one per dot).
     const pastKeys = PAST_HORIZONS.filter(h => pastPicks.some(p => p.horizon === h)).map(h => ({

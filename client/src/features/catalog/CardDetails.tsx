@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery, useFetchFiltersQuery } from "./catalogApi";
+import { useFetchCardDetailsQuery, useFetchCardForecastQuery, useFetchCardReasoningQuery, useFetchCardSalesQuery, useFetchFiltersQuery } from "./catalogApi";
 import { WINDOW_LABEL, windowsFor, type Window } from "./windows";
 import {
     useFetchWatchlistQuery,
@@ -103,6 +103,73 @@ function OrderTicket({ game, productId, printing = '' }: { game: string; product
                 </p>
             )}
         </div>
+    );
+}
+
+// Weekly TCGplayer sales for the printing the page is on (2026-11-09, user:
+// "add a volume table to the card detail page"): the last eight weeks of
+// Near Mint copies and orders with the week's low, high and market price,
+// headed by the total over the last full weeks. The newest week is marked
+// as still running when the crawl fetched it mid-week. Nothing renders for a
+// card the crawl has not reached yet.
+const SALES_ROWS = 8;
+function SalesSection({ game, id, printing }: { game: string; id: number; printing?: string }) {
+    const { data } = useFetchCardSalesQuery({ game, id, printing });
+    const weeks = data?.weeks ?? [];
+    if (!data || weeks.length === 0) return null;
+    const newest = weeks[weeks.length - 1];
+    const running = !!data.asOf && Date.parse(data.asOf) < Date.parse(newest.weekStart) + 7 * 86400e3;
+    const full = running ? weeks.slice(0, -1) : weeks;
+    const recentFull = full.slice(-4);
+    const soldRecent = recentFull.reduce((n, w) => n + w.sold, 0);
+    const allRecent = recentFull.reduce((n, w) => n + w.soldAllConditions, 0);
+    const rows = weeks.slice(-SALES_ROWS).reverse();
+    const copies = (n: number) => `${n} ${n === 1 ? 'copy' : 'copies'}`;
+    const weekLabel = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    return (
+        <section className="panel detail-panel">
+            <h4 className="mono detail-panel__title">Copies sold each week</h4>
+            {recentFull.length > 0 && (
+                <p className="price-caption">
+                    {copies(soldRecent)} sold Near Mint on TCGplayer over the last {recentFull.length === 1 ? 'full week' : `${recentFull.length} full weeks`}
+                    {allRecent > soldRecent ? `, ${allRecent} counting every condition` : ''}
+                    {data.variant ? ` (${data.variant} printing)` : ''}.
+                    {data.asOf ? ` Counted ${shortDate(data.asOf)}; we recount about every four weeks.` : ''}
+                </p>
+            )}
+            <div className="forecast-wrap">
+                <table className="sales-table">
+                    <thead>
+                        <tr>
+                            <th>Week of</th>
+                            <th>Copies</th>
+                            <th>Orders</th>
+                            <th className="sales-table__wide">Low</th>
+                            <th className="sales-table__wide">High</th>
+                            <th>Market</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map(w => (
+                            <tr key={w.weekStart}>
+                                <td>
+                                    {weekLabel(w.weekStart)}
+                                    {w === newest && running && <span className="sales-table__sofar"> so far</span>}
+                                </td>
+                                <td><strong>{w.sold}</strong></td>
+                                <td>{w.orders}</td>
+                                <td className="sales-table__wide">{w.low != null ? currencyFormat(w.low) : '–'}</td>
+                                <td className="sales-table__wide">{w.high != null ? currencyFormat(w.high) : '–'}</td>
+                                <td>{w.market != null ? currencyFormat(w.market) : '–'}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+            <p className="est-note">
+                Near Mint sales only. Low and high are the cheapest and dearest copies that sold that week; market is TCGplayer's market price at the time. The same counts draw the bars along the bottom of the chart.
+            </p>
+        </section>
     );
 }
 
@@ -545,6 +612,7 @@ export default function CardDetails() {
                         ) : (
                             <ForecastSection forecasts={forecasts} game={gameId} id={cardId} />
                         )}
+                        <SalesSection game={gameId} id={cardId} printing={printing || undefined} />
                     </>
                 )}
                 {cardDetails.length > 0 && (

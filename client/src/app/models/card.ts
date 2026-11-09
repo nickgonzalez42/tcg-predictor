@@ -96,6 +96,29 @@ export type PastForecast = {
     realizedPrice?: number
 }
 
+// Weekly TCGplayer sales for the printing the page is on (2026-11-09): Near
+// Mint copies and the orders they came from, with every condition summed
+// alongside. The newest week is the one still in progress when the crawl
+// last looked (asOf); the crawl revisits each card about every four weeks.
+export type SalesWeek = {
+    weekStart: string          // the bucket's first day
+    sold: number               // Near Mint copies sold that week
+    orders: number
+    low?: number
+    high?: number
+    market?: number            // TCGplayer market price at the time
+    soldAllConditions: number
+}
+
+export type CardSales = {
+    game: string
+    productId: number
+    variant?: string           // the TCGplayer printing the figures are for
+    condition: string
+    asOf?: string              // YYYY-MM-DD the crawl last fetched this card
+    weeks: SalesWeek[]         // oldest first
+}
+
 export type GradedPrices = {
     ungraded?: number
     grade7?: number

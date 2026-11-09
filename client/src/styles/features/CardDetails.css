@@ -571,3 +571,63 @@
   border-color: var(--primary, #3d7dca);
   background: color-mix(in srgb, var(--primary, #3d7dca) 14%, transparent);
 }
+
+/* Copies sold each week (2026-11-09): six even columns like the forecast
+   table; the week column keeps a fixed share so "so far" never wraps it. */
+.sales-table {
+  border-collapse: collapse;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.sales-table th:first-child,
+.sales-table td:first-child {
+  width: 22%;
+}
+
+.sales-table th {
+  text-align: left;
+  padding: var(--space-5) var(--space-10);
+  font-size: 11.52px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+
+.sales-table td {
+  padding: var(--space-10);
+  border-bottom: 1px solid var(--border);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sales-table tr:last-child td {
+  border-bottom: none;
+}
+
+.sales-table__sofar {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+@media (max-width: 1023px) {
+  .sales-table th,
+  .sales-table td {
+    padding: var(--space-5);
+    font-size: 13px;
+  }
+}
+
+/* Phones: four columns fit, six do not; the week's low and high go. */
+@media (max-width: 639px) {
+  .sales-table__wide {
+    display: none;
+  }
+
+  .sales-table th:first-child,
+  .sales-table td:first-child {
+    width: 34%;
+  }
+}

@@ -19,6 +19,12 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
     // Raw PriceCharting rows (see PcRawPoint) — cutover-bridge reads only.
     public DbSet<PcRawPoint> PcRaw => Set<PcRawPoint>();
 
+    // Weekly TCGplayer sales per variant and condition, and when each card
+    // was last fetched (see SalesBucket / SalesScan; the card page's sales
+    // table and the chart's sold bars, 2026-11-09).
+    public DbSet<SalesBucket> Sales => Set<SalesBucket>();
+    public DbSet<SalesScan> SalesScans => Set<SalesScan>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -62,6 +68,31 @@ public class PriceChartingContext(DbContextOptions<PriceChartingContext> options
             p.Property(x => x.Grade).HasColumnName("grade");
             p.Property(x => x.Date).HasColumnName("date");
             p.Property(x => x.Price).HasColumnName("price");
+        });
+
+        builder.Entity<SalesBucket>(s =>
+        {
+            s.ToTable("tcg_sales_history");
+            s.HasKey(x => new { x.Game, x.ProductId, x.Variant, x.Condition, x.BucketDate });
+            s.Property(x => x.Game).HasColumnName("game");
+            s.Property(x => x.ProductId).HasColumnName("product_id");
+            s.Property(x => x.Variant).HasColumnName("variant");
+            s.Property(x => x.Condition).HasColumnName("condition");
+            s.Property(x => x.BucketDate).HasColumnName("bucket_date");
+            s.Property(x => x.QuantitySold).HasColumnName("quantity_sold");
+            s.Property(x => x.TransactionCount).HasColumnName("transaction_count");
+            s.Property(x => x.LowSale).HasColumnName("low_sale");
+            s.Property(x => x.HighSale).HasColumnName("high_sale");
+            s.Property(x => x.MarketPrice).HasColumnName("market_price");
+        });
+
+        builder.Entity<SalesScan>(s =>
+        {
+            s.ToTable("tcg_sales_scan");
+            s.HasKey(x => new { x.Game, x.ProductId });
+            s.Property(x => x.Game).HasColumnName("game");
+            s.Property(x => x.ProductId).HasColumnName("product_id");
+            s.Property(x => x.FetchedAt).HasColumnName("fetched_at");
         });
 
         builder.Entity<GradedPrice>(p =>

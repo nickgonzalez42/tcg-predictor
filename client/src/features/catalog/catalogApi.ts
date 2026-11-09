@@ -1,5 +1,5 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import type { Card, Forecast, PastForecast } from "../../app/models/card";
+import type { Card, CardSales, Forecast, PastForecast } from "../../app/models/card";
 
 export type ImageSearchHit = {
     game: string; productId: number; name: string; set: string;
@@ -97,6 +97,12 @@ export const catalogApi = createApi({
             query: ({ game, id, printing }: { game: string, id: number, printing?: string }) =>
                 `cards/${game}/${id}/forecast-history${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
         }),
+        // Weekly TCGplayer sales for the shown printing (card page table and
+        // the chart's sold bars).
+        fetchCardSales: builder.query<CardSales, { game: string, id: number, printing?: string }>({
+            query: ({ game, id, printing }) =>
+                `cards/${game}/${id}/sales${printing ? `?printing=${encodeURIComponent(printing)}` : ''}`
+        }),
         fetchCardReasoning: builder.query<
             { game: string, productId: number, prose: string | null },
             { game: string, id: number }
@@ -124,6 +130,6 @@ export const catalogApi = createApi({
 
 export const {
     useFetchCardDetailsQuery, useFetchCardsQuery, useFetchFiltersQuery,
-    useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardForecastHistoryQuery,
+    useFetchCardHistoryQuery, useFetchCardForecastQuery, useFetchCardForecastHistoryQuery, useFetchCardSalesQuery,
     useFetchCardReasoningQuery, useFetchMoversQuery, useImageSearchMutation, useScanCardMutation,
 } = catalogApi;
