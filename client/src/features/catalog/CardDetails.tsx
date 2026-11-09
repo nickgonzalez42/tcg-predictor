@@ -167,7 +167,7 @@ function SalesSection({ game, id, printing }: { game: string; id: number; printi
                 </table>
             </div>
             <p className="est-note">
-                Near Mint sales only. Low and high are the cheapest and dearest copies that sold that week; market is TCGplayer's market price at the time. The same counts draw the bars along the bottom of the chart.
+                Near Mint sales only. Low and high are the cheapest and dearest copies that sold that week; market is TCGplayer's market price at the time.
             </p>
         </section>
     );

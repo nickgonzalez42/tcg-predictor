@@ -28,7 +28,6 @@
   --nav-bg: #1e3a5f;             /* navbar navy */
   --nav-link: #dbe4f0;
   --chart-history: #3d7dca;
-  --chart-sold: rgba(61, 125, 202, 0.34);   /* weekly copies-sold bars under the price line */
   --chart-forecast: #ffcb05;     /* dashed model-forecast line */
   /* Past-forecast review lines, one color per horizon */
   --chart-past-1w: #4dd0e1;
