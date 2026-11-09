@@ -127,18 +127,33 @@ function SalesSection({ game, id, printing }: { game: string; id: number; printi
     const recentFull = full.slice(-4);
     const soldRecent = recentFull.reduce((n, w) => n + w.sold, 0);
     const allRecent = recentFull.reduce((n, w) => n + w.soldAllConditions, 0);
-    const rows = weeks.slice(-SALES_ROWS).reverse();
+    // Only weeks with a sale are listed (2026-11-09, user, on a $700 card whose
+    // last eight weeks were all zero: "it's showing zero cards moved"). A quiet
+    // card then shows WHEN it last sold instead of a column of zeros, and the
+    // caption says how long it has been quiet.
+    const sold = weeks.filter(w => w.sold > 0);
+    const rows = sold.slice(-SALES_ROWS).reverse();
+    const lastSale = sold[sold.length - 1];
+    const quietWeeks = full.length - 1 - full.lastIndexOf(lastSale);   // full weeks since the last sale
     const copies = (n: number) => `${n} ${n === 1 ? 'copy' : 'copies'}`;
     const weekLabel = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const counted = data.asOf ? ` Counted ${shortDate(data.asOf)}; we recount about every four weeks.` : '';
     return (
         <section className="panel detail-panel">
             <h4 className="mono detail-panel__title">Copies sold each week</h4>
-            {recentFull.length > 0 && (
+            {soldRecent > 0 ? (
                 <p className="price-caption">
                     {copies(soldRecent)} sold Near Mint on TCGplayer over the last {recentFull.length === 1 ? 'full week' : `${recentFull.length} full weeks`}
                     {allRecent > soldRecent ? `, ${allRecent} counting every condition` : ''}
                     {data.variant ? ` (${data.variant} printing)` : ''}.
-                    {data.asOf ? ` Counted ${shortDate(data.asOf)}; we recount about every four weeks.` : ''}
+                    {counted}
+                </p>
+            ) : (
+                <p className="price-caption">
+                    No Near Mint copies sold on TCGplayer in the last {quietWeeks > 1 ? `${quietWeeks} weeks` : 'week'}
+                    {allRecent > 0 ? ` (${copies(allRecent)} in other conditions over the last ${recentFull.length} weeks)` : ''}
+                    {data.variant ? `, ${data.variant} printing` : ''}; the last sale was the week of {weekLabel(lastSale.weekStart)}.
+                    {counted}
                 </p>
             )}
             <div className="forecast-wrap">
@@ -171,7 +186,7 @@ function SalesSection({ game, id, printing }: { game: string; id: number; printi
                 </table>
             </div>
             <p className="est-note">
-                Near Mint sales only. Low and high are the cheapest and dearest copies that sold that week; market is TCGplayer's market price at the time.
+                Near Mint sales only; weeks with nothing sold are left out. Low and high are the cheapest and dearest copies that sold that week; market is TCGplayer's market price at the time.
             </p>
         </section>
     );
