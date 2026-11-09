@@ -863,12 +863,16 @@ def game_week_series(synth, game, names, dates):
     return out
 
 
-def line_chart(dates, series, title=None, xfmt=None):
-    """Multi-line SVG: series = [(label, [pct-or-None per date], color)], each
+def line_chart(dates, series, title=None, xfmt=None, yfmt=None, xticks=None):
+    """Multi-line SVG: series = [(label, [value-or-None per date], color)], each
     line tagged at its right edge with the label and closing value. `dates`
     are the x positions' labels (ISO dates by default, printed MM-DD; xfmt
-    formats them otherwise, e.g. an age axis in days)."""
+    formats them otherwise, e.g. an age axis in days). Values are percents
+    unless `yfmt` prints them otherwise (a count of cards or copies, for the
+    game articles' line charts, 2026-11-08). `xticks='all'` labels every x
+    position instead of the two ends (a handful of price bands or weeks)."""
     fmt = xfmt or (lambda s: s[5:])
+    yfmt = yfmt or (lambda v: f"{v:+.1f}%")
     W, H, PADT, PADB, LX = 640, 250, 12, 22, 46
     if title:
         PADT += 20
@@ -895,8 +899,11 @@ def line_chart(dates, series, title=None, xfmt=None):
                  "stroke='var(--border, #2e3a52)'/>")
     for v in (lo, hi):
         parts.append(f"<text x='{LX - 6}' y='{Y(v) + 4:.1f}' text-anchor='end' font-size='10' "
-                     f"fill='var(--text-muted, #8b96ad)'>{v:+.1f}%</text>")
-    for i, anchor in ((0, "start"), (len(dates) - 1, "end")):
+                     f"fill='var(--text-muted, #8b96ad)'>{esc(yfmt(v))}</text>")
+    ticks = ([(i, "start" if i == 0 else "end" if i == len(dates) - 1 else "middle")
+              for i in range(len(dates))] if xticks == "all"
+             else [(0, "start"), (len(dates) - 1, "end")])
+    for i, anchor in ticks:
         parts.append(f"<text x='{X(i):.1f}' y='{H - 6}' text-anchor='{anchor}' font-size='10' "
                      f"fill='var(--text-muted, #8b96ad)'>{esc(fmt(dates[i]))}</text>")
     # lines, then right-edge labels nudged apart so converging lines stay legible
@@ -907,7 +914,7 @@ def line_chart(dates, series, title=None, xfmt=None):
             continue
         parts.append(f"<polyline points='{pts}' fill='none' stroke='{color}' stroke-width='2'/>")
         last = next(v for v in reversed(ys) if v is not None)
-        labels.append([Y(last), f"{label} {last:+.1f}%", color])
+        labels.append([Y(last), f"{label} {yfmt(last)}".strip(), color])
     labels.sort()
     for i in range(1, len(labels)):
         labels[i][0] = max(labels[i][0], labels[i - 1][0] + 13)

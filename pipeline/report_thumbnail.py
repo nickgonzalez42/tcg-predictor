@@ -161,14 +161,44 @@ def _spark(draw, xy, series, width=600, height=74):
                   font=f, fill=LABEL)
 
 
-def render(out_path, kind, headline, published, stats=(), cards=(), spark=(), label=None):
+def _spark_line(draw, xy, line, width=600, height=74):
+    """The week's price index as ONE line (an article's hero, 2026-11-08,
+    user: no bar charts on the articles): the strip the reports fill with a
+    bar per game carries the set's or game's own day-by-day path instead,
+    its closing value at the end. Real numbers from the article."""
+    x0, y0 = xy
+    dates, values = list(line[0]), list(line[1])
+    pts = [(i, v) for i, v in enumerate(values) if v is not None]
+    if len(pts) < 2 or len(dates) != len(values):
+        return
+    lo = min(min(v for _, v in pts), 0.0)
+    hi = max(max(v for _, v in pts), 0.0)
+    if hi - lo < 0.5:
+        hi, lo = hi + 0.25, lo - 0.25
+    X = lambda i: x0 + width * i / max(len(values) - 1, 1)
+    Y = lambda v: y0 + height - 6 - (v - lo) / (hi - lo) * (height - 16)
+    last = pts[-1][1]
+    colour = UP if last >= 0 else DOWN
+    draw.line([x0, Y(0), x0 + width, Y(0)], fill=(46, 58, 82), width=1)
+    draw.line([(X(i), Y(v)) for i, v in pts], fill=colour, width=4, joint="curve")
+    f = _font(MONO, 18, index=0)
+    draw.text((x0, y0 + height + 8), dates[0][5:], font=f, fill=LABEL)
+    end = dates[-1][5:]
+    draw.text((x0 + width - draw.textlength(end, font=f), y0 + height + 8), end, font=f, fill=LABEL)
+    draw.text((x0 + width + 8, Y(last) - 10), f"{last:+.1f}%", font=f, fill=colour)
+
+
+def render(out_path, kind, headline, published, stats=(), cards=(), spark=(), label=None,
+           spark_line=None):
     """Write one report's thumbnail.
 
-    kind      'market' | 'model'
-    stats     (value, label, tone) triples, tone 'up' | 'down' | None
-    cards     (game, product_id) candidates; the first three with art are used
-    spark     (label, value) pairs drawn as a diverging bar per game
-    label     chip text; defaults to the report kind
+    kind        'market' | 'model' | 'set' | 'game'
+    stats       (value, label, tone) triples, tone 'up' | 'down' | None
+    cards       (game, product_id) candidates; the first three with art are used
+    spark       (label, value) pairs drawn as a diverging bar per game (reports)
+    spark_line  (dates, values): the week's price index as one line, drawn
+                in the strip instead of the bars (articles, 2026-11-08)
+    label       chip text; defaults to the report kind
     """
     img = Image.new("RGBA", (W, H), BG + (255,))
     _dots(img)
@@ -232,7 +262,9 @@ def render(out_path, kind, headline, published, stats=(), cards=(), spark=(), la
     y += 6
     draw.text((64, y), published.upper(), font=f_small, fill=LABEL)
 
-    if spark:
+    if spark_line:
+        _spark_line(draw, (64, 392), spark_line)
+    elif spark:
         _spark(draw, (64, 392), list(spark)[:12])
 
     # Stats along the bottom, each a number over its label. A figure the
@@ -283,9 +315,12 @@ def _esc(t):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
-def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=None):
+def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=None,
+               spark_line=None):
     """Inline SVG twin of the thumbnail. `cards` are (game, pid[, name]);
-    `label` overrides the chip text (an article names its game and kind)."""
+    `label` overrides the chip text (an article names its game and kind);
+    `spark_line` (dates, values) replaces the bar strip with the week's
+    price index as one line (articles, 2026-11-08)."""
     from PIL import Image as _I, ImageDraw
     measure = ImageDraw.Draw(_I.new("RGB", (1, 1)))
     kind_colour = {"market": "#7fb0ea", "model": "#c678dd", "set": "#4dd0e1",
@@ -349,7 +384,36 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=No
     out.append(f'<text x="64" y="{y - step + 32}" font-family="{SVG_MONO}" font-size="20" '
                f'fill="#b2bcce">{_esc(published.upper())}</text>')
 
-    series = list(spark)[:12]
+    line = None
+    if spark_line:
+        dts, vals = list(spark_line[0]), list(spark_line[1])
+        pts = [(i, v) for i, v in enumerate(vals) if v is not None]
+        if len(pts) >= 2 and len(dts) == len(vals):
+            line = (dts, vals, pts)
+    series = [] if spark_line else list(spark)[:12]
+    if line:
+        dts, vals, pts = line
+        x0, y0, width, height = 64, 392, 600, 74
+        lo = min(min(v for _, v in pts), 0.0)
+        hi = max(max(v for _, v in pts), 0.0)
+        if hi - lo < 0.5:
+            hi, lo = hi + 0.25, lo - 0.25
+        X = lambda i: x0 + width * i / max(len(vals) - 1, 1)
+        Y = lambda v: y0 + height - 6 - (v - lo) / (hi - lo) * (height - 16)
+        last = pts[-1][1]
+        colour = "#3fd98a" if last >= 0 else "#ff7a7a"
+        points = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in pts)
+        out.append(f'<g class="report-hero-line"><title>Price index this week, against '
+                   f'{_esc(dts[0])}: {last:+.1f}%</title>'
+                   f'<line x1="{x0}" y1="{Y(0):.1f}" x2="{x0 + width}" y2="{Y(0):.1f}" stroke="#2e3a52"/>'
+                   f'<polyline points="{points}" fill="none" stroke="{colour}" stroke-width="3" '
+                   f'stroke-linejoin="round" stroke-linecap="round"/>'
+                   f'<text x="{x0}" y="{y0 + height + 24}" font-family="{SVG_MONO}" font-size="18" '
+                   f'fill="#b2bcce">{_esc(dts[0][5:])}</text>'
+                   f'<text x="{x0 + width}" y="{y0 + height + 24}" font-family="{SVG_MONO}" '
+                   f'font-size="18" fill="#b2bcce" text-anchor="end">{_esc(dts[-1][5:])}</text>'
+                   f'<text x="{x0 + width + 8}" y="{Y(last) + 6:.1f}" font-family="{SVG_MONO}" '
+                   f'font-size="18" fill="{colour}">{last:+.1f}%</text></g>')
     if series:
         peak = max(abs(v) for _l, v, *_rest in series) or 1.0
         mid, slot = 429, 600 / len(series)

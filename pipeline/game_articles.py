@@ -94,7 +94,7 @@ from market_report import (                               # noqa: E402
     PC_DB, PRED_DB, MIN_BASE, MAX_WEEK_RATIO, YOUNG_DAYS, DIM_LABELS,
     week_window, synth_series, young_series, game_moves, card_attrs,
     find_trends, pick_trends, trend_phrase, live_accuracy,
-    bar_chart, line_chart, esc, card_link, money, pct, short_label,
+    line_chart, esc, card_link, money, pct, short_label,
 )
 from article_editorial import write_set_article, write_game_article, write_recent_article   # noqa: E402
 
@@ -483,6 +483,9 @@ def has_art(game, pid, _cache={}):
 # ---------------------------------------------------------------------------
 # Sales volume (2026-11-07)
 # ---------------------------------------------------------------------------
+SALES_WEEKS = 8           # weekly buckets on the top sellers' line chart
+
+
 def monday_of(d):
     return d - timedelta(days=d.weekday())
 
@@ -528,10 +531,28 @@ def sales_volume(pc, game, cat, pids, today):
     top = sorted(((pid, cat[pid]["name"], v[0], v[1], cat[pid]["price"]) for pid, v in per_card.items()
                   if pid in cat and v[0] > 0), key=lambda t: -t[2])[:TOP_SELLERS_N]
     enough = len(fresh) >= max(5, int(VOLUME_MIN_COVER * len(pids))) and (u_last + u_prev) > 0
+    # The top sellers' last SALES_WEEKS weekly buckets, for the section's line
+    # chart (2026-11-08): a week with no bucket sold nothing.
+    weeks = [(last_week - timedelta(days=7 * k)).isoformat() for k in range(SALES_WEEKS - 1, -1, -1)]
+    lines = []
+    if top:
+        tp = [t[0] for t in top]
+        try:
+            hist = pc.execute(
+                f"SELECT product_id, bucket_date, quantity_sold FROM tcg_sales_history "
+                f"WHERE game=? AND condition='Near Mint' AND bucket_date >= ? AND bucket_date <= ? "
+                f"AND product_id IN ({','.join('?' * len(tp))})", [game, weeks[0], weeks[-1], *tp]).fetchall()
+        except sqlite3.OperationalError:
+            hist = []
+        wk = collections.defaultdict(float)
+        for pid, d, q in hist:
+            wk[(pid, d)] += q or 0.0
+        lines = [(name, [wk.get((pid, w), 0.0) for w in weeks]) for pid, name, *_ in top]
     return {"week": lw, "prev_week": pw, "units_last": u_last, "units_prev": u_prev,
             "txn_last": sum(txn.get((pid, lw), 0.0) for pid in fresh),
             "change_pct": r1((u_last / u_prev - 1) * 100) if u_prev >= 20 else None,
-            "covered": len(fresh), "of": len(pids), "per_card": per_card, "top": top, "enough": enough}
+            "covered": len(fresh), "of": len(pids), "per_card": per_card, "top": top, "enough": enough,
+            "weeks": weeks, "top_lines": lines}
 
 
 def sold_tag(vc, pid):
@@ -554,12 +575,13 @@ def sales_facts(vol, scope):
 
 
 def sales_block(prose, vol, game, label, scope):
-    """The 'What Actually Sold' section: a bar strip of the top sellers, the
-    table, the fallback sentence."""
+    """The 'What Actually Sold' section: the top sellers' copies per week as
+    lines, the table, the fallback sentence."""
     top = vol["top"]
-    rows = [(short_label(n, 30), u, f"week before {p:,.0f}") for _pid, n, u, p, _pr in top]
-    chart = bar_chart(rows, unit=" sold", signed=False, color="var(--primary, #3d7dca)", decimals=0,
-                      title=f"{label}: Near Mint copies sold, week of {vol['week']}") if rows else ""
+    series = [(short_label(n, 22), ys, PALETTE[i % len(PALETTE)])
+              for i, (n, ys) in enumerate(vol.get("top_lines", [])[:SALES_LINES])]
+    chart = line_chart(vol["weeks"], series, title=f"{label}: Near Mint copies sold per week",
+                       yfmt=lambda v: f"{v:,.0f}") if series and vol.get("weeks") else ""
     table = [f"<table class='report-table'><thead><tr><th>Card</th><th>Copies, week of {vol['week']}</th>"
              "<th>Week before</th><th>Price</th></tr></thead><tbody>"]
     for pid, n, u, p, pr in top:
@@ -574,7 +596,7 @@ def sales_block(prose, vol, game, label, scope):
     if top:
         txt += f" {top[0][1]} sold the most, {top[0][2]:,.0f} copies."
     return section(prose, "sales", "What Actually Sold", txt, chart + "".join(table),
-                   f"Copies sold per card, Near Mint, all printings, week of {vol['week']}.")
+                   f"Copies sold per week by the top sellers, Near Mint, all printings; the table is the week of {vol['week']}.")
 
 
 # ---------------------------------------------------------------------------
@@ -607,6 +629,49 @@ def index_series(synth, keys, dates, min_n=50):
         ratios = [r for r in ratios if 1 / MAX_WEEK_RATIO <= r <= MAX_WEEK_RATIO]
         out.append((statistics.mean(ratios) - 1) * 100 if len(ratios) >= min_n else None)
     return out
+
+
+# Line charts in place of bars (2026-11-08, user: "remove the bar charts on
+# the articles (keep them on the reports) and replace with a line graph").
+# Wherever an article ranked groups by their week move as a bar each, it
+# now draws each group's price index day by day through the window (the
+# same recipe as the game's drift line); the table beside it keeps the
+# ranking. Counts (price bands, copies sold) are drawn as one line over
+# their ordered categories.
+PALETTE = ["#ffcb05", "#7fb0ea", "#c678dd", "#3fd98a", "#ff9e64", "#8b96ad"]
+LINES_MAX = 6             # index lines on one chart; more is a tangle
+SALES_LINES = 4           # weekly sales swing harder, so fewer lines fit
+# Short band labels for the ladder's x axis (six of them share 470px).
+BAND_SHORT = {"under $1": "under $1", "$1 to $5": "$1-5", "$5 to $20": "$5-20",
+              "$20 to $50": "$20-50", "$50 to $100": "$50-100", "$100 and up": "$100+"}
+
+
+def group_lines(synth, groups, dates, min_n=2):
+    """[(label, keys)] -> [(label, [pct-or-None per date])]: each group's
+    price index over the window; groups with no drawable line are dropped."""
+    out = []
+    if not dates:
+        return out
+    for label, keys in groups:
+        ys = index_series(synth, keys, dates, min_n=min_n)
+        if any(v is not None for v in ys):
+            out.append((label, ys))
+    return out
+
+
+def lines_chart(dates, lines, title):
+    series = [(short_label(label, 22), ys, PALETTE[i % len(PALETTE)])
+              for i, (label, ys) in enumerate(lines[:LINES_MAX])]
+    return line_chart(dates, series, title=title) if series and dates else ""
+
+
+def band_line(rows, title):
+    """The price ladder as one line over its bands, every band labelled."""
+    if not rows or not any(n for _, n in rows):
+        return ""
+    return line_chart([b for b, _ in rows], [("", [float(n) for _, n in rows], "var(--primary, #3d7dca)")],
+                      title=title, xfmt=lambda b: BAND_SHORT.get(b, b), yfmt=lambda v: f"{v:,.0f} cards",
+                      xticks="all")
 
 
 def forecast_bits(pred, game, cat, pids=None, min_pick=10.0):
@@ -706,12 +771,18 @@ def model_corner(prose, key, header, body_text, picks, game, record, links, extr
     return "".join(out)
 
 
-def hero_and_thumb(kind, game, title, today, stats, cards, spark, focus=None):
+def hero_and_thumb(kind, game, title, today, stats, cards, line, focus=None):
+    """`line` is (dates, values): the set's or game's price index through the
+    week, drawn as one line where the reports' heroes carry a bar per game
+    (2026-11-08); None when the window has no drawable index."""
     from report_thumbnail import render_svg
     label = f"{GAMES[game]['label'].upper()} · {KIND_LABEL['recent' if focus == 'recent' else kind]}"
     pub = today.strftime("%B %-d, %Y")
-    hero = render_svg(kind, title, pub, stats, cards, spark, label=label)
-    thumb = {"kind": kind, "label": label, "stats": stats, "spark": spark,
+    if line and not any(v is not None for v in line[1]):
+        line = None
+    hero = render_svg(kind, title, pub, stats, cards, [], label=label, spark_line=line)
+    thumb = {"kind": kind, "label": label, "stats": stats, "spark": [],
+             "spark_line": [list(line[0]), list(line[1])] if line else None,
              "cards": [list(c) for c in cards]}
     return hero, json.dumps(thumb)
 
@@ -817,8 +888,15 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
     sales = sales_volume(pc, game, cat, members, today)
     tracked_old = sum(m[2] for m in moves)
     tracked_new = sum(m[3] for m in moves)
+    # Day-by-day lines through the window (2026-11-08): one per rarity with
+    # two or more tracked cards, and the whole set for the hero.
+    rarity_lines = group_lines(synth, [
+        (r["rarity"], [(game, pid) for pid, c in members.items() if (c["rarity"] or "Unlisted") == r["rarity"]])
+        for r in rarities if r["tracked"] >= 2], dates)
+    index_line = (dates, index_series(synth, [(game, pid) for pid in members], dates, min_n=5)) if dates else None
     return {
         "game": game, "label": label, "set": set_name, "set_slug": slugify(set_name),
+        "dates": dates, "rarity_lines": rarity_lines, "index_line": index_line,
         "release": release, "age_days": age, "week": {"start": baseline, "end": latest},
         "cards_priced": len(members), "set_value": round(sum(c["price"] for c in members.values()), 2),
         "tracked_value_change_pct": r1((tracked_new / tracked_old - 1) * 100) if tracked_old else None,
@@ -837,7 +915,7 @@ SET_SECTIONS = [
     ("chase", "the set's most valuable cards (the chase list) with each one's price and its move this week"),
     ("movers", "this week's biggest risers and fallers inside the set"),
     ("sales", "how many Near Mint copies of the set's cards actually sold in the last complete week against the week before, and which cards sold most"),
-    ("rarity", "what each rarity costs and how it moved this week"),
+    ("rarity", "what each rarity costs and how it moved this week (the chart draws each rarity's price index day by day)"),
     ("history", "the set's price index since its release day: the average move of its cards from the first day they were broadly priced after release"),
     ("peers", "how this set compares with the game's earlier sets at the same number of days since release (every line on the chart starts on its set's release day), and what those sets did over the month after that age"),
     ("ladder", "how the set's priced cards spread across price bands"),
@@ -984,7 +1062,8 @@ def build_set_article(d, today, no_prose=False):
         rows = [(r["rarity"], r["median_move_pct"], f"{r['tracked']} cards · median {money(r['median_price_usd'])}")
                 for r in d["rarities"] if r["median_move_pct"] is not None and r["tracked"] >= 2]
         rows.sort(key=lambda r: -r[1])
-        chart = bar_chart(rows, title=f"{short_label(set_name, 36)}: median move by rarity") if rows else ""
+        chart = lines_chart(d["dates"], d.get("rarity_lines", []),
+                            f"{short_label(set_name, 36)}: price index this week, by rarity")
         table = ["<table class='report-table'><thead><tr><th>Rarity</th><th>Priced</th>"
                  "<th>Median price</th><th>Tracked</th><th>Median move</th></tr></thead><tbody>"]
         for r in d["rarities"]:
@@ -997,7 +1076,7 @@ def build_set_article(d, today, no_prose=False):
             prose, "rarity", "Rarity Is a Tax Bracket",
             (f"{pricey['rarity']} is the priciest tier at a median {money(pricey['median_price_usd'])}."
              if pricey else "No rarity data for this set."),
-            chart + "".join(table), "Median move this week, by rarity."))
+            chart + "".join(table), "Each rarity's cards averaged, day by day through the week; the table ranks them."))
 
     # What actually sold (2026-11-07)
     if vol and vol["enough"]:
@@ -1060,9 +1139,7 @@ def build_set_article(d, today, no_prose=False):
                             f"Every line starts on its set's release day; {short_label(set_name, 24)} in yellow."))
 
     # Ladder
-    chart = bar_chart([(b, n, None) for b, n in d["ladder"]], unit=" cards", signed=False,
-                      color="var(--primary, #3d7dca)", decimals=0,
-                      title=f"{short_label(set_name, 36)}: priced cards by price band")
+    chart = band_line(d["ladder"], f"{short_label(set_name, 36)}: priced cards by price band")
     over5 = sum(n for b, n in d["ladder"][2:])
     body.append(section(
         prose, "ladder", "Where the Money Sits",
@@ -1101,17 +1178,15 @@ def build_set_article(d, today, no_prose=False):
     if closer:
         body.append(f"<p>{esc(closer)}</p>")
 
-    # Hero: the chase cards fanned, the rarities as the bar strip.
+    # Hero: the chase cards fanned, the set's week as one line.
     stats = [[f"{d['cards_priced']:,}", "priced cards", None],
              [money(d["set_value"]), "set value", None]]
     if st["tracked"]:
         stats = [[f"{st['rose']:,}", "cards rose", "up"], [f"{st['fell']:,}", "cards fell", "down"],
                  [f"{st['median_move_pct']:+.1f}%", "median move", None],
                  [money(d["set_value"]), "set value", None]]
-    spark = [[r["rarity"], r["median_move_pct"]] for r in d["rarities"]
-             if r["median_move_pct"] is not None and r["tracked"] >= 2][:8]
     cards = [[game, pid, name] for pid, name, *_ in d["chase"] if has_art(game, pid)][:3]
-    hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, spark)
+    hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, d.get("index_line"))
     return {"slug": f"set-report-{game}-{today.isoformat()}", "kind": "set", "focus": "set",
             "game": game, "set_name": set_name, "title": title, "summary": lede,
             "body_html": "".join(body), "thumb": thumb, "hero": hero}
@@ -1160,11 +1235,12 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
     ups = sorted((m for m in moves if m[4] > 0.5), key=lambda m: -m[4])
     downs = sorted((m for m in moves if m[4] < -0.5), key=lambda m: m[4])
 
-    prod = collections.defaultdict(lambda: {"prices": [], "moves": [], "dates": collections.Counter()})
+    prod = collections.defaultdict(lambda: {"prices": [], "moves": [], "dates": collections.Counter(), "keys": []})
     for pid, c in pool.items():
         p = prod[c["set"] or "Other"]
         p["prices"].append(c["price"])
         p["dates"][released[pid]] += 1
+        p["keys"].append((game, pid))
         if pid in by_pid:
             p["moves"].append(by_pid[pid][4])
     products = []
@@ -1176,6 +1252,11 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
                          "tracked": len(p["moves"]),
                          "median_move_pct": r1(statistics.median(p["moves"])) if p["moves"] else None})
     products.sort(key=lambda x: (-x["cards_priced"], x["product"]))
+    # Day-by-day lines through the window (2026-11-08): one per release with
+    # two or more tracked cards, and the whole pool for the hero.
+    product_lines = group_lines(synth, [(p["product"], prod[p["product"]]["keys"])
+                                        for p in products if p["tracked"] >= 2], dates)
+    index_line = (dates, index_series(synth, [(game, pid) for pid in pool], dates, min_n=5)) if dates else None
 
     calls, picks = forecast_bits(pred, game, cat, pids=set(pool), min_pick=MIN_BASE)
     sales = sales_volume(pc, game, cat, pool, today)
@@ -1183,6 +1264,7 @@ def collect_recent(pc, pred, game, cat, anchor, pool, released, synth, window, y
     tracked_new = sum(m[3] for m in moves)
     return {
         "game": game, "label": label, "anchor": anchor, "week": {"start": baseline, "end": latest},
+        "dates": dates, "product_lines": product_lines, "index_line": index_line,
         "cards_priced": len(pool), "pool_value": round(sum(c["price"] for c in pool.values()), 2),
         "tracked_value_change_pct": r1((tracked_new / tracked_old - 1) * 100) if tracked_old else None,
         "stats": stats, "chase": chase, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
@@ -1197,7 +1279,7 @@ RECENT_SECTIONS = [
     ("chase", "the most valuable of these newer cards, with each one's price, the release it came from and its move this week"),
     ("movers", "this week's biggest risers and fallers among them"),
     ("sales", "how many Near Mint copies of these cards actually sold in the last complete week against the week before, and which sold most"),
-    ("products", "the releases they come from (promos, decks, side products, the set before the newest): how many priced cards each has, what they cost and how each moved this week"),
+    ("products", "the releases they come from (promos, decks, side products, the set before the newest): how many priced cards each has, what they cost and how each moved this week (the chart draws each release's price index day by day)"),
     ("ladder", "how these cards spread across price bands"),
     ("outlook", "what the model's one-month calls say about them, and the model's own record on this game"),
 ]
@@ -1315,7 +1397,7 @@ def build_recent_article(d, today, no_prose=False):
              f"{p['tracked']} cards · median {money(p['median_price_usd'])}")
             for p in d["products"] if p["median_move_pct"] is not None and p["tracked"] >= 2]
     rows.sort(key=lambda r: -r[1])
-    chart = bar_chart(rows, title=f"{label}: median move by release") if rows else ""
+    chart = lines_chart(d["dates"], d.get("product_lines", []), f"{label}: price index this week, by release")
     table = ["<table class='report-table'><thead><tr><th>Release</th><th>Out since</th><th>Priced</th>"
              "<th>Median price</th><th>Tracked</th><th>Median move</th></tr></thead><tbody>"]
     for p in d["products"][:12]:
@@ -1332,12 +1414,10 @@ def build_recent_article(d, today, no_prose=False):
         (f"{pricey['product']} is the priciest at a median {money(pricey['median_price_usd'])}."
          if pricey and pricey is not biggest else None)])) or "No releases to show."
     body.append(section(prose, "products", "Where They Came From", txt, chart + "".join(table),
-                        "Each release outside the newest set, by median move this week."))
+                        "Each release's cards averaged, day by day through the week; the table ranks them."))
 
     # Ladder
-    chart = bar_chart([(b, n, None) for b, n in d["ladder"]], unit=" cards", signed=False,
-                      color="var(--primary, #3d7dca)", decimals=0,
-                      title=f"{label}: newer cards outside {short_label(anchor, 24)} by price band")
+    chart = band_line(d["ladder"], f"{label}: newer cards outside {short_label(anchor, 24)} by price band")
     over5 = sum(n for b, n in d["ladder"][2:])
     body.append(section(
         prose, "ladder", "Where the Money Sits",
@@ -1361,17 +1441,15 @@ def build_recent_article(d, today, no_prose=False):
     if closer:
         body.append(f"<p>{esc(closer)}</p>")
 
-    # Hero: the chase cards fanned, the releases as the bar strip.
+    # Hero: the chase cards fanned, the pool's week as one line.
     stats = [[f"{d['cards_priced']:,}", "priced cards", None], [f"{n_prod}", "releases", None],
              [money(d["pool_value"]), "together", None], [f"{over5:,}", "worth $5+", None]]
     if st["tracked"]:
         stats = [[f"{st['rose']:,}", "cards rose", "up"], [f"{st['fell']:,}", "cards fell", "down"],
                  [f"{st['median_move_pct']:+.1f}%", "median move", None],
                  [f"{n_prod}", "releases", None]]
-    spark = [[initials(p["product"]), p["median_move_pct"], "", p["product"]] for p in d["products"]
-             if p["median_move_pct"] is not None and p["tracked"] >= 2][:8]
     cards = [[game, pid, name] for pid, name, *_ in d["chase"] if has_art(game, pid)][:3]
-    hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, spark, focus="recent")
+    hero, thumb = hero_and_thumb("set", game, title, today, stats, cards, d.get("index_line"), focus="recent")
     return {"slug": f"new-releases-{game}-{today.isoformat()}", "kind": "set", "focus": "recent",
             "game": game, "set_name": None, "title": title, "summary": lede,
             "body_html": "".join(body), "thumb": thumb, "hero": hero}
@@ -1406,10 +1484,17 @@ def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest
             sets.append({"set": s, "tracked": len(ms), "rose": sum(1 for x in ms if x > 0.5),
                          "fell": sum(1 for x in ms if x < -0.5), "median_move_pct": r1(med)})
     sets.sort(key=lambda x: -abs(x["median_move_pct"]))
+    # Day-by-day lines through the window (2026-11-08): the sets that moved
+    # most, and each group that moved together.
+    set_lines = group_lines(synth, [(s["set"], [(game, pid) for pid, c in cat.items() if c["set"] == s["set"]])
+                                    for s in sets[:LINES_MAX]], dates, min_n=3)
 
     if attrs is None:
         attrs = card_attrs(game)
     trends = pick_trends(find_trends(game, moves, attrs)) if moves else []
+    trend_lines = group_lines(synth, [
+        (str(t["value"]), [((game, m[0], m[5]) if len(m) > 5 and m[5] else (game, m[0])) for m in t["members"]])
+        for t in trends], dates, min_n=3)
     calls, picks = forecast_bits(pred, game, cat)
     discussed = [m[0] for m in ups[:MOVERS_N * 2] + downs[:MOVERS_N * 2]] + [p[0] for p in picks]
     sales = sales_volume(pc, game, cat, discussed, today)
@@ -1419,6 +1504,7 @@ def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest
         "cards_priced": len(cat), "catalog_value": round(sum(c["price"] for c in cat.values()), 2),
         "stats": stats, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
         "sets": sets, "trends": trends, "ladder": ladder([c["price"] for c in cat.values()]),
+        "set_lines": set_lines, "trend_lines": trend_lines,
         "calls": calls, "picks": picks, "record": record_for(pred, game), "newest": newest, "sales": sales,
         "about": about_lines(attrs, [m[0] for m in ups[:MOVERS_N * 2] + downs[:MOVERS_N * 2]] + [p[0] for p in picks]),
     }
@@ -1426,7 +1512,7 @@ def collect_game(pc, pred, game, cat, synth, window, young, market_index, newest
 
 GAME_SECTIONS = [
     ("week", "how the whole game's week went: its drift against the first day of the window (and the all-games line beside it), how many cards rose and fell, the average moves"),
-    ("sets", "which sets moved, ranked by median move"),
+    ("sets", "which sets moved, ranked by median move (the chart draws each set's price index day by day)"),
     ("movers", "the game's biggest individual risers and fallers of the week"),
     ("trends", "the groups of cards that moved together this week: a set, a rarity, a character, a keyword"),
     ("ladder", "how the game's priced cards spread across price bands"),
@@ -1501,7 +1587,7 @@ def build_game_article(d, today, no_prose=False):
     # Sets
     rows = [(s["set"], s["median_move_pct"], f"{s['tracked']} cards") for s in d["sets"][:8]]
     rows.sort(key=lambda r: -r[1])
-    chart = bar_chart(rows, title=f"{label}: median move by set (6+ tracked cards)") if rows else ""
+    chart = lines_chart(d["dates"], d.get("set_lines", []), f"{label}: price index this week, by set")
     table = ["<table class='report-table'><thead><tr><th>Set</th><th>Tracked</th><th>Up</th>"
              "<th>Down</th><th>Median move</th></tr></thead><tbody>"]
     for s in d["sets"][:8]:
@@ -1515,7 +1601,8 @@ def build_game_article(d, today, no_prose=False):
         prose, "sets", "Which Sets Moved",
         (f"{lead['set']} moved most, a median {pct(lead['median_move_pct'])} across {lead['tracked']} tracked cards."
          if lead else "No set had enough tracked cards to call this week."),
-        chart + ("".join(table) if d["sets"] else ""), "Sets ranked by how far their median card moved."))
+        chart + ("".join(table) if d["sets"] else ""),
+        "The sets that moved most, each one's cards averaged day by day; the table ranks them by median move."))
 
     # Movers
     tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
@@ -1538,20 +1625,16 @@ def build_game_article(d, today, no_prose=False):
             marker = ("<span class='report-up'>▲</span>" if t["rising"]
                       else "<span class='report-down'>▼</span>")
             lines.append(f"<p class='report-trendline'>{marker} {trend_phrase(t)}</p>")
-        rows = [(t["value"], t["median"], f"{t['same']}/{t['n']} cards")
-                for t in sorted(d["trends"], key=lambda t: -t["median"])]
-        chart = bar_chart(rows, title=f"{label}: group moves this week (median %)")
+        chart = lines_chart(d["dates"], d.get("trend_lines", []), f"{label}: price index this week, by group")
         t0 = d["trends"][0]
         body.append(section(
             prose, "trends", "What Moved Together",
             f"{t0['value']} ({DIM_LABELS[t0['dim']].lower()}) moved as a group: {t0['same']} of "
             f"{t0['n']} tracked cards, median {pct(t0['median'])}.",
-            "".join(lines) + chart, "Groups that moved as one, by median move."))
+            "".join(lines) + chart, "Groups that moved as one, each group's cards averaged day by day."))
 
     # Ladder
-    chart = bar_chart([(b, n, None) for b, n in d["ladder"]], unit=" cards", signed=False,
-                      color="var(--primary, #3d7dca)", decimals=0,
-                      title=f"{label}: priced cards by price band")
+    chart = band_line(d["ladder"], f"{label}: priced cards by price band")
     over5 = sum(n for b, n in d["ladder"][2:])
     body.append(section(
         prose, "ladder", "Where the Money Sits",
@@ -1581,9 +1664,9 @@ def build_game_article(d, today, no_prose=False):
     stats = [[f"{st['rose']:,}", "cards rose", "up"], [f"{st['fell']:,}", "cards fell", "down"],
              [f"{d['drift']:+.1f}%" if d["drift"] is not None else "0.0%", "week drift", None],
              [f"{st['tracked']:,}", "tracked", None]]
-    spark = [[initials(s["set"]), s["median_move_pct"], "", s["set"]] for s in d["sets"][:10]]
     cards = [[game, m[0], m[1]] for m in (d["ups"][:2] + d["downs"][:2]) if has_art(game, m[0])][:3]
-    hero, thumb = hero_and_thumb("game", game, title, today, stats, cards, spark)
+    hero, thumb = hero_and_thumb("game", game, title, today, stats, cards,
+                                 (d["dates"], d["series"]) if d["dates"] else None)
     return {"slug": f"game-report-{game}-{today.isoformat()}", "kind": "game", "game": game,
             "set_name": None, "title": title, "summary": lede,
             "body_html": "".join(body), "thumb": thumb, "hero": hero}

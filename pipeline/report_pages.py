@@ -290,7 +290,7 @@ def thumbnail(slug, thumb_json, title, published_at, out_dir, base="reports"):
                stats=[tuple(x) for x in t.get("stats", [])],
                cards=[tuple(x) for x in t.get("cards", [])],
                spark=[tuple(x) for x in t.get("spark", [])],
-               label=t.get("label"))
+               label=t.get("label"), spark_line=t.get("spark_line"))
         return f"/{base}/{slug}.jpg"
     except Exception as e:
         print(f"  thumbnail for {slug} skipped: {type(e).__name__}: {e}")
