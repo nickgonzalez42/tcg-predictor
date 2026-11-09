@@ -111,12 +111,16 @@ function OrderTicket({ game, productId, printing = '' }: { game: string; product
 // Near Mint copies and orders with the week's low, high and market price,
 // headed by the total over the last full weeks. The newest week is marked
 // as still running when the crawl fetched it mid-week. Nothing renders for a
-// card the crawl has not reached yet.
+// card without recorded sales.
 const SALES_ROWS = 8;
 function SalesSection({ game, id, printing }: { game: string; id: number; printing?: string }) {
     const { data } = useFetchCardSalesQuery({ game, id, printing });
     const weeks = data?.weeks ?? [];
-    if (!data || weeks.length === 0) return null;
+    // Only a card with recorded sales gets the table (2026-11-09, user: "only
+    // show volume if the card has volume rows"): one the crawl has not
+    // reached, or has reached and found nothing sold, shows no table rather
+    // than eight rows of zeros and dashes.
+    if (!data || !weeks.some(w => w.sold > 0)) return null;
     const newest = weeks[weeks.length - 1];
     const running = !!data.asOf && Date.parse(data.asOf) < Date.parse(newest.weekStart) + 7 * 86400e3;
     const full = running ? weeks.slice(0, -1) : weeks;
