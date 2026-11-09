@@ -400,9 +400,23 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         const track = (key: string, s: ISeriesApi<SeriesType>) =>
             (seriesByKey.current[key] ??= []).push(s);
 
+        // Steady price axis (2026-11-09, user: "the chart moves around too
+        // much vertically when you scroll through horizontally"). The library
+        // re-fits the price axis to whatever is in view on EVERY pan step, so
+        // the line leapt under the cursor. The axis is ours now: every series
+        // opts out of autoscale and the day-grid series (always present, and
+        // valued on every day because the library skips a series with no
+        // valued row in view when it scales) reports one range, `shown`,
+        // which only changes when the data in view leaves
+        // it or fills less than about half of it, and then eases to the new
+        // range instead of jumping (settleScale, below the series).
+        const noScale = { autoscaleInfoProvider: () => null };
+        let shown: { min: number; max: number } | null = null;
+
         let historySeries: ISeriesApi<SeriesType> | null = null;
         if (!hidden.has('history')) {
             const series = chart.addSeries(AreaSeries, {
+                ...noScale,
                 lineColor: history,
                 topColor: 'rgba(61, 125, 202, 0.30)',
                 bottomColor: 'rgba(61, 125, 202, 0.02)',
@@ -429,6 +443,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         let pcOverlay: ISeriesApi<SeriesType> | null = null;
         if (mixedSource && pcSpan.length > 1 && !hidden.has('history')) {
             pcOverlay = chart.addSeries(LineSeries, {
+                ...noScale,
                 color: textMuted,
                 lineWidth: 2,
                 priceLineVisible: false,
@@ -441,6 +456,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // Injected forecast-base/realized points: muted standalone markers.
         if (injectedOnly.length && !hidden.has('history')) {
             const inj = chart.addSeries(LineSeries, {
+                ...noScale,
                 color: textMuted,
                 lineVisible: false,
                 pointMarkersVisible: true,
@@ -495,6 +511,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         ];
         for (let i = 0; i + 1 < chainPts.length; i++) {
             const seg = chart.addSeries(LineSeries, {
+                ...noScale,
                 color: forecastColor,
                 lineWidth: 2,
                 lineStyle: LineStyle.Dashed,
@@ -554,6 +571,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             const a = anchorOf(p);
             if (a) {
                 const anchor = chart.addSeries(LineSeries, {
+                    ...noScale,
                     lineVisible: false,
                     pointMarkersVisible: false,
                     priceLineVisible: false,
@@ -563,6 +581,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
                 anchor.setData([a, { time: p.targetDate, value: p.forecastPrice }]);
             }
             const dot = chart.addSeries(LineSeries, {
+                ...noScale,
                 color: pastColors[p.horizon] ?? '#c678dd',
                 lineVisible: false,          // markers only — no connecting line
                 pointMarkersVisible: true,
@@ -583,6 +602,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // point -> predicted point) by swapping its data; empty data = hidden.
         // Its times always exist via the anchors, so the axis never moves.
         const traj = chart.addSeries(LineSeries, {
+            ...noScale,
             color: '#c678dd',
             lineWidth: 1,
             lineStyle: LineStyle.Dotted,
@@ -598,6 +618,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // grows as the cursor closes in. Its times are always existing slots
         // (series data or the day grid), so the axis never re-spaces.
         const focus = chart.addSeries(LineSeries, {
+            ...noScale,
             lineVisible: false,
             pointMarkersVisible: true,
             pointMarkersRadius: 4,
@@ -624,6 +645,77 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             traj.setData([{ time: m.anchorTime, value: m.anchorValue },
                           { time: m.targetDate, value: m.price }]);
         };
+
+        // The price range the axis should show for a time window: everything
+        // drawn in it (the history line at the tier on screen, its injected
+        // reference prices, the forecast chain at its drawn slots, the
+        // earlier-forecast dots and their anchors), with a little room at
+        // both ends. The library's own scale margins apply on top, as before.
+        // A hidden line is left out, as it is from the drawing.
+        const SCALE_PAD = 0.04, GROW = 0.12, LEAD = 0.18, KEEP_FILL = 0.55, EASE_MS = 260;
+        const targetFor = (from: string, to: string, drawn: keyof typeof tiers = tier) => {
+            let lo = Infinity, hi = -Infinity;
+            const take = (v: number) => { if (Number.isFinite(v)) { if (v < lo) lo = v; if (v > hi) hi = v; } };
+            if (historySeries) {
+                for (const p of tiers[drawn]) if (p.date >= from && p.date <= to) take(p.price);
+                for (const [d, v] of inject) if (d >= from && d <= to) take(v);
+            }
+            for (const c of chainPts) if (c.time >= from && c.time <= to) take(c.value);
+            for (const m of pastPointMeta) {
+                if (m.targetDate >= from && m.targetDate <= to) take(m.price);
+                if (m.anchorTime != null && m.anchorValue != null
+                    && String(m.anchorTime) >= from && String(m.anchorTime) <= to) take(m.anchorValue);
+            }
+            if (!Number.isFinite(lo)) return null;
+            const span = Math.max(hi - lo, Math.abs(hi) * 0.02, 0.01);
+            return { min: lo - span * SCALE_PAD, max: hi + span * SCALE_PAD };
+        };
+        let easing: number | null = null;
+        // Any right-scale option change makes the library re-ask the provider.
+        const repaintScale = () => chart.priceScale('right').applyOptions({ autoScale: true });
+        const easeTo = (t: { min: number; max: number }) => {
+            if (easing != null) cancelAnimationFrame(easing);
+            const from = shown ?? t;
+            const t0 = performance.now();
+            const step = (now: number) => {
+                const k = Math.min(1, (now - t0) / EASE_MS);
+                const e = 1 - Math.pow(1 - k, 3);
+                shown = { min: from.min + (t.min - from.min) * e, max: from.max + (t.max - from.max) * e };
+                repaintScale();
+                easing = k < 1 ? requestAnimationFrame(step) : null;
+            };
+            easing = requestAnimationFrame(step);
+        };
+        // Hysteresis: keep the shown range while the data in view stays inside
+        // it and fills at least KEEP_FILL of it; otherwise ease to the fit,
+        // with GROW headroom at both ends and LEAD more on the side the data
+        // just broke through, since a pan that is revealing higher (or lower)
+        // prices tends to keep doing so: the axis settles once instead of
+        // nudging on every step. The first call (no range yet) lands at once,
+        // so the first paint is right without an animation.
+        const settleScale = (from: string, to: string, drawn: keyof typeof tiers = tier) => {
+            const t = targetFor(from, to, drawn);
+            if (!t) return;
+            if (!shown) { shown = t; repaintScale(); return; }
+            const span = t.max - t.min;
+            const over = t.max > shown.max, under = t.min < shown.min;
+            const fill = span / (shown.max - shown.min);
+            if (!over && !under && fill >= KEEP_FILL) return;
+            easeTo({ min: t.min - span * (GROW + (under ? LEAD : 0)),
+                     max: t.max + span * (GROW + (over ? LEAD : 0)) });
+        };
+        // The library reports intermediate windows while it lays a new range
+        // out (and several per frame during a drag); settling on each one
+        // eased the axis to windows nobody saw. A short wait coalesces them.
+        let settleTimer: number | null = null;
+        const settleSoon = (from: string, to: string) => {
+            if (settleTimer != null) clearTimeout(settleTimer);
+            settleTimer = window.setTimeout(() => { settleTimer = null; settleScale(from, to); }, 80);
+        };
+        cleanups.push(() => {
+            if (easing != null) cancelAnimationFrame(easing);
+            if (settleTimer != null) clearTimeout(settleTimer);
+        });
 
         // Hover (desktop) / tap (touch) tooltip for the past-forecast dots.
         // lightweight-charts fires crosshair moves for taps too, so one handler
@@ -785,15 +877,24 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // whitespace, so horizontal distance equals elapsed time in every
         // tier and at every zoom.
         const grid = chart.addSeries(LineSeries, {
+            // The one series that scales the axis: it reports `shown` (see noScale).
+            autoscaleInfoProvider: () => shown ? { priceRange: { minValue: shown.min, maxValue: shown.max } } : null,
+            lineVisible: false,
+            pointMarkersVisible: false,
             priceLineVisible: false,
             lastValueVisible: false,
             crosshairMarkerVisible: false,
         });
         {
             const gridEnd = Date.parse(chainEnd > lastDate ? chainEnd : lastDate);
-            const days: { time: Time }[] = [];
+            // Every day carries the same (never drawn) value: the library only
+            // asks a series for its autoscale range when that series has a
+            // valued row at or after the left edge of the view, so a bare
+            // whitespace grid would leave the axis with no range at all.
+            const days: { time: Time; value: number }[] = [];
+            const flat = all[all.length - 1].price;
             for (let t = Date.parse(all[0].date); t <= gridEnd; t += 86400e3)
-                days.push({ time: new Date(t).toISOString().slice(0, 10) as Time });
+                days.push({ time: new Date(t).toISOString().slice(0, 10) as Time, value: flat });
             grid.setData(days);
         }
 
@@ -806,6 +907,14 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         if (keep) chart.timeScale().setVisibleRange(keep);
         else if (cutoff) chart.timeScale().setVisibleRange({ from: cutoff as Time, to: windowEnd as Time });
         else chart.timeScale().fitContent();
+        {
+            // The first range is measured at the tier the window will be drawn
+            // at (the range handler below switches to it a moment later; the
+            // tier chosen above looked at the history alone, not the chain).
+            const f = keep ? String(keep.from) : (cutoff ?? all[0].date);
+            const t = keep ? String(keep.to) : windowEnd;
+            settleScale(f, t, tierFor((Date.parse(t) - Date.parse(f)) / 86400e3));
+        }
 
         // Touch (2026-10-28): the library shows its crosshair on touch only in
         // a hold-and-drag tracking mode, so a plain tap did nothing and the
@@ -864,6 +973,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         chart.timeScale().subscribeVisibleTimeRangeChange(r => {
             if (!r) return;
             savedRange.current = { from: r.from, to: r.to };
+            settleSoon(String(r.from), String(r.to));
             if (!historySeries) return;
             const span = (Date.parse(String(r.to)) - Date.parse(String(r.from))) / 86400e3;
             const want = tierFor(span);
