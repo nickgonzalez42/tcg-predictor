@@ -428,30 +428,10 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             historySeries = series;
         }
 
-        // Source-era overlay: the stretch of the line that comes from
-        // PriceCharting sales (pre-cutover / bridge) draws a muted line on
-        // top, so the era boundary is visible instead of silently blended.
-        // Only when the series is actually mixed-source: graded tiers are
-        // 100% PriceCharting by design, and an "era boundary" overlay with no
-        // boundary just paints the whole line gray (the per-point tooltip
-        // still names the source).
-        const mixedSource = all.some(p => sourceByDate.get(p.date) === 'tcgplayer');
-        const pcSpan = points.filter(p => {
-            const s = sourceByDate.get(p.date);
-            return s && s !== 'tcgplayer' && s !== 'forecast reference';
-        });
-        let pcOverlay: ISeriesApi<SeriesType> | null = null;
-        if (mixedSource && pcSpan.length > 1 && !hidden.has('history')) {
-            pcOverlay = chart.addSeries(LineSeries, {
-                ...noScale,
-                color: textMuted,
-                lineWidth: 2,
-                priceLineVisible: false,
-                lastValueVisible: false,
-                crosshairMarkerVisible: false,
-            });
-            pcOverlay.setData(pcSpan.map(p => ({ time: p.date, value: p.price })));
-        }
+        // The PriceCharting-era overlay (a grey line over the spliced stretch,
+        // 2026-09-13) is gone (2026-11-09, user: "I'm still seeing grey-ish
+        // line on the chart sometimes"): with no legend entry it read as a
+        // broken line. The per-point tooltip still names the source.
 
         // Injected forecast-base/realized points: muted standalone markers.
         if (injectedOnly.length && !hidden.has('history')) {
@@ -981,12 +961,6 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             tier = want;
             const vr = chart.timeScale().getVisibleRange();
             historySeries.setData(tiers[tier].map(p => ({ time: p.date, value: p.price })));
-            if (pcOverlay) pcOverlay.setData(tiers[tier]
-                .filter(p => {
-                    const s = sourceByDate.get(p.date);
-                    return s && s !== 'tcgplayer' && s !== 'forecast reference';
-                })
-                .map(p => ({ time: p.date, value: p.price })));
             if (vr) chart.timeScale().setVisibleRange(vr);   // setData must not jump the viewport
         });
 
