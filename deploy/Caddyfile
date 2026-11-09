@@ -78,8 +78,23 @@ cardstock.guide {
 		file_server
 	}
 
+	# Hashed build assets (2026-11-09): cache for good, and a missing one is
+	# a 404. It used to fall through to the SPA page below, so a browser
+	# holding a stale index.html got HTML back for its old bundle, with a
+	# 200, and showed a dead page after every deploy.
+	handle /assets/* {
+		root * /srv/tcg/client
+		header Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
 	handle {
 		root * /srv/tcg/client
+		# The page shell names the current bundle, so browsers must check it
+		# every time (an ETag makes that a cheap 304); the site's own icons
+		# and images can keep their default caching.
+		@shell not path /images/* /favicon* /apple-touch-icon.png /og-image.png /icons.svg /robots.txt /ads.txt
+		header @shell Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
 	}

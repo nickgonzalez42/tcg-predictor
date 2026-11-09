@@ -29,6 +29,20 @@
       html:not([data-route="other"]) #shell-loading { display: none; }
     </style>
     <script>
+      // Stale-shell guard (2026-11-09): a browser that cached this page from
+      // before a deploy asks for a bundle that no longer exists, and the app
+      // never starts (a phone showed a dead home page after the morning's
+      // deploy). When one of our own scripts fails to load, fetch the page
+      // again once; the server now tells browsers to revalidate it.
+      addEventListener("error", function (e) {
+        var t = e.target;
+        if (!t || t.tagName !== "SCRIPT" || !/\/assets\//.test(t.src || "")) return;
+        try {
+          if (sessionStorage.getItem("shell-reloaded")) return;
+          sessionStorage.setItem("shell-reloaded", "1");
+        } catch (err) { /* storage blocked: reload anyway */ }
+        location.reload();
+      }, true);
       (function () {
         var path = location.pathname;
         var home = path === "/";
