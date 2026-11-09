@@ -221,6 +221,11 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     // on a phone), so it stands on the point instead of straddling it.
     const lowEnd = lastY > PAD_TOP + (HERO_H - PAD_TOP - PAD_BOT) * 0.55;
     const artY = lowEnd ? -112 : -54;
+    // A featured card's two lines sit bottom-LEFT (user, 2026-11-09: the art
+    // at the line's end was covering them on the right); the line starts up
+    // in the plot there, so nothing else uses that corner.
+    const labelX = featured ? HERO_PAD : HERO_W - HERO_PAD;
+    const labelAnchor = featured ? 'start' : 'end';
 
     useEffect(() => {
         const path = histRef.current!;
@@ -243,8 +248,8 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
             el?.setAttribute('transform',
                 `translate(${ax} ${ay}) scale(${invX} ${invY}) translate(${-ax} ${-ay})`);
         pinText(nameRef.current, HERO_PAD, HERO_PAD - 3);
-        pinText(labelRef.current, HERO_W - HERO_PAD, HERO_H - 10);
-        pinText(pastRef.current, HERO_W - HERO_PAD, HERO_H - 26);
+        pinText(labelRef.current, labelX, HERO_H - 10);
+        pinText(pastRef.current, labelX, HERO_H - 26);
 
         const finish = () => {   // fully-drawn state (also the reduced-motion state)
             path.style.strokeDasharray = 'none';
@@ -321,15 +326,16 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     x2={HERO_W - HERO_PAD} y2={y(fcstEnd)}
                 />
                 {featured ? (
-                    // Both as text (user, 2026-11-09): the past move the card was
-                    // picked for on one line, the model's call for the same
-                    // stretch ahead on the next, each coloured by its own sign.
+                    // Both as text (user, 2026-11-09), stacked and left-aligned: the
+                    // past move the card was picked for, coloured by its sign, and
+                    // under it the model's call for the same stretch ahead in the
+                    // forecast line's yellow.
                     <>
                         <text
                             ref={pastRef}
                             className="hero-scene__fcst"
-                            x={HERO_W - HERO_PAD} y={HERO_H - 26}
-                            textAnchor="end"
+                            x={labelX} y={HERO_H - 26}
+                            textAnchor={labelAnchor}
                             style={{ opacity: 0, fill: card.trendPct! > 0 ? 'var(--up)' : 'var(--down)' }}
                         >
                             {`${card.trendPct! > 0 ? '+' : ''}${card.trendPct!.toFixed(0)}% PAST ${(card.trendPeriod ?? '1y').toUpperCase()}`}
@@ -337,13 +343,13 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                         <text
                             ref={labelRef}
                             className="hero-scene__fcst"
-                            x={HERO_W - HERO_PAD} y={HERO_H - 10}
-                            textAnchor="end"
-                            style={{ opacity: 0, fill: moverFcst(card) == null || flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
+                            x={labelX} y={HERO_H - 10}
+                            textAnchor={labelAnchor}
+                            style={{ opacity: 0, fill: moverFcst(card) == null ? 'var(--text-muted)' : 'var(--chart-forecast)' }}
                         >
                             {moverFcst(card) == null
-                                ? `NO ${hzLabel(card.fcstHorizon)} CALL YET`
-                                : `${flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% NEXT ${hzLabel(card.fcstHorizon)}`}
+                                ? `MODEL: NO ${hzLabel(card.fcstHorizon)} CALL YET`
+                                : `MODEL ${flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% NEXT ${hzLabel(card.fcstHorizon)}`}
                         </text>
                     </>
                 ) : (
