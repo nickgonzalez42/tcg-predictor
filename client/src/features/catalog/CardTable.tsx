@@ -40,7 +40,7 @@ export default function CardTable({ cards, ownGrade, trend, quick }: Props) {
                             {tierLabel(ownGrade)} price
                         </th>
                         <th className="screener__mid"
-                            title="Our forecast for the same stretch of time as the trend chips">
+                            title="Our forecast for the window the 1M / 6M / 1Y chips select">
                             {fcstLabel} fcst
                         </th>
                         <th className="screener__mid" title="How the price really moved over the selected window">

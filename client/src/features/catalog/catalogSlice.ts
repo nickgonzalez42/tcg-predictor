@@ -1,7 +1,7 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { CardParams, CatalogView } from "../../app/models/cardParams";
 import { PRERELEASE_SORTS, trendForSort } from "./sortOptions";
-import { snapSort, snapTrend, type Windows } from "./windows";
+import { retargetSort, snapSort, snapTrend, type Windows } from "./windows";
 
 // 6M $ growth: desc + the 6M trend view (2026-11-05, user decision). Six
 // months is the horizon the catalog opens on: far enough out that the v4.5
@@ -180,9 +180,25 @@ export const catalogSlice = createSlice({
             state.quickAdd = !!action.payload;
             localStorage.setItem('catalogQuickAdd', state.quickAdd ? '1' : '0');
         },
+        // The 1M / 6M / 1Y chips pick the window for everything on the page.
+        // A forecast or past-change sort moves to the same window too
+        // (2026-11-08, user: toggling the chips "doesn't change the forecast
+        // shown"): the API shows the forecast the rows were RANKED on, so with
+        // the sort left on 6M the chips only moved the sparkline and the
+        // forecast column stayed 6M. Now 6M $ gain + the 1M chip = 1M $ gain,
+        // and chip, ranking and shown forecast agree. Name/price sorts stay.
         setTrend(state, action) {
             state.trend = action.payload;   // 1w | 1m | 6m | 1y
             state.trendWish = undefined;
+            const t = action.payload;
+            if (t === '1m' || t === '6m' || t === '1y') {
+                const retargeted = retargetSort(state.orderBy, t);
+                if (retargeted !== state.orderBy) {
+                    state.orderBy = retargeted;
+                    state.orderWish = undefined;
+                    state.pageNumber = 1;
+                }
+            }
         },
         // Fit the sort and trend to the windows the game can serve (facets
         // arrived, a game switch, or the model gained a horizon overnight),

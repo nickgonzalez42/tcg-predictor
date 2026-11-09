@@ -170,7 +170,7 @@ export default function Catalog() {
               the PREDICTED tag and the filter rail explains the mode. */}
           {!pre && (
             <div className="range-tabs" role="group" aria-label="Trend period"
-              title="Window for the trend line and price movement (price data updates monthly)">
+              title="Window for the forecast shown, the trend line and the price movement; a forecast or past-change sort follows it">
               {(['1m', '6m', '1y'] as const).map(t => (
                 <button key={t}
                   className={`btn btn--outline range-tab${(cardParams.trend ?? '1m') === t ? ' btn--active' : ''}`}

@@ -42,16 +42,23 @@ export function windowOf(orderBy: string): Window | null {
     return w === '1m' || w === '6m' || w === '1y' ? w : null;
 }
 
-export function snapSort(orderBy: string, w: Windows): string {
-    const win = windowOf(orderBy);
-    if (!win || w[win]) return orderBy;
-    const to = ORDER.slice(ORDER.indexOf(win) + 1).find(x => w[x]);
-    if (!to) return 'priceDesc';   // no forecast window at all: fall back to price
+// The same sort (forecast or past change, % or $, direction) at another
+// window: chgUsd6Desc -> chgUsd1mDesc, histPct1y -> histPct6m. A sort with no
+// window (name, price) comes back unchanged.
+export function retargetSort(orderBy: string, to: Window): string {
     const fc = /^(chg(?:Pct|Usd))(?:1m|6|12)(Desc)?$/.exec(orderBy);
     if (fc) return `${fc[1]}${{ '1m': '1m', '6m': '6', '1y': '12' }[to]}${fc[2] ?? ''}`;
     const past = /^(hist(?:Pct|Usd))(?:1m|6m|1y)(Desc)?$/.exec(orderBy);
     if (past) return `${past[1]}${to}${past[2] ?? ''}`;
     return orderBy;
+}
+
+export function snapSort(orderBy: string, w: Windows): string {
+    const win = windowOf(orderBy);
+    if (!win || w[win]) return orderBy;
+    const to = ORDER.slice(ORDER.indexOf(win) + 1).find(x => w[x]);
+    if (!to) return 'priceDesc';   // no forecast window at all: fall back to price
+    return retargetSort(orderBy, to);
 }
 
 export function snapTrend(trend: string | undefined, w: Windows): string | undefined {
