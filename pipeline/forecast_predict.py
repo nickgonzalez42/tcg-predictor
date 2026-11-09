@@ -371,10 +371,15 @@ def make_reason(ret, mom3, trend12, vol6, horizon,
         cand.append((min(abs(s12) * 0.9, 75),
                      f"{subject} is {'up' if s12 > 0 else 'down'} {abs(s12):.0f}% over the past year"))
 
-    # --- liquidity: only when it says something (thin, or clearly moving) ---
-    if vol_now is not None and not np.isnan(vol_now) and vol_now > 0:
-        rate = f"~{vol_now:.0f}/mo sold" if vol_now >= 1 else "under 1/mo sold"
-        if vol_now < 3:
+    # --- liquidity: only when it says something (none, thin, or clearly moving) ---
+    # vol_now = Near Mint copies sold per month from the sales crawl (2026-11-09);
+    # volchg = log change against three months earlier (0.4 is about half again).
+    if vol_now is not None and not np.isnan(vol_now):
+        rate = (f"about {vol_now:.0f} copies a month" if vol_now >= 1.5
+                else "about one copy a month" if vol_now >= 0.5 else "under one copy a month")
+        if vol_now <= 0:
+            cand.append((16, "no Near Mint copies sold in the latest month, so the price is an asking price more than a sale"))
+        elif vol_now < 3:
             cand.append((16, f"it barely trades ({rate}), so the price jumps around"))
         elif volchg is not None and not np.isnan(volchg) and abs(volchg) >= 0.4:
             cand.append((18, f"{'more' if volchg > 0 else 'fewer'} copies are changing hands ({rate})"))
@@ -1038,8 +1043,20 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         # trajectory signals the model saw, for per-card reasoning
         tn = traj_now.loc[keep].reset_index(drop=True)
         mom3, trend12, vol6 = tn["ret3"].to_numpy(), tn["ret12"].to_numpy(), tn["vol6"].to_numpy()
-        vol_now = np.expm1(tn["logvol"].to_numpy()) if "logvol" in tn else np.full(len(tn), np.nan)
-        volchg = tn["volchg"].to_numpy() if "volchg" in tn else np.full(len(tn), np.nan)
+        # Sales volume for the written reason (2026-11-09, user: "update all
+        # the ungraded models to consider volume"): the models have read the
+        # sales crawl's signals since 2026-11-01 (sig_vol_units = log1p Near
+        # Mint copies per WEEK in the base month, sig_vol_chg3 = its change
+        # against three months earlier), but the reason text still read the
+        # retired logvol column and never spoke of volume. Copies per week
+        # become copies per month here, the unit the clauses use. The legacy
+        # column stays as the fallback for a run without the signal files.
+        if "sig_vol_units" in tn:
+            vol_now = np.expm1(tn["sig_vol_units"].to_numpy()) * (52 / 12)
+            volchg = tn["sig_vol_chg3"].to_numpy() if "sig_vol_chg3" in tn else np.full(len(tn), np.nan)
+        else:
+            vol_now = np.expm1(tn["logvol"].to_numpy()) if "logvol" in tn else np.full(len(tn), np.nan)
+            volchg = tn["volchg"].to_numpy() if "volchg" in tn else np.full(len(tn), np.nan)
         set12 = tn["setret12"].to_numpy() if "setret12" in tn else np.full(len(tn), np.nan)
 
         # Stale-anchor gate (live runs only): a card whose newest REAL price for
