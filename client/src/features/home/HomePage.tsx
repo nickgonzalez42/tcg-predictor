@@ -17,7 +17,7 @@ import { usePageMeta } from "../../lib/usePageMeta";
 // tip of its past-1Y price line as it draws itself; when the line reaches the
 // present, the dotted forecast segment extends out; the scene holds, swipes
 // away, and the next card begins. Decorative only.
-const HERO = { draw: 3200, fcst: 900, hold: 1600, out: 500 };
+const HERO = { draw: 3200, fcst: 900, hold: 1600, out: 500, label: 600 };
 const HERO_W = 560, HERO_H = 210, HERO_PAD = 16;
 
 // Resolve once a card's art is actually decodable (SVG <image> has no onError
@@ -276,11 +276,15 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
             path.style.strokeDashoffset = String(L * (1 - p1));
             const pt = path.getPointAtLength(L * p1);
             placeTip(pt.x, pt.y);
+            // The corner labels fade in as the scene opens (2026-11-09, user:
+            // the text "sometimes doesn't appear"): waiting for the line to
+            // finish drawing hid them for more than half of every scene.
+            const pl = ease(Math.min(1, el / HERO.label));
+            if (labelRef.current) labelRef.current.style.opacity = String(pl);
+            if (pastRef.current) pastRef.current.style.opacity = String(pl);
             if (el > HERO.draw) {
                 const p2 = ease(Math.min(1, (el - HERO.draw) / HERO.fcst));
                 revealRef.current?.setAttribute('width', String(lastX + (HERO_W - lastX) * p2));
-                if (labelRef.current) labelRef.current.style.opacity = String(p2);
-                if (pastRef.current) pastRef.current.style.opacity = String(p2);
             }
             if (el > HERO.draw + HERO.fcst + HERO.hold) {
                 // Hold at the finished state until the next card's art has
