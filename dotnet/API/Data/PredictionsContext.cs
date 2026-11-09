@@ -19,6 +19,7 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
     // The public scorecard (2026-10-23): keyless, one row per (game, tier, horizon).
     public DbSet<ForecastAccuracy> Accuracy => Set<ForecastAccuracy>();
     public DbSet<CardTrend> CardTrends => Set<CardTrend>();
+    public DbSet<ShowcasePick> Showcase => Set<ShowcasePick>();   // home-page picks (pick_showcase.py)
     public DbSet<ForecastAccuracyWeekly> AccuracyWeekly => Set<ForecastAccuracyWeekly>();
     public DbSet<ForecastAccuracyWeeklyEarly> AccuracyWeeklyEarly => Set<ForecastAccuracyWeeklyEarly>();
     public DbSet<ForecastAccuracyMonthly> AccuracyMonthly => Set<ForecastAccuracyMonthly>();
@@ -72,6 +73,24 @@ public class PredictionsContext(DbContextOptions<PredictionsContext> options) : 
             f.Property(x => x.RealizedPrice).HasColumnName("realized_price");
             f.Property(x => x.RealizedRet).HasColumnName("realized_ret");
             f.Property(x => x.RealizedAt).HasColumnName("realized_at");
+        });
+
+        builder.Entity<ShowcasePick>(s =>
+        {
+            s.ToTable("showcase");
+            s.HasKey(x => new { x.Kind, x.Game, x.ProductId, x.Printing, x.Slot, x.Side });
+            s.Property(x => x.Kind).HasColumnName("kind");
+            s.Property(x => x.Game).HasColumnName("game");
+            s.Property(x => x.ProductId).HasColumnName("product_id");
+            s.Property(x => x.Printing).HasColumnName("printing");
+            s.Property(x => x.Slot).HasColumnName("slot");
+            s.Property(x => x.Side).HasColumnName("side");
+            s.Property(x => x.Horizon).HasColumnName("horizon");
+            s.Property(x => x.Rank).HasColumnName("rank");
+            s.Property(x => x.Pct).HasColumnName("pct");
+            s.Property(x => x.Price).HasColumnName("price");
+            s.Property(x => x.Sold).HasColumnName("sold");
+            s.Property(x => x.DecidedAt).HasColumnName("decided_at");
         });
 
         builder.Entity<CardTrend>(t =>

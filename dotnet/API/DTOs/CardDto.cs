@@ -13,6 +13,7 @@ public class CardDto
     public double? Price { get; set; }            // actual market price in USD
     public List<string>? Printings { get; set; }  // variant names, base first (null/1 = single printing)
     public string? BasePrinting { get; set; }
+    public string? Showcase { get; set; }    // home-page picks: 'featured' (a past move) | 'expected' (a forecast)
     public string? SelectedPrinting { get; set; } // set on movers rows for a non-base printing
     public string? PictureUrl { get; set; }       // local image served by the API
     // Game-specific fields (One Piece color/power/…, Pokémon hp/attacks/…), null/empty omitted.

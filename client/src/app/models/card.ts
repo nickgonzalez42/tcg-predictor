@@ -13,6 +13,7 @@ export type Card = {
     gradedPrices?: GradedPrices
     printings?: string[]        // variant names, base first (absent = single printing)
     basePrinting?: string
+    showcase?: 'featured' | 'expected'   // home-page picks: a past move the market made, or a forecast
     selectedPrinting?: string   // movers rows: this row IS that printing
     ownedCopies?: OwnedCopy[]   // present only in the Owned list; the copies at ownedGrade
     ownedGrade?: string         // Owned list: the condition this tile represents ('' -> undefined)

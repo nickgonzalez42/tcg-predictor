@@ -71,7 +71,11 @@ echo "=== LOCAL model block — $(date '+%F %T') ==="
 # the forecast step sees every signal file fresh.
 # game_articles (2026-11-06): two per-game articles a day on a Mon-Sat
 # rotation (schedule in game_articles.py); never fatal on its own.
-for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report game_articles; do
+# pick_showcase (2026-11-09): the home page's featured (past moves) and
+# expected (forecast) cards, each checked for recent sales with a fresh
+# TCGplayer fetch (the daytime crawler is paused during the refresh, so the
+# step fetches directly); writes the showcase table; never fatal on its own.
+for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report game_articles pick_showcase; do
   echo "--- $step $(date '+%T') ---"
   t0=$SECONDS
   "$PY" "$DIR/$step.py"

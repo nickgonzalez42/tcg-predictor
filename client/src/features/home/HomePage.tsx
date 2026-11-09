@@ -67,6 +67,11 @@ function RollingText({ text, className = '' }: { text: string; className?: strin
 // Spelled-out horizon for the featured-card band: "6 month forecast".
 const hzLong = (h?: string) =>
     h === '1m' ? '1 month' : h === '6m' ? '6 month' : h === 'launch1m' ? 'Early' : '1 year';
+// A featured card (2026-11-09) is a move the MARKET made: the band and the
+// scene lead with its past change over the window it was picked for, and
+// the model's call for the same stretch ahead rides along as a note.
+const trendLong = (t?: string) => t === '1m' ? '1 month' : t === '6m' ? '6 month' : '1 year';
+const isFeatured = (c: Card) => c.showcase === 'featured' && c.trendPct != null;
 // A mover's headline forecast price: fcstTo at the card's own ranking horizon
 // (the hero mixes categories; tiles rank on 1m), legacy 12m field as fallback.
 const moverFcst = (m: Card) => m.fcstTo ?? m.fcst12To;
@@ -120,7 +125,7 @@ function HeroChart({ movers, onCard }: { movers?: Card[]; onCard?: (c: Card | nu
         // a game's only pick at some horizon and break the every-game promise
         // (young cards carry only a couple of monthly points).
         const ok = (movers ?? []).filter(m =>
-            (m.sparkline?.length ?? 0) >= 2 && moverFcst(m) != null);
+            (m.sparkline?.length ?? 0) >= 2 && (moverFcst(m) != null || isFeatured(m)));
         return heroOrder(ok);   // fresh order every mount
     }, [movers]);
     // A scene only mounts once its art is loaded: the first one waits on the
@@ -190,7 +195,9 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     const labelRef = useRef<SVGTextElement>(null);
 
     const hist = card.sparkline!;
-    const fcstEnd = moverFcst(card)!;
+    // A featured card may have no call at its window; its line then ends flat.
+    const fcstEnd = moverFcst(card) ?? hist[hist.length - 1];
+    const featured = isFeatured(card);
     const all = [...hist, fcstEnd];
     const min = Math.min(...all), span = Math.max(...all) - min || 1;
     // Insets sized to the card art (108 tall / 76 wide, centered on the line
@@ -304,15 +311,32 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     x1={lastX} y1={lastY}
                     x2={HERO_W - HERO_PAD} y2={y(fcstEnd)}
                 />
-                <text
-                    ref={labelRef}
-                    className="hero-scene__fcst"
-                    x={HERO_W - HERO_PAD} y={HERO_H - 10}
-                    textAnchor="end"
-                    style={{ opacity: 0, fill: flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
-                >
-                    {flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% {card.fcstHorizon === 'launch1m' ? 'EARLY CALL' : `NEXT ${hzLabel(card.fcstHorizon)}`}
-                </text>
+                {featured ? (
+                    <text
+                        ref={labelRef}
+                        className="hero-scene__fcst"
+                        x={HERO_W - HERO_PAD} y={HERO_H - 10}
+                        textAnchor="end"
+                        style={{ opacity: 0, fill: card.trendPct! > 0 ? 'var(--up)' : 'var(--down)' }}
+                    >
+                        <tspan className="hero-scene__note">
+                            {moverFcst(card) != null && !flat
+                                ? `MODEL ${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}% NEXT ${hzLabel(card.fcstHorizon)} · `
+                                : ''}
+                        </tspan>
+                        {`${card.trendPct! > 0 ? '+' : ''}${card.trendPct!.toFixed(0)}% PAST ${(card.trendPeriod ?? '1y').toUpperCase()}`}
+                    </text>
+                ) : (
+                    <text
+                        ref={labelRef}
+                        className="hero-scene__fcst"
+                        x={HERO_W - HERO_PAD} y={HERO_H - 10}
+                        textAnchor="end"
+                        style={{ opacity: 0, fill: flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
+                    >
+                        {flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% {card.fcstHorizon === 'launch1m' ? 'EARLY CALL' : `NEXT ${hzLabel(card.fcstHorizon)}`}
+                    </text>
+                )}
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
                         href={artHref}
@@ -422,7 +446,11 @@ export default function HomePage() {
                     <div className="band">
                         <span className="band__title">Featured cards</span>
                         <RollingText className="mono"
-                            text={heroCard ? `${hzLong(heroCard.fcstHorizon)} forecast · live` : 'model forecast · live'} />
+                            text={heroCard
+                                ? isFeatured(heroCard)
+                                    ? `${trendLong(heroCard.trendPeriod)} move · market`
+                                    : `${hzLong(heroCard.fcstHorizon)} forecast · live`
+                                : 'biggest moves · live'} />
                     </div>
                     <HeroChart movers={heroMovers} onCard={setHeroCard} />
                 </div>

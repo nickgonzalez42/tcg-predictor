@@ -1,4 +1,5 @@
 using API.Data;
+using API.Entities;
 using API.DTOS;
 using API.Extensions;
 using API.RequestHelpers;
@@ -50,6 +51,11 @@ public class MoverService(
         {
             _seen = [];   // table not migrated yet: rank as before
         }
+        // Nightly picks (2026-11-09): when pick_showcase.py has decided the
+        // lists, they are served as they stand; the on-request ranking below
+        // remains the fallback for a database without them.
+        var picked = await FromShowcase(count, horizon, trend, perGame, imageUrl);
+        if (picked != null) return picked;
         var ranked = await Rank(count, horizon, trend, perGame, imageUrl);
         await Record(ranked, today);
         return ranked;
@@ -72,6 +78,64 @@ public class MoverService(
                 DateTime.UtcNow.AddDays(-HistoryDays).ToString("yyyy-MM-dd"));
         }
         catch (Microsoft.Data.Sqlite.SqliteException) { /* showcase still served */ }
+    }
+
+    // The showcase table's lists (see ShowcasePick). The hero's mix feed is the
+    // 'featured' kind: every game's biggest past gainer and loser at each
+    // window, with the window as the card's trend and the matching forecast
+    // horizon beside it. Everything else (tiles, ticker) is the 'expected'
+    // kind: each game's strongest 1-month gainer and loser first, then the
+    // global ranking, cut to `count`. Null when the table has no rows of the
+    // kind asked for, so the caller falls back to ranking on request.
+    private async Task<List<CardDto>?> FromShowcase(
+        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
+    {
+        List<ShowcasePick> rows;
+        try
+        {
+            rows = await predictions.Showcase.AsNoTracking().OrderBy(r => r.Rank).ToListAsync();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException)
+        {
+            return null;   // predictions.db predates the table
+        }
+        if (horizon == "mix")
+        {
+            var feat = rows.Where(r => r.Kind == "featured").ToList();
+            if (feat.Count == 0) return null;
+            var picks = feat.Select(r => new Pick(r.Game, r.ProductId, r.Price ?? 0, r.Price ?? 0, r.Printing)).ToList();
+            var movers = await ToCardDtos(picks, imageUrl);
+            var byKey = feat.ToDictionary(r => (r.Game, r.ProductId, r.Printing));
+            foreach (var m in movers) m.Showcase = "featured";
+            foreach (var g in feat.GroupBy(r => (r.Game, r.Slot)))
+            {
+                var set = movers.Where(m => m.Game == g.Key.Game
+                                            && byKey.TryGetValue((m.Game!, m.Id, m.SelectedPrinting ?? ""), out var r)
+                                            && r.Slot == g.Key.Slot).ToList();
+                var hz = g.First().Horizon;
+                await market.ApplyMarket(set, g.Key.Game, trend: g.Key.Slot,
+                    fcstOverride: hz is "1m" or "6m" ? hz : null);
+            }
+            return movers;
+        }
+        var exp = rows.Where(r => r.Kind == "expected").ToList();
+        if (exp.Count == 0) return null;
+        var ordered = exp.Where(r => r.Slot == "game").Concat(exp.Where(r => r.Slot == "global"))
+            .DistinctBy(r => (r.Game, r.ProductId, r.Printing))
+            .ToList();
+        var guaranteed = ordered.Count(r => r.Slot == "game");
+        var chosen = ordered.Take(Math.Max(count, guaranteed))
+            .Select(r => new Pick(r.Game, r.ProductId, r.Price ?? 0, r.Price ?? 0, r.Printing)).ToList();
+        var cards = await ToCardDtos(chosen, imageUrl);
+        foreach (var m in cards) m.Showcase = "expected";
+        var gamesWith12m = (await predictions.Forecasts
+            .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
+            .Select(f => f.Game).Distinct().ToListAsync()).ToHashSet();
+        foreach (var game in cards.Select(m => m.Game).Distinct())
+            await market.ApplyMarket(cards.Where(m => m.Game == game).ToList(), game,
+                trend: trend ?? (gamesWith12m.Contains(game) ? "1y" : "6m"),
+                fcstOverride: "1m");
+        return cards;
     }
 
     private async Task<List<CardDto>> Rank(

@@ -42,7 +42,11 @@ PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "card
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
 # scraping its volume movement the day before").
 WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
-WATCH_CHECK = 100    # cards between looks at the watch file (~2.5 min at 40 rpm)
+# The home page's showcase picks (pick_showcase.py, 2026-11-09) hand their
+# candidates over the same way when this crawler holds the lock; both lists
+# go to the front, articles first.
+WATCH_FILES = [WATCH_FILE, os.path.join(BASE, "ml_data", "showcase_watch.json")]
+WATCH_CHECK = 20     # cards between looks at the watch files (~30 s at 40 rpm; pick_showcase waits on them)
 BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
 LOCK_RETRIES = 5     # write attempts when another connection holds the database
 LOCK_WAIT_S = 10     # pause between those attempts (on top of the busy timeout)
@@ -61,32 +65,37 @@ def refresh_live():
 
 
 def watch_targets(conn, games):
-    """[(game, pid, 0.0, True)] for the article watch list, in its order,
-    minus cards already fetched since the list was made (the hourly
-    relaunches must not refetch them) and minus a list whose article day has
-    passed. Empty when there is no list."""
-    try:
-        with open(WATCH_FILE, encoding="utf-8") as f:
-            w = json.load(f)
-    except (OSError, ValueError):
-        return []
-    made = w.get("made") or ""
-    if (w.get("for") or "") < datetime.now(timezone.utc).date().isoformat():
-        return []
-    cards = [c for c in w.get("cards", []) if c.get("game") in games]
-    fetched = {}
-    for g in {c["game"] for c in cards}:
-        fetched.update({(g, pid): f or "" for pid, f in conn.execute(
-            "SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=?", (g,))})
+    """[(game, pid, 0.0, True)] for the watch lists (articles, then the
+    showcase picks), in their order, minus cards already fetched since each
+    list was made (the hourly relaunches must not refetch them) and minus a
+    list whose day has passed. Empty when there is no list."""
     out, seen = [], set()
-    for c in cards:
-        key = (c["game"], int(c["pid"]))
-        if key in seen or fetched.get(key, "") >= made:
+    today = datetime.now(timezone.utc).date().isoformat()
+    for path in WATCH_FILES:
+        try:
+            with open(path, encoding="utf-8") as f:
+                w = json.load(f)
+        except (OSError, ValueError):
             continue
-        seen.add(key)
-        out.append((c["game"], int(c["pid"]), 0.0, True))
-    if out:
-        print(f"watch list: {len(out)} card(s) for the {w.get('for')} articles go first", flush=True)
+        made = w.get("made") or ""
+        if (w.get("for") or "") < today:
+            continue
+        cards = [c for c in w.get("cards", []) if c.get("game") in games]
+        fetched = {}
+        for g in {c["game"] for c in cards}:
+            fetched.update({(g, pid): f or "" for pid, f in conn.execute(
+                "SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=?", (g,))})
+        n = 0
+        for c in cards:
+            key = (c["game"], int(c["pid"]))
+            if key in seen or fetched.get(key, "") >= made:
+                continue
+            seen.add(key)
+            out.append((c["game"], int(c["pid"]), 0.0, True))
+            n += 1
+        if n:
+            print(f"watch list: {n} card(s) from {os.path.basename(path)} (for {w.get('for')}) go first",
+                  flush=True)
     return out
 
 
@@ -222,10 +231,17 @@ def main():
     watch_seen = {(g, p) for g, p, _m, _e in watch}
     queue = collections.deque(watch + [t for t in targets if (t[0], t[1]) not in watch_seen])
     total = len(queue)
-    try:
-        watch_mtime = os.path.getmtime(WATCH_FILE)
-    except OSError:
-        watch_mtime = None
+    def watch_stamp():
+        """The watch files' modification times, so a new or rewritten list
+        in either file is noticed."""
+        out = []
+        for path in WATCH_FILES:
+            try:
+                out.append(os.path.getmtime(path))
+            except OSError:
+                out.append(None)
+        return tuple(out)
+    watch_mtime = watch_stamp()
 
     def splice_watch():
         """A new or changed watch list goes to the front of the queue. A run
@@ -234,10 +250,7 @@ def main():
         for the refresh or hours into its list; without this the list would
         wait for whichever run happened to start next."""
         nonlocal watch_mtime, total
-        try:
-            m = os.path.getmtime(WATCH_FILE)
-        except OSError:
-            return
+        m = watch_stamp()
         if m == watch_mtime:
             return
         watch_mtime = m
