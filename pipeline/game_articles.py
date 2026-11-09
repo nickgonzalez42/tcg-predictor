@@ -1837,7 +1837,7 @@ def main():
 
     pc = sqlite3.connect(PC_DB)
     pc.execute("PRAGMA busy_timeout=30000")
-    window = week_window(pc)
+    window = week_window(pc, end=today.isoformat() if args.date else None)
     baseline, latest, dates = window
     synth = synth_series(pc, dates) if dates else {}
     young = young_series(pc) if dates else frozenset()

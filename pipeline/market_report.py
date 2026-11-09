@@ -124,12 +124,15 @@ def synth_series(pc, dates):
     return out
 
 
-def week_window(pc):
+def week_window(pc, end=None):
     """(baseline, latest, days) over TCGplayer's broad daily-coverage dates — the
     last such day and the one nearest 7 days before it, plus every broad day
     between. TCGplayer-only, so the report's moves match the site and never cross
-    the PriceCharting->TCGplayer seam."""
+    the PriceCharting->TCGplayer seam. `end` (YYYY-MM-DD) caps the window so a
+    dated rewrite of an article describes the week that ended on its date."""
     dates = tcg_broad_dates(pc)
+    if end:
+        dates = [d for d in dates if d <= end]
     if len(dates) < 2:
         return None, None, []
     latest = dates[-1]
