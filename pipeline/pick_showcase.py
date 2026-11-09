@@ -67,6 +67,7 @@ FETCH_FRESH_DAYS = 2      # a sales fetch this recent is not repeated
 ROUNDS = 4
 PER_ROUND = 3             # candidates tried per unfilled slot per round
 GLOBAL_EXPECTED = 24      # the ticker/tiles ranking depth
+GLOBAL_PER_GAME = 3       # one game cannot fill the ticker (Gundam's 1m model called -34% on dozens, 2026-11-09)
 WINDOWS = (("1m", "pct_1m", "1m"), ("6m", "pct_6m", "6m"), ("1y", "pct_1y", "12m"))
 RPM = 40.0
 DELAY = 1.0
@@ -356,6 +357,8 @@ def pick_expected(pred, sales, games, rounds):
         if i < len(all_up): merged.append(all_up[i])
         if i < len(all_down): merged.append(all_down[i])
     merged = [c for c in merged if (c["game"], c["pid"]) not in taken]
+    # Drop the candidates a full game could never place, so a round's batch
+    # is spent on cards that can still make the list.
     kept, pos = [], 0
     for rnd in range(1, rounds + 1):
         need = GLOBAL_EXPECTED - len(kept)
@@ -368,7 +371,8 @@ def pick_expected(pred, sales, games, rounds):
         sold = sales.sold([(c["game"], c["pid"]) for c in batch])
         for c in batch:
             n = sold[(c["game"], c["pid"])]
-            if n >= MIN_SOLD and (c["game"], c["pid"]) not in taken and len(kept) < GLOBAL_EXPECTED:
+            if (n >= MIN_SOLD and (c["game"], c["pid"]) not in taken and len(kept) < GLOBAL_EXPECTED
+                    and sum(k["game"] == c["game"] for k in kept) < GLOBAL_PER_GAME):
                 kept.append(dict(c, sold=n)); taken.add((c["game"], c["pid"]))
     for c in kept:
         rows.append(("expected", c["game"], c["pid"], c["printing"], "global",
