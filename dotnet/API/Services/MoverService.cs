@@ -319,6 +319,9 @@ public class MoverService(
     {
         var list = (await FreshPricedIds(game, ids.Distinct().ToList())).ToList();
         if (list.Count == 0) return [];
+        var sold = await RecentlySoldIds(game, list);
+        if (sold != null) list = list.Where(sold.Contains).ToList();
+        if (list.Count == 0) return [];
         return (await sources.Cards(game).WithArt()
             .Where(c => list.Contains(c.Id))
             .Where(c => !EF.Functions.Like(c.Name!, "%tournament%")
@@ -352,6 +355,34 @@ public class MoverService(
                         && ids.Contains(h.ProductId)
                         && string.Compare(h.Date, cutoff) >= 0)
             .Select(h => h.ProductId).Distinct().ToListAsync()).ToHashSet();
+    }
+
+    // Volume bar for the showcase (2026-11-09, user: "make sure any cards that
+    // show on the front page have at least some volume behind them
+    // recently"): a card qualifies only if TCGplayer recorded at least
+    // MinRecentSold Near Mint copies sold in the last RecentSoldDays, per the
+    // daytime sales crawl (tcg_sales_history, about a year of weekly buckets
+    // per card, each card revisited about every four weeks, so the window
+    // spans two visits). A card whose price moves on no sales is a listing
+    // price, not a market, and shouldn't headline. Returns null when the game
+    // has no sales rows in the window at all (a game the crawl has not
+    // reached), so such a game keeps its picks rather than vanishing.
+    private const double MinRecentSold = 3;
+    private const int RecentSoldDays = 56;
+    private async Task<HashSet<int>?> RecentlySoldIds(string game, List<int> ids)
+    {
+        if (ids.Count == 0) return [];
+        var since = DateTime.UtcNow.AddDays(-RecentSoldDays).ToString("yyyy-MM-dd");
+        var window = priceCharting.Sales
+            .Where(s => s.Game == game && s.Condition == "Near Mint"
+                        && string.Compare(s.BucketDate, since) >= 0);
+        if (!await window.AnyAsync()) return null;
+        return (await window
+            .Where(s => ids.Contains(s.ProductId))
+            .GroupBy(s => s.ProductId)
+            .Where(g => g.Sum(s => s.QuantitySold ?? 0) >= MinRecentSold)
+            .Select(g => g.Key)
+            .ToListAsync()).ToHashSet();
     }
 
     // Join card names/sets from the right game DB, in memory (cross-DB). The
