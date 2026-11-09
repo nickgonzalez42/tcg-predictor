@@ -436,12 +436,6 @@
   font-weight: 700;
 }
 
-/* The model's call beside a featured card's past move: quieter, same line. */
-.hero-scene__note {
-  fill: var(--text-muted);
-  font-weight: 400;
-}
-
 /* --- At a glance (2026-10-23): three animated infographics. Reveal runs off
    data-in (set once the panel scrolls into view); reduced motion skips it. */
 .glance {

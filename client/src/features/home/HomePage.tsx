@@ -193,6 +193,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     const tipRef = useRef<SVGGElement>(null);
     const nameRef = useRef<SVGTextElement>(null);
     const labelRef = useRef<SVGTextElement>(null);
+    const pastRef = useRef<SVGTextElement>(null);   // a featured card's past move, the line above the forecast
 
     const hist = card.sparkline!;
     // A featured card may have no call at its window; its line then ends flat.
@@ -215,6 +216,11 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
     // A call that rounds to 0% reads neutral, not as a green "+0%" — the
     // model's flat segments (a game's whole 6m, say) feature as "0%".
     const flat = Math.abs(fcstPct) < 0.5;
+    // The art rides the line's end. When the line ends in the lower part of
+    // the plot the art would sit on the labels in the corner (a falling card
+    // on a phone), so it stands on the point instead of straddling it.
+    const lowEnd = lastY > PAD_TOP + (HERO_H - PAD_TOP - PAD_BOT) * 0.55;
+    const artY = lowEnd ? -112 : -54;
 
     useEffect(() => {
         const path = histRef.current!;
@@ -238,12 +244,14 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                 `translate(${ax} ${ay}) scale(${invX} ${invY}) translate(${-ax} ${-ay})`);
         pinText(nameRef.current, HERO_PAD, HERO_PAD - 3);
         pinText(labelRef.current, HERO_W - HERO_PAD, HERO_H - 10);
+        pinText(pastRef.current, HERO_W - HERO_PAD, HERO_H - 26);
 
         const finish = () => {   // fully-drawn state (also the reduced-motion state)
             path.style.strokeDasharray = 'none';
             placeTip(lastX, lastY);
             revealRef.current?.setAttribute('width', String(HERO_W));
             if (labelRef.current) labelRef.current.style.opacity = '1';
+            if (pastRef.current) pastRef.current.style.opacity = '1';
         };
         if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
             finish();
@@ -267,6 +275,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                 const p2 = ease(Math.min(1, (el - HERO.draw) / HERO.fcst));
                 revealRef.current?.setAttribute('width', String(lastX + (HERO_W - lastX) * p2));
                 if (labelRef.current) labelRef.current.style.opacity = String(p2);
+                if (pastRef.current) pastRef.current.style.opacity = String(p2);
             }
             if (el > HERO.draw + HERO.fcst + HERO.hold) {
                 // Hold at the finished state until the next card's art has
@@ -297,7 +306,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     <rect ref={revealRef} x="0" y="0" width="0" height={HERO_H} />
                 </clipPath>
                 <clipPath id={`${clipId}-art`}>
-                    <rect x="-38" y="-54" width="76" height="108" rx="7" />
+                    <rect x="-38" y={artY} width="76" height="108" rx="7" />
                 </clipPath>
             </defs>
             <g ref={rootRef} className="hero-scene">
@@ -312,20 +321,31 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                     x2={HERO_W - HERO_PAD} y2={y(fcstEnd)}
                 />
                 {featured ? (
-                    <text
-                        ref={labelRef}
-                        className="hero-scene__fcst"
-                        x={HERO_W - HERO_PAD} y={HERO_H - 10}
-                        textAnchor="end"
-                        style={{ opacity: 0, fill: card.trendPct! > 0 ? 'var(--up)' : 'var(--down)' }}
-                    >
-                        <tspan className="hero-scene__note">
-                            {moverFcst(card) != null && !flat
-                                ? `MODEL ${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}% NEXT ${hzLabel(card.fcstHorizon)} · `
-                                : ''}
-                        </tspan>
-                        {`${card.trendPct! > 0 ? '+' : ''}${card.trendPct!.toFixed(0)}% PAST ${(card.trendPeriod ?? '1y').toUpperCase()}`}
-                    </text>
+                    // Both as text (user, 2026-11-09): the past move the card was
+                    // picked for on one line, the model's call for the same
+                    // stretch ahead on the next, each coloured by its own sign.
+                    <>
+                        <text
+                            ref={pastRef}
+                            className="hero-scene__fcst"
+                            x={HERO_W - HERO_PAD} y={HERO_H - 26}
+                            textAnchor="end"
+                            style={{ opacity: 0, fill: card.trendPct! > 0 ? 'var(--up)' : 'var(--down)' }}
+                        >
+                            {`${card.trendPct! > 0 ? '+' : ''}${card.trendPct!.toFixed(0)}% PAST ${(card.trendPeriod ?? '1y').toUpperCase()}`}
+                        </text>
+                        <text
+                            ref={labelRef}
+                            className="hero-scene__fcst"
+                            x={HERO_W - HERO_PAD} y={HERO_H - 10}
+                            textAnchor="end"
+                            style={{ opacity: 0, fill: moverFcst(card) == null || flat ? 'var(--text-muted)' : fcstPct > 0 ? 'var(--up)' : 'var(--down)' }}
+                        >
+                            {moverFcst(card) == null
+                                ? `NO ${hzLabel(card.fcstHorizon)} CALL YET`
+                                : `${flat ? '0' : `${fcstPct > 0 ? '+' : ''}${fcstPct.toFixed(0)}`}% NEXT ${hzLabel(card.fcstHorizon)}`}
+                        </text>
+                    </>
                 ) : (
                     <text
                         ref={labelRef}
@@ -340,7 +360,7 @@ function HeroScene({ card, artHref, canLeave, onDone }: {
                 <g ref={tipRef} transform={`translate(${x(0)}, ${y(hist[0])})`}>
                     <image
                         href={artHref}
-                        x="-38" y="-54" width="76" height="108"
+                        x="-38" y={artY} width="76" height="108"
                         clipPath={`url(#${clipId}-art)`}
                         preserveAspectRatio="xMidYMid slice"
                     />
