@@ -559,9 +559,11 @@ def chase_comparables(pc, game, cat, set_name, chase, by_date, release, age, tod
     for pid, c in cat.items():
         if c["set"] and c["set"] != set_name:
             by_set[c["set"]].append(pid)
-    earlier = sorted(((set_release(cat, s), s) for s in by_set if len(by_set[s]) >= COMP_SET_MIN),
-                     reverse=True)
-    earlier = [(r, s) for r, s in earlier if r and r <= release and r >= lookback]
+    # A set with no release date (Magic has a few catalog-only ones) has no
+    # age to match on, so it leaves before the sort.
+    earlier = [(r, s) for r, s in ((set_release(cat, s), s) for s in by_set if len(by_set[s]) >= COMP_SET_MIN)
+               if r]
+    earlier = sorted(((r, s) for r, s in earlier if r <= release and r >= lookback), reverse=True)
     # Every big earlier set's cards ranked by price at day `age` (a card
     # needs a reading there and a month later, and art to show).
     ranked = []                               # [(set, release, [(pid, at, series)] by price desc)]
