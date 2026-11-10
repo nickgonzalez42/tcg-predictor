@@ -158,3 +158,135 @@ a.articles__game:hover {
 .report__body .report-chart + .report-caption {
   margin-top: calc(-1 * var(--space-10));
 }
+
+/* Chase cards beside the earlier cards most like them (2026-11-10): one
+   quiet row per card: the card, its comparables, a small chart of where
+   those went after the same age. */
+.report__body .report-compare {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  margin: var(--space-20) 0 var(--space-10);
+}
+
+.report__body .report-compare-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) 240px;
+  gap: var(--space-15);
+  align-items: start;
+  padding: var(--space-15);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.report__body .report-compare-card,
+.report__body .report-compare-peer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.report__body .report-compare-card:hover,
+.report__body .report-compare-peer:hover {
+  text-decoration: none;
+}
+
+.report__body .report-compare-card:hover .report-compare-name,
+.report__body .report-compare-peer:hover .report-compare-peer-name {
+  text-decoration: underline;
+  text-decoration-color: var(--brand);
+  text-underline-offset: 3px;
+}
+
+.report__body .report-compare-card img {
+  display: block;
+  width: 88px;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: var(--card-corner) / calc(var(--card-corner) * 0.716);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.report__body .report-compare-name {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.report__body .report-compare-meta,
+.report__body .report-compare-peer-meta,
+.report__body .report-compare-label {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.report__body .report-compare-label {
+  display: block;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.report__body .report-compare-like {
+  min-width: 0;
+}
+
+.report__body .report-compare-peer {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-10);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.report__body .report-compare-peer:first-of-type {
+  border-top: 0;
+}
+
+.report__body .report-compare-peer img {
+  display: block;
+  width: 34px;
+  aspect-ratio: 5 / 7;
+  object-fit: cover;
+  border-radius: var(--card-corner) / calc(var(--card-corner) * 0.716);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  flex: none;
+}
+
+.report__body .report-compare-peer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.report__body .report-compare-peer-name {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.report__body .report-compare-spark {
+  display: block;
+  width: 240px;
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  .report__body .report-compare-row {
+    grid-template-columns: 72px minmax(0, 1fr);
+  }
+
+  .report__body .report-compare-card img {
+    width: 72px;
+  }
+
+  .report__body .report-compare-spark {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}

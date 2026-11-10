@@ -84,7 +84,7 @@ import statistics
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
-from math import exp
+from math import exp, log
 from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -460,6 +460,167 @@ def set_forecast_medians(pred, game, cat, pids):
     return out
 
 
+COMP_N = 3                 # earlier sets compared beside each chase card
+COMP_SET_MIN = 80          # a "big" set: this many priced cards (no starter decks or promos)
+COMP_SPAN_DAYS = 182       # how far past today's age a comparable is followed
+COMP_TOL_DAYS = 18         # a reading "at day N" may sit between two monthly points
+                           # (the PriceCharting era before the 2026 cutover is monthly)
+COMP_HORIZONS = [("1m", 30), ("3m", 91), ("6m", 182)]
+
+
+def long_history(pc, game, pids):
+    """{date: {pid: price}} over the whole blended history (price_history_unified:
+    PriceCharting before the 2026 cutover, TCGplayer since), base printing,
+    ungraded. tcg_nm_history alone starts in late July 2026, which is why the
+    comparables read this table."""
+    pids = list(pids)
+    if not pids:
+        return {}
+    try:
+        rows = pc.execute(
+            f"SELECT date, product_id, price FROM price_history_unified WHERE game=? AND printing='' "
+            f"AND grade='ungraded' AND price>0 AND product_id IN ({','.join('?' * len(pids))}) ORDER BY date",
+            [game, *pids]).fetchall()
+    except sqlite3.OperationalError:
+        rows = []
+    by_date = collections.defaultdict(dict)
+    for d, pid, p in rows:
+        by_date[d][pid] = p
+    return by_date
+
+
+def card_paths(by_date):
+    """{pid: [(date, price)]} from a set_history() map, dates ascending."""
+    out = collections.defaultdict(list)
+    for d in sorted(by_date):
+        for pid, p in by_date[d].items():
+            out[pid].append((d, p))
+    return out
+
+
+def price_on(series, day, tol=AGE_TOL_DAYS):
+    """A card's price on an ISO day from its (date, price) readings: exact,
+    else interpolated between the neighbours (the history before August 2026
+    is weekly), else held from a reading up to tol days before; None past
+    that."""
+    before = [r for r in series if r[0] <= day]
+    if not before:
+        return None
+    d0, p0 = before[-1]
+    if d0 == day:
+        return p0
+    gap = (date.fromisoformat(day) - date.fromisoformat(d0)).days
+    after = [r for r in series if r[0] > day]
+    if after:
+        d1, p1 = after[0]
+        span = (date.fromisoformat(d1) - date.fromisoformat(d0)).days
+        if span <= 2 * tol:
+            return p0 + (p1 - p0) * gap / span
+    return p0 if gap <= tol else None
+
+
+def model_calls(pred, game, pids):
+    """{pid: {horizon: implied move % from today's price}} for 1m and 6m."""
+    out = collections.defaultdict(dict)
+    for h in ("1m", "6m"):
+        try:
+            rows = pred.execute(
+                "SELECT product_id, base_price, forecast_price, ret FROM forecasts "
+                "WHERE game=? AND target='ungraded' AND horizon=? AND printing='' AND base_price>0",
+                (game, h)).fetchall()
+        except sqlite3.OperationalError:
+            rows = []
+        for pid, base, fc, ret in rows:
+            if pid in pids:
+                out[pid][h] = r1((ret if ret is not None else fc / base - 1) * 100)
+    return out
+
+
+def chase_comparables(pc, game, cat, set_name, chase, by_date, release, age, today):
+    """For each chase card, the card at the same price rank in each of the
+    game's last few big sets at the same age since release (2026-11-10,
+    user: compare the top cards with similar cards from other sets and say
+    what to expect from that). Rank, not price, is the likeness: price
+    levels drift across a year (One Piece's number one card at day 8 cost
+    $300 in April and $1,500 in November), so "the set's number one card"
+    is what a collector compares. Each comparable carries what it did over
+    the following months from that age and where it sits now; the chase
+    card carries its own path so far. {pid: {...}}.
+
+    The pool is every earlier set of the game with COMP_SET_MIN+ priced
+    cards and a release date inside PEER_LOOKBACK_DAYS, newest first; a
+    card's price at a given age is read between its weekly readings, so the
+    blended history (long_history) reaches back years, and that is what
+    gives the older comparables six-month outcomes."""
+    if age is None or not release or not chase:
+        return {}
+    lookback = (today - timedelta(days=PEER_LOOKBACK_DAYS)).isoformat()
+    by_set = collections.defaultdict(list)
+    for pid, c in cat.items():
+        if c["set"] and c["set"] != set_name:
+            by_set[c["set"]].append(pid)
+    earlier = sorted(((set_release(cat, s), s) for s in by_set if len(by_set[s]) >= COMP_SET_MIN),
+                     reverse=True)
+    earlier = [(r, s) for r, s in earlier if r and r <= release and r >= lookback]
+    # Every big earlier set's cards ranked by price at day `age` (a card
+    # needs a reading there and a month later, and art to show).
+    ranked = []                               # [(set, release, [(pid, at, series)] by price desc)]
+    for r, s in earlier:
+        r0 = date.fromisoformat(r)
+        rows = []
+        for pid, series in card_paths(long_history(pc, game, by_set[s])).items():
+            at = price_on(series, (r0 + timedelta(days=age)).isoformat(), COMP_TOL_DAYS)
+            if at and at >= MIN_BASE and price_on(series, (r0 + timedelta(days=age + 30)).isoformat(), COMP_TOL_DAYS):
+                rows.append((pid, at, series))
+        if len(rows) >= COMP_SET_MIN // 2:
+            rows.sort(key=lambda t: -t[1])
+            ranked.append((s, r, rows))
+        if len(ranked) >= COMP_N + 2:         # a couple spare for cards without art
+            break
+    if not ranked:
+        return {}
+    own_paths = card_paths(long_history(pc, game, [c[0] for c in chase]))
+    rel = date.fromisoformat(release)
+    out = {}
+    for k, (pid, _name, _price, _rarity, _w) in enumerate(chase):
+        picked = []
+        for s, r, rows in ranked:
+            if k >= len(rows) or not has_art(game, rows[k][0]):
+                continue
+            cpid, at, series = rows[k]
+            r0 = date.fromisoformat(r)
+            nxt = {}
+            for h, days in COMP_HORIZONS:
+                later = price_on(series, (r0 + timedelta(days=age + days)).isoformat(), COMP_TOL_DAYS)
+                if later:
+                    nxt[f"next_{h}_pct"] = r1((later / at - 1) * 100)
+            last_d, last_p = series[-1]
+            path = [((date.fromisoformat(d) - r0).days, r1((pp / at - 1) * 100)) for d, pp in series
+                    if 0 <= (date.fromisoformat(d) - r0).days <= age + COMP_SPAN_DAYS]
+            picked.append({"pid": cpid, "name": cat[cpid]["name"], "set": s, "released": r,
+                           "rarity": cat[cpid]["rarity"], "rank_in_its_set": k + 1,
+                           "price_at_same_age_usd": round(at, 2), "now_usd": round(last_p, 2),
+                           "age_now_days": (date.fromisoformat(last_d) - r0).days,
+                           "now_vs_same_age_pct": r1((last_p / at - 1) * 100), **nxt, "_path": path})
+            if len(picked) == COMP_N:
+                break
+        if not picked:
+            continue
+        entry = {"rank": k + 1, "cards": picked,
+                 "own_path": [((date.fromisoformat(d) - rel).days, pp) for d, pp in own_paths.get(pid, [])
+                              if (date.fromisoformat(d) - rel).days >= 0]}
+        for h, _days in COMP_HORIZONS:
+            vals = [c[f"next_{h}_pct"] for c in picked if f"next_{h}_pct" in c]
+            if len(vals) >= 2:
+                entry[f"median_next_{h}_pct"] = r1(statistics.median(vals))
+        out[pid] = entry
+        if os.environ.get("TCG_COMP_DEBUG"):
+            print(f"    chase #{k + 1}: " + "; ".join(
+                f"{c['set'][:24]} #{k + 1} {c['name'][:22]} ${c['price_at_same_age_usd']:,.0f} "
+                f"1m {c.get('next_1m_pct')} 6m {c.get('next_6m_pct')}" for c in picked), flush=True)
+    return out
+
+
 def ladder(prices):
     rows = []
     for label, lo, hi in LADDER:
@@ -548,6 +709,16 @@ def sales_volume(pc, game, cat, pids, today):
         for pid, d, q in hist:
             wk[(pid, d)] += q or 0.0
         lines = [(name, [wk.get((pid, w), 0.0) for w in weeks]) for pid, name, *_ in top]
+        # Weeks before anything sold (the set was not out yet) are not zeros
+        # worth drawing (2026-11-10, user: a line flat at 0 for seven weeks
+        # and one spike): the chart starts at the first week with a sale,
+        # and under three such weeks there is no chart, only the table.
+        first = next((i for i in range(len(weeks)) if any(ys[i] > 0 for _n, ys in lines)), None)
+        if first is None or len(weeks) - first < 3:
+            lines = []
+        elif first:
+            weeks = weeks[first:]
+            lines = [(n, ys[first:]) for n, ys in lines]
     return {"week": lw, "prev_week": pw, "units_last": u_last, "units_prev": u_prev,
             "txn_last": sum(txn.get((pid, lw), 0.0) for pid in fresh),
             "change_pct": r1((u_last / u_prev - 1) * 100) if u_prev >= 20 else None,
@@ -733,6 +904,73 @@ def caption(text):
     return f"<p class='report-caption'><em>{esc(text)}</em></p>" if text else ""
 
 
+def compare_spark(entry, age):
+    """A small, quiet chart: the comparables' paths from their release (grey,
+    as % of their price at day `age`), this card's own path so far in
+    yellow, a hairline at today's age, the median outcomes at the right."""
+    W, H, PL, PR, PT, PB = 240, 96, 6, 72, 8, 14
+    span = age + COMP_SPAN_DAYS
+    series = [c["_path"] for c in entry["cards"] if c["_path"]]
+    own = entry.get("own_path") or []
+    own_pct = []
+    if own and own[-1][1] > 0:
+        base = own[-1][1]
+        own_pct = [(d, (p / base - 1) * 100) for d, p in own if d <= age]
+    vals = [v for s in series for _d, v in s] + [v for _d, v in own_pct] + [0.0]
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1:
+        lo, hi = lo - 1, hi + 1
+    X = lambda d: PL + (W - PL - PR) * min(d, span) / max(span, 1)
+    Y = lambda v: H - PB - (H - PT - PB) * (v - lo) / (hi - lo)
+    parts = [f"<svg class='report-compare-spark' viewBox='0 0 {W} {H}' role='img' "
+             "xmlns='http://www.w3.org/2000/svg'>",
+             f"<line x1='{PL}' y1='{Y(0):.1f}' x2='{W - PR}' y2='{Y(0):.1f}' stroke='var(--border, #2e3a52)'/>",
+             f"<line x1='{X(age):.1f}' y1='{PT}' x2='{X(age):.1f}' y2='{H - PB}' "
+             "stroke='var(--text-muted, #8b96ad)' opacity='0.5'/>"]
+    for s in series:
+        pts = " ".join(f"{X(d):.1f},{Y(v):.1f}" for d, v in s)
+        parts.append(f"<polyline points='{pts}' fill='none' stroke='var(--text-muted, #8b96ad)' "
+                     "stroke-width='1.3' opacity='0.6'/>")
+    if len(own_pct) >= 2:
+        pts = " ".join(f"{X(d):.1f},{Y(v):.1f}" for d, v in own_pct)
+        parts.append(f"<polyline points='{pts}' fill='none' stroke='#ffcb05' stroke-width='2'/>")
+    parts.append(f"<text x='{X(age):.1f}' y='{H - 3}' text-anchor='middle' font-size='9' "
+                 f"fill='var(--text-muted, #8b96ad)'>day {age}</text>")
+    y = PT + 6
+    for h, label in (("1m", "+1 mo"), ("6m", "+6 mo")):
+        v = entry.get(f"median_next_{h}_pct")
+        if v is not None:
+            parts.append(f"<text x='{W - PR + 6}' y='{y}' font-size='10' "
+                         f"fill='var(--text-muted, #8b96ad)'>{label} {esc(pct(v))}</text>")
+            y += 14
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def compare_graphic(game, chase, like, age):
+    """The chase cards beside the earlier cards most like them (2026-11-10):
+    one quiet row per card: the card, its comparables, the small chart."""
+    rows = []
+    for pid, name, price, _rarity, _w in chase:
+        entry = like.get(pid)
+        if not entry or not has_art(game, pid):
+            continue
+        peers = "".join(
+            f"<a class='report-compare-peer' href='/catalog/{game}/{c['pid']}'>"
+            f"<img src='{CDN}/{game}/{c['pid']}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
+            f"<span class='report-compare-peer-text'><span class='report-compare-peer-name'>{esc(c['name'])}</span>"
+            f"<span class='report-compare-peer-meta'>{esc(short_label(c['set'], 28))} · {money(c['price_at_same_age_usd'])} then"
+            f" · {esc(pct(c['now_vs_same_age_pct']))} since</span></span></a>" for c in entry["cards"])
+        rows.append(f"<div class='report-compare-row'>"
+                    f"<a class='report-compare-card' href='/catalog/{game}/{pid}'>"
+                    f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(name)}' loading='lazy'>"
+                    f"<span class='report-compare-name'>{esc(name)}</span>"
+                    f"<span class='report-compare-meta'>{money(price)} · day {age}</span></a>"
+                    f"<div class='report-compare-like'><span class='report-compare-label'>Number {entry['rank']} of the last sets at day {age}</span>{peers}</div>"
+                    f"{compare_spark(entry, age)}</div>")
+    return f"<div class='report-compare'>{''.join(rows)}</div>" if rows else ""
+
+
 def section(prose, key, header, body_text, figure, cap):
     """<h2>, the paragraph, the picture or chart, its caption."""
     h = prose.get("headers", {}).get(key) or header
@@ -885,6 +1123,8 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
 
     calls, picks = forecast_bits(pred, game, cat, pids=set(members), min_pick=MIN_BASE)
     fc_medians = set_forecast_medians(pred, game, cat, set(members))
+    model = model_calls(pred, game, set(members))
+    like = chase_comparables(pc, game, cat, set_name, chase[:CHASE_N], by_date, release, age, today)
     sales = sales_volume(pc, game, cat, members, today)
     tracked_old = sum(m[2] for m in moves)
     tracked_new = sum(m[3] for m in moves)
@@ -903,6 +1143,7 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
         "stats": stats, "chase": chase, "ups": ups[:MOVERS_N * 2], "downs": downs[:MOVERS_N * 2],
         "rarities": rarities, "history": history, "path": path,
         "peers": peers, "compare": compare, "forecast_median": fc_medians, "sales": sales,
+        "model_calls": model, "like": like,
         "ladder": ladder([c["price"] for c in members.values()]),
         "calls": calls, "picks": picks, "record": record_for(pred, game),
         "skipped": list(skipped),
@@ -912,8 +1153,13 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
 
 
 SET_SECTIONS = [
-    ("chase", "the set's most valuable cards (the chase list) with each one's price and its move this week"),
-    ("movers", "this week's biggest risers and fallers inside the set"),
+    ("chase", "the set's most valuable cards (the chase list): each one's price and move this week, then, for each, "
+              "the earlier sets' cards most like it (like_earlier_cards) and what those did over the months after the "
+              "same age, next to the model's own call on it; say plainly what that record suggests we can expect of "
+              "each top card, as a tendency with its numbers and range, never as advice (the picture shows each card "
+              "beside its comparables and a small chart of their paths)"),
+    ("movers", "this week's biggest risers and fallers inside the set, and what the model expects of each over the "
+               "next month (model_call_1m_pct) and six months (model_call_6m_pct)"),
     ("sales", "how many Near Mint copies of the set's cards actually sold in the last complete week against the week before, and which cards sold most"),
     ("rarity", "what each rarity costs and how it moved this week (the chart draws each rarity's price index day by day)"),
     ("history", "the set's price index since its release day: the average move of its cards from the first day they were broadly priced after release"),
@@ -929,6 +1175,22 @@ def build_set_article(d, today, no_prose=False):
     ab = d.get("about", {})
     vol = d.get("sales")
     vc = vol["per_card"] if vol else {}
+    mc = d.get("model_calls", {})
+    like = d.get("like", {})
+
+    def like_facts(entry):
+        if not entry:
+            return None
+        out = {"basis": (f"this card is number {entry['rank']} in its set by price; these are the number "
+                         f"{entry['rank']} cards of the game's last big sets, each priced at the same day "
+                         f"{d['age_days']} since its own set's release. next_1m/3m/6m_pct is what each did over "
+                         f"the following month, three months and six months from that age; "
+                         f"now_vs_same_age_pct is where it sits today. Read them as a tendency with a "
+                         f"range, never a promise"),
+               "cards": [{k: v for k, v in c.items() if not k.startswith("_") and k != "pid"}
+                         for c in entry["cards"]]}
+        out.update({k: v for k, v in entry.items() if k.startswith("median_")})
+        return out
     sections = [s for s in SET_SECTIONS
                 if not ((s[0] in ("movers", "rarity") and st["tracked"] == 0)
                         or (s[0] == "history" and not d["history"])
@@ -940,15 +1202,19 @@ def build_set_article(d, today, no_prose=False):
         "totals": {"cards_priced": d["cards_priced"], "set_value_usd": d["set_value"],
                    "tracked_value_change_pct": d["tracked_value_change_pct"], **st},
         "chase": [{"name": n, "price_usd": round(p, 2), "rarity": r, "week_pct": r1(w), "about": ab.get(_pid),
-                   "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None}
+                   "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None,
+                   "model_call_1m_pct": mc.get(_pid, {}).get("1m"), "model_call_6m_pct": mc.get(_pid, {}).get("6m"),
+                   "like_earlier_cards": like_facts(like.get(_pid))}
                   for _pid, n, p, r, w in d["chase"][:CHASE_N]],
         "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
                            "about": ab.get(m[0]),
-                           "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                           "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None,
+                           "model_call_1m_pct": mc.get(m[0], {}).get("1m"), "model_call_6m_pct": mc.get(m[0], {}).get("6m")}
                           for m in d["ups"][:MOVERS_N]],
                    "down": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
                              "about": ab.get(m[0]),
-                             "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None}
+                             "copies_sold_last_week": round(vc[m[0]][0]) if m[0] in vc else None,
+                             "model_call_1m_pct": mc.get(m[0], {}).get("1m"), "model_call_6m_pct": mc.get(m[0], {}).get("6m")}
                             for m in d["downs"][:MOVERS_N]]},
         "rarities": d["rarities"],
         "since_release": ({"from": d["history"]["dates"][0], "to": d["history"]["dates"][-1],
@@ -1037,23 +1303,35 @@ def build_set_article(d, today, no_prose=False):
                                if w is not None and abs(w) > 0.5 else "") + sold_tag(vc, pid)
         tiles.append(card_tile(game, pid, name, meta))
     top = d["chase"][0] if d["chase"] else None
+    chase_txt = (f"The most valuable card in the set is {top[1]} at {money(top[2])}." if top else
+                 "The set has no priced cards yet.")
+    top_like = like.get(top[0]) if top else None
+    if top_like and top_like.get("median_next_6m_pct") is not None:
+        chase_txt += (f" The earlier {label} cards most like it at day {d['age_days']} went a median "
+                      f"{top_like['median_next_6m_pct']:+.1f} percent over the following six months.")
     body.append(section(
-        prose, "chase", "The Chase List",
-        (f"The most valuable card in the set is {top[1]} at {money(top[2])}." if top else
-         "The set has no priced cards yet."),
-        grid(tiles), f"The top of {set_name}, by price."))
+        prose, "chase", "The Chase List", chase_txt,
+        grid(tiles) + compare_graphic(game, d["chase"][:CHASE_N], like, d["age_days"]),
+        f"The top of {set_name}, by price; under each, the earlier cards most like it and where they went."))
 
     # Movers
     if st["tracked"]:
-        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
+        def call_tag(pid):   # the model's one-month call, on the tile (2026-11-10)
+            v = mc.get(pid, {}).get("1m")
+            return f" · model {pct(v)} next month" if v is not None else ""
+        tiles = [card_tile(game, m[0], m[1], f"<span class='report-up'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}{call_tag(m[0])}")
                  for m in d["ups"] if has_art(game, m[0])][:MOVERS_N]
-        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}")
+        tiles += [card_tile(game, m[0], m[1], f"<span class='report-down'>{pct(m[4])}</span> · {money(m[3])}{sold_tag(vc, m[0])}{call_tag(m[0])}")
                   for m in d["downs"] if has_art(game, m[0])][:MOVERS_N]
         bt = d["ups"][0] if d["ups"] else None
         wt = d["downs"][0] if d["downs"] else None
+
+        def expects(m):
+            v = mc.get(m[0], {}).get("1m")
+            return f" The model's one-month call on it is {v:+.1f} percent." if v is not None else ""
         txt = " ".join(filter(None, [
-            f"{bt[1]} led the set, up {pct(bt[4])} to {money(bt[3])}." if bt else None,
-            f"{wt[1]} fell furthest, {pct(wt[4])} to {money(wt[3])}." if wt else None])) \
+            f"{bt[1]} led the set, up {pct(bt[4])} to {money(bt[3])}.{expects(bt)}" if bt else None,
+            f"{wt[1]} fell furthest, {pct(wt[4])} to {money(wt[3])}.{expects(wt)}" if wt else None])) \
             or "Nothing in the set moved more than half a percent this week."
         body.append(section(prose, "movers", "This Week's Movers", txt, grid(tiles),
                             "Risers on the left, fallers on the right."))

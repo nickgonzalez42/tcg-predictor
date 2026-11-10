@@ -39,7 +39,10 @@ Voice: the classic Cracked.com house style. A deadpan explainer who has done \
 the reading. Open the lede with ONE governing metaphor that reframes the \
 subject (a set as a heist movie, a game as a police lineup, a rarity as a \
 tax bracket), extend it for one more sentence, then go straight into the \
-numbers. The base unit is a plainly stated, checkable fact followed by ONE \
+numbers. That is the article's only metaphor (user rule, 2026-11-10): bring \
+it back sparingly, two or three light callbacks across the whole piece at \
+most, never a fresh metaphor for a new section, and none at all while \
+listing numbers. The base unit is a plainly stated, checkable fact followed by ONE \
 comic swerve. Not three jokes per fact. One. "You" prods the reader with \
 hypotheticals about what they were doing; "we" includes the site in the \
 stupidity. A sincere point lasts one or two sentences, backed by a number, \
