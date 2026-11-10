@@ -462,10 +462,10 @@ def set_forecast_medians(pred, game, cat, pids):
 
 COMP_N = 3                 # earlier sets compared beside each chase card
 COMP_SET_MIN = 80          # a "big" set: this many priced cards (no starter decks or promos)
-COMP_SPAN_DAYS = 182       # how far past today's age a comparable is followed
+COMP_SPAN_DAYS = 365       # how far past today's age a comparable is followed
 COMP_TOL_DAYS = 18         # a reading "at day N" may sit between two monthly points
                            # (the PriceCharting era before the 2026 cutover is monthly)
-COMP_HORIZONS = [("1m", 30), ("3m", 91), ("6m", 182)]
+COMP_HORIZONS = [("1m", 30), ("6m", 182), ("12m", 365)]   # the model's own three windows
 
 
 def long_history(pc, game, pids):
@@ -520,9 +520,9 @@ def price_on(series, day, tol=AGE_TOL_DAYS):
 
 
 def model_calls(pred, game, pids):
-    """{pid: {horizon: implied move % from today's price}} for 1m and 6m."""
+    """{pid: {horizon: implied move % from today's price}} for 1m, 6m and 12m."""
     out = collections.defaultdict(dict)
-    for h in ("1m", "6m"):
+    for h in ("1m", "6m", "12m"):
         try:
             rows = pred.execute(
                 "SELECT product_id, base_price, forecast_price, ret FROM forecasts "
@@ -906,71 +906,140 @@ def caption(text):
     return f"<p class='report-caption'><em>{esc(text)}</em></p>" if text else ""
 
 
-def compare_spark(entry, age):
-    """A small, quiet chart: the comparables' paths from their release (grey,
-    as % of their price at day `age`), this card's own path so far in
-    yellow, a hairline at today's age, the median outcomes at the right."""
-    W, H, PL, PR, PT, PB = 240, 96, 6, 72, 8, 14
-    span = age + COMP_SPAN_DAYS
-    series = [c["_path"] for c in entry["cards"] if c["_path"]]
-    own = entry.get("own_path") or []
-    own_pct = []
-    if own and own[-1][1] > 0:
-        base = own[-1][1]
-        own_pct = [(d, (p / base - 1) * 100) for d, p in own if d <= age]
-    vals = [v for s in series for _d, v in s] + [v for _d, v in own_pct] + [0.0]
+COMPARE_TONES = ("a", "b", "c")      # one colour per comparable, legend swatch + line
+# 2026-11-10, user: "Make each card a different color so it's clear. Card A
+# should be the most vibrant though." Three muted hues (blue, coral, teal)
+# under the chase card's yellow; the swatch CSS repeats them.
+COMPARE_COLORS = {"a": "#7aa7e6", "b": "#e08a7a", "c": "#6cc3b8"}
+
+
+def thin(path, n=6):
+    """At most n evenly spaced points of a path, keeping both ends."""
+    if len(path) <= n:
+        return path
+    step = (len(path) - 1) / (n - 1)
+    return [path[round(i * step)] for i in range(n)]
+
+
+def compare_chart(entry, age, price, calls):
+    """One full-width, quiet chart per chase card (2026-11-10, user):
+    this card's own history from its release to today, then the model's
+    1M, 6M and 1Y calls as dollar values, in yellow; each comparable in its own muted colour,
+    its value at those same ages since its own release, as a % of its price
+    at today's age. A comparable younger than a horizon stops short of it.
+    The history is compressed into the left part and the three horizons
+    sit at equal distances (the card chart's rule), so a year fits."""
+    W, H, PL, PR, PT, PB = 560, 200, 46, 40, 30, 34
+    HF = 0.26                                 # share of the plot the history takes
+    span = W - PL - PR
+    hx = PL + HF * span                       # today's x
+    slot = {h: PL + span * (HF + (1 - HF) * (k + 1) / 3) for k, (h, _d) in enumerate(COMP_HORIZONS)}
+
+    def X(day):
+        return PL + HF * span * (min(day, age) / age if age else 1.0)
+    if not price:
+        return ""
+    # A card with no blended-history reading yet still gets its chart: its
+    # own line starts at today's point.
+    own = [(d, pr) for d, pr in (entry.get("own_path") or []) if d <= age]
+    own_pct = thin([(d, (pr / price - 1) * 100) for d, pr in own])
+    if not own_pct or own_pct[-1][0] < age:
+        own_pct.append((age, 0.0))
+    fc = [(h, calls.get(h)) for h, _d in COMP_HORIZONS]
+    fc = [(h, v) for h, v in fc if v is not None]
+    peers = []
+    for tone, c in zip(COMPARE_TONES, entry["cards"]):
+        hist = thin([(d, v) for d, v in c["_path"] if d <= age])
+        if not hist or hist[-1][0] < age:
+            hist.append((age, 0.0))
+        pts = [(X(d), v) for d, v in hist]
+        for h, _d in COMP_HORIZONS:
+            v = c.get(f"next_{h}_pct")
+            if v is None:
+                break
+            pts.append((slot[h], v))
+        peers.append((tone, pts))
+    vals = [v for _d, v in own_pct] + [v for _h, v in fc] + [v for _t, pts in peers for _x, v in pts] + [0.0]
     lo, hi = min(vals), max(vals)
-    if hi - lo < 1:
-        lo, hi = lo - 1, hi + 1
-    X = lambda d: PL + (W - PL - PR) * min(d, span) / max(span, 1)
-    Y = lambda v: H - PB - (H - PT - PB) * (v - lo) / (hi - lo)
-    parts = [f"<svg class='report-compare-spark' viewBox='0 0 {W} {H}' role='img' "
-             "xmlns='http://www.w3.org/2000/svg'>",
-             f"<line x1='{PL}' y1='{Y(0):.1f}' x2='{W - PR}' y2='{Y(0):.1f}' stroke='var(--border, #2e3a52)'/>",
-             f"<line x1='{X(age):.1f}' y1='{PT}' x2='{X(age):.1f}' y2='{H - PB}' "
-             "stroke='var(--text-muted, #8b96ad)' opacity='0.5'/>"]
-    for s in series:
-        pts = " ".join(f"{X(d):.1f},{Y(v):.1f}" for d, v in s)
-        parts.append(f"<polyline points='{pts}' fill='none' stroke='var(--text-muted, #8b96ad)' "
-                     "stroke-width='1.3' opacity='0.6'/>")
-    if len(own_pct) >= 2:
-        pts = " ".join(f"{X(d):.1f},{Y(v):.1f}" for d, v in own_pct)
-        parts.append(f"<polyline points='{pts}' fill='none' stroke='#ffcb05' stroke-width='2'/>")
-    parts.append(f"<text x='{X(age):.1f}' y='{H - 3}' text-anchor='middle' font-size='9' "
-                 f"fill='var(--text-muted, #8b96ad)'>day {age}</text>")
-    y = PT + 6
-    for h, label in (("1m", "+1 mo"), ("6m", "+6 mo")):
-        v = entry.get(f"median_next_{h}_pct")
-        if v is not None:
-            parts.append(f"<text x='{W - PR + 6}' y='{y}' font-size='10' "
-                         f"fill='var(--text-muted, #8b96ad)'>{label} {esc(pct(v))}</text>")
-            y += 14
-    parts.append("</svg>")
-    return "".join(parts)
+    pad = max(6.0, (hi - lo) * 0.12)
+    lo, hi = lo - pad, hi + pad
+
+    def Y(v):
+        return H - PB - (H - PT - PB) * (v - lo) / (hi - lo)
+    muted = "var(--text-muted, #8b96ad)"
+    out = [f"<svg class='report-compare-chart' viewBox='0 0 {W} {H}' role='img' "
+           f"xmlns='http://www.w3.org/2000/svg'><title>{esc(entry['cards'][0]['set'])} and others at the same age</title>"]
+    # Gridlines: zero and the extremes, labelled at the left (an extreme too
+    # close to zero keeps its line but loses its label).
+    for v in sorted({round(lo + pad), 0, round(hi - pad)}):
+        out.append(f"<line x1='{PL}' y1='{Y(v):.1f}' x2='{W - PR}' y2='{Y(v):.1f}' "
+                   f"stroke='var(--border, #2e3a52)' opacity='{1 if v == 0 else 0.5}'/>")
+        if v == 0 or abs(Y(v) - Y(0)) >= 14:
+            out.append(f"<text class='report-compare-tick' x='{PL - 6}' y='{Y(v) + 3.5:.1f}' text-anchor='end' "
+                       f"font-size='10' fill='{muted}'>{f'{v:+d}%' if v else '0%'}</text>")
+    # Today's hairline and the x labels.
+    out.append(f"<line x1='{hx:.1f}' y1='{PT - 8}' x2='{hx:.1f}' y2='{H - PB}' stroke='{muted}' opacity='0.45'/>")
+    out.append(f"<text class='report-compare-tick' x='{PL}' y='{H - PB + 16}' font-size='10' fill='{muted}'>release</text>")
+    out.append(f"<text class='report-compare-tick' x='{hx:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>today · day {age}</text>")
+    for (h, _d), label in zip(COMP_HORIZONS, ("+1M", "+6M", "+1Y")):
+        out.append(f"<text class='report-compare-tick' x='{slot[h]:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>{label}</text>")
+    # The comparables, one muted colour each; dots where a horizon value exists.
+    for tone, pts in peers:
+        col = COMPARE_COLORS[tone]
+        out.append(f"<polyline points='{' '.join(f'{x:.1f},{Y(v):.1f}' for x, v in pts)}' fill='none' "
+                   f"stroke='{col}' stroke-width='1.6' opacity='0.85'/>")
+        for x, v in pts:
+            if x > hx + 1:
+                out.append(f"<circle cx='{x:.1f}' cy='{Y(v):.1f}' r='2.8' fill='{col}'/>")
+    # This card: history solid, the calls lighter, dollar labels on the dots.
+    out.append(f"<polyline points='{' '.join(f'{X(d):.1f},{Y(v):.1f}' for d, v in own_pct)}' fill='none' "
+               "stroke='#ffcb05' stroke-width='2.2'/>")
+    if fc:
+        pts = [(hx, 0.0)] + [(slot[h], v) for h, v in fc]
+        out.append(f"<polyline points='{' '.join(f'{x:.1f},{Y(v):.1f}' for x, v in pts)}' fill='none' "
+                   "stroke='#ffcb05' stroke-width='1.6' opacity='0.55'/>")
+    out.append(f"<circle cx='{hx:.1f}' cy='{Y(0):.1f}' r='3.5' fill='#ffcb05'/>")
+    dollars = lambda v: f"${v:,.0f}"
+    out.append(f"<text class='report-compare-num' x='{hx:.1f}' y='{PT - 12}' text-anchor='middle' font-size='11' "
+               f"font-weight='600' fill='var(--text, #e8edf5)'>{dollars(price)}</text>")
+    for h, v in fc:
+        y = Y(v)
+        out.append(f"<circle cx='{slot[h]:.1f}' cy='{y:.1f}' r='3.5' fill='#ffcb05'/>"
+                   f"<text class='report-compare-num' x='{slot[h]:.1f}' y='{max(PT - 2, y - 11):.1f}' text-anchor='middle' "
+                   f"font-size='11' font-weight='600' fill='var(--text, #e8edf5)'>{dollars(price * (1 + v / 100))}</text>")
+    out.append("</svg>")
+    return "".join(out)
 
 
-def compare_graphic(game, chase, like, age):
+def compare_graphic(game, chase, like, age, calls):
     """The chase cards beside the earlier cards most like them (2026-11-10):
-    one quiet row per card: the card, its comparables, the small chart."""
-    rows = []
+    one block per card: the card and its comparables across the full row,
+    the chart on its own row under them. Returns (html, pids shown)."""
+    rows, shown = [], set()
     for pid, name, price, _rarity, _w in chase:
         entry = like.get(pid)
         if not entry or not has_art(game, pid):
             continue
+        chart = compare_chart(entry, age, price, calls.get(pid, {}))
+        if not chart:
+            continue
         peers = "".join(
             f"<a class='report-compare-peer' href='/catalog/{game}/{c['pid']}'>"
             f"<img src='{CDN}/{game}/{c['pid']}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
-            f"<span class='report-compare-peer-text'><span class='report-compare-peer-name'>{esc(c['name'])}</span>"
-            f"<span class='report-compare-peer-meta'>{esc(short_label(c['set'], 28))} · {money(c['price_at_same_age_usd'])} then"
-            f" · {esc(pct(c['now_vs_same_age_pct']))} since</span></span></a>" for c in entry["cards"])
+            f"<span class='report-compare-peer-text'><span class='report-compare-peer-name'>"
+            f"<span class='report-compare-swatch-{tone}'></span>{esc(c['name'])}</span>"
+            f"<span class='report-compare-peer-meta'>{esc(short_label(c['set'], 28))} · {money(c['price_at_same_age_usd'])} at day {age}"
+            f" · {esc(pct(c['now_vs_same_age_pct']))} since</span></span></a>"
+            for tone, c in zip(COMPARE_TONES, entry["cards"]))
         rows.append(f"<div class='report-compare-row'>"
                     f"<a class='report-compare-card' href='/catalog/{game}/{pid}'>"
                     f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(name)}' loading='lazy'>"
-                    f"<span class='report-compare-name'>{esc(name)}</span>"
+                    f"<span class='report-compare-name'><span class='report-compare-swatch-own'></span>{esc(name)}</span>"
                     f"<span class='report-compare-meta'>{money(price)} · day {age}</span></a>"
                     f"<div class='report-compare-like'><span class='report-compare-label'>Number {entry['rank']} of the last sets at day {age}</span>{peers}</div>"
-                    f"{compare_spark(entry, age)}</div>")
-    return f"<div class='report-compare'>{''.join(rows)}</div>" if rows else ""
+                    f"{chart}</div>")
+        shown.add(pid)
+    return (f"<div class='report-compare'>{''.join(rows)}</div>" if rows else ""), shown
 
 
 def section(prose, key, header, body_text, figure, cap):
@@ -1157,9 +1226,10 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
 SET_SECTIONS = [
     ("chase", "the set's most valuable cards (the chase list): each one's price and move this week, then, for each, "
               "the earlier sets' cards most like it (like_earlier_cards) and what those did over the months after the "
-              "same age, next to the model's own call on it; say plainly what that record suggests we can expect of "
-              "each top card, as a tendency with its numbers and range, never as advice (the picture shows each card "
-              "beside its comparables and a small chart of their paths)"),
+              "same age, next to the model's own one-month, six-month and one-year calls on it (model_call_*_pct); say "
+              "plainly what that record suggests we can expect of each top card, as a tendency with its numbers and "
+              "range, never as advice (the picture shows each card beside its comparables and a chart: the card's own "
+              "path and the model's three calls in yellow, each comparable at the same ages in its own colour)"),
     ("movers", "this week's biggest risers and fallers inside the set, and what the model expects of each over the "
                "next month (model_call_1m_pct) and six months (model_call_6m_pct)"),
     ("sales", "how many Near Mint copies of the set's cards actually sold in the last complete week against the week before, and which cards sold most"),
@@ -1185,8 +1255,9 @@ def build_set_article(d, today, no_prose=False):
             return None
         out = {"basis": (f"this card is number {entry['rank']} in its set by price; these are the number "
                          f"{entry['rank']} cards of the game's last big sets, each priced at the same day "
-                         f"{d['age_days']} since its own set's release. next_1m/3m/6m_pct is what each did over "
-                         f"the following month, three months and six months from that age; "
+                         f"{d['age_days']} since its own set's release. next_1m/6m/12m_pct is what each did over "
+                         f"the following month, six months and year from that age (missing when the card is "
+                         f"not old enough yet); "
                          f"now_vs_same_age_pct is where it sits today. Read them as a tendency with a "
                          f"range, never a promise"),
                "cards": [{k: v for k, v in c.items() if not k.startswith("_") and k != "pid"}
@@ -1206,6 +1277,7 @@ def build_set_article(d, today, no_prose=False):
         "chase": [{"name": n, "price_usd": round(p, 2), "rarity": r, "week_pct": r1(w), "about": ab.get(_pid),
                    "copies_sold_last_week": round(vc[_pid][0]) if _pid in vc else None,
                    "model_call_1m_pct": mc.get(_pid, {}).get("1m"), "model_call_6m_pct": mc.get(_pid, {}).get("6m"),
+                   "model_call_12m_pct": mc.get(_pid, {}).get("12m"),
                    "like_earlier_cards": like_facts(like.get(_pid))}
                   for _pid, n, p, r, w in d["chase"][:CHASE_N]],
         "movers": {"up": [{"name": m[1], "from_usd": round(m[2], 2), "to_usd": round(m[3], 2), "pct": r1(m[4]),
@@ -1294,12 +1366,12 @@ def build_set_article(d, today, no_prose=False):
         body.append(f"<p class='report-note'>{esc(', '.join(d['skipped']))} is under a week old and "
                     "gets its own article once it has a week of prices.</p>")
 
-    # Chase cards
+    # Chase cards: the comparison blocks, and a plain tile only for a card
+    # without comparables (2026-11-10, user: no card row where the chart is).
+    compare_html, compared = compare_graphic(game, d["chase"][:CHASE_N], like, d["age_days"], mc)
     tiles = []
-    for pid, name, price, rarity, w in d["chase"]:
-        if len(tiles) == CHASE_N:
-            break
-        if not has_art(game, pid):
+    for pid, name, price, rarity, w in d["chase"][:CHASE_N]:
+        if not has_art(game, pid) or pid in compared:
             continue
         meta = money(price) + (f" · <span class='{'report-up' if w > 0 else 'report-down'}'>{pct(w)}</span>"
                                if w is not None and abs(w) > 0.5 else "") + sold_tag(vc, pid)
@@ -1313,8 +1385,10 @@ def build_set_article(d, today, no_prose=False):
                       f"{top_like['median_next_6m_pct']:+.1f} percent over the following six months.")
     body.append(section(
         prose, "chase", "The Chase List", chase_txt,
-        grid(tiles) + compare_graphic(game, d["chase"][:CHASE_N], like, d["age_days"]),
-        f"The top of {set_name}, by price; under each, the earlier cards most like it and where they went."))
+        grid(tiles) + compare_html,
+        f"The top of {set_name}, by price, each beside the earlier cards most like it; the chart follows this card "
+        f"in yellow through the model's one-month, six-month and one-year calls, and each comparable in its own colour at "
+        f"those same ages since its own release."))
 
     # Movers
     if st["tracked"]:

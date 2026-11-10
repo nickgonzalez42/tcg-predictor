@@ -160,8 +160,9 @@ a.articles__game:hover {
 }
 
 /* Chase cards beside the earlier cards most like them (2026-11-10): one
-   quiet row per card: the card, its comparables, a small chart of where
-   those went after the same age. */
+   quiet block per card: the card and its comparables across the row, then a
+   full-width chart of the card's own path and the model's calls against
+   each comparable at the same ages. */
 .report__body .report-compare {
   display: flex;
   flex-direction: column;
@@ -171,7 +172,7 @@ a.articles__game:hover {
 
 .report__body .report-compare-row {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) 240px;
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: var(--space-15);
   align-items: start;
   padding: var(--space-15);
@@ -270,10 +271,42 @@ a.articles__game:hover {
   line-height: 1.25;
 }
 
-.report__body .report-compare-spark {
+.report__body .report-compare-chart {
+  grid-column: 1 / -1;
   display: block;
-  width: 240px;
+  width: 100%;
   height: auto;
+  margin-top: 2px;
+}
+
+/* Legend swatches: this card in yellow, the comparables in three muted
+   colours that match their lines on the chart. */
+.report__body .report-compare-swatch-own,
+.report__body .report-compare-swatch-a,
+.report__body .report-compare-swatch-b,
+.report__body .report-compare-swatch-c {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid var(--text-muted);
+  vertical-align: middle;
+  margin: 0 7px 2px 0;
+}
+
+.report__body .report-compare-swatch-own {
+  border-top-color: #ffcb05;
+}
+
+.report__body .report-compare-swatch-a {
+  border-top-color: #7aa7e6;
+}
+
+.report__body .report-compare-swatch-b {
+  border-top-color: #e08a7a;
+}
+
+.report__body .report-compare-swatch-c {
+  border-top-color: #6cc3b8;
 }
 
 @media (max-width: 640px) {
@@ -285,8 +318,13 @@ a.articles__game:hover {
     width: 72px;
   }
 
-  .report__body .report-compare-spark {
-    grid-column: 1 / -1;
-    width: 100%;
+  /* SVG text is in viewBox units, so phone widths need bigger numbers to
+     read at the same size. */
+  .report__body .report-compare-tick {
+    font-size: 15px;
+  }
+
+  .report__body .report-compare-num {
+    font-size: 16px;
   }
 }

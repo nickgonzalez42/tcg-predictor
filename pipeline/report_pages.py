@@ -111,7 +111,7 @@ border:1px solid var(--border);background:var(--panel)}
 @media (max-width:540px){.report-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 /* Chase cards beside the earlier cards most like them (2026-11-10). */
 .report-compare{display:flex;flex-direction:column;gap:12px;margin:18px 0 10px}
-.report-compare-row{display:grid;grid-template-columns:88px minmax(0,1fr) 240px;gap:16px;align-items:start;
+.report-compare-row{display:grid;grid-template-columns:88px minmax(0,1fr);gap:16px;align-items:start;
 padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
 .report-compare-card,.report-compare-peer{display:flex;flex-direction:column;gap:4px;color:var(--text);text-decoration:none}
 .report-compare-card:hover,.report-compare-peer:hover{text-decoration:none}
@@ -130,9 +130,15 @@ border:1px solid var(--border);background:var(--panel);flex:none}
 .report-compare-peer img[src*="/sorcery/"],.report-compare-card img[src*="/sorcery/"]{border-radius:10%/7.2%}
 .report-compare-peer-text{display:flex;flex-direction:column;gap:2px;min-width:0}
 .report-compare-peer-name{font-size:13px;line-height:1.25}
-.report-compare-spark{display:block;width:240px;height:auto}
+.report-compare-swatch-own,.report-compare-swatch-a,.report-compare-swatch-b,.report-compare-swatch-c{display:inline-block;
+width:14px;height:0;border-top:2px solid var(--text-muted);vertical-align:middle;margin:0 7px 2px 0}
+.report-compare-swatch-own{border-top-color:#ffcb05}.report-compare-swatch-a{border-top-color:#7aa7e6}
+.report-compare-swatch-b{border-top-color:#e08a7a}.report-compare-swatch-c{border-top-color:#6cc3b8}
+.report-compare-chart{grid-column:1/-1;display:block;width:100%;height:auto;margin-top:2px}
 @media (max-width:640px){.report-compare-row{grid-template-columns:72px minmax(0,1fr)}
-.report-compare-card img{width:72px}.report-compare-spark{grid-column:1/-1;width:100%}}
+.report-compare-card img{width:72px}
+/* SVG text is in viewBox units, so phone widths need bigger numbers to read at the same size */
+.report-compare-tick{font-size:15px}.report-compare-num{font-size:16px}}
 @media (max-width:480px){.report-table{font-size:12px}
 .report-table th,.report-table td{padding-right:5px}}
 footer.site{border-top:1px solid var(--border);margin-top:36px;padding-top:14px;
