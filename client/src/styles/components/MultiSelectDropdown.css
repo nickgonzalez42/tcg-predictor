@@ -51,11 +51,20 @@
   gap: 4px;
 }
 
+/* The list item is the flex item; without a cap it sizes to the chip's
+   text and a long set name ("Extra Booster: One Piece Heroines Edition
+   Vol. 2") ran past the panel's edge (2026-11-10). */
+.msd__chips > li {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .msd__chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 100%;
+  min-width: 0;
   padding: 3px 9px;
   border: 1px solid var(--border);
   border-radius: 999px;
