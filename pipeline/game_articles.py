@@ -380,6 +380,16 @@ def set_index_path(by_date, release, n_members):
     start = date.fromisoformat(release or t0)
     lag = (date.fromisoformat(t0) - start).days
     base = {pid: p for pid, p in by_date[t0].items() if p >= 1.0}
+    # A card whose price moves more than MAX_WEEK_RATIO between the first
+    # two days was a presale placeholder, not a market (Heroines Vol. 2,
+    # 2026-11-10: 56 cards priced on release day, 21 still inside the band
+    # a week later, so the path died after day one). The base is the cards
+    # that survive the second day, when that leaves enough of them.
+    t1 = broad[1]
+    kept = {pid: b for pid, b in base.items()
+            if pid in by_date[t1] and 1 / MAX_WEEK_RATIO <= by_date[t1][pid] / b <= MAX_WEEK_RATIO}
+    if len(kept) >= 3:
+        base = kept
     path = []
     for d in broad:
         ratios = [by_date[d][pid] / b for pid, b in base.items() if pid in by_date[d]]
