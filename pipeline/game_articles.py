@@ -84,7 +84,7 @@ import statistics
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
-from math import exp, log
+from math import ceil, exp, floor, log
 from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -489,6 +489,24 @@ def long_history(pc, game, pids):
     return by_date
 
 
+def blended_paths(pc, game, pids):
+    """{pid: [(date, price)]}: the long blended history plus the daily
+    TCGplayer readings (tcg_nm_history), the daily reading winning on a
+    shared date, so a card's first week is drawn day by day (2026-11-10,
+    user: the other cards should show their full history)."""
+    by_date = long_history(pc, game, pids)
+    for d, m in set_history(pc, game, pids).items():
+        by_date[d].update(m)
+    return card_paths(by_date)
+
+
+def base_name(name):
+    """The character or card behind a printing: the name before its first
+    parenthesis or dash qualifier ("Nami (055) (Kentaro Yabuki)" -> "Nami")."""
+    n = name.split(" (")[0].split(" - ")[0].strip()
+    return n.lower()
+
+
 def card_paths(by_date):
     """{pid: [(date, price)]} from a set_history() map, dates ascending."""
     out = collections.defaultdict(list)
@@ -537,21 +555,20 @@ def model_calls(pred, game, pids):
 
 
 def chase_comparables(pc, game, cat, set_name, chase, by_date, release, age, today):
-    """For each chase card, the card at the same price rank in each of the
-    game's last few big sets at the same age since release (2026-11-10,
-    user: compare the top cards with similar cards from other sets and say
-    what to expect from that). Rank, not price, is the likeness: price
-    levels drift across a year (One Piece's number one card at day 8 cost
-    $300 in April and $1,500 in November), so "the set's number one card"
-    is what a collector compares. Each comparable carries what it did over
-    the following months from that age and where it sits now; the chase
-    card carries its own path so far. {pid: {...}}.
-
-    The pool is every earlier set of the game with COMP_SET_MIN+ priced
-    cards and a release date inside PEER_LOOKBACK_DAYS, newest first; a
-    card's price at a given age is read between its weekly readings, so the
-    blended history (long_history) reaches back years, and that is what
-    gives the older comparables six-month outcomes."""
+    """For each chase card, up to COMP_N earlier cards chosen for different
+    reasons (2026-11-10, user: whatever cards are closest from other sets,
+    with the reasoning under each, always keeping one that was similarly
+    price ranked):
+      same rank       the card at this card's price rank in the newest big
+                      earlier set, at the same age since its release
+      same character  the same character or card from an earlier set,
+                      closest in price at that age (else: same rarity)
+      closest price   the card of any earlier set priced closest to this
+                      one at the same age
+    Every pick is read at the same day `age` since its own set's release
+    (price_on between readings; the blended history reaches back years),
+    and carries what it did over the model's three windows from that age,
+    where it sits now, its full path, and its reason. {pid: {...}}."""
     if age is None or not release or not chase:
         return {}
     lookback = (today - timedelta(days=PEER_LOOKBACK_DAYS)).isoformat()
@@ -564,48 +581,72 @@ def chase_comparables(pc, game, cat, set_name, chase, by_date, release, age, tod
     earlier = [(r, s) for r, s in ((set_release(cat, s), s) for s in by_set if len(by_set[s]) >= COMP_SET_MIN)
                if r]
     earlier = sorted(((r, s) for r, s in earlier if r <= release and r >= lookback), reverse=True)
-    # Every big earlier set's cards ranked by price at day `age` (a card
-    # needs a reading there and a month later, and art to show).
-    ranked = []                               # [(set, release, [(pid, at, series)] by price desc)]
+    # Every big earlier set's cards priced at day `age` since its release.
+    pool = []                                 # [(set, release, {pid: (at, series)}, [pid by price desc])]
     for r, s in earlier:
         r0 = date.fromisoformat(r)
-        rows = []
-        for pid, series in card_paths(long_history(pc, game, by_set[s])).items():
+        rows = {}
+        for pid, series in blended_paths(pc, game, by_set[s]).items():
             at = price_on(series, (r0 + timedelta(days=age)).isoformat(), COMP_TOL_DAYS)
-            if at and at >= MIN_BASE and price_on(series, (r0 + timedelta(days=age + 30)).isoformat(), COMP_TOL_DAYS):
-                rows.append((pid, at, series))
+            if at and at >= MIN_BASE and has_art(game, pid):
+                rows[pid] = (at, series)
         if len(rows) >= COMP_SET_MIN // 2:
-            rows.sort(key=lambda t: -t[1])
-            ranked.append((s, r, rows))
-        if len(ranked) >= COMP_N + 2:         # a couple spare for cards without art
-            break
-    if not ranked:
+            pool.append((s, r, rows, sorted(rows, key=lambda q: -rows[q][0])))
+    if not pool:
         return {}
-    own_paths = card_paths(long_history(pc, game, [c[0] for c in chase]))
+    flat = [(s, r, cpid, at, series) for s, r, rows, _o in pool for cpid, (at, series) in rows.items()]
+    own_paths = blended_paths(pc, game, [c[0] for c in chase])
     rel = date.fromisoformat(release)
+
+    def describe(s, r, cpid, at, series, reason, why):
+        r0 = date.fromisoformat(r)
+        nxt = {}
+        for h, days in COMP_HORIZONS:
+            later = price_on(series, (r0 + timedelta(days=age + days)).isoformat(), COMP_TOL_DAYS)
+            if later:
+                nxt[f"next_{h}_pct"] = r1((later / at - 1) * 100)
+        last_d, last_p = series[-1]
+        path = [((date.fromisoformat(d) - r0).days, r1((pp / at - 1) * 100)) for d, pp in series
+                if 0 <= (date.fromisoformat(d) - r0).days <= age + COMP_SPAN_DAYS]
+        return {"pid": cpid, "name": cat[cpid]["name"], "set": s, "released": r,
+                "rarity": cat[cpid]["rarity"], "why": why, "reason": reason,
+                "price_at_same_age_usd": round(at, 2), "now_usd": round(last_p, 2),
+                "age_now_days": (date.fromisoformat(last_d) - r0).days,
+                "now_vs_same_age_pct": r1((last_p / at - 1) * 100), **nxt, "_path": path}
+
     out = {}
-    for k, (pid, _name, _price, _rarity, _w) in enumerate(chase):
-        picked = []
-        for s, r, rows in ranked:
-            if k >= len(rows) or not has_art(game, rows[k][0]):
-                continue
-            cpid, at, series = rows[k]
-            r0 = date.fromisoformat(r)
-            nxt = {}
-            for h, days in COMP_HORIZONS:
-                later = price_on(series, (r0 + timedelta(days=age + days)).isoformat(), COMP_TOL_DAYS)
-                if later:
-                    nxt[f"next_{h}_pct"] = r1((later / at - 1) * 100)
-            last_d, last_p = series[-1]
-            path = [((date.fromisoformat(d) - r0).days, r1((pp / at - 1) * 100)) for d, pp in series
-                    if 0 <= (date.fromisoformat(d) - r0).days <= age + COMP_SPAN_DAYS]
-            picked.append({"pid": cpid, "name": cat[cpid]["name"], "set": s, "released": r,
-                           "rarity": cat[cpid]["rarity"], "rank_in_its_set": k + 1,
-                           "price_at_same_age_usd": round(at, 2), "now_usd": round(last_p, 2),
-                           "age_now_days": (date.fromisoformat(last_d) - r0).days,
-                           "now_vs_same_age_pct": r1((last_p / at - 1) * 100), **nxt, "_path": path})
-            if len(picked) == COMP_N:
+    for k, (pid, name, price, rarity, _w) in enumerate(chase):
+        picked, used = [], {pid}
+        closeness = lambda t: abs(log(t[3] / price)) if price else 0.0
+        # 1. the same price rank in the newest big earlier set that has it
+        for s, r, rows, order in pool:
+            if k < len(order):
+                cpid = order[k]
+                picked.append(describe(s, r, cpid, *rows[cpid], f"Number {k + 1} of {s} by price, as this card is in its set", "same rank"))
+                used.add(cpid)
                 break
+        # 2. the same character or card from an earlier set, else the same rarity
+        base = base_name(name)
+        same = sorted((t for t in flat if t[2] not in used and base_name(cat[t[2]]["name"]) == base), key=closeness)
+        if same:
+            s, r, cpid, at, series = same[0]
+            picked.append(describe(s, r, cpid, at, series, f"The same character from {s}, closest to this card's price at day {age}", "same character"))
+            used.add(cpid)
+        elif rarity:
+            same = sorted((t for t in flat if t[2] not in used and cat[t[2]]["rarity"] == rarity), key=closeness)
+            if same:
+                s, r, cpid, at, series = same[0]
+                picked.append(describe(s, r, cpid, at, series, f"The same rarity ({rarity}) from {s}, closest to this card's price at day {age}", "same rarity"))
+                used.add(cpid)
+        # 3. the closest price at this age across every earlier set, another set if possible
+        sets_used = {c["set"] for c in picked}
+        rest = sorted((t for t in flat if t[2] not in used), key=closeness)
+        pick3 = next((t for t in rest if t[0] not in sets_used), rest[0] if rest else None)
+        if pick3:
+            s, r, cpid, at, series = pick3
+            picked.append(describe(s, r, cpid, at, series, f"The card of any earlier set priced closest to this one at day {age}, from {s}", "closest price"))
+            used.add(cpid)
+        picked = picked[:COMP_N]
         if not picked:
             continue
         entry = {"rank": k + 1, "cards": picked,
@@ -617,9 +658,9 @@ def chase_comparables(pc, game, cat, set_name, chase, by_date, release, age, tod
                 entry[f"median_next_{h}_pct"] = r1(statistics.median(vals))
         out[pid] = entry
         if os.environ.get("TCG_COMP_DEBUG"):
-            print(f"    chase #{k + 1}: " + "; ".join(
-                f"{c['set'][:24]} #{k + 1} {c['name'][:22]} ${c['price_at_same_age_usd']:,.0f} "
-                f"1m {c.get('next_1m_pct')} 6m {c.get('next_6m_pct')}" for c in picked), flush=True)
+            print(f"    chase #{k + 1} {name[:30]} ${price:,.0f}: " + "; ".join(
+                f"[{c['why']}] {c['set'][:22]} {c['name'][:22]} ${c['price_at_same_age_usd']:,.0f} "
+                f"1m {c.get('next_1m_pct')} 6m {c.get('next_6m_pct')} path {len(c['_path'])}" for c in picked), flush=True)
     return out
 
 
@@ -927,7 +968,8 @@ def compare_chart(entry, age, price, calls):
     1M, 6M and 1Y calls as dollar values, in yellow; each comparable in its own muted colour,
     its value at those same ages since its own release, as a % of its price
     at today's age. A comparable younger than a horizon stops short of it.
-    The history is compressed into the left part and the three horizons
+    Forecast points are hollow on a dotted line; the gridlines sit at regular
+    percent steps. The history is compressed into the left part and the three horizons
     sit at equal distances (the card chart's rule), so a year fits."""
     W, H, PL, PR, PT, PB = 560, 200, 46, 40, 30, 34
     HF = 0.26                                 # share of the plot the history takes
@@ -941,15 +983,17 @@ def compare_chart(entry, age, price, calls):
         return ""
     # A card with no blended-history reading yet still gets its chart: its
     # own line starts at today's point.
-    own = [(d, pr) for d, pr in (entry.get("own_path") or []) if d <= age]
-    own_pct = thin([(d, (pr / price - 1) * 100) for d, pr in own])
+    # A reading under 5% of the anchor price in a card's first days is a
+    # pre-release placeholder, not a market, and leaves the line.
+    own = [(d, pr) for d, pr in (entry.get("own_path") or []) if d <= age and pr >= price * 0.05]
+    own_pct = thin([(d, (pr / price - 1) * 100) for d, pr in own], 60)
     if not own_pct or own_pct[-1][0] < age:
         own_pct.append((age, 0.0))
     fc = [(h, calls.get(h)) for h, _d in COMP_HORIZONS]
     fc = [(h, v) for h, v in fc if v is not None]
     peers = []
     for tone, c in zip(COMPARE_TONES, entry["cards"]):
-        hist = thin([(d, v) for d, v in c["_path"] if d <= age])
+        hist = [(d, v) for d, v in c["_path"] if d <= age and v > -95]   # every reading, day by day
         if not hist or hist[-1][0] < age:
             hist.append((age, 0.0))
         pts = [(X(d), v) for d, v in hist]
@@ -959,30 +1003,38 @@ def compare_chart(entry, age, price, calls):
                 break
             pts.append((slot[h], v))
         peers.append((tone, pts))
-    vals = [v for _d, v in own_pct] + [v for _h, v in fc] + [v for _t, pts in peers for _x, v in pts] + [0.0]
+    # The scale stops at +300%: a comparable that ran up further is drawn
+    # at the top edge with its real number beside it, so one runaway card
+    # does not flatten everyone else.
+    CAP = 300.0
+    vals = [v for _d, v in own_pct] + [v for _h, v in fc] + [min(v, CAP) for _t, pts in peers for _x, v in pts] + [0.0]
     lo, hi = min(vals), max(vals)
     pad = max(6.0, (hi - lo) * 0.12)
     lo, hi = lo - pad, hi + pad
+    # Gridlines at regular percent intervals (2026-11-10, user): one step
+    # per chart, chosen to give about four to seven lines, every one labelled.
+    step = next((st for st in (5, 10, 20, 25, 50, 100, 200, 500, 1000) if (hi - lo) / st <= 7), 1000)
+    ticks = list(range(ceil(lo / step) * step, floor(hi / step) * step + 1, step))
 
     def Y(v):
-        return H - PB - (H - PT - PB) * (v - lo) / (hi - lo)
+        return H - PB - (H - PT - PB) * (min(v, CAP) - lo) / (hi - lo)
     muted = "var(--text-muted, #8b96ad)"
     out = [f"<svg class='report-compare-chart' viewBox='0 0 {W} {H}' role='img' "
            f"xmlns='http://www.w3.org/2000/svg'><title>{esc(entry['cards'][0]['set'])} and others at the same age</title>"]
-    # Gridlines: zero and the extremes, labelled at the left (an extreme too
-    # close to zero keeps its line but loses its label).
-    for v in sorted({round(lo + pad), 0, round(hi - pad)}):
+    for v in ticks:
         out.append(f"<line x1='{PL}' y1='{Y(v):.1f}' x2='{W - PR}' y2='{Y(v):.1f}' "
-                   f"stroke='var(--border, #2e3a52)' opacity='{1 if v == 0 else 0.5}'/>")
-        if v == 0 or abs(Y(v) - Y(0)) >= 14:
-            out.append(f"<text class='report-compare-tick' x='{PL - 6}' y='{Y(v) + 3.5:.1f}' text-anchor='end' "
-                       f"font-size='10' fill='{muted}'>{f'{v:+d}%' if v else '0%'}</text>")
+                   f"stroke='var(--border, #2e3a52)' opacity='{1 if v == 0 else 0.55}'/>"
+                   f"<text class='report-compare-tick' x='{PL - 6}' y='{Y(v) + 3.5:.1f}' text-anchor='end' "
+                   f"font-size='10' fill='{muted}'>{f'{v:+d}%' if v else '0%'}</text>")
     # Today's hairline and the x labels.
     out.append(f"<line x1='{hx:.1f}' y1='{PT - 8}' x2='{hx:.1f}' y2='{H - PB}' stroke='{muted}' opacity='0.45'/>")
     out.append(f"<text class='report-compare-tick' x='{PL}' y='{H - PB + 16}' font-size='10' fill='{muted}'>release</text>")
     out.append(f"<text class='report-compare-tick' x='{hx:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>today · day {age}</text>")
     for (h, _d), label in zip(COMP_HORIZONS, ("+1M", "+6M", "+1Y")):
         out.append(f"<text class='report-compare-tick' x='{slot[h]:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>{label}</text>")
+    # The forecast zone is named, and this card's line through it is dotted.
+    out.append(f"<text class='report-compare-tick' x='{W - PR:.1f}' y='{PT - 12}' text-anchor='end' font-size='10' "
+               f"fill='{muted}'>dotted = model forecast</text>")
     # The comparables, one muted colour each; dots where a horizon value exists.
     for tone, pts in peers:
         col = COMPARE_COLORS[tone]
@@ -991,20 +1043,23 @@ def compare_chart(entry, age, price, calls):
         for x, v in pts:
             if x > hx + 1:
                 out.append(f"<circle cx='{x:.1f}' cy='{Y(v):.1f}' r='2.8' fill='{col}'/>")
+                if v > CAP:
+                    out.append(f"<text class='report-compare-tick' x='{x - 6:.1f}' y='{Y(v) + 4:.1f}' text-anchor='end' "
+                               f"font-size='10' fill='{col}'>{v:+.0f}%</text>")
     # This card: history solid, the calls lighter, dollar labels on the dots.
     out.append(f"<polyline points='{' '.join(f'{X(d):.1f},{Y(v):.1f}' for d, v in own_pct)}' fill='none' "
                "stroke='#ffcb05' stroke-width='2.2'/>")
     if fc:
         pts = [(hx, 0.0)] + [(slot[h], v) for h, v in fc]
         out.append(f"<polyline points='{' '.join(f'{x:.1f},{Y(v):.1f}' for x, v in pts)}' fill='none' "
-                   "stroke='#ffcb05' stroke-width='1.6' opacity='0.55'/>")
+                   "stroke='#ffcb05' stroke-width='2' stroke-dasharray='2 5' stroke-linecap='round'/>")
     out.append(f"<circle cx='{hx:.1f}' cy='{Y(0):.1f}' r='3.5' fill='#ffcb05'/>")
     dollars = lambda v: f"${v:,.0f}"
     out.append(f"<text class='report-compare-num' x='{hx:.1f}' y='{PT - 12}' text-anchor='middle' font-size='11' "
                f"font-weight='600' fill='var(--text, #e8edf5)'>{dollars(price)}</text>")
     for h, v in fc:
         y = Y(v)
-        out.append(f"<circle cx='{slot[h]:.1f}' cy='{y:.1f}' r='3.5' fill='#ffcb05'/>"
+        out.append(f"<circle cx='{slot[h]:.1f}' cy='{y:.1f}' r='3.5' fill='var(--panel, #141c2e)' stroke='#ffcb05' stroke-width='2'/>"
                    f"<text class='report-compare-num' x='{slot[h]:.1f}' y='{max(PT - 2, y - 11):.1f}' text-anchor='middle' "
                    f"font-size='11' font-weight='600' fill='var(--text, #e8edf5)'>{dollars(price * (1 + v / 100))}</text>")
     out.append("</svg>")
@@ -1028,7 +1083,7 @@ def compare_graphic(game, chase, like, age, calls):
             f"<img src='{CDN}/{game}/{c['pid']}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
             f"<span class='report-compare-peer-text'><span class='report-compare-peer-name'>"
             f"<span class='report-compare-swatch-{tone}'></span>{esc(c['name'])}</span>"
-            f"<span class='report-compare-peer-meta'>{esc(short_label(c['set'], 28))} · {money(c['price_at_same_age_usd'])} at day {age}"
+            f"<span class='report-compare-peer-meta'>{esc(c['reason'])} · {money(c['price_at_same_age_usd'])} then"
             f" · {esc(pct(c['now_vs_same_age_pct']))} since</span></span></a>"
             for tone, c in zip(COMPARE_TONES, entry["cards"]))
         rows.append(f"<div class='report-compare-row'>"
@@ -1036,7 +1091,7 @@ def compare_graphic(game, chase, like, age, calls):
                     f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(name)}' loading='lazy'>"
                     f"<span class='report-compare-name'><span class='report-compare-swatch-own'></span>{esc(name)}</span>"
                     f"<span class='report-compare-meta'>{money(price)} · day {age}</span></a>"
-                    f"<div class='report-compare-like'><span class='report-compare-label'>Number {entry['rank']} of the last sets at day {age}</span>{peers}</div>"
+                    f"<div class='report-compare-like'><span class='report-compare-label'>Earlier cards most like it, each at day {age} of its own set</span>{peers}</div>"
                     f"{chart}</div>")
         shown.add(pid)
     return (f"<div class='report-compare'>{''.join(rows)}</div>" if rows else ""), shown
@@ -1253,8 +1308,9 @@ def build_set_article(d, today, no_prose=False):
     def like_facts(entry):
         if not entry:
             return None
-        out = {"basis": (f"this card is number {entry['rank']} in its set by price; these are the number "
-                         f"{entry['rank']} cards of the game's last big sets, each priced at the same day "
+        out = {"basis": (f"this card is number {entry['rank']} in its set by price; each comparable was chosen "
+                         f"for the reason it carries (why/reason: the same price rank in the newest earlier set, the "
+                         f"same character or rarity, or the closest price of any earlier set), each priced at the same day "
                          f"{d['age_days']} since its own set's release. next_1m/6m/12m_pct is what each did over "
                          f"the following month, six months and year from that age (missing when the card is "
                          f"not old enough yet); "

@@ -36,6 +36,8 @@ const SVG_ATTRS = new Set([
     // The hero's type and geometry.
     'font-family', 'font-weight', 'transform', 'preserveaspectratio', 'opacity',
     'paint-order', 'stroke-linejoin',
+    // The set articles' comparison chart: a dotted forecast segment.
+    'stroke-dasharray', 'stroke-linecap',
 ]);
 const SVG_VALUE = /^[\w\s.,#()%:/+-]*$/;
 
