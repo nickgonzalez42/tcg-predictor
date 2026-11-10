@@ -135,6 +135,8 @@ width:14px;height:0;border-top:2px solid var(--text-muted);vertical-align:middle
 .report-compare-swatch-own{border-top-color:#ffcb05}.report-compare-swatch-a{border-top-color:#7aa7e6}
 .report-compare-swatch-b{border-top-color:#e08a7a}.report-compare-swatch-c{border-top-color:#6cc3b8}
 .report-compare-chart{grid-column:1/-1;display:block;width:100%;height:auto;margin-top:2px}
+/* Articles written before 2026-11-10 still carry the small spark; it keeps its own row. */
+.report-compare-spark{grid-column:1/-1;display:block;width:240px;max-width:100%;height:auto}
 @media (max-width:640px){.report-compare-row{grid-template-columns:72px minmax(0,1fr)}
 .report-compare-card img{width:72px}
 /* SVG text is in viewBox units, so phone widths need bigger numbers to read at the same size */

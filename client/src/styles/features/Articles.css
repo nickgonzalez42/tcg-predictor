@@ -279,6 +279,16 @@ a.articles__game:hover {
   margin-top: 2px;
 }
 
+/* Articles written before 2026-11-10 still carry the small spark; it keeps
+   its own row until they are regenerated. */
+.report__body .report-compare-spark {
+  grid-column: 1 / -1;
+  display: block;
+  width: 240px;
+  max-width: 100%;
+  height: auto;
+}
+
 /* Legend swatches: this card in yellow, the comparables in three muted
    colours that match their lines on the chart. */
 .report__body .report-compare-swatch-own,
