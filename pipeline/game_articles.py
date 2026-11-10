@@ -320,7 +320,8 @@ def set_history(pc, game, pids):
             f"SELECT date, product_id, price FROM tcg_nm_history WHERE game=? AND printing='' "
             f"AND price>0 AND product_id IN ({','.join('?' * len(pids))}) ORDER BY date",
             [game, *pids]).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        print(f"game_articles: read failed ({e}); that part is left out", flush=True)
         rows = []
     by_date = collections.defaultdict(dict)
     for d, pid, p in rows:
@@ -421,7 +422,8 @@ def peer_sets(pc, game, cat, set_name, release, today):
     try:
         first_tracked = pc.execute("SELECT MIN(date) FROM tcg_nm_history WHERE game=? AND printing=''",
                                    (game,)).fetchone()[0]
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        print(f"game_articles: read failed ({e}); that part is left out", flush=True)
         return []
     if not first_tracked:
         return []
@@ -481,7 +483,8 @@ def long_history(pc, game, pids):
             f"SELECT date, product_id, price FROM price_history_unified WHERE game=? AND printing='' "
             f"AND grade='ungraded' AND price>0 AND product_id IN ({','.join('?' * len(pids))}) ORDER BY date",
             [game, *pids]).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        print(f"game_articles: read failed ({e}); that part is left out", flush=True)
         rows = []
     by_date = collections.defaultdict(dict)
     for d, pid, p in rows:
@@ -546,7 +549,8 @@ def model_calls(pred, game, pids):
                 "SELECT product_id, base_price, forecast_price, ret FROM forecasts "
                 "WHERE game=? AND target='ungraded' AND horizon=? AND printing='' AND base_price>0",
                 (game, h)).fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as e:
+            print(f"game_articles: read failed ({e}); that part is left out", flush=True)
             rows = []
         for pid, base, fc, ret in rows:
             if pid in pids:
@@ -733,7 +737,8 @@ def sales_volume(pc, game, cat, pids, today):
             f"WHERE game=? AND condition='Near Mint' AND bucket_date IN (?, ?) "
             f"AND product_id IN ({','.join('?' * len(pids))})",
             [game, prev_week.isoformat(), last_week.isoformat(), *pids]).fetchall()
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        print(f"game_articles: read failed ({e}); that part is left out", flush=True)
         return None
     fresh = {pid for pid, f in scans.items() if f and f[:10] >= week_open.isoformat()}
     if not fresh:
@@ -762,7 +767,8 @@ def sales_volume(pc, game, cat, pids, today):
                 f"SELECT product_id, bucket_date, quantity_sold FROM tcg_sales_history "
                 f"WHERE game=? AND condition='Near Mint' AND bucket_date >= ? AND bucket_date <= ? "
                 f"AND product_id IN ({','.join('?' * len(tp))})", [game, weeks[0], weeks[-1], *tp]).fetchall()
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as e:
+            print(f"game_articles: read failed ({e}); that part is left out", flush=True)
             hist = []
         wk = collections.defaultdict(float)
         for pid, d, q in hist:
@@ -1409,16 +1415,20 @@ def build_set_article(d, today, no_prose=False):
         med = statistics.median(vals)
         standing = ("better than most" if rank <= max(1, n // 3) else
                     "worse than most" if rank > n - max(1, n // 3) else "about typical")
-        facts["context"] = {
-            "standing_vs_earlier_sets": standing,
-            "this_set_index_pct": r1(own_at), "typical_earlier_set_index_pct": r1(med),
-            "rank_strongest_first": f"{rank} of {n}", "age_days": d["age_days"],
-            "how_to_use": (f"Most {label} sets lose value in their first months, so say whether this one is "
-                           f"holding up better or worse than the earlier sets were at day {d['age_days']} "
-                           f"({standing}: index {r1(own_at)}% against a typical {r1(med)}%, rank "
-                           f"{rank} of {n} strongest first). Lead the title and the lede with this standing, "
-                           f"not with the bare drop."),
-        }
+        if own_at is None:          # no index for this set = no rank, not rank one
+            facts["earlier_sets"]["rank_strongest_first"] = None
+            standing = None
+        if standing:
+            facts["context"] = {
+                "standing_vs_earlier_sets": standing,
+                "this_set_index_pct": r1(own_at), "typical_earlier_set_index_pct": r1(med),
+                "rank_strongest_first": f"{rank} of {n}", "age_days": d["age_days"],
+                "how_to_use": (f"Most {label} sets lose value in their first months, so say whether this one is "
+                               f"holding up better or worse than the earlier sets were at day {d['age_days']} "
+                               f"({standing}: index {r1(own_at)}% against a typical {r1(med)}%, rank "
+                               f"{rank} of {n} strongest first). Lead the title and the lede with this standing, "
+                               f"not with the bare drop."),
+            }
         for h, days in HORIZON_DAYS.items():
             nxt = [r[f"next_{h}_pct"] for r in cmp_rows if f"next_{h}_pct" in r]
             if h in d["forecast_median"] and len(nxt) >= 2:
@@ -1658,7 +1668,8 @@ def released_on(pc, game, cat):
         return dict(pc.execute(
             "SELECT product_id, MIN(date) FROM tcg_nm_history "
             "WHERE game=? AND printing='' AND price>0 GROUP BY product_id", (game,)).fetchall())
-    except sqlite3.OperationalError:
+    except sqlite3.OperationalError as e:
+        print(f"game_articles: read failed ({e}); that part is left out", flush=True)
         return {}
 
 
@@ -2266,7 +2277,7 @@ def main():
     today = date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date()
     kinds = [args.kind] if args.kind else ["set", "game"]
     pred = sqlite3.connect(args.pred_db)
-    pred.execute("PRAGMA busy_timeout=30000")
+    pred.execute("PRAGMA busy_timeout=120000")
     ensure_table(pred)
     last = last_articles(pred)
     waiting = 0
@@ -2287,7 +2298,7 @@ def main():
         return
 
     pc = sqlite3.connect(PC_DB)
-    pc.execute("PRAGMA busy_timeout=30000")
+    pc.execute("PRAGMA busy_timeout=120000")
     window = week_window(pc, end=today.isoformat() if args.date else None)
     baseline, latest, dates = window
     synth = synth_series(pc, dates) if dates else {}
