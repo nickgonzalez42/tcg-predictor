@@ -28,6 +28,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
+from static_nav import nav_html, nav_css, cta_html, CTA_CSS, NAV_JS
 
 PRED_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                        "predictions.db")
@@ -322,6 +323,9 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
     # The interactive hero leads the article; the JPEG only stands in when a
     # link preview is doing the rendering.
     hero = hero_svg or ""
+    # The app's nav and the front-page call to action (static_nav.py,
+    # 2026-11-09): the header marks this page's section as the active link.
+    nav, nav_style, cta = nav_html(active=base), nav_css(), cta_html()
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.
@@ -374,20 +378,18 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <script type="application/ld+json">{schema}</script>
 {ADS}
 <style>{CSS}</style>
+<style>{nav_style}{CTA_CSS}</style>
 </head>
 <body>
 <div class="wrap">
-<header class="site">
-  <a class="logo" href="{SITE}/">CardStock</a>
-  <nav><a href="{SITE}/catalog">Catalog</a><a href="{SITE}/reports">Reports</a>
-  <a href="{SITE}/articles">Articles</a><a href="{SITE}/about">About</a><a href="{SITE}/guides/how-to-read-price-charts">Guides</a></nav>
-</header>
+{nav}
 <article>
 {hero}
 <h1>{t}</h1>
 <p class="published">Published {html.escape(long_date(published_at))}</p>
 {body_html}
 </article>
+{cta}
 <footer class="site">
   <p>CardStock tracks trading card prices and publishes model forecasts with a
   public track record. Not financial advice.
@@ -399,6 +401,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 </div>
 {PX}
 <script>{JS}</script>
+<script>{NAV_JS}</script>
 </body>
 </html>
 """
