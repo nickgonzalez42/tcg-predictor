@@ -117,7 +117,15 @@ DEPTH_GAMES, BACKFILL_TONIGHT = night_plan(LOCAL_WEEKDAY)
 # backlog rotations give up their budget, and never below a floor, so each
 # still makes progress. The CRAWL night is exempt: it is inherently ~40 h
 # and is scheduled as a two-day job instead.
+#
+# 2026-11-10, user: "7AM is a goal not a hard rule. Let's make it so it isn't
+# forced to end." The deadline is now a TARGET: the planner still projects
+# every rotation against it and says in the log when a step is going to
+# carry the night past it, and the ledger still scores the night against it,
+# but no budget is trimmed and nothing is stopped early. The old trimming is
+# kept behind TCG_REFRESH_DEADLINE_MODE=hard.
 DEADLINE = "" if CRAWL_NIGHT else os.environ.get("TCG_REFRESH_DEADLINE", "").strip()
+DEADLINE_MODE = os.environ.get("TCG_REFRESH_DEADLINE_MODE", "goal").strip().lower() or "goal"
 # Measured wall-clock minutes per step, used only to decide how much of a
 # rotation fits before the deadline. These are the 80th percentile of the
 # last 8 nights' logs (recomputed 2026-10-27) — NOT the median: the point is
@@ -182,8 +190,9 @@ def deadline_at(now):
 
 
 def apply_deadline(todo, idx, now):
-    """Trim the budget of todo[idx] to what fits before the deadline.
-    Returns the (possibly rewritten) command."""
+    """Trim the budget of todo[idx] to what fits before the deadline (hard
+    mode), or just say how the step projects against the goal (goal mode,
+    the default since 2026-11-10). Returns the (possibly rewritten) command."""
     name, cmd = todo[idx]
     if name not in TRIMMABLE:
         return cmd
@@ -203,6 +212,13 @@ def apply_deadline(todo, idx, now):
         rest += PUSH_MIN
     available = remaining - rest
     nominal = NOMINAL_MIN.get(name, 2)
+    if DEADLINE_MODE != "hard":
+        # Goal mode: the full budget runs; the log says where the night stands.
+        if available < nominal:
+            print(f"    [goal {DEADLINE}] {name}: {int(remaining)} min left, {int(rest)} min "
+                  f"still to come, about {int(nominal)} min of work here -> running in full, "
+                  f"projected about {int(nominal - available)} min past the goal", flush=True)
+        return cmd
     cmd = list(cmd)
     if name == "pc-link-suggest":
         # This one takes a CLOCK, not just a count: the Monday after a
@@ -486,7 +502,8 @@ def main():
     todo = [s for s in STEPS if s[0] == args.only] if args.only else STEPS[lo:hi]
 
     print(f"weekly refresh — {datetime.now():%Y-%m-%d %H:%M} — {len(todo)} step(s)"
-          + (f" — finishing by {DEADLINE}" if DEADLINE else ""), flush=True)
+          + ((f" — finishing by {DEADLINE}" if DEADLINE_MODE == "hard"
+              else f" — aiming to finish by {DEADLINE}") if DEADLINE else ""), flush=True)
     print(flush=True)
     timings = []
     for i, (name, cmd) in enumerate(todo):
