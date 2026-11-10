@@ -1058,7 +1058,7 @@ def compare_chart(entry, age, price, calls):
         out.append(f"<text class='report-compare-tick' x='{slot[h]:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>{label}</text>")
     # The forecast zone is named, and this card's line through it is dotted.
     out.append(f"<text class='report-compare-tick' x='{W - PR:.1f}' y='{PT - 12}' text-anchor='end' font-size='10' "
-               f"fill='{muted}'>dotted = model forecast</text>")
+               f"fill='{muted}'>{'dotted = model forecast' if fc else 'no model call for this card yet'}</text>")
     # The comparables, one muted colour each; dots where a horizon value exists.
     for tone, pts in peers:
         col = COMPARE_COLORS[tone]
