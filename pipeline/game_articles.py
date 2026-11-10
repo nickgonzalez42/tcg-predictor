@@ -1402,6 +1402,23 @@ def build_set_article(d, today, no_prose=False):
             "median_index_pct": r1(statistics.median(vals)),
             "rank_strongest_first": f"{rank} of {len(cmp_rows) + 1}",
         }
+        # 2026-11-10, user: most sets fall after release, so a drop alone is
+        # not the story; the title and lede say how this set is doing against
+        # the earlier sets at the same age.
+        n = len(cmp_rows) + 1
+        med = statistics.median(vals)
+        standing = ("better than most" if rank <= max(1, n // 3) else
+                    "worse than most" if rank > n - max(1, n // 3) else "about typical")
+        facts["context"] = {
+            "standing_vs_earlier_sets": standing,
+            "this_set_index_pct": r1(own_at), "typical_earlier_set_index_pct": r1(med),
+            "rank_strongest_first": f"{rank} of {n}", "age_days": d["age_days"],
+            "how_to_use": (f"Most {label} sets lose value in their first months, so say whether this one is "
+                           f"holding up better or worse than the earlier sets were at day {d['age_days']} "
+                           f"({standing}: index {r1(own_at)}% against a typical {r1(med)}%, rank "
+                           f"{rank} of {n} strongest first). Lead the title and the lede with this standing, "
+                           f"not with the bare drop."),
+        }
         for h, days in HORIZON_DAYS.items():
             nxt = [r[f"next_{h}_pct"] for r in cmp_rows if f"next_{h}_pct" in r]
             if h in d["forecast_median"] and len(nxt) >= 2:

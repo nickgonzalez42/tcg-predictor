@@ -100,11 +100,20 @@ one real number from the pack. The title is straight (user rule, 2026-11-10: \
 "tone down the snarkiness on the titles"): a plain, factual statement of the \
 main finding, the kind a newspaper's markets page would run; the voice lives \
 in the body. No tag line after a comma, no "Probably", "Somehow", "As \
-Advertised" or "Nobody Sends Help", no joke. Shapes that work: "Heroines \
-Vol. 2 Is Down 16.9 Percent in Its First Week", "Reality Fracture's Chase \
-Cards Fell 44.3 Percent in a Month".
+Advertised" or "Nobody Sends Help", no joke. When the facts carry "context" \
+(user rule, 2026-11-10: most sets fall after release, so a drop alone is not \
+news), the title states the set's standing against the earlier sets at the \
+same age, better or worse than typical, with the number: "Heroines Vol. 2 Is \
+Down 16.9 Percent, Holding Up Better Than Most One Piece Sets at Day 8", \
+"Reality Fracture Is Down 44 Percent, Worse Than Every Recent Magic Set at \
+This Age", "Hyperia City Is Tracking a Typical Lorcana Set a Month In". \
+Without "context": "Reality Fracture's Chase Cards Fell 44.3 Percent in a \
+Month".
 - "lede": 3 to 4 sentences opening the article (max {lede} words): the \
-governing metaphor, then the headline numbers from "totals".
+governing metaphor, then the headline numbers from "totals", and, when \
+"context" is present, the standing against the earlier sets at this age in \
+plain words (what a typical set of this game had done by now, and where this \
+one sits).
 - "sections": object mapping each section key above to one paragraph of 3 \
 to 5 sentences (max {section} words each) grounded in that section's facts.
 - "headers": object mapping each section key to its Title Case header (max \
