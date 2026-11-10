@@ -96,9 +96,13 @@ or a chart the caption goes under:
 Return ONLY a JSON object (no code fences, no commentary) with:
 - "headline": the article title, max {headline} words, Title Case, no final \
 period, no quotation marks, no date. It must name {headline_names} and carry \
-one real number from the pack. Shapes that work: "Why 45 Falling Star Trek \
-Cards Prove Magic Is Fine, Probably", "The 6 Cards Keeping Heroines Vol. 2 \
-Above Water (Barely)".
+one real number from the pack. The title is straight (user rule, 2026-11-10: \
+"tone down the snarkiness on the titles"): a plain, factual statement of the \
+main finding, the kind a newspaper's markets page would run; the voice lives \
+in the body. No tag line after a comma, no "Probably", "Somehow", "As \
+Advertised" or "Nobody Sends Help", no joke. Shapes that work: "Heroines \
+Vol. 2 Is Down 16.9 Percent in Its First Week", "Reality Fracture's Chase \
+Cards Fell 44.3 Percent in a Month".
 - "lede": 3 to 4 sentences opening the article (max {lede} words): the \
 governing metaphor, then the headline numbers from "totals".
 - "sections": object mapping each section key above to one paragraph of 3 \
