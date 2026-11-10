@@ -147,7 +147,7 @@ NAV_JS = """
   // account + logout at the foot). The page is static, so it asks.
   try {
     fetch('/api/account/user-info', { credentials: 'include' }).then(function (r) {
-      if (!r.ok) return;
+      if (r.status !== 200) return;   // anonymous visitors get 204, not an error
       var links = document.getElementById('navbar-links'), end = document.getElementById('navbar-end');
       if (!links || !end) return;
       [['portfolio', 'PORTFOLIO'], ['watchlist', 'WATCHLIST'], ['scan', 'SCAN']].forEach(function (p) {
