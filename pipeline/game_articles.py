@@ -911,16 +911,56 @@ def collect_set(pc, pred, game, cat, set_name, synth, window, young, today, skip
     }
 
 
+# 2026-11-10, user: "put the set performance metrics at the top". The set-level
+# sections (the index since release, the earlier-sets comparison, the rarity
+# breakdown) lead; the card lists follow. SET_ORDER below assembles the body
+# the same way, and reorder_set_body() rearranges articles written before.
 SET_SECTIONS = [
+    ("history", "the set's price index since its release day: the average move of its cards from the first day they were broadly priced after release"),
+    ("peers", "how this set compares with the game's earlier sets at the same number of days since release (every line on the chart starts on its set's release day), and what those sets did over the month after that age"),
+    ("rarity", "what each rarity costs and how it moved this week (the chart draws each rarity's price index day by day)"),
     ("chase", "the set's most valuable cards (the chase list) with each one's price and its move this week"),
     ("movers", "this week's biggest risers and fallers inside the set"),
     ("sales", "how many Near Mint copies of the set's cards actually sold in the last complete week against the week before, and which cards sold most"),
-    ("rarity", "what each rarity costs and how it moved this week (the chart draws each rarity's price index day by day)"),
-    ("history", "the set's price index since its release day: the average move of its cards from the first day they were broadly priced after release"),
-    ("peers", "how this set compares with the game's earlier sets at the same number of days since release (every line on the chart starts on its set's release day), and what those sets did over the month after that age"),
     ("ladder", "how the set's priced cards spread across price bands"),
     ("outlook", "what the model's one-month calls say about the set, how its median call compares with what the earlier sets actually did from this age, and the model's own record on this game"),
 ]
+SET_ORDER = [k for k, _ in SET_SECTIONS]
+
+# The charts that mark the three set-level sections in a stored body (their
+# titles are drawn in capitals by line_chart).
+SET_MARKS = [("history", "PRICE INDEX SINCE"), ("peers", "PRICE INDEX BY DAYS SINCE RELEASE"),
+             ("rarity", "PRICE INDEX THIS WEEK, BY RARITY")]
+
+
+def reorder_set_body(body):
+    """Rearrange a set article's stored body_html into SET_ORDER: the lede and
+    notes stay first, the three set-level sections follow, then the rest in
+    their original order, the model corner and the closer last. Sections are
+    the <h2> runs; the model corner's <h2> is inside its div, so the split
+    there is at the div. Bodies without the set-level charts come back as
+    they were."""
+    import re as _re
+    corner = body.find("<div class='report-model-corner'>")
+    cuts = [m.start() for m in _re.finditer(r"<h2>", body)]
+    if corner >= 0:
+        cuts = [c for c in cuts if c < corner] + [corner]
+    if not cuts:
+        return body
+    tail_at = body.rfind("</div>") + len("</div>") if corner >= 0 else len(body)
+    head, tail = body[:cuts[0]], body[tail_at:]
+    chunks = [body[a:b] for a, b in zip(cuts, cuts[1:] + [tail_at])]
+    lead, rest = {}, []
+    for ch in chunks:
+        up = ch.upper()
+        key = next((k for k, mark in SET_MARKS if mark in up), None)
+        if key and key not in lead:
+            lead[key] = ch
+        else:
+            rest.append(ch)
+    if not lead:
+        return body
+    return head + "".join(lead[k] for k in SET_ORDER if k in lead) + "".join(rest) + tail
 
 
 def build_set_article(d, today, no_prose=False):
@@ -1025,6 +1065,7 @@ def build_set_article(d, today, no_prose=False):
     if d["skipped"]:
         body.append(f"<p class='report-note'>{esc(', '.join(d['skipped']))} is under a week old and "
                     "gets its own article once it has a week of prices.</p>")
+    parts = []   # (section key, html); assembled in SET_ORDER below
 
     # Chase cards
     tiles = []
@@ -1037,11 +1078,11 @@ def build_set_article(d, today, no_prose=False):
                                if w is not None and abs(w) > 0.5 else "") + sold_tag(vc, pid)
         tiles.append(card_tile(game, pid, name, meta))
     top = d["chase"][0] if d["chase"] else None
-    body.append(section(
+    parts.append(("chase", section(
         prose, "chase", "The Chase List",
         (f"The most valuable card in the set is {top[1]} at {money(top[2])}." if top else
          "The set has no priced cards yet."),
-        grid(tiles), f"The top of {set_name}, by price."))
+        grid(tiles), f"The top of {set_name}, by price.")))
 
     # Movers
     if st["tracked"]:
@@ -1055,8 +1096,8 @@ def build_set_article(d, today, no_prose=False):
             f"{bt[1]} led the set, up {pct(bt[4])} to {money(bt[3])}." if bt else None,
             f"{wt[1]} fell furthest, {pct(wt[4])} to {money(wt[3])}." if wt else None])) \
             or "Nothing in the set moved more than half a percent this week."
-        body.append(section(prose, "movers", "This Week's Movers", txt, grid(tiles),
-                            "Risers on the left, fallers on the right."))
+        parts.append(("movers", section(prose, "movers", "This Week's Movers", txt, grid(tiles),
+                                        "Risers on the left, fallers on the right.")))
 
         # Rarity
         rows = [(r["rarity"], r["median_move_pct"], f"{r['tracked']} cards · median {money(r['median_price_usd'])}")
@@ -1072,27 +1113,27 @@ def build_set_article(d, today, no_prose=False):
                          f"<td>{pct(r['median_move_pct']) if r['median_move_pct'] is not None else '–'}</td></tr>")
         table.append("</tbody></table>")
         pricey = d["rarities"][0] if d["rarities"] else None
-        body.append(section(
+        parts.append(("rarity", section(
             prose, "rarity", "Rarity Is a Tax Bracket",
             (f"{pricey['rarity']} is the priciest tier at a median {money(pricey['median_price_usd'])}."
              if pricey else "No rarity data for this set."),
-            chart + "".join(table), "Each rarity's cards averaged, day by day through the week; the table ranks them."))
+            chart + "".join(table), "Each rarity's cards averaged, day by day through the week; the table ranks them.")))
 
     # What actually sold (2026-11-07)
     if vol and vol["enough"]:
-        body.append(sales_block(prose, vol, game, label, "set cards"))
+        parts.append(("sales", sales_block(prose, vol, game, label, "set cards")))
 
     # Since release
     if d["history"]:
         h = d["history"]
         chart = line_chart(h["dates"], [(short_label(set_name, 24), h["index"], "#ffcb05")],
                            title=f"{short_label(set_name, 36)}: price index since {h['dates'][0]}")
-        body.append(section(
+        parts.append(("history", section(
             prose, "history", "The Road Since Release",
             f"Against its first broadly priced day since release, {h['dates'][0]}, the set's cards sit "
             f"{h['index'][-1]:+.1f} percent on average, with a peak of {max(h['index']):+.1f} percent "
             f"and a low of {min(h['index']):+.1f} percent.",
-            chart, "The whole set, averaged, from its release day to now."))
+            chart, "The whole set, averaged, from its release day to now.")))
 
     # Earlier sets at the same age (user, 2026-11-07). Every line starts on
     # its set's real release day; the x axis is days since release.
@@ -1135,16 +1176,16 @@ def build_set_article(d, today, no_prose=False):
                 f"release week sat at a median {statistics.median(vals):+.1f} percent at the same age"
                 + (f" ({best['set']} {best['index_at_age_pct']:+.1f}, {worst['set']} {worst['index_at_age_pct']:+.1f})."
                    if len(cmp_rows) > 1 else f" ({best['set']} {best['index_at_age_pct']:+.1f})."))
-        body.append(section(prose, "peers", "How the Last Few Sets Did by Now", txt, chart + "".join(table),
-                            f"Every line starts on its set's release day; {short_label(set_name, 24)} in yellow."))
+        parts.append(("peers", section(prose, "peers", "How the Last Few Sets Did by Now", txt, chart + "".join(table),
+                                       f"Every line starts on its set's release day; {short_label(set_name, 24)} in yellow.")))
 
     # Ladder
     chart = band_line(d["ladder"], f"{short_label(set_name, 36)}: priced cards by price band")
     over5 = sum(n for b, n in d["ladder"][2:])
-    body.append(section(
+    parts.append(("ladder", section(
         prose, "ladder", "Where the Money Sits",
         f"{over5} of the set's {d['cards_priced']} priced cards are worth $5 or more.",
-        chart, "Every priced card in the set, sorted into bands."))
+        chart, "Every priced card in the set, sorted into bands.")))
 
     # Outlook (model corner) + closer
     c = d["calls"]
@@ -1172,8 +1213,9 @@ def build_set_article(d, today, no_prose=False):
     if rec:
         txt += (f" On {label} its one-month forecasts have missed by {rec['typical_miss_pct']} percent "
                 f"on average, against {rec['flat_baseline_miss_pct']} percent for assuming no change.")
-    body.append(model_corner(prose, "outlook", "What the Model Thinks", txt, d["picks"], game, rec, links,
-                             extra=extra))
+    parts.append(("outlook", model_corner(prose, "outlook", "What the Model Thinks", txt, d["picks"], game, rec, links,
+                                          extra=extra)))
+    body += [h for key in SET_ORDER for k, h in parts if k == key]
     closer = prose.get("closer")
     if closer:
         body.append(f"<p>{esc(closer)}</p>")
