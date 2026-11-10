@@ -398,12 +398,15 @@ button.navbar__link {
     right: 0;
     bottom: auto;
     width: auto;
-    /* Solid, one colour with the drawer (user requests 2026-10-23/24): the
-       bar and its drawer read as a single dark sheet, not glass. */
-    background: var(--nav-sheet);
+    /* Glass, like the desktop drawer (user request 2026-11-10, replacing the
+       2026-10-23/24 solid sheet). The header itself stays transparent and
+       unblurred: the bar and the drawer each carry their own glass below,
+       because a blur nested inside a blurred parent only sees the parent,
+       not the page behind it. */
+    background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    border-bottom: 2px solid var(--brand);
+    border-bottom: none;
     pointer-events: auto;
     /* Hide/show rides `top`, not transform: the market crawl is a fixed
        child of this header and a transform here would carry it along. */
@@ -433,11 +436,11 @@ button.navbar__link {
   /* Scrolled down: the bar slides up out of view (its border too). An open
      drawer pins it on screen. */
   .navbar--hidden:not(.navbar--open) {
-    top: calc(-1 * var(--nav-bar-h) - 2px);
+    top: calc(-1 * var(--nav-bar-h) - 1px);
   }
 
   .navbar {
-    --nav-sheet: #111a2b;                    /* the ONE colour of bar, drawer and foot */
+    --nav-edge: var(--border);               /* the dark hairline under the bar and the drawer */
     --bar-pad: 24px;                         /* side gutter (20px on phones) */
     --m-logo-w: calc(32px * 63 / 88);        /* the 32px logo's width */
     /* Once the card topples (pivot: bottom-right) it lies to the right of
@@ -451,6 +454,10 @@ button.navbar__link {
     padding: 0 var(--bar-pad);
     align-items: center;
     pointer-events: auto;
+    background: var(--nav-glass);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--nav-edge);
   }
 
   .navbar__logo {
@@ -473,8 +480,8 @@ button.navbar__link {
 
   /* The drawer unrolls from under the bar: a grid row that grows from 0fr to
      1fr (the panel inside must have min-height 0 + overflow hidden, and no
-     padding of its own, or the row can't collapse). It covers the bar's
-     bottom border while open and carries its own. */
+     padding of its own, or the row can't collapse). It carries its own
+     hairline below. */
   .navbar__drawer {
     display: grid;
     grid-template-rows: 0fr;
@@ -482,8 +489,10 @@ button.navbar__link {
     top: 100%;
     left: 0;
     right: 0;
-    background: var(--nav-sheet);
-    border-bottom: 2px solid var(--brand);
+    background: var(--nav-glass);
+    -webkit-backdrop-filter: blur(24px);
+    backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--nav-edge);
     box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5);
     transition: grid-template-rows 0.35s ease;
     pointer-events: auto;
