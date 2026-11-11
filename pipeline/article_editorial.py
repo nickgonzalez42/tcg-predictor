@@ -227,9 +227,17 @@ _SUPERLATIVE = re.compile(
     r"\ball-time\b|\bin (?:the )?history of\b", re.I)
 
 
+# "better than most sets" is only measured when the facts carry a context
+# standing (game_articles.STANDING_MIN_PEERS earlier releases or more).
+_MOST = re.compile(r"\b(?:better|worse|stronger|weaker|ahead of|behind|beat(?:s|ing)?|outperform(?:s|ing)?|trail(?:s|ing)?|lag(?:s|ging)?) (?:than )?most\b", re.I)
+
+
 def _guard(text, compared):
     if not text:
         return text
+    if not compared and _MOST.search(text):
+        print(f"article_editorial: overreach dropped: {text[:90]!r}", file=sys.stderr)
+        return None
     if _SUPERLATIVE.search(text):
         print(f"article_editorial: overreach dropped: {text[:90]!r}", file=sys.stderr)
         return None

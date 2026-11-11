@@ -472,6 +472,9 @@ def set_forecast_medians(pred, game, cat, pids):
     return out
 
 
+# fewest earlier releases at the same age before the title may say how the set
+# stands against them ("better than most" off one or two sets is not a claim)
+STANDING_MIN_PEERS = 3
 NUM_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
              8: "eight", 9: "nine", 10: "ten"}
 COMP_N = 3                 # earlier sets compared beside each chase card
@@ -1429,6 +1432,10 @@ def build_set_article(d, today, no_prose=False):
                     "worse than most" if rank > n - max(1, n // 3) else "about typical")
         if own_at is None:          # no index for this set = no rank, not rank one
             facts["earlier_sets"]["rank_strongest_first"] = None
+            standing = None
+        # 2026-11-11: Star Wars' Homeworlds was titled "Better Than Most Sets"
+        # off a field of one (its own promo set). A standing needs a real field.
+        if n - 1 < STANDING_MIN_PEERS:
             standing = None
         if standing:
             facts["context"] = {
