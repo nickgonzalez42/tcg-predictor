@@ -472,6 +472,8 @@ def set_forecast_medians(pred, game, cat, pids):
     return out
 
 
+NUM_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven",
+             8: "eight", 9: "nine", 10: "ten"}
 COMP_N = 3                 # earlier sets compared beside each chase card
 COMP_SET_MIN = 80          # a "big" set: this many priced cards (no starter decks or promos)
 COMP_SPAN_DAYS = 365       # how far past today's age a comparable is followed
@@ -1430,6 +1432,9 @@ def build_set_article(d, today, no_prose=False):
             standing = None
         if standing:
             facts["context"] = {
+                # 2026-11-10, user: "Just say 'last five releases'" -- the
+                # comparison is named by its count, never as every/all sets.
+                "compared_against": f"the last {NUM_WORDS.get(n - 1, n - 1)} releases",
                 "standing_vs_earlier_sets": standing,
                 "this_set_index_pct": r1(own_at), "typical_earlier_set_index_pct": r1(med),
                 "rank_strongest_first": f"{rank} of {n}", "age_days": d["age_days"],
@@ -1437,7 +1442,8 @@ def build_set_article(d, today, no_prose=False):
                                f"holding up better or worse than the earlier sets were at day {d['age_days']} "
                                f"({standing}: index {r1(own_at)}% against a typical {r1(med)}%, rank "
                                f"{rank} of {n} strongest first). Lead the title and the lede with this standing, "
-                               f"not with the bare drop."),
+                               f"not with the bare drop. Name the comparison as \"the last {NUM_WORDS.get(n - 1, n - 1)} releases\"; "
+                               f"never \"every\", \"all\" or \"any\" earlier set, and never \"ever\"."),
             }
         for h, days in HORIZON_DAYS.items():
             nxt = [r[f"next_{h}_pct"] for r in cmp_rows if f"next_{h}_pct" in r]

@@ -93,6 +93,11 @@ The article is a {kind_desc}. Its sections, in order, each with a picture \
 or a chart the caption goes under:
 {sections}
 
+CLAIMS: say only what the facts measure (user rule, 2026-11-11). A comparison \
+is named by what it covers ("the last five releases", "the six sets we can \
+compare at this age"); never "every", "all" or "any" earlier set, never "ever", \
+"of all time", "in history" or "record", unless a fact states exactly that.
+
 Return ONLY a JSON object (no code fences, no commentary) with:
 - "headline": the article title, max {headline} words, Title Case, no final \
 period, no quotation marks, no date. It must name {headline_names} and carry \
@@ -184,7 +189,8 @@ def _write(kind, facts, sections, headline_names):
         print("article_editorial: bad JSON, keeping templated text", file=sys.stderr)
         return None
 
-    prose = {k: _clean(data.get(k), cap) for k, cap in LIMITS.items()}
+    compared = ((facts.get("context") or {}).get("compared_against") if isinstance(facts, dict) else None)
+    prose = {k: _guard(_clean(data.get(k), cap), compared) for k, cap in LIMITS.items()}
     prose["headline"] = _headline(prose.get("headline"))
     keys = [k for k, _ in sections]
 
@@ -192,7 +198,7 @@ def _write(kind, facts, sections, headline_names):
         src = data.get(field)
         if not isinstance(src, dict):
             return {}
-        return {k: t for k, t in ((k, _clean(src.get(k), cap)) for k in keys) if t}
+        return {k: t for k, t in ((k, _guard(_clean(src.get(k), cap), compared)) for k in keys) if t}
 
     prose["sections"] = pick("sections", SECTION_LIMIT)
     prose["headers"] = {k: _headline(v) or v for k, v in pick("headers", HEADER_LIMIT).items()}
@@ -202,6 +208,45 @@ def _write(kind, facts, sections, headline_names):
     print(f"article_editorial: kept {kept} prose field(s) "
           f"({len(prose['sections'])}/{len(keys)} sections)")
     return prose
+
+
+# Overreach guard (2026-11-11, user: "Put in a block against this sort of
+# overreaching"). A title said "Worse Than Every Earlier Set" when the facts
+# compared five releases. A universal claim about earlier sets is rewritten
+# to the comparison the facts name ("the last five releases"); one with no
+# such name, or an "ever"/"of all time" superlative, drops that field so the
+# templated text stands in.
+_UNIVERSAL = re.compile(
+    r"\b(?:every|all(?: of the)?|any)(?: single)? (?:earlier|previous|prior|other|past)"
+    r"(?: [A-Z][\w.'-]*)*(?: sets?| releases?| expansions?)\b", re.I)
+# "ever" alone is ordinary English ("ever since", "without ever"); only a
+# superlative paired with it, or an all-time claim, is an overreach.
+_SUPERLATIVE = re.compile(
+    r"\b(?:best|worst|biggest|largest|steepest|sharpest|highest|lowest|strongest|weakest|fastest|deepest|"
+    r"greatest|smallest|slowest)\b[^.;:]{0,40}?\bever\b|\bever (?:recorded|seen)\b|\bof all time\b|"
+    r"\ball-time\b|\bin (?:the )?history of\b", re.I)
+
+
+def _guard(text, compared):
+    if not text:
+        return text
+    if _SUPERLATIVE.search(text):
+        print(f"article_editorial: overreach dropped: {text[:90]!r}", file=sys.stderr)
+        return None
+    if _UNIVERSAL.search(text):
+        if not compared:
+            print(f"article_editorial: overreach dropped: {text[:90]!r}", file=sys.stderr)
+            return None
+        def repl(m):
+            words = m.group(0).split()
+            if len(words) > 1 and words[0][0].isupper() and words[1][0].isupper():
+                return " ".join(w if w == "the" else w[0].upper() + w[1:] for w in compared.split())   # a Title Case line
+            return compared[0].upper() + compared[1:] if words[0][0].isupper() else compared
+        starts_upper = text[:1].isupper()
+        text = _UNIVERSAL.sub(repl, text)
+        if starts_upper:
+            text = text[:1].upper() + text[1:]
+    return text
 
 
 def write_set_article(facts, sections):
