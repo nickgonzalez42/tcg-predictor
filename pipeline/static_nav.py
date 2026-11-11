@@ -172,7 +172,7 @@ NAV_JS = """
 # site's primary yellow pill; the copy is the collector voice.
 CTA_CSS = """
 .home-cta{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;
-margin:44px 0 0;padding:22px 24px;border:1px solid var(--border);border-radius:14px;
+margin:36px 0;padding:22px 24px;border:1px solid var(--border);border-radius:14px;
 background:linear-gradient(180deg,#1a2333,#141c2e)}
 .home-cta__text{flex:1 1 320px;min-width:0}
 .home-cta__kicker{font-family:ui-monospace,Menlo,monospace;font-size:12px;letter-spacing:.08em;

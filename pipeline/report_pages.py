@@ -339,6 +339,21 @@ ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
 
+def mid_cta(body_html, cta):
+    """(body with the CTA spliced in before its middle <h2>, what is left to
+    place after the article)."""
+    import re as _re
+    heads = [m.start() for m in _re.finditer(r"<h2[ >]", body_html)]
+    if len(heads) < 2:
+        return body_html, cta
+    # the middle by reading length: text only (charts and card art weigh
+    # nothing to a reader scrolling), never above the first section
+    text_len = lambda h: len(_re.sub(r"<svg.*?</svg>|<[^>]+>", "", h, flags=_re.S))
+    half = text_len(body_html) / 2
+    at = min(heads[1:], key=lambda i: abs(text_len(body_html[:i]) - half))
+    return body_html[:at] + cta + body_html[at:], ""
+
+
 def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None,
          base="reports", section=None):
     t, s = html.escape(title), html.escape(summary)
@@ -358,6 +373,10 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
     # The app's nav and the front-page call to action (static_nav.py,
     # 2026-11-09): the header marks this page's section as the active link.
     nav, nav_style, cta = nav_html(active=base), nav_css(), cta_html()
+    # 2026-11-11, user: the front-page call to action sits near the middle
+    # of the piece, before the section header closest to halfway through
+    # the body; a body without section headers keeps it at the end.
+    body_html, cta = mid_cta(body_html, cta)
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.
