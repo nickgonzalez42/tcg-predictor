@@ -8,6 +8,18 @@
 # recomputes the caches).
 #
 # Invoked by run_daily_refresh.sh after Phase A; safe to run by hand too.
+#
+#   local_model_run.sh --plan   say whether tonight's block is a LONG one
+#                               (MODEL_PLAN=long|normal) and exit; touches
+#                               nothing. The nightly publishes prices BEFORE
+#                               a long block instead of after it.
+#   TCG_MODEL_RESTART=0         push predictions.db but leave the API restart
+#                               to the caller (the nightly's price publish
+#                               follows and restarts once for both).
+# Under the nightly (TCG_BATCH_DATE set) each finished step is noted against
+# the batch and a second invocation for the same batch skips it, so a block
+# that died or failed picks up where it stopped; forecast_predict keeps its
+# own note per game. Hand runs carry no batch and always run every step.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 PY=/Users/nicholasgonzalez/Developer/Projects/parent/one-piece/.venv/bin/python
@@ -43,12 +55,57 @@ export TCG_FC_PRERELEASE=1
 # next model block trains every horizon whatever the night (used 2026-11-02,
 # user: "make sure any that don't have a 6M and 1Y get them tonight").
 FORCE_LONG="$DIR/../../one-piece/ml_data/.long_horizons_tonight"
-if [ -f "$FORCE_LONG" ]; then
-  echo "=== .long_horizons_tonight present: training 6m/12m tonight (one-shot) ==="
-  rm -f "$FORCE_LONG"
-elif [ "${TCG_CRAWL_NIGHT:-0}" != "1" ] || [ "$(date +%d)" -gt 7 ]; then
-  export TCG_FC_HORIZONS=1m
+PLAN_ONLY=0; [ "${1:-}" = "--plan" ] && PLAN_ONLY=1
+BATCH="${TCG_BATCH_DATE:-}"
+STATE_DIR="$DIR/../../one-piece/ml_data/refresh_state"
+# The night's day of the month is the day the run STARTED (the batch label
+# is the morning after), not the clock's: a long block that is resumed the
+# next day must not change its mind about which horizons it trains.
+NIGHT_DOM=$(date +%d)
+[ -n "$BATCH" ] && NIGHT_DOM=$(date -j -v-1d -f %F "$BATCH" +%d 2>/dev/null || date +%d)
+# The choice is made once per batch and kept (the one-shot file is gone by
+# the time a resume looks for it).
+HFILE=""; [ -n "$BATCH" ] && HFILE="$STATE_DIR/$BATCH.horizons"
+if [ -n "$HFILE" ] && [ -s "$HFILE" ]; then
+  LONG_H=$(cat "$HFILE")
+elif [ -f "$FORCE_LONG" ]; then
+  LONG_H=all
+  [ "$PLAN_ONLY" = 1 ] || echo "=== .long_horizons_tonight present: training 6m/12m tonight (one-shot) ==="
+elif [ "${TCG_CRAWL_NIGHT:-0}" = "1" ] && [ "$NIGHT_DOM" -le 7 ]; then
+  LONG_H=all
+else
+  LONG_H=1m
 fi
+[ "$LONG_H" = "1m" ] && export TCG_FC_HORIZONS=1m
+# 1m: score from each segment's saved fit, refit each game on its own night
+# of the week (2026-11-12; see SCORE_1M in forecast_predict.py).
+# TCG_FC_1M_SCORE=0 in the environment refits every segment for one run.
+export TCG_FC_1M_SCORE=${TCG_FC_1M_SCORE:-1}
+
+if [ "$PLAN_ONLY" = 1 ]; then
+  # Long = every horizon trains, or at least half the games fit their 1m
+  # (the first night under score mode, or after a model-version bump).
+  if [ "$LONG_H" = "all" ]; then
+    echo "MODEL_PLAN=long (6m/12m train tonight)"
+  else
+    line=$("$PY" "$DIR/forecast_predict.py" --plan 2>/dev/null | grep 'plan-1m' | tail -1)
+    n_fit=$(echo "$line" | sed -n 's/.*fit_games=\([0-9]*\) of \([0-9]*\).*/\1/p')
+    n_all=$(echo "$line" | sed -n 's/.*fit_games=\([0-9]*\) of \([0-9]*\).*/\2/p')
+    if [ -z "$n_fit" ] || [ -z "$n_all" ]; then
+      echo "MODEL_PLAN=long (the 1m plan could not be read)"
+    elif [ $(( n_fit * 2 )) -ge "$n_all" ]; then
+      echo "MODEL_PLAN=long ($line)"
+    else
+      echo "MODEL_PLAN=normal ($line)"
+    fi
+  fi
+  exit 0
+fi
+[ -f "$FORCE_LONG" ] && rm -f "$FORCE_LONG"
+if [ -n "$HFILE" ]; then
+  mkdir -p "$STATE_DIR" && echo "$LONG_H" > "$HFILE"
+fi
+STEPS_FILE=""; [ -n "$BATCH" ] && STEPS_FILE="$STATE_DIR/$BATCH.model_steps"
 
 # Card attributes the model reads beyond price history (2026-11-01, user:
 # name, text, art, stat line, set, printing, price, sales volume, rarity,
@@ -76,6 +133,10 @@ echo "=== LOCAL model block — $(date '+%F %T') ==="
 # TCGplayer fetch (the daytime crawler is paused during the refresh, so the
 # step fetches directly); writes the showcase table; never fatal on its own.
 for step in forecast_scorecard build_market_signals forecast_predict forecast_launch sealed_prices forecast_prerelease market_report game_articles pick_showcase; do
+  if [ -n "$STEPS_FILE" ] && grep -qx "$step" "$STEPS_FILE" 2>/dev/null; then
+    echo "--- $step already done for batch $BATCH, skipped ---"
+    continue
+  fi
   echo "--- $step $(date '+%T') ---"
   t0=$SECONDS
   "$PY" "$DIR/$step.py"
@@ -85,6 +146,7 @@ for step in forecast_scorecard build_market_signals forecast_predict forecast_la
     echo "=== MODEL BLOCK FAILED at $step (rc=$rc) — predictions.db NOT pushed ==="
     exit 1
   fi
+  [ -n "$STEPS_FILE" ] && echo "$step" >> "$STEPS_FILE"
 done
 
 # One-off job hook: a self-contained pipeline/oneoff_model_job.sh (never
@@ -136,6 +198,10 @@ done
   && echo "set pages shipped" \
   || echo "(set pages ship failed — non-fatal)"
 
+if [ "${TCG_MODEL_RESTART:-1}" != "1" ]; then
+  echo "predictions.db pushed; the API restart is left to the price publish that follows"
+  exit 0
+fi
 ${=SSH} "ubuntu@$SERVER_IP" \
   'sudo systemctl restart tcg-api && sleep 2 && systemctl is-active tcg-api' \
   || { echo "=== prod API RESTART FAILED ==="; exit 1; }

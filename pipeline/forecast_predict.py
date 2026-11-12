@@ -16,9 +16,11 @@ Run:  .venv/bin/python forecast_predict.py
 """
 
 import csv
+import json
 import math
 import os
 import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
 
 import numpy as np
@@ -126,8 +128,37 @@ PRESERVED = {}        # game -> standing graded rows kept as-is this run (no new
 # calibration under MODEL_DIR, and every 1m-only night loads them to issue
 # 6m/12m rows for the cards that have none: the FILL pass. Standing rows
 # are never touched by a fill; the monthly retrain still replaces them all.
-MODEL_DIR = os.path.join(BASE, "ml_data", "models")
+MODEL_DIR = (os.environ.get("TCG_FC_MODEL_DIR", "").strip()
+             or os.path.join(BASE, "ml_data", "models"))   # the override is for scratch runs
 ARTIFACT_MAX_DAYS = 45   # a fill never runs off a model older than the monthly cadence allows
+# The 1m fit is saved too, and most nights only SCORE from it (2026-11-12,
+# refresh review). The model learns from MONTHLY price buckets, so a refit
+# one night later sees the same months plus a day of drift in the newest
+# bucket's labels: six fits per segment were ~6.5 h of every night for a
+# model that had barely changed, and a failure anywhere in them cost the
+# night its push. Under TCG_FC_1M_SCORE=1 (set by local_model_run.sh; unset
+# = fit every run, which is what hand runs and backtests get) a segment's 1m
+# rows come from its saved fit: every card re-scored on tonight's prices and
+# features, with the bands, debias and shrink as calibrated at the fit. Each
+# game refits on its own night of the week (FIT_1M_WEEKDAY, Mon=0, keyed on
+# the night the run STARTED), so a night carries about a seventh of the
+# fitting instead of all of it. A segment with no usable saved fit (none
+# yet, another model version, a feature this run lacks, older than
+# FIT_1M_MAX_DAYS) always fits, and a score that throws refits the segment.
+# TCG_FC_1M_SCORE=0 for one run refits everything.
+SCORE_1M = os.environ.get("TCG_FC_1M_SCORE", "").strip() == "1"
+FIT_1M_MAX_DAYS = 9      # the weekly night plus two nights of slack
+FIT_1M_MIN_DAYS = 1.5    # a fit this fresh is not redone on its game's night
+# The three big games (about 190k / 185k / 137k cards) get a night each and
+# Saturday, the crawl night and the monthly long-horizon retrain, gets none.
+FIT_1M_WEEKDAY = {
+    "pokemon": 0,
+    "onepiece": 1, "lorcana": 1, "fleshandblood": 1,
+    "yugioh": 2,
+    "digimon": 3, "gundam": 3, "starwars": 3,
+    "sorcery": 4, "riftbound": 4, "cyberpunk": 4,
+    "magic": 6,
+}
 
 # ---- feature buckets for per-card attribution -------------------------------
 # Trajectory features are already narrated directly (momentum/volatility/volume);
@@ -732,6 +763,41 @@ def _artifact_path(game, target, hname):
     return os.path.join(MODEL_DIR, f"{game}_{target}_{hname}.joblib")
 
 
+def night_weekday():
+    """Local weekday (Mon=0) of the night this run belongs to: the day before
+    TCG_BATCH_DATE (the morning the batch goes live), so a run that crosses
+    midnight, or is resumed the next day, still counts as its own night.
+    Hand runs without the label use today."""
+    b = os.environ.get("TCG_BATCH_DATE", "").strip()
+    try:
+        return (datetime.strptime(b, "%Y-%m-%d") - timedelta(days=1)).weekday()
+    except ValueError:
+        return datetime.now().weekday()
+
+
+def fit_weekday(game):
+    """The night of the week a game's 1m segments refit. A game added to the
+    registry without a line in FIT_1M_WEEKDAY lands on a weeknight by name."""
+    if game in FIT_1M_WEEKDAY:
+        return FIT_1M_WEEKDAY[game]
+    import zlib
+    return zlib.crc32(game.encode()) % 5
+
+
+def _saved_1m(game, target, version):
+    """The saved 1m fit this segment SCORES from tonight, or None when it
+    fits instead: scoring is off, nothing usable is saved, or it is the
+    game's refit night (see FIT_1M_WEEKDAY)."""
+    if not SCORE_1M:
+        return None
+    art = _load_artifact(game, target, "1m", version, FIT_1M_MAX_DAYS, "fitting tonight")
+    if art is None:
+        return None
+    if night_weekday() == fit_weekday(game) and art["age_days"] >= FIT_1M_MIN_DAYS:
+        return None
+    return art
+
+
 def _typical_frame(X):
     """One row holding each training column's 'typical card' value (median,
     or the mode for a categorical, dtype kept): all bucket_deltas needs from
@@ -748,8 +814,9 @@ def _typical_frame(X):
 
 
 def _save_artifact(game, target, hname, version, now, payload):
-    """Persist a long-horizon fit for the nightly fill pass. Non-fatal: a
-    segment that cannot save simply waits for the next retrain to fill."""
+    """Persist a fit: a long-horizon one for the nightly fill pass, the 1m
+    one for the nights that only score. Non-fatal: a segment that cannot
+    save simply fits again (1m) or waits for the next retrain to fill."""
     try:
         import joblib
         os.makedirs(MODEL_DIR, exist_ok=True)
@@ -758,17 +825,21 @@ def _save_artifact(game, target, hname, version, now, payload):
         joblib.dump({**payload, "version": version, "trained_at": now,
                      "game": game, "target": target, "horizon": hname}, tmp, compress=3)
         os.replace(tmp, path)
-        print(f"  [{game}/{target}/{hname}] model saved for nightly fills "
+        print(f"  [{game}/{target}/{hname}] model saved for "
+              f"{'nightly scoring' if hname == '1m' else 'nightly fills'} "
               f"({os.path.getsize(path) // 1024} KB)", flush=True)
     except Exception as e:
-        print(f"  [{game}/{target}/{hname}] model NOT saved ({type(e).__name__}: {e}) "
-              f"— fills wait for the next retrain", flush=True)
+        print(f"  [{game}/{target}/{hname}] model NOT saved ({type(e).__name__}: {e}) — "
+              f"{'the segment fits again tomorrow' if hname == '1m' else 'fills wait for the next retrain'}",
+              flush=True)
 
 
-def _load_artifact(game, target, hname, version):
+def _load_artifact(game, target, hname, version, max_days=ARTIFACT_MAX_DAYS,
+                   instead="no fill until the next retrain"):
     """The saved fit for a segment/horizon, or None (with a log line saying
     why) when there is none, it is from another model version, or it is
-    older than ARTIFACT_MAX_DAYS."""
+    older than `max_days`. `instead` words what happens then; the returned
+    payload carries its age in days as age_days."""
     path = _artifact_path(game, target, hname)
     if not os.path.exists(path):
         return None
@@ -777,25 +848,27 @@ def _load_artifact(game, target, hname, version):
         art = joblib.load(path)
     except Exception as e:
         print(f"  [{game}/{target}/{hname}] saved model unreadable ({type(e).__name__}: {e}) "
-              f"— no fill", flush=True)
+              f"— {instead}", flush=True)
         return None
     if art.get("version") != version:
         print(f"  [{game}/{target}/{hname}] saved model is {art.get('version')}, this run is "
-              f"{version} — no fill until the next retrain", flush=True)
+              f"{version} — {instead}", flush=True)
         return None
     try:
-        age = (datetime.now(timezone.utc) - datetime.fromisoformat(art["trained_at"])).days
+        age = (datetime.now(timezone.utc)
+               - datetime.fromisoformat(art["trained_at"])).total_seconds() / 86400
     except (KeyError, ValueError, TypeError):
-        age = ARTIFACT_MAX_DAYS + 1
-    if age > ARTIFACT_MAX_DAYS:
-        print(f"  [{game}/{target}/{hname}] saved model is {age} days old — no fill until "
-              f"the next retrain", flush=True)
+        age = max_days + 1
+    if age > max_days:
+        print(f"  [{game}/{target}/{hname}] saved model is {int(age)} days old — {instead}",
+              flush=True)
         return None
+    art["age_days"] = age
     return art
 
 
 def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=None,
-                         fill=None):
+                         fill=None, force_fit=False):
     horizons = horizons or HORIZONS
     # Horizons this run does not train but may FILL from the saved monthly
     # models (see MODEL_DIR); 1m trains every night and is never filled.
@@ -915,17 +988,37 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
 
     CUM = cum_stats(P)
 
+    # 1m: score from the saved fit, or fit (see SCORE_1M). Decided before the
+    # samples are assembled: a scored horizon needs none, which with the six
+    # fits is what a score-only night saves. `force_fit` is the retry after a
+    # score that threw. Live runs only; backtests and debug captures fit.
+    traj_cols = traj_block(P, R, 1, V, S, EXTRA, CUM, MKT).columns
+    fit_h = dict(horizons)
+    art_1m = None
+    preserved_0 = len(PRESERVED.get(game, []))
+    if "1m" in fit_h and not as_of and debug is None and not force_fit:
+        art_1m = _saved_1m(game, target, version)
+        if art_1m is not None:
+            avail = set(traj_cols) | set(static.columns)
+            lost = [c for c in art_1m["columns"] if c not in avail]
+            if lost:
+                print(f"  [{game}/{target}/1m] the saved model wants feature(s) this run lacks "
+                      f"({', '.join(lost[:5])}) — fitting tonight", flush=True)
+                art_1m = None
+            else:
+                del fit_h["1m"]
+
     # Rolling out-of-sample window per horizon: the last few base months whose
     # outcome has matured (a fixed calendar cutoff ages into training the gate
     # model on a shrinking minority of the data).
-    cutoffs = {h: rolling_cutoff(dates, k) for h, k in horizons.items()}
+    cutoffs = {h: rolling_cutoff(dates, k) for h, k in fit_h.items()}
 
     # The trajectory block at month t is horizon-independent, so build it once
     # per t and slice it for every horizon (was: rebuilt 3x per pipeline run).
-    samples = {h: ([], [], [], [], []) for h in horizons}  # h -> (Xr, y, is_test, w, base_t)
-    for t in range(1, len(dates) - min(horizons.values())):
+    samples = {h: ([], [], [], [], []) for h in fit_h}  # h -> (Xr, y, is_test, w, base_t)
+    for t in (range(1, len(dates) - min(fit_h.values())) if fit_h else ()):
         tb_full = None
-        for hname, k in horizons.items():
+        for hname, k in fit_h.items():
             if t >= len(dates) - k:
                 continue
             v = np.isfinite(P[:, t]) & np.isfinite(P[:, t + k]) & (P[:, t] > 0) & (P[:, t + k] > 0)
@@ -947,8 +1040,7 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
 
     # "Now" features are also horizon-independent: one block per distinct
     # latest-priced month, assembled once and reused for every horizon.
-    traj_now = pd.DataFrame(np.nan, index=np.arange(len(pids)),
-                            columns=traj_block(P, R, 1, V, S, EXTRA, CUM, MKT).columns)
+    traj_now = pd.DataFrame(np.nan, index=np.arange(len(pids)), columns=traj_cols)
     for tv in np.unique(last_idx[keep]):
         blk = traj_block(P, R, int(tv), V, S, EXTRA, CUM, MKT)
         sel = last_idx == tv
@@ -1168,6 +1260,29 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
     for hname, k in horizons.items():
         use_debias = hname in debias_h
         use_cqr = hname in cqr_h
+        if hname == "1m" and art_1m is not None:
+            a = art_1m
+            print(f"  [{game}/{target}/1m] SCORE: {int(keep.sum())} card(s) from the "
+                  f"{str(a['trained_at'])[:10]} fit ({a['age_days']:.1f} days old; this game "
+                  f"refits on weekday {fit_weekday(game)})", flush=True)
+            try:
+                _emit(hname, k, keep, a["model"], a["q10"], a["q90"], a["columns"],
+                      a["typical"], a["use_debias"], a["use_cqr"], a["bias"], a["shrink"],
+                      a["conf_widen"], a["calib"], a["wcal"], a["unreliable"], a["weak_point"])
+            except Exception as e:
+                # A saved fit that cannot score tonight's cards must not cost
+                # the segment its night: drop what the attempt left behind
+                # and run the segment again as a fit.
+                import traceback
+                tb = traceback.extract_tb(e.__traceback__)
+                where = f" at line {tb[-1].lineno}" if tb else ""
+                print(f"  [{game}/{target}/1m] SCORE FAILED: {type(e).__name__}: {e}{where} "
+                      f"— fitting the segment instead", flush=True)
+                if game in PRESERVED:
+                    del PRESERVED[game][preserved_0:]
+                return forecast_game_target(game, target, now, as_of, horizons, debug,
+                                            fill, force_fit=True)
+            continue
         Xr, ys, tests, ws, bs = samples[hname]
         if not Xr:
             continue
@@ -1392,9 +1507,10 @@ def forecast_game_target(game, target, now, as_of=None, horizons=None, debug=Non
         q10 = model_quantile(0.10).fit(X, y, sample_weight=w)
         q90 = model_quantile(0.90).fit(X, y, sample_weight=w)
 
-        # Long horizons retrain monthly: keep this fit so the nights between
-        # can issue rows for cards that gain their first eligible bucket.
-        if not as_of and hname != "1m" and debug is None:
+        # Keep this fit. Long horizons retrain monthly, and the nights
+        # between issue rows from it for cards that gain their first eligible
+        # bucket; the 1m fit is what the score-only nights run on (SCORE_1M).
+        if not as_of and debug is None:
             _save_artifact(game, target, hname, version, now, dict(
                 columns=list(X.columns), typical=_typical_frame(X),
                 model=model, q10=q10, q90=q90, use_debias=use_debias,
@@ -1540,11 +1656,30 @@ def main():
                          "the live forecasts table is left untouched")
     ap.add_argument("--db", metavar="PATH",
                     help="write to this predictions.db instead of the live one")
+    ap.add_argument("--plan", action="store_true",
+                    help="say which games' 1m segments would FIT on this night (the rest "
+                         "score from their saved fits) and exit; run_daily_refresh.sh reads "
+                         "it to decide whether prices publish before the model block")
     args = ap.parse_args()
     if args.as_of and not (len(args.as_of) == 7 and args.as_of[4] == "-"
                            and args.as_of.replace("-", "").isdigit()):
         ap.error("--as-of must look like YYYY-MM")
     games = args.game if args.game else market_games()   # any price source (2026-10-18)
+    if args.plan:
+        # A game fits when any 1m fit it has saved is due, or it has none.
+        # (A catalog-only game never saves one and always lists here; it
+        # costs nothing, and the runner's threshold allows for it.)
+        import contextlib, io
+        fit_games = []
+        for g in games:
+            saved = [t for t in TARGETS if os.path.exists(_artifact_path(g, t, "1m"))]
+            with contextlib.redirect_stdout(io.StringIO()):
+                due = not saved or any(_saved_1m(g, t, MODEL_VERSION) is None for t in saved)
+            if due:
+                fit_games.append(g)
+        print(f"[forecast] plan-1m: fit_games={len(fit_games)} of {len(games)} "
+              f"({', '.join(fit_games) or 'none'})")
+        return
     # --as-of backtests train 1m only. Otherwise TCG_FC_HORIZONS (e.g. "1m")
     # limits the run's horizons: Thursday nights run 1m only (2026-10-09,
     # user decision — 6m/12m stay unvalidated until their first cohorts
@@ -1629,12 +1764,57 @@ def main():
         except sqlite3.OperationalError:
             prev = {}   # first run against this DB: nothing to protect
 
+    # Resume (2026-11-12): each game publishes in its own transaction, so a
+    # run that died (2026-11-08, the Mac restarted at segment 19 of 72 on a
+    # full-retrain night and the night's work was lost) can pick up at the
+    # first game it had not published. The nightly's full runs note each
+    # published game against the batch label and the horizons trained; a
+    # rerun under the same label skips those. Hand runs (no TCG_BATCH_DATE,
+    # or --game/--target/--db) never read or write it; TCG_FC_RESUME=0
+    # ignores it for one run. A game stopped by the publish gate is not
+    # noted, so a resume tries it again.
+    ckpt_path = None
+    done_games = set()
+    batch = os.environ.get("TCG_BATCH_DATE", "").strip()
+    if batch and not (args.game or args.target or args.as_of or args.db):
+        ckpt_path = os.path.join(BASE, "ml_data", "forecast_progress.json")
+        ckpt_key = {"batch": batch, "horizons": sorted(horizons or HORIZONS)}
+        if os.environ.get("TCG_FC_RESUME", "1") != "0":
+            try:
+                with open(ckpt_path) as f:
+                    saved = json.load(f)
+                if all(saved.get(k) == v for k, v in ckpt_key.items()):
+                    done_games = set(saved.get("games", [])) & set(games)
+            except (OSError, ValueError):
+                pass
+        if done_games:
+            print(f"[forecast] resuming batch {batch}: {len(done_games)} game(s) already "
+                  f"published ({', '.join(sorted(done_games))})", flush=True)
+
+    def note_published(game):
+        if not ckpt_path:
+            return
+        done_games.add(game)
+        try:
+            with open(ckpt_path + ".tmp", "w") as f:
+                json.dump({**ckpt_key, "games": sorted(done_games)}, f)
+            os.replace(ckpt_path + ".tmp", ckpt_path)
+        except OSError as e:
+            print(f"[forecast] progress note not written ({e}) — non-fatal", flush=True)
+
     wrote = archived = 0
     gated = []
     for game in games:
+        if game in done_games:
+            done_seg += len(run_targets)
+            print(f"[forecast] [{game}] already published for batch {batch} — skipped",
+                  flush=True)
+            print(f"[forecast] {done_seg}/{total_seg} segments ({game}/resumed)", flush=True)
+            continue
         rows = []
         for target in run_targets:
             done_seg += 1
+            t_seg = time.time()
             try:
                 rows += forecast_game_target(game, target, now, args.as_of, horizons, fill=fill)
             except Exception as e:
@@ -1651,7 +1831,8 @@ def main():
                     PRESERVED[game] = [r for r in PRESERVED[game] if r[2] != target]
             # Parseable progress for the dashboard (counts every segment, so it
             # reaches N/N even when a young-game tier is skipped without rows).
-            print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target})", flush=True)
+            print(f"[forecast] {done_seg}/{total_seg} segments ({game}/{target}) "
+                  f"{datetime.now():%H:%M:%S}, {(time.time() - t_seg) / 60:.1f} min", flush=True)
 
         if args.as_of:
             # Backtest: archive-only. The live forecasts table keeps serving
@@ -1700,6 +1881,7 @@ def main():
             # would clear the launch tier's early estimates for nothing.
             print(f"[forecast] [{game}] no priced tier to publish — existing rows left untouched",
                   flush=True)
+            note_published(game)
             continue
         kept_n = len(PRESERVED.get(game, []))
         write_game(conn, game, rows, subset, horizons, args.target)
@@ -1710,6 +1892,7 @@ def main():
               + (f" (+{kept_n} standing graded row(s) kept, no new price)" if kept_n else ""),
               flush=True)
         UNGRADED_RET.pop(game, None)   # donor calls are per game; free them
+        note_published(game)
 
     if args.as_of:
         conn.close()

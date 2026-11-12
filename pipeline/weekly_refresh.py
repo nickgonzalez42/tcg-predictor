@@ -1,7 +1,11 @@
 """
 One-command data refresh: TCGplayer + PriceCharting for every game, end to end.
 (Named for its original weekly cadence; run_daily_refresh.sh now runs it every
-morning via launchd.)
+night via launchd.)
+
+The nightly runs it in two parts (2026-11-12): --core, every step the night's
+prices and forecasts are built from, and --tail, the rate-limited rotation
+crawls, which start only after the site has the new data. See TAIL below.
 
 Run with the pipeline venv (which lives in the sibling one-piece/ data dir); from
 the pipeline/ directory:
@@ -10,6 +14,7 @@ the pipeline/ directory:
     ../../one-piece/.venv/bin/python weekly_refresh.py --list     # show the steps
     ../../one-piece/.venv/bin/python weekly_refresh.py --from unify   # resume after a failure
     ../../one-piece/.venv/bin/python weekly_refresh.py --only nm-price
+    ../../one-piece/.venv/bin/python weekly_refresh.py --tail     # the rotations only
 
 Steps (in order):
   tcg-onepiece   TCGplayer One Piece: NEW cards only — one aggregation request
@@ -51,6 +56,7 @@ rebuilt from those sources each run.
 import argparse
 import atexit
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -86,7 +92,19 @@ CRAWL_NIGHT = (_env_crawl == "1") if _env_crawl in ("0", "1") \
 #   detailed backfill Tuesday + Friday (its series only has weekly points)
 #   console sweep, full price-table rebuild, full-file push: Saturday
 #   6m/12m retrain first Saturday of the month (local_model_run.sh; 3m retired 2026-10-24)
-LOCAL_WEEKDAY = datetime.now().weekday()
+def night_weekday():
+    """Local weekday (Mon=0) of the night this run belongs to: the day before
+    TCG_BATCH_DATE (the morning the batch goes live). The clock gave the
+    wrong slice to anything that started after midnight, a resume above all;
+    hand runs without the label still use today."""
+    b = os.environ.get("TCG_BATCH_DATE", "").strip()
+    try:
+        return (datetime.strptime(b, "%Y-%m-%d") - timedelta(days=1)).weekday()
+    except ValueError:
+        return datetime.now().weekday()
+
+
+LOCAL_WEEKDAY = night_weekday()
 DEPTH_SLICE = {
     0: "magic",
     1: "pokemon",
@@ -134,17 +152,68 @@ DEADLINE_MODE = os.environ.get("TCG_REFRESH_DEADLINE_MODE", "goal").strip().lowe
 # 2026-10-27: tcg-nm-prices was carrying a nominal of 30 while really taking
 # 25-93 min (max 193) — a 60+ min hole in every night's reservation, and the
 # main reason the 2026-10-27 run finished at ~08:00 against a 06:00 deadline.
+# 2026-11-12: recomputed from the ten nights 11-03..11-12. The rotations had
+# drifted far from their old numbers once the daytime agents took the bulk
+# of the graded and sales crawls (pc-graded-new was reserved 129 min and
+# takes 1 to 3; pc-link-suggest 66 against 5 to 22), while unify and
+# art-comps had grown past theirs. tcg-nm-depth carries what tcg-nm-prices
+# used to take (the two were one step); tcg-nm-prices is now only the crawl
+# for a game whose CSV did not land, and has no measurements yet.
 NOMINAL_MIN = {
-    "tcg-magic": 7, "tcg-onepiece": 5, "tcg-starwars": 4, "tcg-pokemon": 3,
-    "tcg-csv-export": 5, "tcg-csv-import": 5, "tcg-sku-resolve": 9,
-    "tcg-nm-prices": 93, "tcg-nm-verify": 16, "tcg-nm-backfill": 69,
-    "tcg-sales": 16, "tcg-nm-rescue": 1, "tcg-printing-pins": 6,
-    "printing-ingest": 64, "imageless-audit": 18, "art-recheck": 16, "pc-gundam": 2,
-    "pc-starwars": 4, "pc-graded-new": 129, "nm-pc-sweep": 4, "unify": 18,
-    "nm-price": 2, "card-trends": 4, "art-comps": 6, "s3-upload": 3, "art-sync": 2,
-    "pc-link-suggest": 66, "pc-console-discover": 2, "pc-console-sweep": 94,
+    "tcg-magic": 10, "tcg-onepiece": 3, "tcg-starwars": 1, "tcg-pokemon": 3,
+    "tcg-digimon": 4,
+    "tcg-csv-export": 5, "tcg-csv-import": 7, "tcg-sku-resolve": 2,
+    "tcg-nm-prices": 10, "tcg-nm-depth": 92, "tcg-nm-verify": 7, "tcg-nm-backfill": 69,
+    "tcg-sales": 3, "tcg-nm-rescue": 1, "tcg-printing-pins": 5,
+    "printing-ingest": 63, "imageless-audit": 21, "art-recheck": 12, "pc-gundam": 2,
+    "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 5, "unify": 27,
+    "nm-price": 3, "card-trends": 3, "art-comps": 13, "s3-upload": 4, "art-sync": 7,
+    "pc-link-suggest": 22, "pc-console-discover": 2, "pc-console-sweep": 94,
     "nm-rescue-full": 1, "tcg-market-watch": 1,
 }
+# --- the tail (2026-11-12, refresh review) ----------------------------------
+# These are rotation crawls: each night they refresh a slice of a backlog,
+# at a request rate the source sets, and nothing the same night publishes
+# reads what they fetch (checked step by step, below). They used to sit in
+# the middle of the night, so two to four hours of rate-limited crawling
+# stood between the fresh prices and the site every night, and a stall in
+# any of them held the whole night up. The nightly now runs the steps the
+# prices and forecasts are built from first (--core), publishes, and only
+# then runs these (--tail): what they fetch reaches the site one night
+# later, on rotations of 7 to 30 days. A tail step that fails is logged and
+# the tail moves on; nothing after it depends on it.
+#   pc-console-discover, pc-console-sweep  crawl night only; read by
+#                    pc-link-suggest alone
+#   tcg-sku-resolve  SKU ids for TOMORROW's CSV import
+#   tcg-nm-depth     market depth + the search price for the night's depth
+#                    games: no price rows (see tcg-nm-prices for the split)
+#   tcg-nm-verify    flags into tcg_nm_review, read by a person
+#   tcg-sales        sales-volume trickle (the daytime agent does the bulk)
+#   printing-ingest  labelled-printing series, 30-day rotation; the CSV
+#                    import carries the printings' nightly prices
+#   imageless-audit, art-recheck  art the next night's ml-embed + s3-upload
+#                    pick up
+#   pc-graded-new    fallback graded crawl (the daytime agent does the bulk)
+#   pc-link-suggest  link candidates for match_review.py
+# NOT in the tail, because the same night's unify needs them: the CSV steps,
+# tcg-nm-prices (the fallback for a game whose CSV did not land),
+# tcg-nm-backfill and tcg-printing-pins (the only price source for the
+# TCGplayer-only and pinned cards, which the CSV import skips), tcg-nm-rescue.
+TAIL = ("pc-console-discover", "pc-console-sweep", "tcg-sku-resolve", "tcg-nm-depth",
+        "tcg-nm-verify", "tcg-sales", "printing-ingest", "imageless-audit",
+        "art-recheck", "pc-graded-new", "pc-link-suggest")
+TAIL_CRAWL_NIGHT_ONLY = ("pc-console-discover", "pc-console-sweep")
+# The tail starts no new step at or after this local time on the batch's own
+# day: tomorrow night's run must find the machine free.
+TAIL_STOP = os.environ.get("TCG_TAIL_STOP", "16:30").strip()
+# ...and a step still running at this time is stopped. launchd does not start
+# a job whose last run is still alive, so a tail that ran on would cost the
+# next night its start (the earliest is Saturday's, 18:20).
+TAIL_HARD_STOP = os.environ.get("TCG_TAIL_HARD_STOP", "17:30").strip()
+# Exit code when another refresh holds the lock. It used to be 0, which the
+# nightly read as "the crawls are done" and went on to the model on stale data.
+EXIT_LOCKED = 75
+STATE_DIR = os.path.join(DATA_DIR, "ml_data", "refresh_state")
 # Rotation steps whose budget may be cut: step -> (flag, floor). The flag's
 # value is scaled by the fraction of its nominal time that still fits.
 TRIMMABLE = {
@@ -240,7 +309,7 @@ def apply_deadline(todo, idx, now):
 
 
 def acquire_lock():
-    """Skip cleanly (exit 0) if another refresh is still running; otherwise take
+    """Stop (exit EXIT_LOCKED) if another refresh is still running; otherwise take
     the lock for this process. A lock left by a dead process is ignored."""
     if os.path.exists(LOCK):
         try:
@@ -250,9 +319,14 @@ def acquire_lock():
         if pid is not None:
             try:
                 os.kill(pid, 0)   # raises if that pid is gone
-                print(f"another refresh (pid {pid}) is still running — skipping this run")
-                sys.exit(0)
-            except ProcessLookupError:
+                # After a reboot the old pid can belong to anything: only a
+                # process that IS this script holds the lock (2026-11-12).
+                who = subprocess.run(["ps", "-o", "command=", "-p", str(pid)],
+                                     capture_output=True, text=True).stdout
+                if "weekly_refresh.py" in who:
+                    print(f"another refresh (pid {pid}) is still running — skipping this run")
+                    sys.exit(EXIT_LOCKED)
+            except (ProcessLookupError, PermissionError):
                 pass              # stale lock from a dead run
     with open(LOCK, "w") as f:
         f.write(str(os.getpid()))
@@ -316,9 +390,22 @@ STEPS = [
     # and the search price (tcg_depth_history.market_price, the
     # search-vs-CSV cross-check) without writing price rows. Every other
     # CSV-priced game is skipped. --resume skips sets already done today.
+    #
+    # Split in two 2026-11-12. tcg-nm-prices is the fallback alone
+    # (--depth-games none: only a game whose CSV did not land is crawled, and
+    # priced), so on a normal night it is over in seconds and the night's
+    # prices no longer wait up to two hours on a depth walk that writes no
+    # price. tcg-nm-depth is that walk, run in the tail. Its CSV window is
+    # widened to 30 h because it can start half a day after the import: with
+    # the default 20 h a late tail would take tonight's CSV for missing and
+    # start writing crawl prices over it.
     ("tcg-nm-prices", ["scrape_tcg_nm_prices.py", "--game", "all",
                        "--resume", "--delay", "1.0", "--rpm", "30",
-                       "--csv-games", "depth-only", "--depth-games", DEPTH_GAMES]),
+                       "--csv-games", "depth-only", "--depth-games", "none"]),
+    ("tcg-nm-depth", ["scrape_tcg_nm_prices.py", "--game", "all",
+                      "--resume", "--delay", "1.0", "--rpm", "30",
+                      "--csv-games", "depth-only", "--depth-games", DEPTH_GAMES,
+                      "--csv-window-hours", "30"]),
     # Cross-check the high-value cards' search marketPrice against the detailed
     # endpoint's Near Mint market and flag disagreements into tcg_nm_review for
     # manual page inspection. TCGplayer's search marketPrice drifts to an asking
@@ -474,6 +561,44 @@ STEPS = [
 ]
 
 
+def steps_file():
+    """Where this batch's finished steps are noted, or None for a hand run
+    (no TCG_BATCH_DATE): those neither note nor skip anything."""
+    batch = os.environ.get("TCG_BATCH_DATE", "").strip()
+    return os.path.join(STATE_DIR, f"{batch}.steps") if batch else None
+
+
+def steps_done():
+    path = steps_file()
+    try:
+        return {l.strip() for l in open(path) if l.strip()} if path else set()
+    except OSError:
+        return set()
+
+
+def note_step(name):
+    path = steps_file()
+    if not path:
+        return
+    try:
+        os.makedirs(STATE_DIR, exist_ok=True)
+        with open(path, "a") as f:
+            f.write(name + "\n")
+    except OSError as e:
+        print(f"    (step note not written: {e})", flush=True)
+
+
+def tail_stop_at(clock=None):
+    """`clock` (default TAIL_STOP, the moment after which the tail starts
+    nothing new) on the batch's own day. None for a hand run."""
+    batch = os.environ.get("TCG_BATCH_DATE", "").strip()
+    try:
+        hh, mm = (int(x) for x in (clock or TAIL_STOP).split(":"))
+        return datetime.strptime(batch, "%Y-%m-%d").replace(hour=hh, minute=mm)
+    except ValueError:
+        return None
+
+
 def main():
     names = [n for n, _ in STEPS]
     ap = argparse.ArgumentParser(description="Weekly data refresh (both games, both sources)")
@@ -481,48 +606,126 @@ def main():
     ap.add_argument("--from", dest="start", choices=names, help="start at this step (resume)")
     ap.add_argument("--to", dest="stop", choices=names + ["catalog"],
                     help="stop AFTER this step (inclusive). With --from, runs a "
-                         "contiguous slice — used to split the run around the AWS "
-                         "model block: Mac does ...--to art-comps, then s3-upload... "
+                         "contiguous slice — used to split the run around the "
+                         "model block: ...--to art-comps, then s3-upload... "
                          "'catalog' = the last TCGplayer catalog crawl step (the daily "
                          "night's crawl-only pass; stays right when games are added).")
     ap.add_argument("--only", choices=names, help="run a single step")
+    ap.add_argument("--core", action="store_true",
+                    help="leave the TAIL steps out of the slice (the nightly's passes "
+                         "before the publish)")
+    ap.add_argument("--tail", action="store_true",
+                    help="run the TAIL steps and nothing else, in order; a failing step "
+                         "is logged and skipped, and the exit code is always 0")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip the steps this batch (TCG_BATCH_DATE) already finished")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="print the steps this invocation would run, and exit")
     args = ap.parse_args()
     if args.stop == "catalog":
         args.stop = [n for n in names if n in {f"tcg-{g}" for g in GAMES}][-1]
+    if args.tail and (args.core or args.start or args.stop or args.only):
+        ap.error("--tail runs the whole tail: it takes no --core/--from/--to/--only")
 
     if args.list:
         for n, cmd in STEPS:
-            print(f"{n:14} {' '.join(cmd)}")
+            print(f"{n:14} {'tail' if n in TAIL else 'core'}  {' '.join(cmd)}")
         return
-
-    acquire_lock()
 
     lo = names.index(args.start) if args.start else 0
     hi = names.index(args.stop) + 1 if args.stop else len(STEPS)
     todo = [s for s in STEPS if s[0] == args.only] if args.only else STEPS[lo:hi]
+    if args.tail:
+        todo = [s for s in STEPS if s[0] in TAIL
+                and (CRAWL_NIGHT or s[0] not in TAIL_CRAWL_NIGHT_ONLY)]
+    elif args.core:
+        todo = [s for s in todo if s[0] not in TAIL]
+    done = steps_done() if args.resume else set()
+    if args.dry_run:
+        for n, cmd in todo:
+            print(f"{'skip (done)' if n in done else 'run':11} {n:18} {' '.join(cmd)}")
+        return
+
+    acquire_lock()
 
     print(f"weekly refresh — {datetime.now():%Y-%m-%d %H:%M} — {len(todo)} step(s)"
+          + (" — tail" if args.tail else "")
           + ((f" — finishing by {DEADLINE}" if DEADLINE_MODE == "hard"
-              else f" — aiming to finish by {DEADLINE}") if DEADLINE else ""), flush=True)
+              else f" — aiming to finish by {DEADLINE}")
+             if DEADLINE and not args.tail else ""), flush=True)
     print(flush=True)
+
+    # A terminated run takes its step down with it: tomorrow night's start
+    # ends a tail that is still going, and an orphaned crawler would keep
+    # writing under the new night.
+    child = [None]
+
+    def _terminated(signum, frame):
+        if child[0] is not None and child[0].poll() is None:
+            child[0].terminate()
+            try:
+                child[0].wait(timeout=20)
+            except subprocess.TimeoutExpired:
+                child[0].kill()
+        print(f"\nterminated (signal {signum}) — stopped", flush=True)
+        sys.exit(143)
+    signal.signal(signal.SIGTERM, _terminated)
+
+    stop_at = tail_stop_at() if args.tail else None
+    hard_at = tail_stop_at(TAIL_HARD_STOP) if args.tail else None
     timings = []
     for i, (name, cmd) in enumerate(todo):
-        if DEADLINE:
+        if name in done:
+            print(f"--- {name} already done for this batch, skipped ---\n", flush=True)
+            continue
+        if stop_at and datetime.now() >= stop_at:
+            print(f"--- it is past {TAIL_STOP}: {name} and the rest of the tail wait for "
+                  f"tomorrow ---", flush=True)
+            break
+        # The finish-by planner belongs to the passes before the publish; the
+        # tail runs after it and has nothing to race.
+        if DEADLINE and not args.tail:
             cmd = apply_deadline(todo, i, datetime.now())
         print(f"=== {name}: {' '.join(cmd)} ===", flush=True)
         t0 = time.time()
-        result = subprocess.run([PY, os.path.join(SCRIPT_DIR, cmd[0]), *cmd[1:]], cwd=DATA_DIR)
+        child[0] = subprocess.Popen([PY, os.path.join(SCRIPT_DIR, cmd[0]), *cmd[1:]], cwd=DATA_DIR)
+        cut = False
+        while True:
+            try:
+                code = child[0].wait(timeout=30 if hard_at else None)
+                break
+            except subprocess.TimeoutExpired:
+                if datetime.now() >= hard_at:
+                    cut = True
+                    child[0].terminate()
+                    try:
+                        code = child[0].wait(timeout=60)
+                    except subprocess.TimeoutExpired:
+                        child[0].kill()
+                        code = child[0].wait()
+                    break
+        child[0] = None
         mins = (time.time() - t0) / 60
-        timings.append((name, mins, result.returncode))
-        if result.returncode != 0:
-            print(f"\n✗ {name} failed (exit {result.returncode}) after {mins:.1f} min.")
+        timings.append((name, mins, code))
+        if cut:
+            print(f"--- it is past {TAIL_HARD_STOP}: {name} stopped after {mins:.1f} min so "
+                  f"tonight's run can start; the rest of the tail waits for tomorrow ---",
+                  flush=True)
+            break
+        if code != 0:
+            if args.tail:
+                print(f"--- {name} FAILED (exit {code}) after {mins:.1f} min — the tail "
+                      f"goes on ---\n", flush=True)
+                continue
+            print(f"\n✗ {name} failed (exit {code}) after {mins:.1f} min.")
             print(f"  Fix the issue, then resume with:  weekly_refresh.py --from {name}")
             summary(timings)
-            sys.exit(result.returncode)
+            sys.exit(code)
+        note_step(name)
         print(f"--- {name} done in {mins:.1f} min ---\n", flush=True)
 
     summary(timings)
-    print("\n✓ refresh complete")
+    print("\n✓ refresh complete" if not args.tail else "\n✓ tail complete")
 
 
 def summary(timings):

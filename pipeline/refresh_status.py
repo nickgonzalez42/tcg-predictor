@@ -84,6 +84,10 @@ def parse():
 
     alive = pipeline_alive()
     complete = any("refresh complete" in ln or "data live on" in ln for ln in lines)
+    # The night is finished (prices + forecasts on the site) at its "refresh
+    # complete" line; the rotation crawls of the tail run on after it.
+    live_at = next((m.group(1) for ln in lines
+                    if (m := re.match(r"=== refresh complete .*?(\d\d:\d\d):\d\d ===", ln))), None)
     running = next((s for s in steps if s["status"] == "running"), None)
     if not alive and running:
         running["status"] = "stopped" if not complete else "done"
@@ -105,7 +109,7 @@ def parse():
         running["sub"] = sub
         if sub and sub["total"]:
             frac_in_step = sub["done"] / sub["total"]
-    elif running and running["name"] == "tcg-nm-prices" and nm_prog:
+    elif running and running["name"] in ("tcg-nm-prices", "tcg-nm-depth") and nm_prog:
         running["subnm"] = nm_prog
         if nm_prog["total_sets"]:
             frac_in_step = nm_prog["done_sets"] / nm_prog["total_sets"]
@@ -116,7 +120,7 @@ def parse():
     if total:
         pct = round(100 * (done_n + frac_in_step) / total)
     return {"state": state, "steps": steps, "total": total, "done": done_n,
-            "pct": pct, "started": started, "log": os.path.basename(path),
+            "pct": pct, "started": started, "live_at": live_at, "log": os.path.basename(path),
             "nm": nm_prog, "csv": _csv_imports_today(), "runs": _recent_runs(),
             "tail": lines[-TAIL_LINES:]}
 
@@ -307,7 +311,8 @@ async function tick(){
  b.className='badge '+d.state; b.textContent=d.state;
  document.getElementById('sub').textContent =
    (d.log?d.log+' · ':'')+(d.started?'started '+d.started+' · ':'')+
-   (d.total?(d.done+' of '+d.total+' steps done'):(d.done+' steps done'));
+   (d.total?(d.done+' of '+d.total+' steps done'):(d.done+' steps done'))+
+   (d.live_at?' · site updated '+d.live_at+(d.state==='running'?', rotation crawls still going':''):'');
  document.getElementById('fill').style.width = (d.pct!=null?d.pct:0)+'%';
  // Tonight's Seller Portal CSV imports — the price source on CSV nights; a
  // game missing from this line is the crawl's to price tonight.
