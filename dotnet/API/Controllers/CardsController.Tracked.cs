@@ -17,7 +17,7 @@ public partial class CardsController
     [HttpGet("tracked")]
     public async Task<ActionResult<List<CardDto>>> GetTracked(
         [FromQuery] CardParams cardParams, [FromQuery] string? kind,
-        [FromQuery] bool includePacks = true)
+        [FromQuery] bool includePacks = true, [FromQuery] bool listed = false)
     {
         var listKind = TrackKind.Normalize(kind);
         var game = GameRegistry.KeyOrDefault(cardParams.Game);
@@ -25,9 +25,10 @@ public partial class CardsController
         // Owned is shown one tile per (card + condition) with a quantity, so it has
         // its own paging path. Wishlist is one tile per card. includePacks=false
         // drops pack-pull copies from the list, matching the portfolio summary's
-        // toggle (positions left with no copies disappear).
+        // toggle (positions left with no copies disappear). listed=true keeps
+        // only the copies flagged as listed for sale (the Listed tab).
         if (listKind == TrackKind.Owned)
-            return await PageOwnedByCondition(sources.Cards(game), cardParams, game, includePacks);
+            return await PageOwnedByCondition(sources.Cards(game), cardParams, game, includePacks, listed);
 
         var user = User.Identity!.Name!;
         var tracked = await store.TrackedCards
@@ -169,7 +170,8 @@ public partial class CardsController
     // its quantity and the individual copies at that condition, is priced by that
     // condition's market price, and honors the same search/filter/sort/paging.
     private async Task<List<CardDto>> PageOwnedByCondition(
-        IQueryable<CardBase> source, CardParams p, string folder, bool includePacks = true)
+        IQueryable<CardBase> source, CardParams p, string folder, bool includePacks = true,
+        bool listedOnly = false)
     {
         var user = User.Identity!.Name!;
 
@@ -178,6 +180,8 @@ public partial class CardsController
             .ToListAsync();
         if (!includePacks)
             copies = copies.Where(c => c.Source == AcquireSource.Paid).ToList();
+        if (listedOnly)
+            copies = copies.Where(c => c.ListedAt != null).ToList();
 
         // Card rows for the owned products, honoring search / set / rarity filters.
         var ids = copies.Select(x => x.ProductId).Distinct().ToList();
@@ -316,6 +320,7 @@ public partial class CardsController
                     AddedAt = x.AddedAt,
                     Source = x.Source,
                     Printing = x.Printing,
+                    ListedAt = x.ListedAt,
                 }).ToList();
                 if (forecastSort is { } sort && UnitChange(u.ProductId, u.Grade) is { } ch)
                     CardMarketData.ApplyExpected(dto, ch, sort);

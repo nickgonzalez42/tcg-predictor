@@ -282,6 +282,9 @@ namespace API.Data.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("ListedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Note")
                         .HasColumnType("TEXT");
 

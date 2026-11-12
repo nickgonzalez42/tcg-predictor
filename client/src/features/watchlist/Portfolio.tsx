@@ -37,7 +37,9 @@ export default function Portfolio() {
     const [showOutlook, setShowOutlook] = useState(false);
     // Positions (what you hold) vs the Sold track (what you've sold, with
     // realized P/L) — two tabs over the same table area (2026-10-24).
-    const [view, setView] = useState<'positions' | 'sold'>('positions');
+    // "Listed" (2026-11-12) is the positions table narrowed to the copies
+    // marked as listed for sale; the tab appears once something is marked.
+    const [view, setView] = useState<'positions' | 'listed' | 'sold'>('positions');
     const { setPageNumber, setOrderBy } = ownedParamsSlice.actions;
     const params = useAppSelector(state => state.ownedParams);
     const dispatch = useAppDispatch();
@@ -46,7 +48,8 @@ export default function Portfolio() {
     // allocation, best/worst AND the positions list below (2026-10-02). They
     // never count in the money lines either way.
     const [includePacks, setIncludePacks] = useState(true);
-    const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'owned', includePacks, ...params });
+    const { data, isLoading } = useFetchTrackedCardsQuery(
+        { kind: 'owned', includePacks, listed: view === 'listed', ...params });
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks });
 
     // The game filter defaults to wherever the user most recently added a
@@ -70,6 +73,9 @@ export default function Portfolio() {
     // empty state with the Import onramp.
     const empty = summary != null && summary.copies === 0;
     const soldCount = summary?.realized?.count ?? 0;
+    const listedCount = tracked?.filter(t => t.kind === 'owned' && t.listedAt).length ?? 0;
+    // Both tabs page the same list, so a switch starts from the first page.
+    const showView = (v: typeof view) => { setView(v); dispatch(setPageNumber(1)); };
 
     // Download the positions as a CSV that round-trips through Import (cookie
     // auth rides the fetch; blob keeps it a same-page download).
@@ -134,11 +140,17 @@ export default function Portfolio() {
                 <div className="table-head">
                     <div className="pf-tabs" role="tablist" aria-label="Portfolio tracks">
                         <button type="button" role="tab" aria-selected={view === 'positions'}
-                            className="pf-tab" onClick={() => setView('positions')}>
+                            className="pf-tab" onClick={() => showView('positions')}>
                             Positions{summary ? ` · ${summary.copies}` : ''}
                         </button>
+                        {(listedCount > 0 || view === 'listed') && (
+                            <button type="button" role="tab" aria-selected={view === 'listed'}
+                                className="pf-tab" onClick={() => showView('listed')}>
+                                Listed{listedCount ? ` · ${listedCount}` : ''}
+                            </button>
+                        )}
                         <button type="button" role="tab" aria-selected={view === 'sold'}
-                            className="pf-tab" onClick={() => setView('sold')}>
+                            className="pf-tab" onClick={() => showView('sold')}>
                             Sold{soldCount ? ` · ${soldCount}` : ''}
                         </button>
                     </div>
@@ -220,6 +232,11 @@ export default function Portfolio() {
                             onPageChange={(page: number) => dispatch(setPageNumber(page))}
                         />
                     </>
+                ) : view === 'listed' ? (
+                    <p className="est-note">
+                        Nothing here is marked as listed for sale. Tap the tag on any
+                        position to mark it.
+                    </p>
                 ) : (
                     <p className="est-note">
                         No cards in your portfolio yet. Browse the <Link to="/catalog">catalog</Link> and

@@ -14,6 +14,7 @@ public class TrackedCardDto
     public bool? AutoPrice { get; set; }       // paid + null -> auto
     public DateTime? AcquiredAt { get; set; }
     public string? Note { get; set; }
+    public bool Listed { get; set; }           // the stack is listed for sale, so the clone is too
 }
 
 // One owned physical copy, returned with an owned card (CardDto.OwnedCopies).
@@ -28,6 +29,15 @@ public class OwnedCopyDto
     public DateTime AddedAt { get; set; }
     public string Source { get; set; } = "pack";   // pack | paid
     public string Printing { get; set; } = "";     // '' = base printing
+    public DateTime? ListedAt { get; set; }        // listed for sale since (null = not listed)
+}
+
+// Flag owned copies as listed for sale, or clear the flag
+// (POST /watchlist/owned/listed): a whole stack's ids, or one copy's.
+public class ListCopiesDto
+{
+    public required List<int> Ids { get; set; }
+    public bool Listed { get; set; }
 }
 
 // Set how many copies of a card the user owns at one condition

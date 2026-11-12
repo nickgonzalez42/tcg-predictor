@@ -76,6 +76,8 @@ export type TrackedCard = {
     // Sold rows only.
     soldPrice?: number;
     soldAt?: string;
+    // Owned rows only: listed for sale since (absent = not listed).
+    listedAt?: string;
 }
 
 // One sale on the Sold track (GET /watchlist/sold).
@@ -206,13 +208,15 @@ export const watchlistApi = createApi({
         }),
         // A single list's cards, with catalog-style filtering/sorting/pagination.
         fetchTrackedCards: builder.query<{ items: Card[], pagination: Pagination },
-            { kind: TrackKind; includePacks?: boolean } & CardParams>({
-            query: ({ kind, includePacks, ...params }) => ({
+            { kind: TrackKind; includePacks?: boolean; listed?: boolean } & CardParams>({
+            query: ({ kind, includePacks, listed, ...params }) => ({
                 url: 'cards/tracked',
                 params: toApiParams({
                     ...params, kind,
                     // Only sent when hiding, so existing cache keys stay stable.
                     ...(includePacks === false ? { includePacks: false } : {}),
+                    // The Listed tab: only copies flagged as listed for sale.
+                    ...(listed ? { listed: true } : {}),
                 }),
             }),
             transformResponse: (items: Card[], meta) => {
@@ -228,7 +232,7 @@ export const watchlistApi = createApi({
         addToWatchlist: builder.mutation<void, {
             game: string; productId: number; kind: TrackKind; grade?: string; printing?: string;
             source?: 'pack' | 'paid'; purchasePrice?: number; autoPrice?: boolean;
-            acquiredAt?: string; note?: string;
+            acquiredAt?: string; note?: string; listed?: boolean;
         }>({
             query: (body) => ({ url: 'watchlist', method: 'POST', body }),
             invalidatesTags: (_res, _err, arg) =>
@@ -277,6 +281,12 @@ export const watchlistApi = createApi({
         removeOwnedCopy: builder.mutation<void, { id: number }>({
             query: ({ id }) => ({ url: `watchlist/owned/${id}`, method: 'DELETE' }),
             invalidatesTags: ['Owned', 'Summary'],
+        }),
+        // Flag owned copies as listed for sale, or clear the flag (a stack's
+        // ids or one copy's). A marker for the owner only: no total changes.
+        setListed: builder.mutation<{ listed: number }, { ids: number[]; listed: boolean }>({
+            query: (body) => ({ url: 'watchlist/owned/listed', method: 'POST', body }),
+            invalidatesTags: ['Owned'],
         }),
         // ----- Sold track (2026-10-24) -----
         // Mark owned copies sold: they leave the positions and appear on the
@@ -342,4 +352,5 @@ export const {
     useUpdateSoldMutation,
     useRestoreSoldMutation,
     useRemoveSoldMutation,
+    useSetListedMutation,
 } = watchlistApi;

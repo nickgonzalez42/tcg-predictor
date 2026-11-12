@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useAddToWatchlistMutation, useRemoveOwnedCopyMutation } from "./watchlistApi";
+import { useAddToWatchlistMutation, useRemoveOwnedCopyMutation, useSetListedMutation } from "./watchlistApi";
 import { OwnedCopyRow } from "./OwnedCopyRow";
 import SellModal from "./SellModal";
 import { packPrice, tierLabel } from "./grades";
@@ -11,6 +11,17 @@ import Modal from "../../app/shared/components/Modal";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import type { Card, OwnedCopy } from "../../app/models/card";
 
+// A price tag: the "listed for sale" mark (drawn, so no font has to carry it).
+function ListedIcon() {
+    return (
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+            strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+            <path d="M1.8 1.8h5.6l6.8 6.8-5.6 5.6-6.8-6.8z" />
+            <circle cx="5" cy="5" r="1" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
 // One position row (a card + condition unit). Clicking the row expands the
 // per-copy editor inline; −/＋ remove or add a copy at this condition.
 export default function PositionRow({ card, hasYear }: { card: Card; hasYear: boolean }) {
@@ -20,6 +31,7 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
     const [selling, setSelling] = useState<OwnedCopy[] | null>(null);
     const [addCopy, { isLoading: adding }] = useAddToWatchlistMutation();
     const [removeCopy, { isLoading: removing }] = useRemoveOwnedCopyMutation();
+    const [setListed, { isLoading: listing }] = useSetListedMutation();
 
     const copies = card.ownedCopies ?? [];
     const qty = card.ownedQuantity ?? copies.length;
@@ -47,6 +59,7 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
         purchasePrice: proto && proto.source === 'paid' && !proto.autoPrice ? proto.purchasePrice : undefined,
         acquiredAt: proto?.acquiredAt,
         note: proto?.note,
+        listed: !!proto?.listedAt,
     });
     const removeOne = () => {
         const target = copies[copies.length - 1];
@@ -54,6 +67,14 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
     };
     // Removing the LAST copy deletes the whole position — confirm that one.
     const onMinus = () => (qty <= 1 ? setConfirming(true) : removeOne());
+
+    // "Listed for sale" (2026-11-12): the owner's own marker on the stack.
+    // Listed and unlisted copies never share a row, so the first copy speaks
+    // for all of them; the earliest date is the one shown.
+    const listedSince = proto?.listedAt
+        ? copies.reduce((min, c) => (c.listedAt && c.listedAt < min ? c.listedAt : min), proto.listedAt)
+        : undefined;
+    const toggleListed = () => setListed({ ids: copies.map(c => c.id), listed: !listedSince });
 
     return (
         <>
@@ -86,6 +107,11 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                         {card.name}
                     </Link>
                     <div className="mono">{[card.setName, card.rarity].filter(Boolean).join(' · ')}</div>
+                    {listedSince && (
+                        <span className="listed-chip" title={`You marked this as listed on ${shortDate(listedSince)}`}>
+                            Listed for sale
+                        </span>
+                    )}
                     {/* Phones hide the Condition column; the tier moves here. */}
                     <div className="screener__cond-inline">
                         <span className="owned-condition">{tierLabel(card.ownedGrade)}</span>
@@ -122,6 +148,12 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                         onClick={addOne} title="Add one copy">＋</button>
                     <button className="btn btn--outline btn--circle btn--sell" disabled={qty === 0}
                         onClick={() => setSelling(copies)} title="Mark copies as sold">$</button>
+                    <button className="btn btn--outline btn--circle btn--listed" disabled={listing || qty === 0}
+                        aria-pressed={!!listedSince} onClick={toggleListed}
+                        aria-label={listedSince ? 'Listed for sale. Tap to clear the mark' : 'Mark as listed for sale'}
+                        title={listedSince ? 'Listed for sale. Tap to clear the mark' : 'Mark as listed for sale'}>
+                        <ListedIcon />
+                    </button>
                 </td>
             </tr>
             {expanded && (
@@ -129,7 +161,8 @@ export default function PositionRow({ card, hasYear }: { card: Card; hasYear: bo
                     onClose={() => setExpanded(false)}>
                     <p className="est-note" style={{ marginTop: 0 }}>
                         Identical copies stack into one row. Edit any copy here; a copy that
-                        differs in any way (condition, paid price, date, note) gets its own row.
+                        differs in any way (condition, paid price, date, note, listed for sale)
+                        gets its own row.
                     </p>
                     <div className="owned-copies owned-copies--modal">
                         {copies.map(copy => (

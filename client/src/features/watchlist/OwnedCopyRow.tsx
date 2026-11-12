@@ -3,6 +3,7 @@ import type { OwnedCopy } from "../../app/models/card";
 import {
     useUpdateOwnedCopyMutation,
     useRemoveOwnedCopyMutation,
+    useSetListedMutation,
 } from "./watchlistApi";
 import { PRICE_TIER_OPTIONS } from "./grades";
 import SourceToggle from "./SourceToggle";
@@ -19,6 +20,7 @@ export function OwnedCopyRow({ copy, onDone, onClose, onSell }: {
 }) {
     const [update, { isLoading: saving }] = useUpdateOwnedCopyMutation();
     const [remove, { isLoading: removing }] = useRemoveOwnedCopyMutation();
+    const [setListed, { isLoading: listing }] = useSetListedMutation();
 
     // Acquired is never empty: it defaults to the copy's added date, and a
     // cleared field saves as null which the server resets to the added date.
@@ -100,6 +102,13 @@ export function OwnedCopyRow({ copy, onDone, onClose, onSell }: {
                         Mark sold
                     </button>
                 )}
+                <button className="btn btn--outline" disabled={listing} aria-pressed={!!copy.listedAt}
+                    title={copy.listedAt ? "Clear the listed for sale mark on this copy"
+                        : "Mark this copy as listed for sale"}
+                    onClick={() => setListed({ ids: [copy.id], listed: !copy.listedAt })
+                        .unwrap().then(() => onDone?.(), () => { /* failed: the editor stays open */ })}>
+                    {copy.listedAt ? 'No longer listed' : 'Mark as listed'}
+                </button>
                 <button className="btn btn--outline btn--danger" disabled={removing}
                     title="Delete this copy from your portfolio"
                     onClick={() => remove({ id: copy.id })}>

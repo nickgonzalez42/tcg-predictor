@@ -49,22 +49,31 @@ public class TrackedCard
     public double? SoldPrice { get; set; }         // proceeds per copy, USD
     public DateTime? SoldAt { get; set; }          // sale date (defaults to the day it was marked)
 
-    // A copy the user has personalized (marked paid, manual price, note, or a
-    // hand-set acquired date) displays as its own unit and is never
-    // auto-deleted by quantity changes; untouched pack pulls stack.
+    // Listed for sale (2026-11-12): the user's own note that this copy is up
+    // for sale somewhere. Null = not listed; the value is when they flagged
+    // it. Owned copies only — it changes no rollup (the copy is still held
+    // and still counts in value), and marking the copy sold clears it.
+    public DateTime? ListedAt { get; set; }
+
+    // A copy the user has personalized (marked paid, manual price, note, a
+    // hand-set acquired date, or listed for sale) displays as its own unit
+    // and is never auto-deleted by quantity changes; untouched pack pulls stack.
     // (Get-only => unmapped.)
     // (2026-10-10: `!AutoPrice` no longer counts — pack pulls are stored with
     // auto-price off, so it made every pack pull "detailed" and unstackable.)
     public bool HasDetail => Source == AcquireSource.Paid
         || !string.IsNullOrWhiteSpace(Note)
-        || (AcquiredAt != null && AcquiredAt.Value.Date != AddedAt.Date);
+        || (AcquiredAt != null && AcquiredAt.Value.Date != AddedAt.Date)
+        || ListedAt != null;
 
     // Everything a copy can differ by. Copies with equal signatures stack
     // into one position row (quantity N); any difference — printing,
-    // condition, source, price, auto-price, acquired date, note — unstacks.
-    public (int, string, string, string, double, bool, DateTime, string) StackKey =>
+    // condition, source, price, auto-price, acquired date, note, listed for
+    // sale or not — unstacks (the listed DATE doesn't: copies flagged on
+    // different days still share a row).
+    public (int, string, string, string, double, bool, DateTime, string, bool) StackKey =>
         (ProductId, Printing, Grade ?? "", Source, Math.Round(PurchasePrice ?? 0, 2),
-         AutoPrice, (AcquiredAt ?? AddedAt).Date, Note?.Trim() ?? "");
+         AutoPrice, (AcquiredAt ?? AddedAt).Date, Note?.Trim() ?? "", ListedAt != null);
 }
 
 public static class AcquireSource

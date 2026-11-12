@@ -87,6 +87,7 @@ public class WatchlistController(
             PurchasePrice = price,
             Source = src,
             Note = kind == TrackKind.Owned && !string.IsNullOrWhiteSpace(dto.Note) ? dto.Note.Trim() : null,
+            ListedAt = kind == TrackKind.Owned && dto.Listed ? now : null,
         });
         await context.SaveChangesAsync();
 
@@ -311,6 +312,29 @@ public class WatchlistController(
         return Ok();
     }
 
+    // Flag owned copies as listed for sale, or clear the flag (2026-11-12).
+    // The user's own marker only: nothing is posted anywhere and no rollup
+    // changes. Copies already in the asked-for state are left alone, so a
+    // copy keeps the date it was first flagged.
+    [HttpPost("owned/listed")]
+    public async Task<ActionResult> SetListed(ListCopiesDto dto)
+    {
+        if (dto.Ids.Count == 0 || dto.Ids.Count > MaxCopiesPerCondition)
+            return BadRequest($"Flag between 1 and {MaxCopiesPerCondition} copies at a time.");
+
+        var user = User.Identity!.Name!;
+        var copies = await context.TrackedCards
+            .Where(x => dto.Ids.Contains(x.Id) && x.UserName == user && x.Kind == TrackKind.Owned)
+            .ToListAsync();
+        if (copies.Count == 0) return NotFound();
+
+        var now = DateTime.UtcNow;
+        foreach (var c in copies)
+            c.ListedAt = dto.Listed ? c.ListedAt ?? now : null;
+        await context.SaveChangesAsync();
+        return Ok(new { listed = dto.Listed ? copies.Count : 0 });
+    }
+
     // Wipe the whole portfolio: every owned copy, details and all. The client
     // double-confirms before calling this; there is no undo server-side.
     [HttpDelete("owned")]
@@ -386,6 +410,7 @@ public class WatchlistController(
             c.Kind = TrackKind.Sold;
             c.SoldPrice = Math.Round(dto.Price, 2);
             c.SoldAt = when;
+            c.ListedAt = null;   // a sold copy is no longer listed
             if (!Blank(dto.Note)) c.Note = dto.Note!.Trim();
         }
         await context.SaveChangesAsync();
