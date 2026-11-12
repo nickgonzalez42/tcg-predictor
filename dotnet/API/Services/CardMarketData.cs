@@ -313,6 +313,11 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
 
     // Latest labeled price per product. Cards shown as their own base printing
     // are absent here and keep the near_mint_price column.
+    // The newest of the daily row and the blended history's ungraded row
+    // (2026-11-12): on the server the daily table only moves on a full push,
+    // the blended one every night, so the daily rows alone served a price up
+    // to a week old (a Foil at $6.00 under a headline of $5.77, and its
+    // forecast drawn from the wrong price).
     public async Task<Dictionary<int, double>> LatestPrintingPrices(
         string game, string printing, List<int> ids)
     {
@@ -325,6 +330,11 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                             && batch.Contains(p.ProductId))
                 .Select(p => new { p.ProductId, p.Date, p.Price })
                 .ToListAsync();
+            rows.AddRange(await priceCharting.History.IgnoreQueryFilters()
+                .Where(h => h.Game == game && h.Printing == printing && h.Grade == "ungraded"
+                            && batch.Contains(h.ProductId))
+                .Select(h => new { h.ProductId, h.Date, h.Price })
+                .ToListAsync());
             foreach (var g in rows.GroupBy(r => r.ProductId))
                 latest[g.Key] = g.OrderByDescending(r => r.Date).First().Price;
         }

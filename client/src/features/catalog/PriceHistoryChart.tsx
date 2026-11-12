@@ -109,6 +109,10 @@ const HORIZON_OFFSET: Record<string, (date: string) => string> = {
     '1m': d => addDays(d, 28),
     '6m': d => addDays(d, 182),
     '12m': d => addDays(d, 364),
+    // The early estimate (2026-11-12, user: "I want it to" show on the chart):
+    // a card too new for the usual forecast carries this one-month first
+    // guess instead, drawn as the chain's only dot until the 1M replaces it.
+    'launch1m': d => addDays(d, 28),
 };
 
 // Past forecasts for the shown tier, as dots placed at the date each forecast
@@ -120,7 +124,13 @@ const HORIZON_OFFSET: Record<string, (date: string) => string> = {
 // (e.g. the 1M issued a month ago); a horizon key = every matured forecast of
 // that one category.
 const PAST_HORIZONS = ['1m', '6m', '12m'];
-const HORIZON_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y' };
+const HORIZON_LABEL: Record<string, string> = { '1m': '1M', '6m': '6M', '12m': '1Y', 'launch1m': 'EARLY' };
+// The early estimate stands in for a 1M the card does not have yet; once the
+// tier carries a real 1M the chain (like the table) shows that one only.
+const chainForecasts = (forecasts: Forecast[] | undefined, grade: string) => {
+    const tier = (forecasts ?? []).filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
+    return tier.some(f => f.horizon === '1m') ? tier.filter(f => f.horizon !== 'launch1m') : tier;
+};
 const HORIZON_WORDS: Record<string, string> = { '1m': '1-month', '6m': '6-month', '12m': '1-year', 'launch1m': 'early' };
 const CONF_LABEL: Record<string, string> = { high: 'High', med: 'Medium', low: 'Low' };
 
@@ -334,8 +344,11 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             spanDays <= 105 ? 'daily' : spanDays <= 420 ? 'weekly' : 'monthly';
 
         // Same view as last build -> restore the user's zoom; a real tab or
-        // grade change starts fresh from the tab window.
-        const key = grade + '|' + range;
+        // grade change starts fresh from the tab window. So does the forecast
+        // chain arriving (or being switched off): the history often lands
+        // first, and a zoom saved from that chain-less build cut the chain
+        // off at the right edge (2026-11-12, a five-day-old card on a phone).
+        const key = grade + '|' + range + '|' + (hidden.has('forecast') ? 0 : chainForecasts(forecasts, grade).length);
         const keep = viewKey.current === key ? savedRange.current : null;
         viewKey.current = key;
         if (!keep) savedRange.current = null;
@@ -453,8 +466,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // Dashed gold forecast chain: one SEGMENT per period, each continuing
         // from the previous horizon's endpoint — last real point -> 1m -> 6m
         // -> 12m — with a dot marking each horizon along the way.
-        const tierFc = hidden.has('forecast') ? [] : (forecasts ?? [])
-            .filter(f => f.target === grade && HORIZON_OFFSET[f.horizon]);
+        const tierFc = hidden.has('forecast') ? [] : chainForecasts(forecasts, grade);
         const last = points[points.length - 1];
         // Each future point keeps its forecast: it is hoverable (focus +
         // tooltip) and clickable (modal) like the earlier-forecast dots.
@@ -479,8 +491,12 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
         // split the plot in half and each segment is a third of a month.
         // The other tabs keep the natural size: equal shares of the real
         // chain's span.
+        // A card younger than the tab's month has only its own days on
+        // screen, so the chain is as wide as those (2026-11-12: a five-day-old
+        // card's month-wide early estimate squeezed its history into a sliver).
+        const histFrom = cutoff && cutoff > all[0].date ? cutoff : all[0].date;
         const histDays = cutoff
-            ? Math.round((day0 - Date.parse(cutoff)) / 86400e3)
+            ? Math.max(3, Math.round((day0 - Date.parse(histFrom)) / 86400e3))
             : spanDays;
         const segDays = !sorted.length ? 0
             : Math.max(1, Math.round((range === '1m' ? histDays : spanDays) / sorted.length));
@@ -743,7 +759,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
             const f = c.f;
             const pct = f.basePrice > 0 ? (f.forecastPrice / f.basePrice - 1) * 100 : null;
             tip.innerHTML =
-                `<strong>${HORIZON_LABEL[f.horizon] ?? f.horizon} forecast</strong>` +
+                `<strong>${f.horizon === 'launch1m' ? 'Early estimate' : `${HORIZON_LABEL[f.horizon] ?? f.horizon} forecast`}</strong>` +
                 `<span>$${f.forecastPrice.toFixed(2)}${pct != null ? ` (${signedPct(pct)})` : ''}</span>` +
                 `<span>range $${f.low.toFixed(2)} to $${f.high.toFixed(2)}</span>` +
                 `<span>for ${fmtDate(c.time)}</span>` +
@@ -975,7 +991,9 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     if (isLoading) return <div>Loading chart…</div>;
     if (!grades.length) return <div className="est-note">No price history yet for this card.</div>;
 
-    const hasForecast = (forecasts ?? []).some(f => f.target === grade);
+    const chainNow = chainForecasts(forecasts, grade);
+    const hasForecast = chainNow.length > 0;
+    const earlyOnly = hasForecast && chainNow.every(f => f.horizon === 'launch1m');
     const pastPicks = pickPastForecasts(pastData?.forecasts ?? [], grade, pastView,
                                         range === '1m' ? 7 : 28);
     const hasPast = (pastData?.forecasts ?? []).some(f => f.target === grade);
@@ -984,7 +1002,7 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     // Split into rows: history/forecast, then the past-forecast horizons.
     const mainKeys = [
         { id: 'history', label: 'History', color: 'var(--chart-history)' },
-        ...(hasForecast ? [{ id: 'forecast', label: 'Forecast', color: 'var(--chart-forecast)' }] : []),
+        ...(hasForecast ? [{ id: 'forecast', label: earlyOnly ? 'Early estimate' : 'Forecast', color: 'var(--chart-forecast)' }] : []),
     ];
     // One key per horizon that has any plotted dot (not one per dot).
     const pastKeys = PAST_HORIZONS.filter(h => pastPicks.some(p => p.horizon === h)).map(h => ({
@@ -1076,7 +1094,7 @@ function ForecastPointModal({ item, onClose }: { item: FocusModal; onClose: () =
         const pct = f.basePrice > 0 ? (f.forecastPrice / f.basePrice - 1) * 100 : null;
         const word = HORIZON_WORDS[f.horizon] ?? f.horizon;
         return (
-            <Modal title={`Our ${word} forecast`} onClose={onClose}>
+            <Modal title={f.horizon === 'launch1m' ? 'Our early estimate' : `Our ${word} forecast`} onClose={onClose}>
                 <dl className="chart-modal">
                     <dt>Forecast</dt><dd><strong>{money(f.forecastPrice)}</strong>{pct != null && <span className={`chart-modal__pct ${pct >= 0 ? 'up' : 'down'}`}>{signedPct(pct)}</span>}</dd>
                     <dt>For</dt><dd>{fmtLongDate(item.time)}</dd>
