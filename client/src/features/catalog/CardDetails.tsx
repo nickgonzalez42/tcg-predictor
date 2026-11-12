@@ -28,6 +28,7 @@ const HORIZON_LABEL: Record<string, string> = {
 import { GAME_LABEL } from "../../lib/games";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { tcgBuyUrl } from "../../lib/affiliate";
+import { trackBuyClick } from "../../lib/pageview";
 import AdSlot from "../../app/shared/components/AdSlot";
 import { useColumnParallax } from "../../lib/useColumnParallax";
 
@@ -489,7 +490,9 @@ export default function CardDetails() {
                         {/* rel=sponsored: affiliate links must be marked for
                             crawlers; the visible disclosure covers the FTC. */}
                         <a className="btn btn--block" href={tcgBuyUrl(cardId)!}
-                            target="_blank" rel="sponsored noopener">
+                            target="_blank" rel="sponsored noopener"
+                            onClick={() => trackBuyClick(cardId)}
+                            onAuxClick={e => { if (e.button === 1) trackBuyClick(cardId); }}>
                             Buy on TCGplayer ↗
                         </a>
                         <div className="buy-tcg__disclosure mono">

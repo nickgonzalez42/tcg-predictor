@@ -28,3 +28,16 @@ export function trackPageView(path: string) {
             .catch(() => { /* a lost count is not worth a console error */ });
     } catch { /* never let counting break a page */ }
 }
+
+// A click on a TCGplayer buy link (2026-11-12). The link opens TCGplayer in a
+// new tab, so our server never hears about it; TCGplayer's affiliate dashboard
+// counts the click but cannot say which visitor or page it came from. This
+// ping puts it in the same access log as the page views, as the pseudo-page
+// /out/tcgplayer/{product id}, with the page the visitor was on in f=.
+export function trackBuyClick(productId: number) {
+    try {
+        const q = new URLSearchParams({ p: `/out/tcgplayer/${productId}`, f: window.location.pathname });
+        fetch(`/px?${q.toString()}`, { method: "GET", keepalive: true, cache: "no-store" })
+            .catch(() => { /* a lost count is not worth a console error */ });
+    } catch { /* never let counting break a link */ }
+}

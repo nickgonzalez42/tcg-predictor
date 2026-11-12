@@ -1,4 +1,5 @@
 import { tcgBuyUrl } from "../../../lib/affiliate";
+import { trackBuyClick } from "../../../lib/pageview";
 
 // Affiliated TCGplayer link for card rows — every outbound TCGplayer link on
 // the site goes through the Impact deep link (2026-10-09, user decision).
@@ -15,7 +16,9 @@ export default function BuyTcgLink({ productId, compact }: {
         target: "_blank",
         rel: "sponsored noopener",
         title: "Buy on TCGplayer (affiliate link; CardStock may earn a commission)",
-        onClick: (e: React.MouseEvent) => e.stopPropagation(),
+        onClick: (e: React.MouseEvent) => { e.stopPropagation(); trackBuyClick(productId); },
+        // a middle click opens the link too, and fires this instead of onClick
+        onAuxClick: (e: React.MouseEvent) => { if (e.button === 1) trackBuyClick(productId); },
     } as const;
     return compact
         ? <a className="buy-tcg-inline mono" {...shared}>TCG ↗</a>
