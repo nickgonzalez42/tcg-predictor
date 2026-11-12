@@ -80,9 +80,34 @@ ${=RS} "$SSH_CMD" "$API_DATA/../clip/" ubuntu@$IP:/srv/tcg/data/clip/
 # push (which restores byte parity). Sundays / full rebuilds delete the delta
 # file, so the full path runs automatically.
 DELTA=$DATA/ml_data/unified_delta.db
+# The delta above carries the blended history and the match rows only. The
+# daily Near Mint prices, the graded crawl's rows and the weekly sales counts
+# sat still on the server between full pushes (2026-11-12: a Thursday card
+# page showed Monday's price) until delta_extras.py: it stages the rows those
+# tables gained since the last ship, the server applies them in small
+# transactions (a rollback-journal writer locks the API's readers out for
+# the length of each commit), and the marks only move once that succeeded.
+# Never fatal: a miss leaves the marks, so tomorrow's file carries the rows.
+EXTRAS=$DATA/ml_data/delta_extras.db
+PIPELINE=${0:A:h:h}/pipeline
+extras() { (cd "$PIPELINE" && "$DATA/.venv/bin/python" delta_extras.py "$@") }
+push_extras() {
+  extras stage || return 1
+  echo "== daily prices + sales counts (extras, $(du -h "$EXTRAS" | cut -f1)) =="
+  scp -C -i $KEY -o ServerAliveInterval=30 -o ServerAliveCountMax=6 "$EXTRAS" ubuntu@$IP:/tmp/delta_extras.db &&
+    extras apply-sql | ${=SSH_CMD} ubuntu@$IP 'sqlite3 -bail /srv/tcg/data/cards/pricecharting.db' |
+      tail -1 | grep -qx 'extras applied' &&
+    extras mark
+  local rc=$?
+  ${=SSH_CMD} ubuntu@$IP 'rm -f /tmp/delta_extras.db' || true
+  return $rc
+}
 push_pc_full() {
   echo "== pricecharting (full) =="
+  # The file about to ship holds every row up to these marks.
+  extras capture || echo "WARN: delta extras capture failed"
   ${=RS} "$SSH_CMD" $API_DATA/pricecharting.db ubuntu@$IP:/srv/tcg/data/cards/
+  extras mark-full || echo "WARN: delta extras marks not updated"
 }
 # The delta is tonight's when its meta date is the night's batch label
 # (TCG_BATCH_DATE, exported by run_daily_refresh.sh; UTC day for hand runs).
@@ -104,6 +129,7 @@ SQL
   then
     echo "delta applied cleanly"
     ${=SSH_CMD} ubuntu@$IP 'rm -f /tmp/unified_delta.db'
+    push_extras || echo "WARN: daily prices + sales counts not shipped tonight (they ride the next push)"
   else
     echo "DELTA APPLY FAILED or row counts diverged — falling back to full push"
     push_pc_full
