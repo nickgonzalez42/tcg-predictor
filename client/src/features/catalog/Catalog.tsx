@@ -6,7 +6,8 @@ import { useAppDispatch, useAppSelector } from "../../app/store/store";
 import AppPagination from "../../app/shared/components/AppPagination";
 import AdSlot from "../../app/shared/components/AdSlot";
 import CardLoader from "../../app/shared/components/CardLoader";
-import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, applyDefaultSets, fitWindows, initDefaultGame, resetToDefaults, setPageNumber, setParams, setTrend, setView, setQuickAdd } from "./catalogSlice";
+import UpdatingList from "../../app/shared/components/UpdatingList";
+import { DEFAULT_ORDER, DEFAULT_PAGE_SIZE, DEFAULT_TREND, applyDefaultSets, fitWindows, initDefaultGame, resetParams, resetToDefaults, setPageNumber, setParams, setSearchTerm, setTrend, setView, setQuickAdd } from "./catalogSlice";
 import { WINDOW_LABEL, windowsFor } from "./windows";
 import type { CardParams } from "../../app/models/cardParams";
 import { useEffect, useRef } from "react";
@@ -15,6 +16,7 @@ import { useUserInfoQuery } from "../account/accountApi";
 import { useFetchWatchlistQuery } from "../watchlist/watchlistApi";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { GAME_LABEL } from "../../lib/games";
 
 export default function Catalog() {
     usePageMeta("Card Prices and Predictions",
@@ -29,8 +31,12 @@ export default function Catalog() {
     { game: cardParams.game, market: marketMode || undefined }, { skip: !cardParams.gameInitialized });
   // The list waits until the set filter is settled (the newest set by
   // default, see below), so a visitor never sees every set flash past first.
-  const { data, isLoading } = useFetchCardsQuery(cardParams,
+  // New filters keep the old list on screen until the new one lands
+  // (data = the last answer, currentData = this filter's, once it's in);
+  // `updating` dims it meanwhile.
+  const { data, currentData, isLoading, isFetching } = useFetchCardsQuery(cardParams,
     { skip: !cardParams.gameInitialized || !cardParams.setsDecided });
+  const updating = isFetching && !currentData;
   const dispatch = useAppDispatch();
   // Windows the game can't serve (no 6m/12m rows yet, or under a year of
   // history) lose their chip and their sorts; the active sort and trend step
@@ -156,6 +162,20 @@ export default function Catalog() {
   const view = isMobile ? 'cards' : (cardParams.view ?? 'cards');
   const quick = !!user && !!cardParams.quickAdd;
   const totalCount = data.pagination?.totalCount;
+  // Empty results: say what was searched for, in which game (search covers
+  // one game at a time), and offer the way out. "Narrowed" = anything beyond
+  // the search that could be hiding the card; the opening set doesn't count,
+  // a search already set it aside.
+  const term = cardParams.searchTerm?.trim();
+  const gameLabel = GAME_LABEL[cardParams.game] ?? '';
+  const narrowed = (cardParams.setsDecided === 'user' && cardParams.sets.length > 0)
+    || cardParams.rarities.length > 0 || cardParams.printings.length > 0
+    || cardParams.confidence.length > 0 || !!cardParams.minPrice || !!cardParams.maxPrice;
+  // Clears every filter but keeps the search: that card is still the goal.
+  const clearFiltersKeepSearch = () => {
+    dispatch(resetParams());
+    if (cardParams.searchTerm) dispatch(setSearchTerm(cardParams.searchTerm));
+  };
 
   return (
     <div className={`catalog subgrid full-span${view === 'rows' ? ' catalog--rows' : ''}`}>
@@ -228,22 +248,59 @@ export default function Catalog() {
             </div>
           )}
         </div>
-        {data.items && data.items.length > 0 ? (
-          <>
-            {view === 'rows' ? (
-              <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} trend={cardParams.trend} quick={quick} />
-            ) : (
-              <CardList cards={data.items} ownGrade={cardParams.grade ?? ''} quick={quick} />
-            )}
-            <AppPagination
-              metadata={data.pagination}
-              onPageChange={(page: number) => dispatch(setPageNumber(page))}
-            />
-            <AdSlot slot="" />
-          </>
-        ) : (
-          <h3>{pre ? 'No pre-release cards for this game right now' : 'There are no results for this filter'}</h3>
-        )}
+        <UpdatingList updating={updating} className="subgrid full-span">
+          {data.items && data.items.length > 0 ? (
+            <>
+              {view === 'rows' ? (
+                <CardTable cards={data.items} ownGrade={cardParams.grade ?? ''} trend={cardParams.trend} quick={quick} />
+              ) : (
+                <CardList cards={data.items} ownGrade={cardParams.grade ?? ''} quick={quick} />
+              )}
+              <AppPagination
+                metadata={data.pagination}
+                onPageChange={(page: number) => dispatch(setPageNumber(page))}
+              />
+            </>
+          ) : term ? (
+            <div className="catalog-empty full-span">
+              <h3 className="catalog-empty__title">
+                No {pre ? 'pre-release ' : ''}{gameLabel} cards match “{term}”
+              </h3>
+              <p className="catalog-empty__text">
+                {narrowed
+                  ? `Your filters might be hiding it. Clear them and we'll look through every ${gameLabel} card for it.`
+                  : `Check the spelling, or try part of the name. Search covers one game at a time, so if it's not a ${gameLabel} card, switch games in Filters.`}
+              </p>
+              <div className="catalog-empty__actions">
+                <button className="btn btn--outline" onClick={() => dispatch(setSearchTerm(''))}>
+                  Clear search
+                </button>
+                {narrowed && (
+                  <button className="btn btn--outline" onClick={clearFiltersKeepSearch}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="catalog-empty full-span">
+              <h3 className="catalog-empty__title">
+                {pre ? 'No pre-release cards for this game right now' : 'No cards match these filters'}
+              </h3>
+              {narrowed && (
+                <>
+                  <p className="catalog-empty__text">Try a wider price range, or clear a filter or two.</p>
+                  <div className="catalog-empty__actions">
+                    <button className="btn btn--outline" onClick={() => dispatch(resetParams())}>
+                      Clear filters
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+        </UpdatingList>
+        {data.items && data.items.length > 0 && <AdSlot slot="" />}
       </div>
     </div>
   )

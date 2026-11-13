@@ -55,9 +55,14 @@ export default function Filters({ filtersData: data }: Props) {
     const isTablet = useMediaQuery('(max-width: 1023px)');
     const dropdown = isTablet || view === 'rows';
     const [open, setOpen] = useState(false);
-    useEffect(() => {
-        if (!dropdown) setOpen(false);   // leaving dropdown mode closes the overlay
-    }, [dropdown]);
+    // Leaving dropdown mode (a tablet turned past 1023px, back to card view)
+    // closes the overlay. Adjusted while rendering rather than in an effect,
+    // so the rail never paints a frame with the overlay's header still up.
+    const [wasDropdown, setWasDropdown] = useState(dropdown);
+    if (dropdown !== wasDropdown) {
+        setWasDropdown(dropdown);
+        if (!dropdown) setOpen(false);
+    }
     useEffect(() => {
         document.body.classList.toggle('filters-open', open && dropdown);
         return () => document.body.classList.remove('filters-open');
@@ -90,7 +95,14 @@ export default function Filters({ filtersData: data }: Props) {
             </button>
             {/* Dropdown mode: search lives in the toolbar, sized like the
                 toggle above it — finding a card shouldn't take a trip into
-                the overlay. (Desktop keeps it inside the panels.) */}
+                the overlay. (Desktop keeps it inside the panels.)
+                2026-11-13: the overlay gets no copy of it. It opens from right
+                here and closing it lands back on the field, while a second box
+                on the same term would show a stale value during either one's
+                typing pause. Not sticky under the top bar either: the smooth
+                scroller transforms the page, so a sticky child can't stick,
+                and a pinned copy would have to chase the bar as it hides and
+                returns. Paging scrolls back up to it anyway. */}
             {dropdown && (
                 <div className="filters__search">
                     <Search />
