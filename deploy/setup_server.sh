@@ -17,15 +17,17 @@ if ! command -v caddy >/dev/null; then
 fi
 
 # Layout. Everything owned by ubuntu — the ssh/rsync user and the service user.
-sudo mkdir -p /srv/tcg/{api,client,data/cards}
+sudo mkdir -p /srv/tcg/{api,api-next,client,data/cards}
 sudo chown -R ubuntu:ubuntu /srv/tcg
 sudo chmod -R g+rX,o+rX /srv/tcg              # caddy reads /srv/tcg/client
 
 # systemd unit + Caddyfile (pushed to /tmp by deploy_app.sh)
 sudo mv /tmp/tcg-api.service /etc/systemd/system/tcg-api.service
+sudo caddy validate --config /tmp/Caddyfile --adapter caddyfile >/dev/null
 sudo mv /tmp/Caddyfile /etc/caddy/Caddyfile
 sudo systemctl daemon-reload
 sudo systemctl enable tcg-api
-sudo systemctl restart caddy
+# Reload, not restart: a restart drops every open connection (2026-11-13).
+sudo systemctl reload-or-restart caddy
 
 echo "server setup complete"

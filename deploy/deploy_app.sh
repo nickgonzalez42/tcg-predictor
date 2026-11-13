@@ -25,17 +25,23 @@ ${=SSH} 'bash /tmp/setup_server.sh'
 
 # macOS ships openrsync (not GNU rsync), which sporadically loses one temp
 # file on many-file trees (exit 23, "stat .X.dll.??? failed") — a second
-# pass always converges, so each sync gets one retry. The API is stopped
-# during its sync anyway (rewriting a live .NET install risks a torn app),
-# and the ERR trap brings it back up even on a mid-ship failure.
+# pass always converges, so each sync gets one retry. The live install is
+# only rewritten while the API is stopped (a torn .NET app otherwise), by a
+# local copy from api-next, and the ERR trap brings it back up even on a
+# failure there.
 # (Root fix if the retry ever isn't enough: brew install rsync.)
 RSYNC=$([ -x /opt/homebrew/bin/rsync ] && echo /opt/homebrew/bin/rsync || echo rsync)
 sync_dir() { $RSYNC -az --delete -e "$SSH_E" "$1" "$2" || \
              { echo "rsync flaked — retrying $2"; \
                $RSYNC -az --delete -e "$SSH_E" "$1" "$2"; } }
+# The new build goes up beside the running one first (api-next), so the API
+# is down only for a local copy and its own startup, not for the upload
+# (2026-11-13: a deploy meant about a minute of 502s; Caddy now also holds
+# requests for up to 45 s while it restarts).
+sync_dir "$ROOT/dotnet/API/bin/deploy-linux/" ubuntu@$IP:/srv/tcg/api-next/
 trap '${=SSH} "sudo systemctl start tcg-api" || true' ERR
-${=SSH} 'sudo systemctl stop tcg-api'
-sync_dir "$ROOT/dotnet/API/bin/deploy-linux/" ubuntu@$IP:/srv/tcg/api/
+${=SSH} 'sudo systemctl stop tcg-api && rsync -a --delete /srv/tcg/api-next/ /srv/tcg/api/ && chmod +x /srv/tcg/api/API && sudo systemctl start tcg-api && sleep 2 && systemctl is-active tcg-api'
+trap - ERR
 # Normalize modes before shipping: rsync -a PRESERVES them, and Caddy runs as
 # its own user, so one owner-only file (an asset copied in from a 600 source
 # — riftbound-back.png, 2026-10-20) is unreadable to the server. The SPA
@@ -47,9 +53,6 @@ sync_dir "$ROOT/client/dist/" ubuntu@$IP:/srv/tcg/client/
 # trainer drops each new Friday report into the same tree; the repo copy only
 # grows it.
 $RSYNC -az -e "$SSH_E" "$ROOT/static-content/" ubuntu@$IP:/srv/tcg/static/
-
-${=SSH} 'chmod +x /srv/tcg/api/API && sudo systemctl start tcg-api && sleep 2 && systemctl is-active tcg-api'
-trap - ERR
 # The API takes 10-30 s to come up (migrations, the scanner artifacts); a
 # warm-up fired before that only collects 502s from Caddy (2026-10-25). Wait
 # for a real answer first, then prime what the startup self-warmup covers as
