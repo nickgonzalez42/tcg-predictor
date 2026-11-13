@@ -29,7 +29,8 @@ Modes
   --game all|<game>   export each game's pricing CSV into
                       one-piece/tcg_exports/incoming/<game>_<YYYY-MM-DD>.csv
                       (validated: header, product line, row floor). A game
-                      that fails gets one more try after the others.
+                      that fails gets one more try after the others, unless
+                      it failed only after a long wait (LONG_FAILURE_S).
 
 Exit codes: 0 every requested game exported; 1 some game failed (the rest
 are saved — the import step prices what it has, the crawl covers the rest);
@@ -125,6 +126,14 @@ NAV_TIMEOUT_MS = 60_000
 DOWNLOAD_TIMEOUT_MS = 15 * 60_000   # Magic is ~1M rows; give the server time
 CAPTURE_TIMEOUT_MS = 15_000         # failure screenshot, then element dump: each
 LOGIN_WAIT_S = 15 * 60
+# Longer than any export has needed: Magic's file starts within a minute on
+# a good night, but took 236 s on 2026-11-13 at 14:25. An attempt that fails
+# after this long waited out a limit no export needs (an export request that
+# never answers, a dialog that never gets ready), and either would hold every
+# game alike. So that game gets no retry, and every later attempt in the run
+# waits LONG_FAILURE_S at most instead of DOWNLOAD_TIMEOUT_MS: a stuck portal
+# costs 15 min once and 5 min a game after it, not 15-30 min a game.
+LONG_FAILURE_S = 5 * 60
 
 
 def log(msg):
@@ -141,9 +150,12 @@ def brief(e):
     on. A plain 300-character cut kept only the long selector: the
     2026-11-12 failures read as stuck at "locator resolved" because every
     step after it had been cut off."""
-    head, _, calls = str(e).partition("Call log:")
+    # An event wait (expect_download) prints its log under a "=== logs ==="
+    # banner instead of "Call log:".
+    text = re.sub(r"\n=+ logs =+\n", "\nCall log:\n", str(e))
+    head, _, calls = text.partition("Call log:")
     head = " ".join(head.split())[:300]
-    steps = [s.strip(" -")[:120] for s in calls.splitlines() if s.strip(" -")]
+    steps = [s.strip(" -=")[:120] for s in calls.splitlines() if s.strip(" -=")]
     if steps:
         head += " [call log ... " + " | ".join(steps[-3:]) + "]"
     return f"{type(e).__name__}: {head}"
@@ -204,6 +216,17 @@ def launch(p, headless):
 def is_login_page(page):
     u = page.url.lower()
     return "/oauth/login" in u or "/logon" in u or "/login" in u
+
+
+def page_title(page, timeout_ms=5_000):
+    """The page's title, or "" when it can't say within timeout_ms (title()
+    takes no timeout; wait_for_function does, and a one-item list satisfies
+    it at once, even for an empty title)."""
+    try:
+        return page.main_frame.wait_for_function(
+            "() => [document.title]", timeout=timeout_ms).json_value()[0]
+    except Exception:                            # noqa: BLE001
+        return ""
 
 
 def save_state(ctx):
@@ -487,7 +510,7 @@ def set_dialog_product_line(page, dialog, game):
     return label
 
 
-def export_game(page, game, today):
+def export_game(page, game, today, patience_ms=DOWNLOAD_TIMEOUT_MS):
     """Pricing page (store.tcgplayer.com/admin/pricing, "Manage Your
     Pricing") -> product line <select name=CategoryId> -> All Set Names ->
     "Export Filtered CSV" -> download. Seen 2026-10-17: the page is a plain
@@ -495,7 +518,10 @@ def export_game(page, game, today):
     From Live / Export From Staged / Export Filtered CSV / Import to Staged).
     If the export button opens an options dialog instead of downloading
     outright, its Export button is pressed too. Returns the saved CSV path;
-    a structural change raises FlowError with a screenshot + element dump."""
+    a structural change raises FlowError with a screenshot + element dump.
+    patience_ms bounds every wait from the dialog's product line to the
+    download: DOWNLOAD_TIMEOUT_MS, or LONG_FAILURE_S once the run has had a
+    long failure."""
     goto(page, PRICING_URL)
     if is_login_page(page):
         raise SystemExit(2)
@@ -532,9 +558,10 @@ def export_game(page, game, today):
     if not dialog.count():
         dialog = page
     # From here to the download a slow portal is waited out, not failed:
-    # every wait runs on the download's 15 minutes instead of the page's
-    # 60 s default (put back below, whatever happens).
-    page.set_default_timeout(DOWNLOAD_TIMEOUT_MS)
+    # every wait runs on patience_ms (the download's 15 min, or 5 after a
+    # long failure) instead of the page's 60 s default (put back below,
+    # whatever happens).
+    page.set_default_timeout(patience_ms)
     try:
         line = set_dialog_product_line(page, dialog, game)
         go = first_visible(page, [
@@ -542,17 +569,26 @@ def export_game(page, game, today):
             dialog.get_by_role("button", name=re.compile(r"^export filtered csv$", re.I)),
             page.locator("input[type=submit][value='Export Filtered CSV']").last,
         ], "the dialog's 'Export Filtered CSV' button")
+        url = page.url
         log(f"  requesting export of {line!r}")
         t0 = time.monotonic()
-        with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:
-            # The submit starts a form navigation that only resolves when the
-            # server starts sending the file (Magic 27-58 s on good nights),
-            # and click() waits for that navigation by default: past its 60 s
-            # that failed Magic on 2026-11-10/11 and Yu-Gi-Oh + Magic on
-            # 2026-11-12/13 (the failure screenshots show the pointer already
-            # on the button). no_wait_after leaves that wait to
-            # expect_download; the timeout lets a busy page take its time.
-            go.click(timeout=DOWNLOAD_TIMEOUT_MS, no_wait_after=True)
+        with page.expect_download(timeout=patience_ms) as dl_info:
+            # The submit is a form POST (/admin/pricing/downloadexportcsv)
+            # whose navigation only ends when the server starts sending the
+            # file (Magic 27-58 s on good nights, 236 s on 2026-11-13 at
+            # 14:25), and click() waits for that navigation: past the click's
+            # old 60 s that failed Magic on 2026-11-10/11 and Yu-Gi-Oh + Magic
+            # on 2026-11-12/13 (the failure screenshots show the pointer
+            # already on the button). It now gets as long as the download.
+            go.click(timeout=patience_ms)
+            # A download leaves the page where it was. A new page in its place
+            # (an error or gateway-timeout page, the login page) means no file
+            # is coming: fail now instead of waiting out the download timeout.
+            if page.url != url:
+                if is_login_page(page):
+                    raise SystemExit(2)
+                raise FlowError(f"the export answered with a page, not a file: "
+                                f"{page.url} ({page_title(page)!r})")
         download = dl_info.value
     finally:
         page.set_default_timeout(NAV_TIMEOUT_MS)
@@ -572,25 +608,28 @@ def export_game(page, game, today):
 EXPIRED = object()
 
 
-def try_export(page, game, today):
-    """One attempt at a game: the saved CSV's path, None when it failed
-    (logged, with a bounded screenshot + element dump in DEBUG_DIR), or
-    EXPIRED when the session died. Nothing is reset after a failure: every
-    attempt starts from a fresh load of the pricing page, and the Escape key
-    the loop used to press could itself wait as long as a busy page."""
+def try_export(page, game, today, patience_ms=DOWNLOAD_TIMEOUT_MS):
+    """One attempt at a game: (outcome, seconds it took). The outcome is the
+    saved CSV's path, None when it failed (logged, with a bounded screenshot
+    + element dump in DEBUG_DIR), or EXPIRED when the session died. Nothing
+    is reset after a failure: every attempt starts from a fresh load of the
+    pricing page, and the Escape key the loop used to press could itself
+    wait as long as a busy page."""
+    t0 = time.monotonic()
     try:
-        return export_game(page, game, today)
+        return export_game(page, game, today, patience_ms), time.monotonic() - t0
     except SystemExit as e:
         if e.code == 2:
-            return EXPIRED
+            return EXPIRED, time.monotonic() - t0
         raise
     except Exception as e:                       # noqa: BLE001
-        log(f"[{game}] FAILED: {brief(e)}")
+        took = time.monotonic() - t0
+        log(f"[{game}] FAILED after {took:.0f} s: {brief(e)}")
         png, js = save_debug(page, f"fail_{game}")
         left = [f for f in (png, js) if os.path.exists(f)]
         if left:
             log(f"[{game}]   see {left[0]}")
-        return None
+        return None, took
 
 
 def min_rows(game):
@@ -749,8 +788,24 @@ def mode_export(p, games, headless, force=False):
         ctx.close()
         return 2
     log(f"signed in via {how}")
-    ok, failed, retried = [], [], []
+    ok, failed, retried, long_failed = [], [], [], []
     expired = False
+    patience = DOWNLOAD_TIMEOUT_MS
+
+    def attempt(game):
+        # One try_export on the run's patience. The first attempt that fails
+        # after LONG_FAILURE_S cuts it: every later attempt, later games and
+        # retries alike, waits LONG_FAILURE_S at most.
+        nonlocal patience
+        got, took = try_export(page, game, today, patience)
+        if got is None and took >= LONG_FAILURE_S:
+            long_failed.append(game)
+            if patience > LONG_FAILURE_S * 1000:
+                patience = LONG_FAILURE_S * 1000
+                log(f"[{game}] failed after a long wait: from here on every wait gets "
+                    f"{LONG_FAILURE_S / 60:g} min, not {DOWNLOAD_TIMEOUT_MS / 60_000:g} min")
+        return got
+
     for i, game in enumerate(games):
         final = os.path.join(INCOMING_DIR, f"{game}_{today}.csv")
         archived = os.path.join(EXPORT_DIR, "archive", f"{game}_{today}.csv.gz")
@@ -763,7 +818,7 @@ def mode_export(p, games, headless, force=False):
             ok.append(final)
             continue
         log(f"[{game}] exporting {PORTAL_LINES[game][0]!r}")
-        got = try_export(page, game, today)
+        got = attempt(game)
         if got is EXPIRED:
             # Session died mid-run: this game and every one after it are
             # unexported; the crawl fallback covers them tonight.
@@ -779,10 +834,14 @@ def mode_export(p, games, headless, force=False):
     # portal cost Yu-Gi-Oh and Magic their files on 2026-11-12/13 and sent
     # them to the fallback crawl (~80 and ~105 min). Same flow, from a fresh
     # load of the pricing page; a game that fails twice is left to the
-    # crawl. No retry after a dead session (that needs --login).
+    # crawl. No retry after a dead session (that needs --login), nor for a
+    # game that failed only after a long wait (LONG_FAILURE_S).
     for game in ([] if expired else list(failed)):
+        if game in long_failed:
+            log(f"[{game}] no retry: its attempt failed after a long wait (the crawl covers it)")
+            continue
         log(f"[{game}] retrying after the first pass")
-        got = try_export(page, game, today)
+        got = attempt(game)
         if got is EXPIRED:
             log(f"[{game}] session expired mid-run — stopping")
             break
