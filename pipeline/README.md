@@ -49,7 +49,12 @@ index since release, price ladder, the model's outlook) and a **game report** on
 whole game (the week's drift, which sets moved, movers, groups that moved together,
 price ladder, the model's record and picks). `article_editorial.py` writes the prose
 (Claude, house voice) around the computed numbers; `article_pages.py` renders the
-static twins the nightly rsyncs to `/srv/tcg/static/articles/`.
+static twins the nightly rsyncs to `/srv/tcg/static/articles/`. Each page also carries
+the reader's next steps (2026-11-13): after the opening section, every card the piece is
+about in the catalog (counted read-only from the game's card DB, by the catalog's own
+rule); after the piece, those cards again, a free portfolio, and more articles on the
+game. The app's article page shows the same blocks, and the static pages read their
+stylesheet, `client/src/styles/features/ArticleNext.css`, at render time.
 
 The step runs after `market_report` in `local_model_run.sh` and keys its games off the
 run's UTC weekday: Mon Pokémon + Magic, Tue Yu-Gi-Oh! + One Piece, Wed Lorcana + Digimon,

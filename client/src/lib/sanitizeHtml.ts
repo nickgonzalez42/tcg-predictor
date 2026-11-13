@@ -110,3 +110,15 @@ export function sanitizeReportHtml(html: string): string {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     return Array.from(doc.body.childNodes).map(n => cleanNode(n, true)).join('');
 }
+
+// An article body cut where its opening section ends, before the first
+// top-level <h2> (2026-11-13): the article page puts the reader's next step
+// there, as the static page does (report_pages.after_opening). Both halves
+// go through the same allowlist; a body without a heading is all opening.
+export function sanitizeReportSections(html: string): [string, string] {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const nodes = Array.from(doc.body.childNodes);
+    const at = nodes.findIndex(n => n.nodeType === Node.ELEMENT_NODE && (n as Element).tagName === 'H2');
+    const clean = (list: Node[]) => list.map(n => cleanNode(n, true)).join('');
+    return at < 0 ? [clean(nodes), ''] : [clean(nodes.slice(0, at)), clean(nodes.slice(at))];
+}
