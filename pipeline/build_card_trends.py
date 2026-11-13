@@ -130,6 +130,35 @@ def broken(pts, i):
     return False
 
 
+# window_change's tag for a window whose stored anchor would be a launch-week
+# price: (NEED_DAILY, start, fallback). The anchor then comes from the daily
+# Near Mint series at `start` (daily_anchor), else `fallback`.
+NEED_DAILY = "daily"
+
+
+def launch_end_of(pts, released):
+    """The first day after a series' launch weeks (see window_change): a week
+    after the card's release date when the catalog knows it (presale asks come
+    before it, the hype price of launch day just after), else LAUNCH_SKIP_DAYS
+    after its first price."""
+    if released:
+        return (date.fromisoformat(released[:10]) + timedelta(days=RELEASE_SETTLE_DAYS)).isoformat()
+    return (date.fromisoformat(pts[0][0][:10]) + timedelta(days=LAUNCH_SKIP_DAYS)).isoformat()
+
+
+def daily_anchor(src, game, pid, start, before):
+    """Median of a card's first three daily Near Mint prices on or after
+    `start` and before `before` (today's point), or 0.0 when it has none."""
+    try:
+        prices = [p for (p,) in src.execute(
+            "SELECT price FROM tcg_nm_history WHERE game=? AND product_id=? AND printing='' "
+            "AND date >= ? AND date < ? ORDER BY date LIMIT 3",
+            (game, pid, start, before[:10])) if p and p > 0]
+    except sqlite3.OperationalError:     # a history DB without the daily table
+        return 0.0
+    return statistics.median(prices) if prices else 0.0
+
+
 def window_change(pts, dates, cutoff, today, released=None):
     """(pct, usd) of the latest price against the window's anchor, or None.
 
@@ -138,11 +167,12 @@ def window_change(pts, dates, cutoff, today, released=None):
     start (the last point on or before it), read so one bad point can't own the
     ranking (2026-11-13, user: "the history percent order on the catalog is not
     working" -- the top and bottom of every past-change sort were artifacts):
-      - a card's first LAUNCH_SKIP_DAYS days, and everything up to
-        RELEASE_SETTLE_DAYS after its release date (`released`, when known),
-        are presale and launch asks (a $9.99 common that settles at $0.09), so
+      - everything up to RELEASE_SETTLE_DAYS after a card's release date
+        (`released`, when known; else its first LAUNCH_SKIP_DAYS days) is
+        presale and launch asks (a $9.99 common that settles at $0.09), so
         a window reaching back into them measures from the first price after
-        them, and a card still inside them has no change yet;
+        them (NEED_DAILY: the daily series has the price where the stored
+        month-end points don't), and a card still inside them has no change yet;
       - the anchor is the median of its point and its same-source neighbours
         when it has one on each side, so a single stray listing is not the
         baseline;
@@ -158,18 +188,25 @@ def window_change(pts, dates, cutoff, today, released=None):
     """
     latest_d, latest_p, latest_s = pts[-1]
     last = len(pts) - 1
-    launch_end = (date.fromisoformat(pts[0][0][:10])
-                  + timedelta(days=LAUNCH_SKIP_DAYS)).isoformat()
-    if released:
-        launch_end = max(launch_end, (date.fromisoformat(released[:10])
-                                      + timedelta(days=RELEASE_SETTLE_DAYS)).isoformat())
+    launch_end = launch_end_of(pts, released)
+    if launch_end >= latest_d[:10]:
+        return None                       # still inside its launch weeks
     launch = cutoff < launch_end
-    if launch:
-        i = bisect.bisect_left(dates, launch_end)
-        if i >= last:
-            return None
-    else:
-        i = bisect.bisect_right(dates, cutoff) - 1
+    # The anchor stands for the price at `start`; a window that begins before
+    # the first price we have (collection began after the launch weeks)
+    # measures from that first price.
+    start = max(cutoff, launch_end)
+    i = max(bisect.bisect_right(dates, start) - 1, 0)
+    if dates[i] < launch_end:
+        # The stored series (month-end points plus today) has no price between
+        # the launch weeks and `start`, only a launch-week one. The daily
+        # series has (the caller reads it); without it, the first stored price
+        # after the launch weeks will do.
+        j = bisect.bisect_left(dates, launch_end)
+        fallback = None
+        if j < last and pts[j][1] > 0:
+            fallback = ((latest_p / pts[j][1] - 1) * 100, latest_p - pts[j][1])
+        return (NEED_DAILY, start, fallback)
     if pts[i][2] != latest_s:
         j = next(k for k in range(i + 1, len(pts)) if pts[k][2] == latest_s)
         head = [pts[k][1] for k in range(j, min(j + 3, last))]
@@ -217,6 +254,7 @@ def build(pc_db, out_db, today):
     buf = []
     cur_key = None
     pts = []
+    young = [0]    # windows anchored on the daily series
 
     def flush():
         nonlocal rows_out
@@ -225,8 +263,18 @@ def build(pc_db, out_db, today):
         dates = [p[0] for p in pts]
         released = rel.get((cur_key[0], cur_key[2]))
         vals = [*cur_key, pts[-1][0], pts[-1][1]]
+        daily = {}     # start -> daily anchor, each read once per series
         for _w, c in cut_list:
             ch = window_change(pts, dates, c, today, released)
+            if isinstance(ch, tuple) and ch[0] == NEED_DAILY:
+                _tag, start, ch = ch
+                if cur_key[1] == "ungraded":    # the daily series is Near Mint
+                    if start not in daily:
+                        daily[start] = daily_anchor(src, cur_key[0], cur_key[2],
+                                                    start, pts[-1][0])
+                    if daily[start]:
+                        ch = ((pts[-1][1] / daily[start] - 1) * 100, pts[-1][1] - daily[start])
+                        young[0] += 1
             vals += list(ch) if ch else [None, None]
         vals.append(today.isoformat())
         buf.append(vals)
@@ -259,6 +307,7 @@ def build(pc_db, out_db, today):
     out.execute("CREATE INDEX IF NOT EXISTS idx_card_trends_game_grade ON card_trends (game, grade)")
     out.execute("COMMIT")
     out.close()
+    print(f"card_trends: {young[0]:,} young-card windows anchored on the daily series")
     print(f"card_trends: {rows_out:,} series from {rows_in:,} history rows "
           f"(as of {today}, cutoffs {cut['1w']}/{cut['1m']}/{cut['6m']}/{cut['1y']}) "
           f"in {time.time() - t0:.0f}s -> {out_db}")

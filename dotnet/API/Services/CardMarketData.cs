@@ -294,14 +294,20 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         var latest = pts[last];
         var launchEnd = DateTime.ParseExact(pts[0].Date[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture)
             .AddDays(LaunchSkipDays).ToString("yyyy-MM-dd");
+        if (string.CompareOrdinal(launchEnd, latest.Date[..10]) >= 0) return null;
         var launch = string.CompareOrdinal(cutoff, launchEnd) < 0;
-        int i;
-        if (launch)
+        var anchorAt = launch ? launchEnd : cutoff;
+        var i = Math.Max(pts.FindLastIndex(p => string.CompareOrdinal(p.Date, anchorAt) <= 0), 0);
+        if (string.CompareOrdinal(pts[i].Date, launchEnd) < 0)
         {
-            i = pts.FindIndex(p => string.CompareOrdinal(p.Date, launchEnd) >= 0);
-            if (i < 0 || i >= last) return null;
+            // Only a launch-week price stands at the window's start (the stored
+            // series keeps month-end points). The nightly table reads the daily
+            // series here; this fallback measures from the first stored price
+            // after the launch weeks.
+            var j = pts.FindIndex(p => string.CompareOrdinal(p.Date, launchEnd) >= 0);
+            if (j < 0 || j >= last || pts[j].Price <= 0) return null;
+            return new HistoryChange((latest.Price / pts[j].Price - 1) * 100, latest.Price - pts[j].Price);
         }
-        else i = pts.FindLastIndex(p => string.CompareOrdinal(p.Date, cutoff) <= 0);
 
         if (pts[i].Source != latest.Source)
         {
