@@ -30,6 +30,7 @@ Run:  .venv/bin/python pc_printing_backfill.py --limit 500
 
 import argparse
 import collections
+import email.utils
 import json
 import os
 import re
@@ -71,6 +72,20 @@ VARIANT_BRACKETS = {
     "Normal": None,
 }
 
+# Rate limits (2026-11-13): PriceCharting throttles rather than blocks at our
+# pace. On most nights it answers a share of requests with a 429 between
+# successes: the pc-link-suggest drain just before this step, at the same
+# 1 s + fetch pace, loses from under 1% to half of its pages a night that
+# way, and nothing has met 25 refusals in a row since the 2026-10-12 block.
+# The first 429 used to end this run (17 of 22 runs from 2026-10-20 to
+# 2026-11-13, 15-232 pages in). Now a 429 waits, never less than its
+# Retry-After asks, then retries the same page and doubles the delay for
+# the rest of the run. A page still refused after the last wait, or a wait
+# that would take the run past WAIT_BUDGET, stops it as before; the rest
+# carries over to the next run.
+RETRY_WAITS = (30, 60, 120)    # s, one per consecutive 429 on the same page
+WAIT_BUDGET = 600              # s of 429 waits per run
+
 
 def now_iso():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -105,20 +120,36 @@ def candidate_names(base_pc_name, variant):
     return [f"{stem} [{b}]{suffix}" for b in VARIANT_BRACKETS[variant]]
 
 
+def retry_after(headers):
+    """Seconds a Retry-After header asks for (delta-seconds or HTTP-date), or
+    None when there is none we can read."""
+    value = (headers.get("Retry-After") or "").strip() if headers else ""
+    if value.isdigit():
+        return int(value)
+    try:
+        when = email.utils.parsedate_to_datetime(value)
+    except (TypeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
 def fetch_verified(pc_id):
-    """(chart_dict|None, tcg_ids, http_status) for one PC page — one request
-    serves both the price chart and the embedded-tcg-id verification."""
+    """(chart_dict|None, tcg_ids, http_status, retry_after_s|None) for one PC
+    page — one request serves both the price chart and the embedded-tcg-id
+    verification."""
     req = urllib.request.Request(
         f"https://www.pricecharting.com/game/{pc_id}", headers={"User-Agent": UA})
     try:
         with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as resp:
             html = resp.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as e:
-        return None, set(), e.code
+        return None, set(), e.code, retry_after(e.headers)
     m = CHART_RE.search(html)
     chart = json.loads(m.group(1)) if m else None
     ids = {int(x) for x in TCG_ID_RE.findall(urllib.parse.unquote(html))}
-    return chart, ids, 200
+    return chart, ids, 200, None
 
 
 def main():
@@ -160,10 +191,11 @@ def main():
     if not targets:
         print("nothing to backfill")
         return
-    print(f"backfilling {len(targets)} (card, printing) page(s) at 1 req/s")
+    print(f"backfilling {len(targets)} (card, printing) page(s) at 1 req/s", flush=True)
 
     cats = {}
     stats = collections.Counter()
+    pace, waited = args.delay, 0.0
     for i, (game, pid, variant, base_name, console) in enumerate(targets, 1):
         def memo(status, pc_id=None, pc_name=None):
             conn.execute("INSERT OR REPLACE INTO pc_printing_matches VALUES (?,?,?,?,?,?,?)",
@@ -185,10 +217,27 @@ def main():
         if not pc_id:
             memo("no-page-in-catalog")
             continue
-        time.sleep(args.delay)
-        chart, ids, status = fetch_verified(pc_id)
+        refused = 0
+        while True:
+            time.sleep(pace)
+            chart, ids, status, asked = fetch_verified(pc_id)
+            if status != 429:
+                break
+            stats["429"] += 1
+            if refused == len(RETRY_WAITS):
+                break
+            wait = max(RETRY_WAITS[refused], asked or 0)
+            if waited + wait > WAIT_BUDGET:
+                break
+            print(f"  429 on pc_id {pc_id} — waiting {wait:.0f} s, then "
+                  f"{2 * args.delay:g} s between pages", flush=True)
+            time.sleep(wait)
+            waited += wait
+            refused += 1
+            pace = 2 * args.delay
         if status == 429:
-            print("  rate limited — stopping this run early", file=sys.stderr)
+            print(f"  rate limited ({refused + 1} in a row, {waited:.0f} s waited "
+                  f"this run) — stopping this run early", file=sys.stderr)
             break
         if pid not in ids:
             memo("verify-failed", pc_id, pc_name)
