@@ -85,6 +85,10 @@ VARIANT_BRACKETS = {
 # carries over to the next run.
 RETRY_WAITS = (30, 60, 120)    # s, one per consecutive 429 on the same page
 WAIT_BUDGET = 600              # s of 429 waits per run
+# A 403 is a refusal, not a slowdown (the 2026-10-12 block was a wall of
+# them). A refused page is left unsaved for the next run, and this many in a
+# row stop the run, the way the shared fetch helper and the graded crawl stop.
+BLOCK_STOP = 5
 
 
 def now_iso():
@@ -122,17 +126,17 @@ def candidate_names(base_pc_name, variant):
 
 def retry_after(headers):
     """Seconds a Retry-After header asks for (delta-seconds or HTTP-date), or
-    None when there is none we can read."""
+    None when there is none we can read. Never raises."""
     value = (headers.get("Retry-After") or "").strip() if headers else ""
-    if value.isdigit():
+    if re.fullmatch(r"[0-9]{1,6}", value):
         return int(value)
     try:
         when = email.utils.parsedate_to_datetime(value)
-    except (TypeError, ValueError):
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=timezone.utc)
+        return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+    except (TypeError, ValueError, OverflowError):
         return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=timezone.utc)
-    return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
 
 
 def fetch_verified(pc_id):
@@ -145,7 +149,7 @@ def fetch_verified(pc_id):
         with urllib.request.urlopen(req, timeout=30, context=SSL_CTX) as resp:
             html = resp.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as e:
-        return None, set(), e.code, retry_after(e.headers)
+        return None, set(), e.code, (retry_after(e.headers) if e.code == 429 else None)
     m = CHART_RE.search(html)
     chart = json.loads(m.group(1)) if m else None
     ids = {int(x) for x in TCG_ID_RE.findall(urllib.parse.unquote(html))}
@@ -195,7 +199,7 @@ def main():
 
     cats = {}
     stats = collections.Counter()
-    pace, waited = args.delay, 0.0
+    pace, waited, blocked = args.delay, 0.0, 0
     for i, (game, pid, variant, base_name, console) in enumerate(targets, 1):
         def memo(status, pc_id=None, pc_name=None):
             conn.execute("INSERT OR REPLACE INTO pc_printing_matches VALUES (?,?,?,?,?,?,?)",
@@ -229,7 +233,8 @@ def main():
             wait = max(RETRY_WAITS[refused], asked or 0)
             if waited + wait > WAIT_BUDGET:
                 break
-            print(f"  429 on pc_id {pc_id} — waiting {wait:.0f} s, then "
+            told = f", Retry-After {asked:.0f} s" if asked is not None else ""
+            print(f"  429 on pc_id {pc_id}{told} — waiting {wait:.0f} s, then "
                   f"{2 * args.delay:g} s between pages", flush=True)
             time.sleep(wait)
             waited += wait
@@ -239,6 +244,15 @@ def main():
             print(f"  rate limited ({refused + 1} in a row, {waited:.0f} s waited "
                   f"this run) — stopping this run early", file=sys.stderr)
             break
+        if status == 403:
+            blocked += 1
+            stats["403"] += 1
+            if blocked >= BLOCK_STOP:
+                print(f"  {blocked} refusals (403) in a row — PriceCharting may be "
+                      "blocking us; stopping this run early", file=sys.stderr)
+                break
+            continue
+        blocked = 0
         if pid not in ids:
             memo("verify-failed", pc_id, pc_name)
             continue
