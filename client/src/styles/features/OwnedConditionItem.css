@@ -23,10 +23,12 @@
   color: var(--text-muted);
 }
 
+/* Fields on top, buttons on their own row under them: side by side, the four
+   buttons squeezed the fields into a one-per-line column in the 480px modal. */
 .owned-copy {
   display: flex;
-  align-items: flex-end;
-  gap: var(--space-10);
+  flex-direction: column;
+  gap: var(--space-15);
   padding: var(--space-10);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -50,7 +52,6 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: var(--space-10) var(--space-15);
-  flex: 1;
   min-width: 0;
 }
 
@@ -83,13 +84,27 @@
   white-space: nowrap;
 }
 
+/* Paid + its Auto price checkbox travel together when the fields wrap. */
+.owned-copy__price {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-10);
+  min-width: 0;
+}
+
 .owned-copy__note {
   flex: 1 1 200px;
 }
 
 .owned-copy__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--space-5);
+}
+
+/* Delete sits apart from Save, at the row's far end. */
+.owned-copy__actions .btn--danger {
+  margin-left: auto;
 }
 
 .owned-copy__actions .btn {
@@ -98,9 +113,43 @@
   font-size: 12.8px;
 }
 
+/* Phones: two even columns of fields, the note full width, and the buttons
+   as a 2x2 block of full-size tap targets. */
+@media (max-width: 520px) {
+  .owned-copy__fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: end;
+  }
+
+  .owned-copy__grade,
+  .owned-copy__paid,
+  .owned-copy__date {
+    width: auto;
+  }
+
+  .owned-copy__paid {
+    flex: 1;
+  }
+
+  .owned-copy__note {
+    grid-column: 1 / -1;
+  }
+
+  .owned-copy__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .owned-copy__actions .btn--danger {
+    margin-left: 0;
+  }
+}
+
 /* Source chips match the editor's 32px control scale. */
 .owned-copy__fields .src-toggle .btn {
   min-height: 32px;
+  white-space: nowrap;
 }
 
 /* (card + condition) owned tile */

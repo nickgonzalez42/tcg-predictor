@@ -73,7 +73,7 @@ export function OwnedCopyRow({ copy, onDone, onClose, onSell }: {
                     <SourceToggle value={source} onChange={setSource} />
                 </label>
                 {source === 'paid' && (
-                    <>
+                    <div className="owned-copy__price">
                         <label className="owned-copy__paid">Paid
                             <input className="input" type="number" min="0" step="0.01" inputMode="decimal"
                                 value={auto ? String(copy.purchasePrice ?? 0) : price} disabled={auto}
@@ -84,7 +84,7 @@ export function OwnedCopyRow({ copy, onDone, onClose, onSell }: {
                             <input type="checkbox" checked={auto} onChange={e => setAuto(e.target.checked)} />
                             Auto price
                         </label>
-                    </>
+                    </div>
                 )}
                 <label className="owned-copy__date">Acquired
                     <input className="input" type="date" value={acquired} max={new Date().toISOString().slice(0, 10)}
