@@ -58,6 +58,15 @@ h1, h2, h3, h4 {
   color: var(--text-muted);
 }
 
+/* A list that failed to load: the message and its Try again button on one
+   line, wrapping on narrow screens. */
+.load-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-10);
+}
+
 .text-muted {
   color: var(--text-muted);
 }

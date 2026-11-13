@@ -48,7 +48,7 @@ export default function Portfolio() {
     // allocation, best/worst AND the positions list below (2026-10-02). They
     // never count in the money lines either way.
     const [includePacks, setIncludePacks] = useState(true);
-    const { data, isLoading } = useFetchTrackedCardsQuery(
+    const { data, currentData, isLoading, isError, refetch } = useFetchTrackedCardsQuery(
         { kind: 'owned', includePacks, listed: view === 'listed', ...params });
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks });
 
@@ -199,6 +199,13 @@ export default function Portfolio() {
 
                 {isLoading ? (
                     <CardLoader />
+                ) : isError && !currentData ? (
+                    // The page asked for failed (data would still hold the
+                    // previous page, which reads as a pager that does nothing).
+                    <div className="est-note load-error">
+                        <span>We couldn't load this page of your portfolio.</span>
+                        <button className="btn btn--outline" onClick={() => refetch()}>Try again</button>
+                    </div>
                 ) : data && data.items.length > 0 ? (
                     <>
                         <div className="screener-wrap">

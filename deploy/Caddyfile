@@ -2,6 +2,17 @@
 # automatically (HTTP-01 challenge on :80) and redirects HTTP -> HTTPS.
 # handle blocks are mutually exclusive — the SPA's try_files can't swallow
 # /api/* (try_files is a rewrite and would otherwise run before the proxy).
+# The API behind every proxied path. A deploy restarts it (2026-11-13: a
+# portfolio page click landed in that window, got a 502, and the pager looked
+# dead): while it is down Caddy keeps retrying the connection for up to 45 s
+# instead of answering 502 at once, so a restart only makes requests slower.
+(api) {
+	reverse_proxy 127.0.0.1:5000 {
+		lb_try_duration 45s
+		lb_try_interval 500ms
+	}
+}
+
 cardstock.guide {
 	encode gzip
 
@@ -21,11 +32,11 @@ cardstock.guide {
 	}
 
 	handle /api/* {
-		reverse_proxy 127.0.0.1:5000
+		import api
 	}
 
 	handle /card-images/* {
-		reverse_proxy 127.0.0.1:5000
+		import api
 	}
 
 	# First-party page-view beacon (2026-10-27). The site is a single-page
@@ -40,7 +51,7 @@ cardstock.guide {
 
 	@sitemaps path /sitemap.xml /sitemap-*.xml
 	handle @sitemaps {
-		reverse_proxy 127.0.0.1:5000
+		import api
 	}
 
 	# Crawler-visible static pages (2026-08-29, AdSense "low value content"
