@@ -1332,13 +1332,12 @@ def build_report(force=False, as_of=None):
         bt = backtest_accuracy(pred)
         by_game = [r for r in backtest_accuracy(pred, by_game=True) if r[0] in GAMES]
         if bt and bt[0]:
-            model_body.append(f"<p>No live forecast has been out long enough to grade yet: "
-                        "the first 1-month cohort matures in August 2026, 6-month in "
-                        "January 2027, 12-month in July 2027; live grades take over "
-                        "here as they land. Until then, the record below comes from "
+            model_body.append(f"<p>No live forecast has been out long enough to check yet; "
+                        "live results take over here as they land. "
+                        "Until then, the record below comes from "
                         f"backtests: the model was retrained as of May and June 2026 "
                         "with everything after hidden, and its "
-                        f"{bt[0]:,} one-month calls graded against what then happened: "
+                        f"{bt[0]:,} one-month calls checked against what then happened: "
                         f"typical miss {(exp(bt[1]) - 1) * 100:.1f}%, "
                         f"bias {pct((exp(bt[2]) - 1) * 100)}, "
                         f"80% band hit {bt[3] * 100:.0f}%. On the {bt[4]:,} calls where "
