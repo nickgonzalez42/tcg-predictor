@@ -19,12 +19,13 @@ viable, pick new cards, check volume, repeat until the cards are ready.")
 Every pick needs sales behind it. Each round, the next few candidates of
 every unfilled slot get a FRESH TCGplayer sales fetch: directly (the crawl's
 own session and politeness budget) when the daytime sales crawler is not
-running, otherwise by handing the list to that crawler through
-showcase_watch.json, which it splices to the front of its queue, and waiting
-for it to finish them. A candidate with fewer than MIN_SOLD Near Mint copies
-sold in the last SOLD_DAYS is dropped and the slot tries the next one, up to
-ROUNDS rounds. Candidates that are already fresh (fetched within
-FETCH_FRESH_DAYS) are not refetched.
+running or is sitting out the refresh this run is part of, otherwise by
+handing the list to that crawler through showcase_watch.json, which it
+splices to the front of its queue, and waiting for it to finish them. A
+candidate with fewer than MIN_SOLD Near Mint copies sold in the last
+SOLD_DAYS is dropped and the slot tries the next one, up to ROUNDS rounds.
+Candidates that are already fresh (fetched within FETCH_FRESH_DAYS) are not
+refetched.
 
 Writes the `showcase` table in predictions.db, replacing a kind's rows only
 when it produced at least one; the nightly push carries it to prod and
@@ -39,6 +40,7 @@ import fcntl
 import json
 import os
 import sqlite3
+import subprocess
 import sys
 import time
 import traceback
@@ -49,6 +51,7 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, market_games, db_path
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
+from backfill_sales_volume import refresh_pids
 
 CARDS = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards")
 PRED_DB = os.path.join(CARDS, "predictions.db")
@@ -164,6 +167,76 @@ def expected_candidates(pred, game, ok):
 # ---------------------------------------------------------------------------
 # Sales: fresh fetch, then the volume test
 # ---------------------------------------------------------------------------
+def take_lock(lock):
+    """The sales crawler's lock on the open file `lock`, without waiting:
+    True when it is ours (or already was)."""
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def crawler_paused():
+    """pid of the refresh this run is part of, while the sales crawler that
+    holds the lock sits it out; None otherwise (the list goes to the crawler).
+
+    backfill_sales_volume pauses while refresh_live() (refresh_pids, the
+    test used here) and fetches nothing until no refresh process is left,
+    so a list handed to it then is only waited on: 18 hand-offs, 0 cards
+    and 74 minutes instead of about 7 on 2026-11-13. Inside the nightly
+    that refresh is this run's own parent, which outlives every fetch made
+    here, and the night's steps run one at a time, so nothing else is
+    crawling either. None for a run by hand while a refresh is live (that
+    refresh may be crawling), for a --no-yield crawl (the tail's tcg-sales
+    step, which never pauses and takes the list like the daytime crawler)
+    and for a lock held by anything but a crawler, or no process list."""
+    try:
+        live = refresh_pids()
+        if not live:
+            return None
+        ps = subprocess.run(["ps", "-A", "-ww", "-o", "pid=,ppid=,command="],
+                            capture_output=True, text=True)
+    except OSError:
+        return None
+    procs = {}
+    for line in ps.stdout.splitlines():
+        f = line.split(None, 2)
+        if len(f) >= 2 and f[0].isdigit() and f[1].isdigit():
+            procs[int(f[0])] = (int(f[1]), f[2] if len(f) > 2 else "")
+    parent, pid = None, os.getppid()
+    for _ in range(64):              # up the tree to the nearest refresh process
+        if pid in live:
+            parent = pid
+            break
+        if pid not in procs:
+            break
+        pid = procs[pid][0]
+    # The crawls: python running backfill_sales_volume.py, or the caffeinate
+    # that wraps it. A shell or an editor that only names the script is not.
+    crawls = []
+    for _ppid, cmd in procs.values():
+        args = cmd.split()
+        if (args and os.path.basename(args[0]).lower().startswith(("python", "caffeinate"))
+                and any(os.path.basename(a) == "backfill_sales_volume.py" for a in args[1:])):
+            crawls.append(args)
+    if parent is None or not crawls or any("--no-yield" in args for args in crawls):
+        return None
+    return parent
+
+
+def clear_watch():
+    """Remove the hand-off list once nobody waits on it. A crawler takes a
+    list with no "until" for the rest of its UTC day, which runs well into
+    the morning after a nightly hand-off, so a leftover sends it after cards
+    that were already judged (2026-11-13: the night's last list, 10 cards,
+    fetched when the crawler resumed after the refresh)."""
+    try:
+        os.remove(WATCH_FILE)
+    except OSError:
+        pass
+
+
 class Sales:
     def __init__(self, pc, no_fetch=False):
         self.pc = pc
@@ -181,8 +254,9 @@ class Sales:
 
     def ensure_fresh(self, pairs):
         """Fetch sales for the pairs whose last fetch is older than
-        FETCH_FRESH_DAYS: directly under the crawler's lock, or through the
-        running crawler's watch list."""
+        FETCH_FRESH_DAYS: directly under the crawler's lock, directly while
+        the crawler holding it sits out this run's refresh, otherwise
+        through the running crawler's watch list."""
         if self.no_fetch or not pairs:
             return
         cutoff = (datetime.now(timezone.utc) - timedelta(days=FETCH_FRESH_DAYS)).isoformat()
@@ -193,24 +267,52 @@ class Sales:
             return
         lock = open(LOCK_PATH, "w")
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError:
-            lock.close()
+            if take_lock(lock):
+                clear_watch()
+                self.fetch_direct(need)
+                return
+            parent = crawler_paused()
+            if parent is not None:
+                clear_watch()
+
+                def still_paused():
+                    # Before each card the crawler must still be out of the
+                    # way: its lock has come free (ours now, so no crawl can
+                    # start) or the refresh it waits on is still this run's
+                    # parent. The parent outlives the step, so this trips
+                    # only when it dies under the run (a launchd reload
+                    # beheads the script); the crawler then resumes at its
+                    # next look, within 10 minutes, and gets the cards left.
+                    # The two overlap by one card's fetch at most.
+                    try:
+                        return take_lock(lock) or parent in refresh_pids()
+                    except OSError:
+                        return False
+
+                need = self.fetch_direct(need, still_paused,
+                                         "the sales crawler is paused for the refresh")
+                if not need:
+                    return
+                log(f"  sales: the refresh this run is part of is gone, so the crawler "
+                    f"may resume; the other {len(need)} card(s) go to it")
             self.via_crawler(need)
-            return
-        try:
-            self.fetch_direct(need)
         finally:
             fcntl.flock(lock, fcntl.LOCK_UN)
             lock.close()
 
-    def fetch_direct(self, need):
+    def fetch_direct(self, need, go=None, why=""):
+        """Fetch the cards' sales at the crawl's politeness budget. `go`, if
+        given, is asked before each card; returns the cards left when it
+        says no ([] once all were tried)."""
         if self.session is None:
             tp.RATE_LIMITER = tp.RateLimiter(rpm=RPM, min_interval=DELAY)
             self.session = tp.make_session()
-        log(f"  sales: fetching {len(need)} card(s) directly")
-        fails = 0
-        for game, pid in need:
+        log(f"  sales: fetching {len(need)} card(s) directly" + (f" ({why})" if why else ""))
+        fails, left = 0, []
+        for k, (game, pid) in enumerate(need):
+            if go is not None and not go():
+                left = need[k:]
+                break
             try:
                 h = tp.fetch_price_history(self.session, pid, DELAY)
             except Exception as e:   # one bad card never stops the pick
@@ -233,28 +335,36 @@ class Sales:
             self.fetched += 1
         if fails:
             log(f"  sales: {fails} fetch(es) failed; those cards are judged on what is stored")
+        return left
 
     def via_crawler(self, need):
-        """The daytime crawler holds the lock: give it the list and wait."""
-        made = datetime.now(timezone.utc).isoformat()
-        with open(WATCH_FILE, "w", encoding="utf-8") as f:
-            json.dump({"made": made, "for": datetime.now(timezone.utc).date().isoformat(),
-                       "cards": [{"game": g, "pid": p} for g, p in need]}, f)
+        """The daytime crawler holds the lock and is crawling: give it the
+        list and wait. The list says until when it is waited on (the crawler
+        skips it after that) and is removed when the wait ends."""
         budget = max(WAIT_MIN_S, WAIT_PER_CARD_S * len(need))
+        now = datetime.now(timezone.utc)
+        made = now.isoformat()
+        with open(WATCH_FILE, "w", encoding="utf-8") as f:
+            json.dump({"made": made, "for": now.date().isoformat(),
+                       "until": (now + timedelta(seconds=budget)).isoformat(timespec="seconds"),
+                       "cards": [{"game": g, "pid": p} for g, p in need]}, f)
         log(f"  sales: the sales crawler is running; handed it {len(need)} card(s) "
             f"(showcase_watch.json), waiting up to {budget // 60} min")
         t0 = time.time()
-        while time.time() - t0 < budget:
-            time.sleep(15)
-            scanned = self.scanned_at(need)
-            left = [p for p in need if scanned.get(p, "") < made]
-            if not left:
-                log(f"  sales: crawler finished all {len(need)} in {int(time.time() - t0)} s")
-                self.fetched += len(need)
-                return
-        log(f"  sales: crawler finished {len(need) - len(left)} of {len(need)} in time; "
-            f"the rest are judged on what is stored")
-        self.fetched += len(need) - len(left)
+        try:
+            while time.time() - t0 < budget:
+                time.sleep(15)
+                scanned = self.scanned_at(need)
+                left = [p for p in need if scanned.get(p, "") < made]
+                if not left:
+                    log(f"  sales: crawler finished all {len(need)} in {int(time.time() - t0)} s")
+                    self.fetched += len(need)
+                    return
+            log(f"  sales: crawler finished {len(need) - len(left)} of {len(need)} in time; "
+                f"the rest are judged on what is stored")
+            self.fetched += len(need) - len(left)
+        finally:
+            clear_watch()
 
     def sold(self, pairs):
         """(game, pid) -> Near Mint copies sold in the last SOLD_DAYS."""

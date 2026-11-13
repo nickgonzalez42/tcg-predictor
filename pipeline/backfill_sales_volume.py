@@ -43,8 +43,10 @@ PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "card
 # scraping its volume movement the day before").
 WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
 # The home page's showcase picks (pick_showcase.py, 2026-11-09) hand their
-# candidates over the same way when this crawler holds the lock; both lists
-# go to the front, articles first.
+# candidates over the same way when this crawler holds the lock and is
+# crawling (while it sits out a refresh, pick_showcase fetches them itself,
+# 2026-11-13); both lists go to the front, articles first. A hand-off says
+# until when it is waited on and is skipped after that.
 WATCH_FILES = [WATCH_FILE, os.path.join(BASE, "ml_data", "showcase_watch.json")]
 WATCH_CHECK = 20     # cards between looks at the watch files (~30 s at 40 rpm; pick_showcase waits on them)
 BLOCK_LIMIT = 25     # consecutive failed fetches before a cool-off
@@ -54,23 +56,35 @@ COOL_OFF_S = 1800    # breaker trip: rest, then resume (transient outages heal)
 MAX_TRIPS = 4        # consecutive cool-offs with no success between: give up
 
 
+REFRESH_PROCS = "run_daily_refresh.sh|weekly_refresh.py"   # pgrep -f pattern
+
+
+def refresh_pids():
+    """pids of the nightly refresh's processes. pick_showcase looks for its
+    own parent among them: the refresh this crawler waits out."""
+    r = subprocess.run(["pgrep", "-f", REFRESH_PROCS], capture_output=True, text=True)
+    return {int(p) for p in r.stdout.split() if p.isdigit()}
+
+
 def refresh_live():
     """True while the nightly refresh is running. Long unattended runs pause
     then: the refresh crawls TCGplayer at the same politeness budget, and two
     crawls at once would double it — the exact mistake that got the
     PriceCharting IP blocked for two days (2026-10-12)."""
-    r = subprocess.run(["pgrep", "-f", "run_daily_refresh.sh|weekly_refresh.py"],
-                       capture_output=True)
-    return r.returncode == 0
+    return bool(refresh_pids())
 
 
 def watch_targets(conn, games):
     """[(game, pid, 0.0, True)] for the watch lists (articles, then the
     showcase picks), in their order, minus cards already fetched since each
     list was made (the hourly relaunches must not refetch them) and minus a
-    list whose day has passed. Empty when there is no list."""
+    list whose day has passed, or whose wait has: past a hand-off's "until"
+    pick_showcase has judged those cards on what is stored, and a list its
+    run left behind must not send this crawl after them hours later. Empty
+    when there is no list."""
     out, seen = [], set()
-    today = datetime.now(timezone.utc).date().isoformat()
+    now = datetime.now(timezone.utc)
+    today = now.date().isoformat()
     for path in WATCH_FILES:
         try:
             with open(path, encoding="utf-8") as f:
@@ -79,6 +93,9 @@ def watch_targets(conn, games):
             continue
         made = w.get("made") or ""
         if (w.get("for") or "") < today:
+            continue
+        until = str(w.get("until") or "")
+        if until and until < now.isoformat(timespec="seconds"):
             continue
         cards = [c for c in w.get("cards", []) if c.get("game") in games]
         fetched = {}
@@ -273,11 +290,13 @@ def main():
             splice_watch()
         if (game, pid) in skip:
             continue
-        # Yield to the nightly refresh (checked every 10 cards, ~15 s at
-        # 40rpm, so a refresh that has just started is noticed before more
-        # than a commit or two can meet its crawl on pricecharting.db). After
+        # Yield to the nightly refresh (checked on the first card and every
+        # 10 after, ~15 s at 40rpm, so a refresh that has just started is
+        # noticed before more than a commit or two can meet its crawl on
+        # pricecharting.db, and a run launched while one is live fetches
+        # nothing: pick_showcase may be fetching then, 2026-11-13). After
         # a pause, drop targets the refresh's own tcg-sales step fetched.
-        if not args.no_yield and i % 10 == 0 and refresh_live():
+        if not args.no_yield and (i == 1 or i % 10 == 0) and refresh_live():
             print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)",
                   flush=True)
             conn.commit()
