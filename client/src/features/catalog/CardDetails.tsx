@@ -193,6 +193,22 @@ function SalesSection({ game, id, printing }: { game: string; id: number; printi
     );
 }
 
+// Liquidity honesty (2026-09-13): a long-frozen price is usually a listing,
+// not sales, so say so up front. The clock is read once, when the note first
+// shows, not on every render: a count of days has no need to tick.
+function PriceLiquidityNote({ movedAt }: { movedAt: string }) {
+    const [now] = useState(() => Date.now());
+    const days = Math.floor((now - Date.parse(movedAt)) / 86400e3);
+    if (days <= 13) return null;   // recently moved: sales-backed, no caveat needed
+    return (
+        <p className="est-note price-liquidity">
+            {days > 45
+                ? `This price hasn't moved in ${days} days; it may reflect asking prices rather than recent sales.`
+                : `Price last moved ${days} days ago.`}
+        </p>
+    );
+}
+
 function ForecastSection({ forecasts, game, id }: {
     forecasts: Forecast[]; game: string; id: number;
 }) {
@@ -606,19 +622,9 @@ export default function CardDetails() {
                                 </span>
                             </div>
                         )}
-                        {/* Liquidity honesty (2026-09-13): a long-frozen price is
-                            usually a listing, not sales — say so up front. */}
-                        {!printing && card.priceMovedAt && (() => {
-                            const days = Math.floor((Date.now() - Date.parse(card.priceMovedAt!)) / 86400e3);
-                            if (days <= 13) return null;   // recently moved: sales-backed, no caveat needed
-                            return (
-                                <p className="est-note price-liquidity">
-                                    {days > 45
-                                        ? `This price hasn't moved in ${days} days; it may reflect asking prices rather than recent sales.`
-                                        : `Price last moved ${days} days ago.`}
-                                </p>
-                            );
-                        })()}
+                        {!printing && card.priceMovedAt && (
+                            <PriceLiquidityNote key={card.id} movedAt={card.priceMovedAt} />
+                        )}
                         <section className="panel detail-panel">
                             <h4 className="mono detail-panel__title">Price history and forecast</h4>
                             <PriceHistoryChart game={gameId} id={cardId} printing={printing || undefined} forecasts={forecasts} />
