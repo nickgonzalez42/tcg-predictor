@@ -5,6 +5,7 @@ using API.RequestHelpers;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using System.Globalization;
 
 namespace API.Services;
 
@@ -169,9 +170,9 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     }
 
     // Actual price movement per product over one trend window, on the tier's
-    // history. The anchor is the last point at-or-before the window start
-    // (the price as it stood back then), else the series' first point — the
-    // same rule the tiles' trend pill uses, so orderings agree with displays.
+    // history, from the nightly card_trends table (anchor rule in
+    // build_card_trends.window_change). The tiles show the same numbers
+    // (ApplyMarket), so orderings agree with displays.
     public async Task<Dictionary<int, HistoryChange>> HistoryChanges(
         string game, string tier, List<int> ids, string window)
     {
@@ -236,50 +237,126 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     }
 
     // Fallback: one ordered pass over the tier's base-printing history,
-    // streamed so a 3M-row game never sits in memory. Anchor rule per window:
-    // the last price on or before the window start, else the first price.
+    // streamed so a 3M-row game never sits in memory, with the nightly
+    // table's anchor rule per window (WindowChange).
     private async Task<Dictionary<int, TrendRow>> ComputeTierTrends(string game, string tier)
     {
         var cut = new Dictionary<string, string>();
         foreach (var w in new[] { "1w", "1m", "6m", "1y" }) cut[w] = WindowStart(w);
+        var today = DateTime.UtcNow.Date;
         var map = new Dictionary<int, TrendRow>();
 
         int? curPid = null;
-        (string Date, double Price)? first = null, latest = null;
-        var anchors = new Dictionary<string, (string Date, double Price)>();
+        var pts = new List<TrendPoint>();
         void Flush()
         {
-            if (curPid == null || latest == null) return;
-            double? P(string w, out double? usd)
-            {
-                var a = anchors.TryGetValue(w, out var av) ? av : first!.Value;
-                if (a.Price <= 0) { usd = null; return null; }
-                usd = latest.Value.Price - a.Price;
-                return (latest.Value.Price / a.Price - 1) * 100;
-            }
-            var p1w = P("1w", out var u1w); var p1m = P("1m", out var u1m);
-            var p6m = P("6m", out var u6m); var p1y = P("1y", out var u1y);
-            map[curPid.Value] = new TrendRow(p1w, u1w, p1m, u1m, p6m, u6m, p1y, u1y);
+            if (curPid == null || pts.Count == 0) return;
+            var c1w = WindowChange(pts, cut["1w"], today);
+            var c1m = WindowChange(pts, cut["1m"], today);
+            var c6m = WindowChange(pts, cut["6m"], today);
+            var c1y = WindowChange(pts, cut["1y"], today);
+            map[curPid.Value] = new TrendRow(c1w?.Pct, c1w?.Usd, c1m?.Pct, c1m?.Usd,
+                                             c6m?.Pct, c6m?.Usd, c1y?.Pct, c1y?.Usd);
         }
 
         var rows = priceCharting.History
             .Where(h => h.Game == game && h.Grade == tier)
             .OrderBy(h => h.ProductId).ThenBy(h => h.Date)
-            .Select(h => new { h.ProductId, h.Date, h.Price })
+            .Select(h => new { h.ProductId, h.Date, h.Price, h.Source })
             .AsAsyncEnumerable();
         await foreach (var r in rows)
         {
             if (r.ProductId != curPid)
             {
                 Flush();
-                curPid = r.ProductId; first = (r.Date, r.Price); anchors.Clear();
+                curPid = r.ProductId;
+                pts = [];
             }
-            latest = (r.Date, r.Price);
-            foreach (var (w, c) in cut)
-                if (string.CompareOrdinal(r.Date, c) <= 0) anchors[w] = latest.Value;
+            pts.Add(new TrendPoint(r.Date, r.Price, r.Source ?? ""));
         }
         Flush();
         return map;
+    }
+
+    private readonly record struct TrendPoint(string Date, double Price, string Source);
+
+    // The nightly table's rule (build_card_trends.window_change), kept in step
+    // for the fallback: a card's launch weeks are skipped, a stray anchor point
+    // gives way to its neighbours' median, the PriceCharting -> TCGplayer seam
+    // is checked, and nothing is measured across a step that changed what the
+    // series tracks. Null where the window has no trustworthy number.
+    private const int LaunchSkipDays = 14;
+    private const double SeamMaxStep = 2.0, StepBreak = 10.0;
+
+    private static HistoryChange? WindowChange(List<TrendPoint> pts, string cutoff, DateTime today)
+    {
+        var last = pts.Count - 1;
+        var latest = pts[last];
+        var launchEnd = DateTime.ParseExact(pts[0].Date[..10], "yyyy-MM-dd", CultureInfo.InvariantCulture)
+            .AddDays(LaunchSkipDays).ToString("yyyy-MM-dd");
+        var launch = string.CompareOrdinal(cutoff, launchEnd) < 0;
+        int i;
+        if (launch)
+        {
+            i = pts.FindIndex(p => string.CompareOrdinal(p.Date, launchEnd) >= 0);
+            if (i < 0 || i >= last) return null;
+        }
+        else i = pts.FindLastIndex(p => string.CompareOrdinal(p.Date, cutoff) <= 0);
+
+        if (pts[i].Source != latest.Source)
+        {
+            var j = pts.FindIndex(i + 1, p => p.Source == latest.Source);
+            var head = new List<double>();
+            for (var k = j; k < Math.Min(j + 3, last); k++) head.Add(pts[k].Price);
+            if (head.Count == 0) return null;
+            head.Sort();
+            var start = head.Count % 2 == 1 ? head[head.Count / 2]
+                : (head[head.Count / 2 - 1] + head[head.Count / 2]) / 2;
+            var prev = pts[j - 1].Price;
+            var step = prev > 0 ? start / prev : double.PositiveInfinity;
+            if (step > SeamMaxStep || step < 1 / SeamMaxStep)
+            {
+                var c = DateTime.ParseExact(cutoff, "yyyy-MM-dd", CultureInfo.InvariantCulture);
+                var half = c.AddDays(Math.Floor((today - c).TotalDays / 2)).ToString("yyyy-MM-dd");
+                if (string.CompareOrdinal(pts[j].Date, half) > 0 || start <= 0
+                    || Broken(pts, j, start)) return null;
+                return new HistoryChange((latest.Price / start - 1) * 100, latest.Price - start);
+            }
+        }
+        var anchor = pts[i].Price;
+        if (!launch && i > 0 && i < last - 1
+            && pts[i - 1].Source == pts[i].Source && pts[i + 1].Source == pts[i].Source)
+        {
+            double x = pts[i - 1].Price, z = pts[i + 1].Price;
+            anchor = Math.Max(Math.Min(x, anchor), Math.Min(Math.Max(x, anchor), z));
+        }
+        // The break scan starts from the anchor as read, so a stray anchor
+        // point that the median replaced does not count as a step of its own.
+        if (anchor <= 0 || Broken(pts, i, anchor)) return null;
+        return new HistoryChange((latest.Price / anchor - 1) * 100, latest.Price - anchor);
+    }
+
+    // A step of more than StepBreak between consecutive points from i on (point
+    // i read as `first`) that the series keeps; a single stray point the next
+    // one undoes is not a break.
+    private static bool Broken(List<TrendPoint> pts, int i, double first)
+    {
+        var last = pts.Count - 1;
+        double P(int k) => k == i ? first : pts[k].Price;
+        var k = i;
+        while (k < last)
+        {
+            double a = P(k), b = P(k + 1);
+            if (a > 0 && b > 0 && (b / a > StepBreak || b / a < 1 / StepBreak))
+            {
+                if (k + 1 == last) return true;
+                var c = P(k + 2);
+                if (c > 0 && c / a >= 1.0 / 3 && c / a <= 3) { k += 2; continue; }
+                return true;
+            }
+            k++;
+        }
+        return false;
     }
 
     // ----- selected printing (2026-10-20) ------------------------------------
@@ -526,6 +603,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                 .ToListAsync()
             : [];
         var fcById = fc.ToLookup(f => (f.ProductId, f.Printing));
+        var trends = await TierTrends(game, tier);
 
         // Liquidity honesty (2026-09-13), details page only: when did the base
         // NM price last actually CHANGE? A price frozen for weeks is usually a
@@ -574,6 +652,12 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                         ? (span[^1].Price / span[0].Price - 1) * 100
                         : null;
                     card.TrendPeriod = period;
+                    // A base printing shows the nightly table's number, the one
+                    // the past-change sorts order by, so a sorted list always
+                    // reads in order (null where the window's history can't be
+                    // trusted: launch asks, the source seam, a broken series).
+                    if (Pr(card) == "" && trends.TryGetValue(card.Id, out var tr))
+                        card.TrendPct = tr.For(period)?.Pct;
                 }
             }
             var rowsFor = fcById[(card.Id, Pr(card))];

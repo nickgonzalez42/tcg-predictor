@@ -11,12 +11,13 @@ once, here, and the API reads a 500k-row table instead.
 
 One pass over price_history_unified in index order (game, grade, product_id,
 date) — the base printing only, as the API's global filter reads it — and
-for each series: the latest price, and for each window the last price on or
-before the window's start (or the first price we have, when the series is
-younger than the window), exactly the anchor rule CardMarketData.HistoryChanges
-used. One row per (game, grade, product_id) with pct/usd columns for the four
-windows (1w, 1m, 6m, 1y); the cutoffs follow .NET's AddDays/AddMonths/AddYears
-so the numbers match what the API would have produced today.
+for each series: the latest price, and for each window the price as it stood
+at the window's start (see window_change for how that anchor is read without
+being fooled by launch listings, stray points or the PriceCharting/TCGplayer
+seam). One row per (game, grade, product_id) with pct/usd columns for the four
+windows (1w, 1m, 6m, 1y); the cutoffs follow .NET's AddDays/AddMonths/AddYears.
+The API shows these same numbers on the tiles (CardMarketData.ApplyMarket), so
+the order of a "What already happened" sort always matches what the tiles say.
 
 Written into predictions.db (table card_trends, built as card_trends_new and
 swapped in one transaction), which the model block pushes to prod every
@@ -26,9 +27,11 @@ Run:  .venv/bin/python build_card_trends.py [--pc-db ..] [--out-db ..] [--as-of 
 """
 
 import argparse
+import bisect
 import calendar
 import os
 import sqlite3
+import statistics
 import sys
 import time
 from datetime import date, datetime, timedelta, timezone
@@ -38,6 +41,55 @@ CARDS = os.path.join(REPO, "dotnet", "API", "Data", "cards")
 PC_DB = os.path.join(CARDS, "pricecharting.db")
 OUT_DB = os.path.join(CARDS, "predictions.db")
 WINDOWS = ("1w", "1m", "6m", "1y")
+# A new card's first two weeks are presale and launch listings (a $9.99 ask on
+# a common that settles at $0.10 a month later): no change is measured from them.
+LAUNCH_SKIP_DAYS = 14
+# Where a series switches source (PriceCharting's history -> TCGplayer's market
+# price, the July 2026 seam) and the two disagree by more than this factor at
+# the switch, the change is measured from the switch instead, or not at all.
+SEAM_MAX_STEP = 2.0
+# One step between consecutive points bigger than this (either way) that the
+# series keeps means the source started tracking a different item.
+STEP_BREAK = 10.0
+# Preorder asks can sit for months before a set comes out (a Star Trek card at
+# $99.95 from July to its November release, $3.47 the week it shipped), so
+# where the catalog knows a card's release date, its launch weeks run until a
+# week after it.
+RELEASE_SETTLE_DAYS = 7
+
+
+def release_dates():
+    """{(game, product_id): 'YYYY-MM-DD'} from each catalog's release_date, or,
+    for a schema without one (One Piece), its set's TCGplayer publish date from
+    the cache game_articles keeps (ml_data/tcgcsv_groups_<game>.json). Never
+    touches the network; a game it can't date just keeps the first-price rule."""
+    import json
+    from games import BASE, GAMES, db_path
+    out = {}
+    for game in GAMES:
+        path = db_path(game)
+        if not os.path.exists(path):
+            continue
+        try:
+            con = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=30)
+            cols = {r[1] for r in con.execute("PRAGMA table_info(cards)")}
+            if "release_date" in cols:
+                for pid, rel in con.execute(
+                        "SELECT product_id, release_date FROM cards WHERE release_date > ''"):
+                    out[(game, pid)] = rel[:10]
+            else:
+                with open(os.path.join(BASE, "ml_data", f"tcgcsv_groups_{game}.json"),
+                          encoding="utf-8") as f:
+                    groups = {g["name"].strip(): (g.get("publishedOn") or "")[:10]
+                              for g in json.load(f).get("results", []) if g.get("name")}
+                for pid, set_name in con.execute("SELECT product_id, set_name FROM cards"):
+                    if groups.get((set_name or "").strip()):
+                        out[(game, pid)] = groups[set_name.strip()]
+            con.close()
+        except (OSError, ValueError, KeyError, sqlite3.Error) as e:
+            print(f"card_trends: no release dates for {game} ({type(e).__name__}); "
+                  "its launch weeks run from the first price")
+    return out
 
 
 def add_months(d, months):
@@ -56,8 +108,95 @@ def cutoffs(today):
     }
 
 
+def broken(pts, i):
+    """True when the series steps by more than STEP_BREAK between consecutive
+    points after index i and stays there: the source changed what it tracks
+    (a trophy card priced as its $8 base print for a year, then at $35,500), so
+    no change measured across the step means anything. A single stray point
+    that the next one undoes is not a break."""
+    last = len(pts) - 1
+    k = i
+    while k < last:
+        a, b = pts[k][1], pts[k + 1][1]
+        if a > 0 and b > 0 and not 1 / STEP_BREAK <= b / a <= STEP_BREAK:
+            if k + 1 == last:
+                return True
+            c = pts[k + 2][1]
+            if c > 0 and 1 / 3 <= c / a <= 3:
+                k += 2
+                continue
+            return True
+        k += 1
+    return False
+
+
+def window_change(pts, dates, cutoff, today, released=None):
+    """(pct, usd) of the latest price against the window's anchor, or None.
+
+    pts: [(date, price, source)] date-ascending for one series; dates: the
+    same dates, for bisect. The anchor is the price as it stood at the window's
+    start (the last point on or before it), read so one bad point can't own the
+    ranking (2026-11-13, user: "the history percent order on the catalog is not
+    working" -- the top and bottom of every past-change sort were artifacts):
+      - a card's first LAUNCH_SKIP_DAYS days, and everything up to
+        RELEASE_SETTLE_DAYS after its release date (`released`, when known),
+        are presale and launch asks (a $9.99 common that settles at $0.09), so
+        a window reaching back into them measures from the first price after
+        them, and a card still inside them has no change yet;
+      - the anchor is the median of its point and its same-source neighbours
+        when it has one on each side, so a single stray listing is not the
+        baseline;
+      - when the anchor's source differs from today's, the new source's start
+        (the median of its first three points before today, since its very
+        first point is sometimes a stray) is checked against the old source's
+        last price; if they disagree by more than SEAM_MAX_STEP (the unscaled
+        PriceCharting -> TCGplayer seam, or PriceCharting's November 2025 break
+        behind it), the change is measured from that new-source start when it
+        lies in the window's first half, and otherwise there is no number;
+      - a series that jumps by more than STEP_BREAK and stays there (broken())
+        has no number for the window.
+    """
+    latest_d, latest_p, latest_s = pts[-1]
+    last = len(pts) - 1
+    launch_end = (date.fromisoformat(pts[0][0][:10])
+                  + timedelta(days=LAUNCH_SKIP_DAYS)).isoformat()
+    if released:
+        launch_end = max(launch_end, (date.fromisoformat(released[:10])
+                                      + timedelta(days=RELEASE_SETTLE_DAYS)).isoformat())
+    launch = cutoff < launch_end
+    if launch:
+        i = bisect.bisect_left(dates, launch_end)
+        if i >= last:
+            return None
+    else:
+        i = bisect.bisect_right(dates, cutoff) - 1
+    if pts[i][2] != latest_s:
+        j = next(k for k in range(i + 1, len(pts)) if pts[k][2] == latest_s)
+        head = [pts[k][1] for k in range(j, min(j + 3, last))]
+        if not head:
+            return None
+        start = statistics.median(head)
+        prev = pts[j - 1][1]
+        step = start / prev if prev > 0 else float("inf")
+        if not 1 / SEAM_MAX_STEP <= step <= SEAM_MAX_STEP:
+            c = date.fromisoformat(cutoff)
+            if (pts[j][0] > (c + (today - c) / 2).isoformat() or start <= 0
+                    or broken([(pts[j][0], start, latest_s)] + pts[j + 1:], 0)):
+                return None
+            return (latest_p / start - 1) * 100, latest_p - start
+    anchor = pts[i][1]
+    if not launch and 0 < i < last - 1 and pts[i - 1][2] == pts[i][2] == pts[i + 1][2]:
+        anchor = sorted((pts[i - 1][1], anchor, pts[i + 1][1]))[1]
+    # The break scan starts from the anchor as read, so a stray anchor point
+    # that the median replaced does not count as a step of its own.
+    if anchor <= 0 or broken([(pts[i][0], anchor, pts[i][2])] + pts[i + 1:], 0):
+        return None
+    return (latest_p / anchor - 1) * 100, latest_p - anchor
+
+
 def build(pc_db, out_db, today):
     t0 = time.time()
+    rel = release_dates()
     cut = cutoffs(today)
     cut_list = [(w, cut[w]) for w in WINDOWS]
     src = sqlite3.connect(f"file:{pc_db}?mode=ro", uri=True, timeout=600)
@@ -77,20 +216,18 @@ def build(pc_db, out_db, today):
     rows_in = rows_out = 0
     buf = []
     cur_key = None
-    first = latest = None
-    anchors = {}
+    pts = []
 
     def flush():
         nonlocal rows_out
-        if cur_key is None or latest is None:
+        if cur_key is None or not pts:
             return
-        vals = [*cur_key, latest[0], latest[1]]
-        for w, _c in cut_list:
-            a = anchors.get(w) or first
-            if a and a[1] > 0:
-                vals += [(latest[1] / a[1] - 1) * 100, latest[1] - a[1]]
-            else:
-                vals += [None, None]
+        dates = [p[0] for p in pts]
+        released = rel.get((cur_key[0], cur_key[2]))
+        vals = [*cur_key, pts[-1][0], pts[-1][1]]
+        for _w, c in cut_list:
+            ch = window_change(pts, dates, c, today, released)
+            vals += list(ch) if ch else [None, None]
         vals.append(today.isoformat())
         buf.append(vals)
         rows_out += 1
@@ -98,20 +235,18 @@ def build(pc_db, out_db, today):
             out.executemany("INSERT INTO card_trends_new VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", buf)
             buf.clear()
 
-    # The covering index (game, grade, product_id, date, price) makes this a
-    # single ordered walk; rows arrive date-ascending within a series.
-    q = ("SELECT game, grade, product_id, date, price FROM price_history_unified "
+    # The index (game, grade, product_id, date, price) orders the walk; rows
+    # arrive date-ascending within a series (the printing filter and the
+    # source already read each row, so selecting source costs nothing more).
+    q = ("SELECT game, grade, product_id, date, price, source FROM price_history_unified "
          "WHERE printing='' ORDER BY game, grade, product_id, date")
-    for game, grade, pid, d, price in src.execute(q):
+    for game, grade, pid, d, price, source in src.execute(q):
         rows_in += 1
         key = (game, grade, pid)
         if key != cur_key:
             flush()
-            cur_key, first, anchors = key, (d, price), {}
-        latest = (d, price)
-        for w, c in cut_list:
-            if d <= c:
-                anchors[w] = latest
+            cur_key, pts = key, []
+        pts.append((d, price, source or ""))
     flush()
     if buf:
         out.executemany("INSERT INTO card_trends_new VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", buf)
