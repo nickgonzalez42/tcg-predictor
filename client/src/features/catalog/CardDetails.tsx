@@ -19,6 +19,9 @@ import { fallbackToCardBack } from "../../lib/cardImages";
 import { sanitizeHtml } from "../../lib/sanitizeHtml";
 import CardLoader from "../../app/shared/components/CardLoader";
 import Modal from "../../app/shared/components/Modal";
+import NotFound from "../../app/errors/NotFound";
+import LoadFailed from "../../app/errors/LoadFailed";
+import { isNotFound } from "../../app/api/baseApi";
 import { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice";
 
 const HORIZONS = ['1m', '6m', '12m'];
@@ -417,7 +420,7 @@ export default function CardDetails() {
     const printing = searchParams.get('printing') ?? '';
     const gameId = game ?? 'onepiece';
     const cardId = id ? +id : 0;
-    const { data: card, isLoading } = useFetchCardDetailsQuery(
+    const { data: card, isLoading, error, refetch } = useFetchCardDetailsQuery(
         { game: gameId, id: cardId, printing: printing || undefined });
     // The art column and the chart column finish the page together (see the hook).
     const leftRef = useRef<HTMLDivElement>(null);
@@ -441,7 +444,13 @@ export default function CardDetails() {
             a.target.localeCompare(b.target) || a.horizon.localeCompare(b.horizon)),
         [forecastData]);
 
-    if (isLoading || !card) return <CardLoader game={gameId} />
+    if (!card) {
+        // A missing card is this page's own 404 (baseApi leaves 404s to the
+        // page), shown at the address as typed.
+        if (isNotFound(error)) return <NotFound message="We couldn't find that card." />;
+        if (error) return <LoadFailed what="card" onRetry={refetch} />;
+        return <CardLoader game={gameId} />
+    }
     const fc12 = forecasts.find(f => f.target === 'ungraded' && f.horizon === '12m');
     const pct12 = fc12 && fc12.basePrice ? (fc12.forecastPrice / fc12.basePrice - 1) * 100 : undefined;
     const historyMonths = forecasts.find(f => f.target === 'ungraded')?.months;

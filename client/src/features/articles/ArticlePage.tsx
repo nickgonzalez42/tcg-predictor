@@ -2,6 +2,9 @@ import { useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetchArticleQuery } from "./articlesApi";
 import CardLoader from "../../app/shared/components/CardLoader";
+import NotFound from "../../app/errors/NotFound";
+import LoadFailed from "../../app/errors/LoadFailed";
+import { isNotFound } from "../../app/api/baseApi";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { sanitizeReportHtml } from "../../lib/sanitizeHtml";
 import { GAME_LABEL } from "../../lib/games";
@@ -15,7 +18,7 @@ import { articleChipStyle, articleKindLabel } from "./articleKind";
 // exactly as on a weekly report.
 export default function ArticlePage() {
     const { slug } = useParams<{ slug: string }>();
-    const { data: article, isLoading } = useFetchArticleQuery(slug!, { skip: !slug });
+    const { data: article, isLoading, error, refetch } = useFetchArticleQuery(slug!, { skip: !slug });
     usePageMeta(article?.title ?? "Article", article?.summary, {
         type: "article",
         canonical: slug ? `/articles/${slug}` : undefined,
@@ -27,13 +30,11 @@ export default function ArticlePage() {
 
     if (isLoading) return <CardLoader />;
     if (!article) {
-        return (
-            <div className="reports full-span">
-                <p className="est-note">
-                    That article doesn't exist. <Link to="/articles">All articles</Link>
-                </p>
-            </div>
-        );
+        // A missing article is this page's own 404 (baseApi leaves 404s to the
+        // page); any other failure says so instead of claiming it's gone.
+        if (!error || isNotFound(error))
+            return <NotFound message="We couldn't find that article." to="/articles" linkText="All articles" />;
+        return <LoadFailed what="article" onRetry={refetch} />;
     }
 
     const game = GAME_LABEL[article.game] ?? article.game;

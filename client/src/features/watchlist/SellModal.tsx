@@ -4,6 +4,7 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import type { OwnedCopy } from "../../app/models/card";
 import { useSellCopiesMutation } from "./watchlistApi";
 import { currencyFormat } from "../../lib/util";
+import { isNotFound } from "../../app/api/baseApi";
 
 // "Mark as sold" for a position (2026-10-24): how many of the stack's copies,
 // the sale price per copy (prefilled with today's market price), the sale
@@ -39,8 +40,11 @@ export default function SellModal({ title, copies, marketPrice, onClose }: {
             await sell({ ids: chosen.map(c => c.id), price: p, soldAt: soldAt || undefined,
                          note: note.trim() || undefined }).unwrap();
             onClose();
-        } catch {
-            setError("Couldn't record the sale. Try again.");
+        } catch (err) {
+            // Copies already gone (sold or removed in another tab): the list
+            // refreshes and a note says why, so this snapshot of them closes.
+            if (isNotFound(err)) onClose();
+            else setError("Couldn't record the sale. Try again.");
         }
     };
 

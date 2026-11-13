@@ -1,5 +1,6 @@
 import { createApi } from "@reduxjs/toolkit/query/react";
-import { baseQueryWithErrorHandling } from "../../app/api/baseApi";
+import { toast } from "react-toastify";
+import { baseQueryWithErrorHandling, isNotFound } from "../../app/api/baseApi";
 import type { Card } from "../../app/models/card";
 import type { CardParams } from "../../app/models/cardParams";
 import type { Pagination } from "../../app/models/pagination";
@@ -194,6 +195,19 @@ export type OwnedCopyEdit = {
     source?: 'pack' | 'paid';        // pack pulls carry no price fields
 }
 
+// A 404 from a copy or sale edit means it is already gone: removed, sold or
+// restored in another tab, or by an earlier click. The lists refresh on their
+// own (the tags invalidate on errors too); this says why the row went. A
+// removal that 404s says nothing, since gone is what was asked for.
+const copiesGone = (n: number) => n === 1
+    ? "That copy isn't in your portfolio anymore. We've refreshed your list."
+    : "Those copies aren't in your portfolio anymore. We've refreshed your list.";
+const SALE_GONE = "That sale isn't on your Sold list anymore. We've refreshed it.";
+async function sayIfGone(queryFulfilled: Promise<unknown>, message: string) {
+    try { await queryFulfilled; }
+    catch (err) { if (isNotFound((err as { error?: unknown }).error)) toast.info(message); }
+}
+
 export const watchlistApi = createApi({
     reducerPath: 'watchlistApi',
     baseQuery: baseQueryWithErrorHandling,
@@ -261,6 +275,7 @@ export const watchlistApi = createApi({
         updateOwnedCopy: builder.mutation<void, { id: number } & OwnedCopyEdit>({
             query: ({ id, ...body }) => ({ url: `watchlist/owned/${id}`, method: 'PATCH', body }),
             invalidatesTags: ['Owned', 'Summary'],
+            onQueryStarted: (_arg, { queryFulfilled }) => sayIfGone(queryFulfilled, copiesGone(1)),
         }),
         // The whole collection rolled up for the Collection analysis modal.
         fetchCollectionAnalysis: builder.query<CollectionAnalysis, void>({
@@ -286,7 +301,9 @@ export const watchlistApi = createApi({
         // ids or one copy's). A marker for the owner only: no total changes.
         setListed: builder.mutation<{ listed: number }, { ids: number[]; listed: boolean }>({
             query: (body) => ({ url: 'watchlist/owned/listed', method: 'POST', body }),
-            invalidatesTags: ['Owned'],
+            // A failure means the copies changed elsewhere, so the totals refresh too.
+            invalidatesTags: (_res, error) => error ? ['Owned', 'Summary'] : ['Owned'],
+            onQueryStarted: (arg, { queryFulfilled }) => sayIfGone(queryFulfilled, copiesGone(arg.ids.length)),
         }),
         // ----- Sold track (2026-10-24) -----
         // Mark owned copies sold: they leave the positions and appear on the
@@ -295,6 +312,7 @@ export const watchlistApi = createApi({
             { ids: number[]; price: number; soldAt?: string; note?: string }>({
             query: (body) => ({ url: 'watchlist/sold', method: 'POST', body }),
             invalidatesTags: ['Owned', 'Summary', 'Sold'],
+            onQueryStarted: (arg, { queryFulfilled }) => sayIfGone(queryFulfilled, copiesGone(arg.ids.length)),
         }),
         fetchSold: builder.query<SoldCopy[], void>({
             query: () => 'watchlist/sold',
@@ -303,10 +321,12 @@ export const watchlistApi = createApi({
         updateSold: builder.mutation<void, { id: number; price: number; soldAt?: string | null; note?: string | null }>({
             query: ({ id, ...body }) => ({ url: `watchlist/sold/${id}`, method: 'PATCH', body }),
             invalidatesTags: ['Sold', 'Summary'],
+            onQueryStarted: (_arg, { queryFulfilled }) => sayIfGone(queryFulfilled, SALE_GONE),
         }),
         restoreSold: builder.mutation<void, { id: number }>({
             query: ({ id }) => ({ url: `watchlist/sold/${id}/restore`, method: 'POST' }),
             invalidatesTags: ['Owned', 'Summary', 'Sold'],
+            onQueryStarted: (_arg, { queryFulfilled }) => sayIfGone(queryFulfilled, SALE_GONE),
         }),
         removeSold: builder.mutation<void, { id: number }>({
             query: ({ id }) => ({ url: `watchlist/sold/${id}`, method: 'DELETE' }),

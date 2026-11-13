@@ -9,6 +9,7 @@ import { PRICE_TIER_OPTIONS, tierLabel } from "../watchlist/grades";
 import { GAMES } from "../../lib/games";
 import { currencyFormat, gameKey } from "../../lib/util";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { isNotFound } from "../../app/api/baseApi";
 import type { Card } from "../../app/models/card";
 
 // Collection scanner (2026-10-24). The rear camera streams into a stage with
@@ -270,7 +271,9 @@ export default function ScanPage() {
             .sort((a, b) => b.addedAt.localeCompare(a.addedAt))
             .slice(0, e.qty)
             .map(t => t.id);
-        for (const id of ids) await removeCopy({ id }).unwrap();
+        // A copy already removed (in another tab) counts as undone.
+        for (const id of ids)
+            await removeCopy({ id }).unwrap().catch(err => { if (!isNotFound(err)) throw err; });
         setSession(s => s.filter(x => x.key !== e.key));
         setToast(`Removed ${ids.length} × ${e.card.name}`);
     };

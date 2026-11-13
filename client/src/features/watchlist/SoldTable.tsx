@@ -4,6 +4,7 @@ import Modal from "../../app/shared/components/Modal";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { currencyFormat, shortDate } from "../../lib/util";
 import { tierLabel } from "./grades";
+import { isNotFound } from "../../app/api/baseApi";
 import {
     useFetchSoldQuery, useUpdateSoldMutation, useRestoreSoldMutation, useRemoveSoldMutation,
     type SoldCopy, type Realized,
@@ -149,7 +150,11 @@ function EditSaleModal({ sale, onClose }: { sale: SoldCopy; onClose: () => void 
         try {
             await update({ id: sale.id, price: p, soldAt: soldAt || null, note: note.trim() || null }).unwrap();
             onClose();
-        } catch { /* keep the form open */ }
+        } catch (err) {
+            // A sale that's gone (undone or deleted elsewhere) has nothing
+            // left to edit; any other failure keeps the form open to retry.
+            if (isNotFound(err)) onClose();
+        }
     };
     return (
         <Modal title={`Edit sale · ${sale.name}`} onClose={onClose}>
