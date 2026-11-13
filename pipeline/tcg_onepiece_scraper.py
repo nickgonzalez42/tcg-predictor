@@ -46,7 +46,6 @@ Requires only the `requests` library from PyPI.
 
 import argparse
 import json
-import hashlib
 import os
 import random
 import sqlite3
@@ -496,25 +495,11 @@ def fetch_price_history(session, product_id, base_delay):
 # Images
 # ----------------------------------------------------------------------------
 
-# TCGplayer's "Image Coming Soon" placeholder, byte-identical for every
-# product that has no photo yet (32,552 B). An older run saved it as card
-# art for 22 One Piece cards (2026-10-22); a card carrying it looked like it
-# HAD art, so the site showed a grey box and the imageless audit never
-# re-checked it. Treat it as "no image" wherever an image is downloaded.
-PLACEHOLDER_MD5 = "6810409b5f6564ddf54aabf123f3819e"
-PLACEHOLDER_SIZE = 32552
-
-
-def is_placeholder_file(path):
-    """True when the file on disk is the TCGplayer placeholder (size first,
-    then hash — the hash is only computed on an exact size match)."""
-    try:
-        if os.path.getsize(path) != PLACEHOLDER_SIZE:
-            return False
-        with open(path, "rb") as f:
-            return hashlib.md5(f.read()).hexdigest() == PLACEHOLDER_MD5
-    except OSError:
-        return False
+# TCGplayer's "Image Coming Soon" picture is "no image" wherever art is
+# downloaded: a card carrying it looks like it HAS art, so the site shows a
+# grey box and the imageless audit never re-checks it. It comes in several
+# encodings, so the check lives in one place (placeholder_art.py).
+from placeholder_art import is_placeholder, is_placeholder_file
 
 
 def download_image(session, product_id, base_delay, image_dir):
@@ -538,7 +523,7 @@ def download_image(session, product_id, base_delay, image_dir):
                                     retry_forbidden=False)
         if resp is None or resp.status_code != 200:
             return None
-        if hashlib.md5(resp.content).hexdigest() == PLACEHOLDER_MD5:
+        if is_placeholder(resp.content):
             return None   # "Image Coming Soon" — the product has no art yet
         with open(path, "wb") as f:
             f.write(resp.content)
@@ -872,7 +857,10 @@ def main():
         need_image = False
         if not args.no_images:
             img_file = os.path.join(args.image_dir, f"{pid}.jpg")
-            on_disk = os.path.exists(img_file) and os.path.getsize(img_file) > 0
+            # A placeholder saved before the guard is no art: fetch afresh
+            # (download_image replaces it, or leaves the card art-less).
+            on_disk = (os.path.exists(img_file) and os.path.getsize(img_file) > 0
+                       and not is_placeholder_file(img_file))
             in_db = conn.execute(
                 "SELECT 1 FROM cards WHERE product_id=? AND image_path IS NOT NULL AND image_path != ''",
                 (pid,)).fetchone() is not None
