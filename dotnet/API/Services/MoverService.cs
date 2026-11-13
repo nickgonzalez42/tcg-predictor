@@ -83,10 +83,12 @@ public class MoverService(
     // The showcase table's lists (see ShowcasePick). The hero's mix feed is the
     // 'featured' kind: every game's biggest past gainer and loser at each
     // window, with the window as the card's trend and the matching forecast
-    // horizon beside it. Everything else (tiles, ticker) is the 'expected'
-    // kind: each game's strongest 1-month gainer and loser first, then the
-    // global ranking, cut to `count`. Null when the table has no rows of the
-    // kind asked for, so the caller falls back to ranking on request.
+    // horizon beside it: that horizon's call or none, never a shorter one (a
+    // game with only EARLY calls reads "no 6M call yet" in a 6M scene).
+    // Everything else (tiles, ticker) is the 'expected' kind: each game's
+    // strongest 1-month gainer and loser first, then the global ranking, cut
+    // to `count`. Null when the table has no rows of the kind asked for, so
+    // the caller falls back to ranking on request.
     private async Task<List<CardDto>?> FromShowcase(
         int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
     {
@@ -114,7 +116,7 @@ public class MoverService(
                                             && r.Slot == g.Key.Slot).ToList();
                 var hz = g.First().Horizon;
                 await market.ApplyMarket(set, g.Key.Game, trend: g.Key.Slot,
-                    fcstOverride: hz is "1m" or "6m" ? hz : null);
+                    fcstOverride: hz is "1m" or "6m" ? hz : null, ownHorizonOnly: true);
             }
             return movers;
         }
@@ -134,7 +136,7 @@ public class MoverService(
         foreach (var game in cards.Select(m => m.Game).Distinct())
             await market.ApplyMarket(cards.Where(m => m.Game == game).ToList(), game,
                 trend: trend ?? (gamesWith12m.Contains(game) ? "1y" : "6m"),
-                fcstOverride: "1m");
+                fcstOverride: "1m", ownHorizonOnly: true);
         return cards;
     }
 
@@ -254,13 +256,17 @@ public class MoverService(
             .OrderBy(p => Fresh(_seen, p.Game, p.ProductId) ? 0 : 1)
             .ToList();
 
+        // The horizon a game's cards rank on: hz, except that the default 12m
+        // falls back to 6m for a game with no 12m rows yet.
+        string RankHorizon(string game) => hz != "12m" ? hz : gamesWith12m.Contains(game) ? "12m" : "6m";
+
         // Every game with forecasts is GUARANTEED two movers (its strongest
         // gainer + strongest loser) so no game monopolizes the showcase; the
         // remaining slots come from the global ranking.
         var guaranteed = new List<Pick>();
         foreach (var game in guaranteeGames ? GameRegistry.Keys : Array.Empty<string>())
         {
-            var gameHorizon = hz != "12m" ? hz : (gamesWith12m.Contains(game) ? "12m" : "6m");
+            var gameHorizon = RankHorizon(game);
             var gainer = await BestMover(game, gameHorizon, gainerSide: true);
             var loser = await BestMover(game, gameHorizon, gainerSide: false);
             // A game with no 1m mover at all (the new games and brand-new
@@ -290,11 +296,13 @@ public class MoverService(
         // Sparkline/trend default to the year window (6m for young games) so
         // the tiles have enough monthly points to draw; an explicit trend
         // (e.g. the homepage's PAST 1M tiles) overrides it. The headline
-        // forecast fields (FcstTo/FcstHorizon) follow the ranking horizon.
+        // forecast fields (FcstTo/FcstHorizon) follow the ranking horizon,
+        // named outright: left to the trend window, a 1-year list asked for
+        // with trend=1m headlined every card's 1-month call.
         foreach (var game in GameRegistry.Keys)
             await market.ApplyMarket(movers.Where(m => m.Game == game).ToList(), game,
                 trend: trend ?? (gamesWith12m.Contains(game) ? "1y" : "6m"),
-                fcstOverride: hz == "12m" ? null : hz);
+                fcstOverride: RankHorizon(game), ownHorizonOnly: true);
 
         // The band above is measured against the forecast's OWN base price;
         // the tile shows the move against TODAY's price, which drifts apart

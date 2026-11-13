@@ -477,7 +477,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
         // 2026-11-04 they joined the 1m sort alone, so a game with no 6m/12m
         // rows at all (the four CSV-only games) came back in id order under
         // the default "6 months, % gain" sort while every tile showed its
-        // EARLY call — ApplyMarket falls back to that row for ANY window.
+        // EARLY call — ApplyMarket falls back to that row for ANY catalog window.
         var early = new Dictionary<int, (double S, double B, double F)>();
         void Take(int pid, string pr, string hz, double b, double f)
         {
@@ -558,9 +558,12 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
     // Everything is computed for the SHOWN condition tier (Near Mint when none is
     // selected; conditions without their own forecast, like LP/MP, fall back to
     // the ungraded forecast). One history + one forecast query per page.
+    // ownHorizonOnly (the home page's slots, 2026-11-13): the headline call is
+    // one at the shown horizon or none, and FcstHorizon names that horizon
+    // either way (see the EARLY fallback below).
     public async Task ApplyMarket(
         List<CardDto> cards, string game, string? grade = null, string? trend = null,
-        string? fcstOverride = null, string? printing = null)
+        string? fcstOverride = null, string? printing = null, bool ownHorizonOnly = false)
     {
         if (cards.Count == 0) return;
         // Which series each card is being SHOWN as: the selected printing,
@@ -690,8 +693,15 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                 }
             }
             // No row at the window's horizon: a card too new for the standard
-            // model shows its EARLY call instead, badged by the client.
-            if (card.FcstTo == null)
+            // model shows its EARLY call instead, badged by the client. The
+            // catalog does this at every window (its forecast sorts rank on the
+            // same row, see ForecastChanges). The home page's slots take it at
+            // 1m only (2026-11-13): it is a one-month call, and Cyberpunk, with
+            // nothing but EARLY rows, had it riding the hero's 6M and 1Y
+            // featured scenes, which the client then filed with the 1M ones.
+            // A slot left without a call of its own still names its horizon,
+            // so the hero reads "no 6M call yet" and keeps the card in its run.
+            if (card.FcstTo == null && (!ownHorizonOnly || fcstHorizon == "1m"))
             {
                 var early = rowsFor.FirstOrDefault(f => f.Horizon == "launch1m");
                 if (early != null)
@@ -701,6 +711,7 @@ public class CardMarketData(PredictionsContext predictions, PriceChartingContext
                     card.FcstConfidence = early.Confidence;
                 }
             }
+            if (ownHorizonOnly) card.FcstHorizon ??= fcstHorizon;
         }
     }
 
