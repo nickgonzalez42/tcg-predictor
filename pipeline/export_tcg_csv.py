@@ -28,7 +28,8 @@ Modes
                       and repaired without anyone watching the screen.
   --game all|<game>   export each game's pricing CSV into
                       one-piece/tcg_exports/incoming/<game>_<YYYY-MM-DD>.csv
-                      (validated: header, product line, row floor).
+                      (validated: header, product line, row floor). A game
+                      that fails gets one more try after the others.
 
 Exit codes: 0 every requested game exported; 1 some game failed (the rest
 are saved — the import step prices what it has, the crawl covers the rest);
@@ -122,6 +123,7 @@ REQUIRED_COLUMNS = ("TCGplayer Id", "Product Line", "Product Name",
 
 NAV_TIMEOUT_MS = 60_000
 DOWNLOAD_TIMEOUT_MS = 15 * 60_000   # Magic is ~1M rows; give the server time
+CAPTURE_TIMEOUT_MS = 15_000         # failure screenshot, then element dump: each
 LOGIN_WAIT_S = 15 * 60
 
 
@@ -131,6 +133,20 @@ def log(msg):
 
 def norm(s):
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+
+
+def brief(e):
+    """An error on one log line: its message (300 chars at most) plus the
+    last steps of a Playwright call log, which say what the wait was stuck
+    on. A plain 300-character cut kept only the long selector: the
+    2026-11-12 failures read as stuck at "locator resolved" because every
+    step after it had been cut off."""
+    head, _, calls = str(e).partition("Call log:")
+    head = " ".join(head.split())[:300]
+    steps = [s.strip(" -")[:120] for s in calls.splitlines() if s.strip(" -")]
+    if steps:
+        head += " [call log ... " + " | ".join(steps[-3:]) + "]"
+    return f"{type(e).__name__}: {head}"
 
 
 # ----------------------------------------------------------------------------
@@ -246,26 +262,34 @@ def goto(page, url):
 
 
 def save_debug(page, name):
+    """Screenshot + element dump into DEBUG_DIR, each bounded by
+    CAPTURE_TIMEOUT_MS and skipped when the page can't answer in time: on
+    2026-11-12 a busy page held the failed Magic export's screenshot for
+    60 s and its dump for 86 s more. Returns both paths; a skipped one is
+    never written."""
     os.makedirs(DEBUG_DIR, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     png = os.path.join(DEBUG_DIR, f"{name}_{stamp}.png")
     js = os.path.join(DEBUG_DIR, f"{name}_{stamp}.json")
     try:
-        page.screenshot(path=png, full_page=True)
+        page.screenshot(path=png, full_page=True, timeout=CAPTURE_TIMEOUT_MS)
     except Exception as e:                       # noqa: BLE001
-        log(f"  (screenshot failed: {e})")
+        log(f"  (screenshot skipped: {brief(e)})")
     try:
+        data = dump_elements(page, timeout_ms=CAPTURE_TIMEOUT_MS)
         with open(js, "w", encoding="utf-8") as f:
-            json.dump(dump_elements(page), f, indent=1)
+            json.dump(data, f, indent=1)
     except Exception as e:                       # noqa: BLE001
-        log(f"  (element dump failed: {e})")
+        log(f"  (element dump skipped: {brief(e)})")
     return png, js
 
 
-def dump_elements(page, limit=500):
+def dump_elements(page, limit=500, timeout_ms=None):
     """Every interactive element on the page (and inside same-origin
     frames): tag/role/text/attrs + select options. This is what --inspect
-    writes and what a failed export leaves behind for diagnosis."""
+    writes and what a failed export leaves behind for diagnosis. timeout_ms
+    bounds the whole dump: the page's own read fails past it, a frame read
+    is dropped."""
     script = """
     (limit) => {
       const sel = 'a, button, select, input, textarea, [role=button], [role=link], ' +
@@ -298,10 +322,22 @@ def dump_elements(page, limit=500):
                frames: Array.from(document.querySelectorAll('iframe')).map(f => f.src),
                elements: out };
     }"""
-    data = page.evaluate(script, limit)
+    end = time.monotonic() + timeout_ms / 1000 if timeout_ms else None
+
+    def run(frame):
+        if end is None:
+            return frame.evaluate(script, limit)
+        left = (end - time.monotonic()) * 1000
+        if left <= 0:
+            raise TimeoutError(f"element dump past {timeout_ms} ms")
+        # evaluate() takes no timeout; wait_for_function does, and the
+        # script's result (an object) satisfies it on the first call.
+        return frame.wait_for_function(script, arg=limit, timeout=left).json_value()
+
+    data = run(page.main_frame)
     for i, fr in enumerate(page.frames[1:], 1):
         try:
-            sub = fr.evaluate(script, limit)
+            sub = run(fr)
             sub["frame_index"] = i
             data.setdefault("frame_dumps", []).append(sub)
         except Exception:                        # noqa: BLE001
@@ -413,6 +449,9 @@ def set_dialog_product_line(page, dialog, game):
         raise FlowError(f"dialog has no product line matching {PORTAL_LINES[game]}: {opts[:40]}")
     label = opts[idx].strip()
     shown_loc = dialog.locator(".select2-selection--single").first
+    # One wait for the widget, on the long timeout export_game gives this
+    # stretch: a missing widget then costs that once, not on every read.
+    shown_loc.wait_for(state="attached")
 
     def shown():
         try:
@@ -435,8 +474,10 @@ def set_dialog_product_line(page, dialog, game):
     log(f"  dialog product line: {shown()!r}")
     # Sets must be back on "All Set Names" (the reload resets it; verify).
     sets_shown = ""
+    multi = dialog.locator(".select2-selection--multiple").first
     try:
-        sets_shown = dialog.locator(".select2-selection--multiple").first.inner_text()
+        if multi.count():                        # absent: reset, don't wait
+            sets_shown = multi.inner_text()
     except Exception:                            # noqa: BLE001
         pass
     if "all set" not in sets_shown.lower():
@@ -490,17 +531,33 @@ def export_game(page, game, today):
                          "or contains(@class,'modal')][1]")
     if not dialog.count():
         dialog = page
-    line = set_dialog_product_line(page, dialog, game)
-    go = first_visible(page, [
-        dialog.locator("input[type=submit][value='Export Filtered CSV']"),
-        dialog.get_by_role("button", name=re.compile(r"^export filtered csv$", re.I)),
-        page.locator("input[type=submit][value='Export Filtered CSV']").last,
-    ], "the dialog's 'Export Filtered CSV' button")
-    log(f"  requesting export of {line!r}")
-    with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:
-        go.click()
-    download = dl_info.value
-    log(f"  download started: {download.suggested_filename!r}")
+    # From here to the download a slow portal is waited out, not failed:
+    # every wait runs on the download's 15 minutes instead of the page's
+    # 60 s default (put back below, whatever happens).
+    page.set_default_timeout(DOWNLOAD_TIMEOUT_MS)
+    try:
+        line = set_dialog_product_line(page, dialog, game)
+        go = first_visible(page, [
+            dialog.locator("input[type=submit][value='Export Filtered CSV']"),
+            dialog.get_by_role("button", name=re.compile(r"^export filtered csv$", re.I)),
+            page.locator("input[type=submit][value='Export Filtered CSV']").last,
+        ], "the dialog's 'Export Filtered CSV' button")
+        log(f"  requesting export of {line!r}")
+        t0 = time.monotonic()
+        with page.expect_download(timeout=DOWNLOAD_TIMEOUT_MS) as dl_info:
+            # The submit starts a form navigation that only resolves when the
+            # server starts sending the file (Magic 27-58 s on good nights),
+            # and click() waits for that navigation by default: past its 60 s
+            # that failed Magic on 2026-11-10/11 and Yu-Gi-Oh + Magic on
+            # 2026-11-12/13 (the failure screenshots show the pointer already
+            # on the button). no_wait_after leaves that wait to
+            # expect_download; the timeout lets a busy page take its time.
+            go.click(timeout=DOWNLOAD_TIMEOUT_MS, no_wait_after=True)
+        download = dl_info.value
+    finally:
+        page.set_default_timeout(NAV_TIMEOUT_MS)
+    log(f"  download started: {download.suggested_filename!r} "
+        f"({time.monotonic() - t0:.0f} s after the request)")
     os.makedirs(INCOMING_DIR, exist_ok=True)
     tmp = os.path.join(INCOMING_DIR, f".{game}_{today}.part")
     download.save_as(tmp)
@@ -509,6 +566,31 @@ def export_game(page, game, today):
     os.replace(tmp, final)
     log(f"  saved {final} ({rows:,} rows, product line {line_seen!r}; dialog pick {line!r})")
     return final
+
+
+# try_export's answer when the portal bounced to its login page mid-run.
+EXPIRED = object()
+
+
+def try_export(page, game, today):
+    """One attempt at a game: the saved CSV's path, None when it failed
+    (logged, with a bounded screenshot + element dump in DEBUG_DIR), or
+    EXPIRED when the session died. Nothing is reset after a failure: every
+    attempt starts from a fresh load of the pricing page, and the Escape key
+    the loop used to press could itself wait as long as a busy page."""
+    try:
+        return export_game(page, game, today)
+    except SystemExit as e:
+        if e.code == 2:
+            return EXPIRED
+        raise
+    except Exception as e:                       # noqa: BLE001
+        log(f"[{game}] FAILED: {brief(e)}")
+        png, js = save_debug(page, f"fail_{game}")
+        left = [f for f in (png, js) if os.path.exists(f)]
+        if left:
+            log(f"[{game}]   see {left[0]}")
+        return None
 
 
 def min_rows(game):
@@ -667,7 +749,8 @@ def mode_export(p, games, headless, force=False):
         ctx.close()
         return 2
     log(f"signed in via {how}")
-    ok, failed = [], []
+    ok, failed, retried = [], [], []
+    expired = False
     for i, game in enumerate(games):
         final = os.path.join(INCOMING_DIR, f"{game}_{today}.csv")
         archived = os.path.join(EXPORT_DIR, "archive", f"{game}_{today}.csv.gz")
@@ -680,28 +763,37 @@ def mode_export(p, games, headless, force=False):
             ok.append(final)
             continue
         log(f"[{game}] exporting {PORTAL_LINES[game][0]!r}")
-        try:
-            ok.append(export_game(page, game, today))
-        except SystemExit as e:
-            if e.code == 2:
-                # Session died mid-run: this game and every one after it are
-                # unexported; the crawl fallback covers them tonight.
-                log(f"[{game}] session expired mid-run — stopping")
-                failed.extend(games[i:])
-                break
-            raise
-        except Exception as e:                   # noqa: BLE001
-            png, js = save_debug(page, f"fail_{game}")
-            log(f"[{game}] FAILED: {type(e).__name__}: {str(e)[:300]}")
-            log(f"[{game}]   see {png}")
+        got = try_export(page, game, today)
+        if got is EXPIRED:
+            # Session died mid-run: this game and every one after it are
+            # unexported; the crawl fallback covers them tonight.
+            log(f"[{game}] session expired mid-run — stopping")
+            failed.extend(games[i:])
+            expired = True
+            break
+        if got:
+            ok.append(got)
+        else:
             failed.append(game)
-            # Reset to a clean page state for the next game.
-            try:
-                page.keyboard.press("Escape")
-            except Exception:                    # noqa: BLE001
-                pass
+    # One more try for each game that failed, once the others are in: a slow
+    # portal cost Yu-Gi-Oh and Magic their files on 2026-11-12/13 and sent
+    # them to the fallback crawl (~80 and ~105 min). Same flow, from a fresh
+    # load of the pricing page; a game that fails twice is left to the
+    # crawl. No retry after a dead session (that needs --login).
+    for game in ([] if expired else list(failed)):
+        log(f"[{game}] retrying after the first pass")
+        got = try_export(page, game, today)
+        if got is EXPIRED:
+            log(f"[{game}] session expired mid-run — stopping")
+            break
+        if got:
+            ok.append(got)
+            failed.remove(game)
+            retried.append(game)
     ctx.close()
-    log(f"done: {len(ok)} exported, {len(failed)} failed{' (' + ', '.join(failed) + ')' if failed else ''}")
+    log(f"done: {len(ok)} exported, {len(failed)} failed"
+        f"{' (' + ', '.join(failed) + ')' if failed else ''}"
+        f"{'; succeeded on the retry: ' + ', '.join(retried) if retried else ''}")
     return 0 if not failed else 1
 
 
