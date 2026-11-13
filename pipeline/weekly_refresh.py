@@ -428,7 +428,8 @@ STEPS = [
     # detailed endpoint tcg-nm-backfill uses; a card's first touch lands ~a
     # year of history, so the rotation IS the backfill.
     # --no-yield is load-bearing (2026-10-16): as a refresh step this script's
-    # yield-to-refresh guard would find its own parent and sleep forever.
+    # yield-to-refresh guard would find the refresh it runs in (its caffeinate;
+    # pgrep leaves out the caller's own ancestors) and sleep forever.
     #
     # PARKED 2026-10-18 (user decision): 4,000/night cost ~110 min a night,
     # ~11 h a week, for data NOTHING currently reads — no code outside this

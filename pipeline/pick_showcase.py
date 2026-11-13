@@ -51,12 +51,13 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, market_games, db_path
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
-from backfill_sales_volume import refresh_pids
+from backfill_sales_volume import REFRESH_SCRIPTS, refresh_pids
 
 CARDS = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards")
 PRED_DB = os.path.join(CARDS, "predictions.db")
 PC_DB = os.path.join(CARDS, "pricecharting.db")
 LOCK_PATH = os.path.join(BASE, ".sales_volume.lock")          # the sales crawler's lock
+CRAWL_SCRIPT = "backfill_sales_volume.py"                     # ... and its script
 WATCH_FILE = os.path.join(BASE, "ml_data", "showcase_watch.json")
 
 PRICE_FLOOR = 10.0        # dollars; a game with nothing at this floor falls back to FLOOR_FALLBACK
@@ -177,26 +178,54 @@ def take_lock(lock):
         return False
 
 
+def runs(cmd, scripts):
+    """True when the command line `cmd` runs one of `scripts` (file names):
+    the script is the first operand of a shell or a python, behind a
+    caffeinate if there is one (`/bin/zsh /x/run_daily_refresh.sh --resume B`,
+    `caffeinate -i /x/python /x/backfill_sales_volume.py`). A `zsh -c` line,
+    an editor or a tail that only names the script does not, nor does a
+    line this cannot read (the safe answer: the list goes to the crawler)."""
+    args = cmd.split()
+    if args and os.path.basename(args[0]) == "caffeinate":
+        args = args[1:]
+        while args and args[0].startswith("-"):
+            args = args[2:] if args[0] in ("-t", "-w") else args[1:]
+    prog = os.path.basename(args[0]).lower() if args else ""
+    if prog not in ("zsh", "bash", "sh") and not prog.startswith("python"):
+        return False
+    for a in args[1:]:
+        if a in ("-c", "-m"):
+            return False
+        if not a.startswith("-"):
+            return os.path.basename(a) in scripts
+    return False
+
+
 def crawler_paused():
     """pid of the refresh this run is part of, while the sales crawler that
     holds the lock sits it out; None otherwise (the list goes to the crawler).
 
-    backfill_sales_volume pauses while refresh_live() (refresh_pids, the
-    test used here) and fetches nothing until no refresh process is left,
-    so a list handed to it then is only waited on: 18 hand-offs, 0 cards
-    and 74 minutes instead of about 7 on 2026-11-13. Inside the nightly
-    that refresh is this run's own parent, which outlives every fetch made
-    here, and the night's steps run one at a time, so nothing else is
-    crawling either. None for a run by hand while a refresh is live (that
-    refresh may be crawling), for a --no-yield crawl (the tail's tcg-sales
-    step, which never pauses and takes the list like the daytime crawler)
-    and for a lock held by anything but a crawler, or no process list."""
+    backfill_sales_volume pauses while refresh_live() and fetches nothing
+    until no refresh process is left, so a list handed to it then is only
+    waited on: 18 hand-offs, 0 cards and 74 minutes instead of about 7 on
+    2026-11-13. Inside the nightly that refresh is this run's grandparent
+    (run_daily_refresh.sh, then local_model_run.sh), which outlives every
+    fetch made here, and the night's steps run one at a time, so nothing
+    else is crawling either. It is the nearest ancestor that runs a refresh
+    script, not one that merely names it (an agent's `zsh -c` line), and
+    pgrep lists ancestors only when asked (refresh_pids(ancestors=True)).
+    None for a run by hand while a refresh is live (that refresh may be
+    crawling), for a --no-yield crawl (the tail's tcg-sales step, which
+    never pauses and takes the list like the daytime crawler) and for a
+    lock held by anything but a crawler, or no process list."""
     try:
-        live = refresh_pids()
+        live = refresh_pids(ancestors=True)
         if not live:
             return None
+        # errors="replace": ps passes argv bytes through as they are, and one
+        # process with a non-UTF-8 argument must not abort the pick.
         ps = subprocess.run(["ps", "-A", "-ww", "-o", "pid=,ppid=,command="],
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, errors="replace")
     except OSError:
         return None
     procs = {}
@@ -205,21 +234,17 @@ def crawler_paused():
         if len(f) >= 2 and f[0].isdigit() and f[1].isdigit():
             procs[int(f[0])] = (int(f[1]), f[2] if len(f) > 2 else "")
     parent, pid = None, os.getppid()
-    for _ in range(64):              # up the tree to the nearest refresh process
-        if pid in live:
-            parent = pid
-            break
+    for _ in range(64):              # up the tree to the nearest refresh
         if pid not in procs:
             break
-        pid = procs[pid][0]
-    # The crawls: python running backfill_sales_volume.py, or the caffeinate
+        ppid, cmd = procs[pid]
+        if pid in live and runs(cmd, REFRESH_SCRIPTS):
+            parent = pid
+            break
+        pid = ppid
+    # The crawls: python running the crawler's script, or the caffeinate
     # that wraps it. A shell or an editor that only names the script is not.
-    crawls = []
-    for _ppid, cmd in procs.values():
-        args = cmd.split()
-        if (args and os.path.basename(args[0]).lower().startswith(("python", "caffeinate"))
-                and any(os.path.basename(a) == "backfill_sales_volume.py" for a in args[1:])):
-            crawls.append(args)
+    crawls = [cmd.split() for _ppid, cmd in procs.values() if runs(cmd, (CRAWL_SCRIPT,))]
     if parent is None or not crawls or any("--no-yield" in args for args in crawls):
         return None
     return parent
@@ -278,14 +303,15 @@ class Sales:
                 def still_paused():
                     # Before each card the crawler must still be out of the
                     # way: its lock has come free (ours now, so no crawl can
-                    # start) or the refresh it waits on is still this run's
-                    # parent. The parent outlives the step, so this trips
-                    # only when it dies under the run (a launchd reload
-                    # beheads the script); the crawler then resumes at its
-                    # next look, within 10 minutes, and gets the cards left.
-                    # The two overlap by one card's fetch at most.
+                    # start) or the refresh it waits out, this run's own, is
+                    # still alive (an ancestor: pgrep lists it only with -a).
+                    # That refresh outlives the step, so this trips only
+                    # when it dies under the run (a launchd reload beheads
+                    # the script); the crawler then resumes at its next
+                    # look, within 10 minutes, and gets the cards left. The
+                    # two overlap by one card's fetch at most.
                     try:
-                        return take_lock(lock) or parent in refresh_pids()
+                        return take_lock(lock) or parent in refresh_pids(ancestors=True)
                     except OSError:
                         return False
 

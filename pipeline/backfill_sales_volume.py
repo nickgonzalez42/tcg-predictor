@@ -56,14 +56,20 @@ COOL_OFF_S = 1800    # breaker trip: rest, then resume (transient outages heal)
 MAX_TRIPS = 4        # consecutive cool-offs with no success between: give up
 
 
-REFRESH_PROCS = "run_daily_refresh.sh|weekly_refresh.py"   # pgrep -f pattern
+REFRESH_SCRIPTS = ("run_daily_refresh.sh", "weekly_refresh.py")
+REFRESH_PROCS = "|".join(REFRESH_SCRIPTS)   # pgrep -f pattern
 
 
-def refresh_pids():
-    """pids of the nightly refresh's processes. pick_showcase looks for its
-    own parent among them: the refresh this crawler waits out."""
-    r = subprocess.run(["pgrep", "-f", REFRESH_PROCS], capture_output=True, text=True)
-    return {int(p) for p in r.stdout.split() if p.isdigit()}
+def refresh_pids(ancestors=False):
+    """pids of the nightly refresh's processes. pgrep (macOS) leaves out its
+    caller and all the caller's ancestors unless -a is given, so a run inside
+    the refresh sees its own refresh only with ancestors=True: pick_showcase
+    looks there for the refresh this crawler waits out. Without it, from
+    inside, only the refresh's caffeinate shows (a child of the script)."""
+    r = subprocess.run(["pgrep"] + (["-a"] if ancestors else []) + ["-f", REFRESH_PROCS],
+                       capture_output=True, text=True, errors="replace")
+    # The first field of each line: Linux's pgrep -a adds the command line.
+    return {int(f[0]) for f in map(str.split, r.stdout.splitlines()) if f and f[0].isdigit()}
 
 
 def refresh_live():
@@ -191,9 +197,10 @@ def main():
     ap.add_argument("--no-yield", action="store_true",
                     help="skip the yield-to-refresh pause. REQUIRED when this "
                          "script runs AS a refresh step: the guard pgreps for "
-                         "weekly_refresh and would find its own parent and "
-                         "sleep forever (2026-10-16: the first in-refresh run "
-                         "deadlocked exactly this way for 5 hours)")
+                         "the refresh, would find the one it runs in (its "
+                         "caffeinate; pgrep leaves out the caller's own "
+                         "ancestors) and sleep forever (2026-10-16: the first "
+                         "in-refresh run deadlocked exactly this way for 5 hours)")
     args = ap.parse_args()
 
     # One crawl at a time (2026-10-28): the daytime launchd agent relaunches

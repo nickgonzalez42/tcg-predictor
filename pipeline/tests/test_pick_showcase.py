@@ -2,8 +2,15 @@
 """
 pick_showcase's sales vetting next to the daytime sales crawler (2026-11-13:
 the nightly handed 18 lists to a crawler paused for the refresh and waited
-74 minutes for nothing). Mocks only: no network, no real database, and every
-data path (the crawler's lock, the watch lists) in a temp folder.
+74 minutes for nothing). No network, no real database, and every data path
+(the crawler's lock, the watch lists) in a temp folder.
+
+The process questions are answered the way macOS answers them: pgrep leaves
+out its caller's ancestors unless -a is given, and `exec caffeinate` keeps
+the refresh script on its pid with the caffeinate as its child. The first
+mocks had it the other way round and passed while the nightly could not see
+its own refresh, so one test also runs the nightly's process shape for real,
+under a marker name (NightlyProcesses).
 
 Run (from the repo root):
       ../one-piece/.venv/bin/python -m unittest discover -s pipeline/tests -v
@@ -13,7 +20,9 @@ import fcntl
 import io
 import json
 import os
+import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -28,7 +37,8 @@ from unittest import mock
 TMP = tempfile.mkdtemp(prefix="showcase-test-")
 os.environ["TCG_DATA_DIR"] = TMP
 os.makedirs(os.path.join(TMP, "ml_data"))
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PIPELINE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, PIPELINE)
 
 import backfill_sales_volume as bsv  # noqa: E402
 import pick_showcase as ps           # noqa: E402
@@ -42,11 +52,13 @@ def tearDownModule():
 
 
 # pid: (ppid, command line)
-CAFFEINATE, REFRESH, MODEL, SHELL = 400, 500, 600, 700
-NIGHTLY = {   # the nightly's model block runs pick_showcase (parent: MODEL)
+CAFFEINATE, REFRESH, MODEL, SHELL, AGENT = 400, 500, 600, 700, 800
+NIGHTLY = {   # as launchd starts it: `exec caffeinate` keeps the script on its
+              # pid and forks the caffeinate as its child; the model block runs
+              # pick_showcase (parent: MODEL)
     1: (0, "/sbin/launchd"),
-    CAFFEINATE: (1, "/usr/bin/caffeinate -i /bin/zsh /x/pipeline/run_daily_refresh.sh"),
-    REFRESH: (CAFFEINATE, "/bin/zsh /x/pipeline/run_daily_refresh.sh"),
+    REFRESH: (1, "/bin/zsh /x/pipeline/run_daily_refresh.sh"),
+    CAFFEINATE: (REFRESH, "caffeinate -i /bin/zsh /x/pipeline/run_daily_refresh.sh"),
     MODEL: (REFRESH, "/bin/zsh local_model_run.sh"),
     SHELL: (1, "-zsh"),
 }
@@ -62,27 +74,48 @@ MENTIONS = {   # name the script without running it
     32000: (SHELL, "/bin/zsh -c tail sales-crawl.log; python backfill_sales_volume.py --no-yield"),
     32001: (SHELL, "vim pipeline/backfill_sales_volume.py"),
 }
+HAND_RUN = {   # an agent's shell line that names the refresh and runs the pick by hand
+    AGENT: (SHELL, "/bin/zsh -c source /x/snapshot.zsh && eval 'grep -n yield "
+                   "pipeline/run_daily_refresh.sh; python pipeline/pick_showcase.py'"),
+}
 HISTORY = {"result": [{"variant": "Normal", "condition": "Near Mint", "buckets": [
     {"bucketStartDate": "2026-11-02", "quantitySold": 4, "transactionCount": 3}]}]}
 
 
 class Procs:
-    """subprocess.run for the two process questions: pgrep for the refresh
-    (backfill_sales_volume.refresh_pids) and ps for the process tree."""
+    """subprocess.run for the two process questions, answered as on macOS:
+    pgrep -f for the refresh (backfill_sales_volume.refresh_pids) leaves out
+    the caller's ancestors unless -a is given, and ps lists every process.
+    Both outputs are bytes decoded as subprocess.run would (a command line
+    may not be UTF-8). `parent` is the caller's parent (os.getppid)."""
 
-    def __init__(self, table):
-        self.table, self.calls = dict(table), []
+    def __init__(self, table, parent):
+        self.table, self.parent, self.calls = dict(table), parent, []
+
+    def ancestors(self):
+        out, pid = set(), self.parent
+        while pid in self.table and pid not in out:
+            out.add(pid)
+            pid = self.table[pid][0]
+        return out
 
     def __call__(self, argv, **kw):
         self.calls.append(argv[0])
-        if argv[:2] == ["pgrep", "-f"] and argv[2] == bsv.REFRESH_PROCS:
+        if argv[0] == "pgrep" and argv[-1] == bsv.REFRESH_PROCS and set(argv[1:-1]) in (
+                {"-f"}, {"-a", "-f"}):
+            hidden = set() if "-a" in argv else self.ancestors()
             out = "".join(f"{p}\n" for p, (_pp, cmd) in sorted(self.table.items())
-                          if "run_daily_refresh.sh" in cmd or "weekly_refresh.py" in cmd)
+                          if p not in hidden and re.search(argv[-1], cmd))
         elif argv[0] == "ps":
             out = "".join(f"{p:>5} {pp:>5} {cmd}\n" for p, (pp, cmd) in sorted(self.table.items()))
         else:
             raise AssertionError(f"unexpected command: {argv}")
-        return subprocess.CompletedProcess(argv, 0 if out else 1, out, "")
+        raw = out.encode("utf-8", "surrogateescape")
+        if kw.get("text") or kw.get("errors"):
+            out = raw.decode("utf-8", kw.get("errors") or "strict")
+        else:
+            out = raw
+        return subprocess.CompletedProcess(argv, 0 if raw else 1, out, "")
 
 
 class FakeTime:
@@ -176,15 +209,20 @@ class EnsureFresh(unittest.TestCase):
                        "cards": [{"game": "onepiece", "pid": 999}]}, f)
 
     def run_pick(self, table, parent=MODEL):
-        self.procs = Procs(table)
+        self.procs = Procs(table, parent)
         with mock.patch.object(subprocess, "run", side_effect=self.procs), \
                 mock.patch.object(ps.os, "getppid", return_value=parent):
             self.sales.ensure_fresh(self.NEED)
 
+    def paused(self, table, parent=MODEL):
+        with mock.patch.object(subprocess, "run", side_effect=Procs(table, parent)), \
+                mock.patch.object(ps.os, "getppid", return_value=parent):
+            return ps.crawler_paused()
+
     # -- the three cases ---------------------------------------------------
     def test_crawler_paused_for_the_refresh_means_a_direct_fetch(self):
-        """Crawler alive + refresh live (this run's own parent): no hand-off,
-        no wait, every card fetched here."""
+        """Crawler alive + refresh live (the one this run is part of): no
+        hand-off, no wait, every card fetched here."""
         self.crawler_holds_lock()
         self.leftover_list()
         self.run_pick({**NIGHTLY, **CRAWLER})
@@ -237,6 +275,14 @@ class EnsureFresh(unittest.TestCase):
         self.assertIn("crawler finished 0 of 3", "\n".join(self.logs))
         self.assertFalse(os.path.exists(ps.WATCH_FILE))
 
+    def test_hand_run_from_a_line_naming_the_refresh_keeps_the_hand_off(self):
+        """An ancestor that only names the refresh script (an agent's zsh -c
+        line, which pgrep -a lists) is not a refresh this run is part of."""
+        self.crawler_holds_lock()
+        self.run_pick({**NIGHTLY, **CRAWLER, **HAND_RUN}, parent=AGENT)
+        self.assertEqual(self.fetches, [])
+        self.assertEqual(self.handoffs, [self.NEED])
+
     def test_no_yield_crawl_keeps_the_hand_off(self):
         """The tail's tcg-sales step never pauses: it takes the list."""
         self.crawler_holds_lock()
@@ -261,6 +307,15 @@ class EnsureFresh(unittest.TestCase):
         self.assertEqual(self.fetches, [])
         self.assertEqual(self.handoffs, [self.NEED])
 
+    def test_a_command_line_that_is_not_utf8_is_read(self):
+        """ps passes argv bytes through as they are: one process with a
+        non-UTF-8 argument must not raise out of the pick."""
+        self.crawler_holds_lock()
+        odd = {33000: (SHELL, "/x/python -c pass \udcff\udcfe")}   # the bytes ff fe
+        self.run_pick({**NIGHTLY, **CRAWLER, **odd})
+        self.assertEqual(self.handoffs, [])
+        self.assertEqual(self.fetches, [101, 202, 303])
+
     # -- the refresh or the crawler going away mid-list -----------------------
     def test_refresh_gone_mid_list_stops_and_hands_the_rest_over(self):
         """The refresh dies under the run (a launchd reload): the crawler may
@@ -269,7 +324,7 @@ class EnsureFresh(unittest.TestCase):
         self.crawler_crawls = True
 
         def refresh_dies(pid):
-            if pid == 202:
+            if pid == 202:             # its caffeinate goes with it
                 del self.procs.table[REFRESH], self.procs.table[CAFFEINATE]
                 self.procs.table[MODEL] = (1, self.procs.table[MODEL][1])
         self.on_fetch = refresh_dies
@@ -295,6 +350,7 @@ class EnsureFresh(unittest.TestCase):
         self.assertEqual(self.free_in_fetch, [False] * 3)
         self.assertTrue(self.lock_free())
 
+    # -- reading the process table ---------------------------------------------
     def test_a_shell_naming_the_script_is_no_crawl(self):
         """A shell that mentions the script and --no-yield neither keeps a
         paused crawler from counting as paused nor stands in for one."""
@@ -302,14 +358,39 @@ class EnsureFresh(unittest.TestCase):
         self.run_pick({**NIGHTLY, **CRAWLER, **MENTIONS})
         self.assertEqual(self.handoffs, [])
         self.assertEqual(self.fetches, [101, 202, 303])
-        with mock.patch.object(subprocess, "run", side_effect=Procs({**NIGHTLY, **MENTIONS})), \
-                mock.patch.object(ps.os, "getppid", return_value=MODEL):
-            self.assertIsNone(ps.crawler_paused())
+        self.assertIsNone(self.paused({**NIGHTLY, **MENTIONS}))
 
     def test_paused_names_the_nearest_refresh_ancestor(self):
-        with mock.patch.object(subprocess, "run", side_effect=Procs({**NIGHTLY, **CRAWLER})), \
-                mock.patch.object(ps.os, "getppid", return_value=MODEL):
-            self.assertEqual(ps.crawler_paused(), REFRESH)
+        resumed = dict(NIGHTLY)          # the watchdog's relaunch
+        resumed[REFRESH] = (1, "/bin/zsh /x/pipeline/run_daily_refresh.sh --resume 2026-11-13")
+        wrapped = dict(NIGHTLY)          # a caffeinate above the script, should one ever be
+        wrapped[CAFFEINATE] = (1, NIGHTLY[CAFFEINATE][1])
+        wrapped[REFRESH] = (CAFFEINATE, NIGHTLY[REFRESH][1])
+        for name, table in (("nightly", NIGHTLY), ("resumed", resumed), ("wrapped", wrapped)):
+            with self.subTest(name):
+                self.assertEqual(self.paused({**table, **CRAWLER}), REFRESH)
+
+    def test_runs_reads_what_a_command_line_runs(self):
+        refresh, crawl = bsv.REFRESH_SCRIPTS, (ps.CRAWL_SCRIPT,)
+        for cmd, scripts, want in [
+                ("/bin/zsh /x/pipeline/run_daily_refresh.sh", refresh, True),
+                ("/bin/zsh /x/pipeline/run_daily_refresh.sh --resume 2026-11-13", refresh, True),
+                ("caffeinate -i /bin/zsh /x/pipeline/run_daily_refresh.sh", refresh, True),
+                ("/x/Python -u weekly_refresh.py --tail --resume", refresh, True),
+                (HAND_RUN[AGENT][1], refresh, False),
+                ("vim pipeline/run_daily_refresh.sh", refresh, False),
+                ("/bin/zsh local_model_run.sh", refresh, False),
+                ("-zsh", refresh, False),
+                ("", refresh, False),
+                (CRAWLER[29061][1], crawl, True),
+                (CRAWLER[29063][1], crawl, True),
+                (TAIL_SALES[31000][1], crawl, True),
+                (MENTIONS[32000][1], crawl, False),
+                (MENTIONS[32001][1], crawl, False),
+                ("/x/python -m backfill_sales_volume.py", crawl, False),
+                ("caffeinate -i node clicker.js", crawl, False)]:
+            with self.subTest(cmd):
+                self.assertIs(ps.runs(cmd, scripts), want)
 
 
 class CrawlerSide(unittest.TestCase):
@@ -375,12 +456,99 @@ class CrawlerSide(unittest.TestCase):
         self.assertEqual(events, ["live?", "live?", "sleep 600", "live?", "fetch 101", "fetch 102"])
 
     def test_refresh_live_reads_the_refresh_pids(self):
-        with mock.patch.object(subprocess, "run", side_effect=Procs(NIGHTLY)):
+        """The crawler's own test, from outside the refresh (a launchd agent)."""
+        with mock.patch.object(subprocess, "run", side_effect=Procs(NIGHTLY, 1)):
             self.assertEqual(bsv.refresh_pids(), {CAFFEINATE, REFRESH})
             self.assertTrue(bsv.refresh_live())
-        with mock.patch.object(subprocess, "run", side_effect=Procs(DAYTIME)):
+        with mock.patch.object(subprocess, "run", side_effect=Procs(DAYTIME, 1)):
             self.assertEqual(bsv.refresh_pids(), set())
             self.assertFalse(bsv.refresh_live())
+
+    def test_refresh_pids_reads_only_the_pid_column(self):
+        """Linux's pgrep -a lists command lines too: their numbers are no pids."""
+        out = "500 /bin/zsh /x/pipeline/run_daily_refresh.sh --resume 2026-11-13 40\n"
+        with mock.patch.object(subprocess, "run",
+                               return_value=subprocess.CompletedProcess([], 0, out, "")):
+            self.assertEqual(bsv.refresh_pids(ancestors=True), {500})
+
+
+# The nightly's first lines (re-exec under caffeinate) and its model block,
+# under a marker name; the python in it reports what pick_showcase sees.
+REFRESH_STANDIN = """#!/bin/zsh
+SELF="${0:A}"
+if [[ -z "${SHOWCASE_PROBE_CAFFEINATED:-}" ]]; then
+  export SHOWCASE_PROBE_CAFFEINATED=1
+  exec caffeinate -i /bin/zsh "$SELF" "$@"
+fi
+/bin/zsh "${SELF:h}/model.sh"
+exit $?
+"""
+MODEL_STANDIN = """#!/bin/zsh
+"$SHOWCASE_PROBE_PY" "${0:A:h}/probe.py"
+exit $?
+"""
+PROBE = """
+import json, os, subprocess, sys
+sys.path.insert(0, os.environ["SHOWCASE_PROBE_PIPELINE"])
+import backfill_sales_volume as bsv
+import pick_showcase as ps
+
+script = os.environ["SHOWCASE_PROBE_SCRIPT"]      # the refresh stand-in's file name
+bsv.REFRESH_PROCS = script.replace(".", "[.]")
+ps.REFRESH_SCRIPTS = (script,)
+real_run = subprocess.run
+
+
+def run(argv, **kw):          # a paused daytime crawler, in this ps listing only
+    r = real_run(argv, **kw)
+    if argv[0] == "ps":
+        r.stdout += ("999999 1 /x/python /x/pipeline/backfill_sales_volume.py "
+                     "--game all --rpm 40 --refresh-days 28\\n")
+    return r
+
+
+subprocess.run = run
+refresh = int(real_run(["ps", "-o", "ppid=", "-p", str(os.getppid())],
+                       capture_output=True, text=True).stdout)
+print(json.dumps({"refresh": refresh, "plain": sorted(bsv.refresh_pids()),
+                  "ancestors": sorted(bsv.refresh_pids(ancestors=True)),
+                  "paused": ps.crawler_paused()}))
+"""
+
+
+@unittest.skipUnless(sys.platform == "darwin" and shutil.which("caffeinate"),
+                     "the nightly's process layout is macOS's")
+class NightlyProcesses(unittest.TestCase):
+    """The nightly's process shape for real: a zsh script that re-execs
+    itself under caffeinate, a zsh model block it runs, and a python in that
+    asking crawler_paused(). A marker name stands in for the refresh's, so
+    nothing a crawler pauses for runs; the paused crawler is a line added to
+    the probe's ps output only."""
+
+    def test_the_model_block_finds_its_refresh(self):
+        d = tempfile.mkdtemp(prefix="nightly-", dir=TMP)
+        script = f"showcaseprobe{os.getpid()}.sh"
+        for name, text in ((script, REFRESH_STANDIN), ("model.sh", MODEL_STANDIN),
+                           ("probe.py", PROBE)):
+            with open(os.path.join(d, name), "w", encoding="utf-8") as f:
+                f.write(text)
+
+        def stop_leftovers():          # by pid: only processes running from d
+            r = subprocess.run(["pgrep", "-f", os.path.basename(d)], capture_output=True, text=True)
+            for p in r.stdout.split():
+                with contextlib.suppress(OSError, ValueError):
+                    os.kill(int(p), signal.SIGTERM)
+        self.addCleanup(stop_leftovers)
+        env = {k: v for k, v in os.environ.items() if k != "SHOWCASE_PROBE_CAFFEINATED"}
+        env.update(SHOWCASE_PROBE_PY=sys.executable, SHOWCASE_PROBE_SCRIPT=script,
+                   SHOWCASE_PROBE_PIPELINE=PIPELINE)
+        r = subprocess.run(["/bin/zsh", os.path.join(d, script)], env=env,
+                           capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        seen = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertNotIn(seen["refresh"], seen["plain"])   # pgrep hides it from inside...
+        self.assertIn(seen["refresh"], seen["ancestors"])  # ... unless -a (still_paused's test)
+        self.assertEqual(seen["paused"], seen["refresh"])
 
 
 if __name__ == "__main__":
