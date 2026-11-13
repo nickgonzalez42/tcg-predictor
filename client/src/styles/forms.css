@@ -30,6 +30,10 @@
   border-radius: var(--radius);
   color: var(--text);
   font-size: 15.2px;
+  /* The browser draws a field's native parts (a date's calendar icon, a
+     select's option list) for a light page unless told otherwise, which
+     left a black calendar icon on the dark field. The site is dark only. */
+  color-scheme: dark;
 }
 
 /* Auto-price checkbox row in the add-to-portfolio flows. */
