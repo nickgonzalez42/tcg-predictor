@@ -121,7 +121,7 @@ def main():
     sess = tp.make_session()
     adopted = left = gated = 0
     for g, pid in todo:
-        pts = nm_series(sess, pid, args.delay)
+        pts, _ = nm_series(sess, pid, args.delay)
         pts = freshen_current_week(pts)
         if pts and pts[0][0] >= recent_cut:
             # Table-first gate (user policy 2026-08-18): the chart is only

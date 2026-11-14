@@ -159,17 +159,21 @@ DEADLINE_MODE = os.environ.get("TCG_REFRESH_DEADLINE_MODE", "goal").strip().lowe
 # art-comps had grown past theirs. tcg-nm-depth carries what tcg-nm-prices
 # used to take (the two were one step); tcg-nm-prices is now only the crawl
 # for a game whose CSV did not land, and has no measurements yet.
+# 2026-11-14: tcg-nm-rescue, nm-rescue-full and tcg-market-watch measured ~1
+# only because each crashed on its first card every run from 2026-10-14
+# (nm_series began returning the raw response too). Working, the rescue's
+# 500 probes take ~25 min (24.7 on 10-14) and the watch's ~50 cards ~3.
 NOMINAL_MIN = {
     "tcg-magic": 10, "tcg-onepiece": 3, "tcg-starwars": 1, "tcg-pokemon": 3,
     "tcg-digimon": 4,
     "tcg-csv-export": 5, "tcg-csv-import": 7, "tcg-sku-resolve": 2,
     "tcg-nm-prices": 10, "tcg-nm-depth": 92, "tcg-nm-verify": 7, "tcg-nm-backfill": 69,
-    "tcg-sales": 3, "tcg-nm-rescue": 1, "tcg-printing-pins": 5,
+    "tcg-sales": 3, "tcg-nm-rescue": 25, "tcg-printing-pins": 5,
     "printing-ingest": 63, "imageless-audit": 21, "art-recheck": 12, "pc-gundam": 2,
     "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 5, "unify": 27,
     "nm-price": 3, "card-trends": 3, "art-comps": 13, "s3-upload": 4, "art-sync": 7,
     "pc-link-suggest": 22, "pc-console-discover": 2, "pc-console-sweep": 94,
-    "nm-rescue-full": 1, "tcg-market-watch": 1,
+    "nm-rescue-full": 25, "tcg-market-watch": 3,
 }
 # --- the tail (2026-11-12, refresh review) ----------------------------------
 # These are rotation crawls: each night they refresh a slice of a backlog,

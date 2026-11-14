@@ -77,7 +77,7 @@ def main():
     for r in watch:
         g, pid = r["game"], int(r["product_id"])
         table = table_market_prices(sess, pid, 1.0)
-        pts = freshen_current_week(nm_series(sess, pid, 1.0)) if table else []
+        pts = freshen_current_week(nm_series(sess, pid, 1.0)[0]) if table else []
         moves = len({p for d, p in pts if d >= move_cut})
         if table and moves >= 2 and chart_agrees_with_table(pts, table):
             conn.executemany(
