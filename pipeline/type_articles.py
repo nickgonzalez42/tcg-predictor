@@ -295,9 +295,6 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
 
 
 TYPE_SECTIONS = [
-    ("group", "what this card type is (what_it_is, one sentence) and the group today: how many priced cards across "
-              "how many sets since which release, what they cost (median, cheapest, dearest) and which cards sit "
-              "at the top (the picture shows the six dearest)"),
     ("history", "the story of the group's price over its whole priced history, told as a shape in plain words: when "
                 "it fell, when it sat flat, when it climbed and where it is now (index, with its peak and trough "
                 "months), then the past year against the game's other expensive cards (index.comparison) and how "
@@ -380,6 +377,50 @@ def history_chart(path, price, calls, name):
                    f"font-size='11' font-weight='600' fill='var(--text, #e8edf5)'>{dollars(v)}</text>")
     out.append("</svg>")
     return "".join(out)
+
+
+def card_picker(game, spec, members, year, mc, sell, first):
+    """Every card of the type as a scrollable list beside one detail panel.
+    Each row carries its own hidden detail block (art, price, set, the past
+    year, the model's calls, last sale, a link to the card page); the app
+    (useReportBodyEffects) and the static page (report_pages.PICKER_JS) show
+    the picked row's block in the panel. `first` is the card shown at rest."""
+    last = sell["last"] if sell else {}
+
+    def detail(pid):
+        c = members[pid]
+        calls = mc.get(pid, {})
+        facts = [("Set", esc(c["set"] or "")), ("Released", esc(c["release"] or ""))]
+        if pid in year:
+            facts.append(("Past year", f"<span class='report-{'up' if year[pid] >= 0 else 'down'}'>{pct(year[pid])}</span>"))
+        for h, lab in (("6m", "Model, 6 months"), ("12m", "Model, 1 year")):
+            if calls.get(h) is not None:
+                facts.append((lab, pct(calls[h])))
+        if sell:
+            w = last.get(pid)
+            facts.append(("Last sold", date.fromisoformat(w).strftime("%b %-d, %Y") if w else "no sale on record"))
+            facts.append((f"Sold in {SELL_WEEKS} weeks", f"{sell['copies'].get(pid, 0):,.0f} Near Mint"))
+        rows = "".join(f"<span class='report-picker-key'>{k}</span><span>{v}</span>" for k, v in facts if v)
+        return (f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
+                f"<div class='report-picker-info'><span class='report-picker-title'>{esc(c['name'])}</span>"
+                f"<span class='report-picker-big'>{money(c['price'])}</span>"
+                f"<div class='report-picker-facts'>{rows}</div>"
+                f"<a class='report-picker-open' href='/catalog/{game}/{pid}'>Open the card page</a></div>")
+    items = []
+    for pid in sorted(members, key=lambda p: -members[p]["price"]):
+        c = members[pid]
+        move = (f"<span class='report-picker-move report-{'up' if year[pid] >= 0 else 'down'}'>{pct(year[pid])}</span>"
+                if pid in year else "<span class='report-picker-move'></span>")
+        items.append(f"<div class='report-picker-item{' report-picker-on' if pid == first else ''}'>"
+                     f"<span class='report-picker-name'>{esc(c['name'])}</span>"
+                     f"<span class='report-picker-price'>{money(c['price'])}</span>{move}"
+                     f"<div class='report-picker-detail'>{detail(pid)}</div></div>")
+    n = len(members)
+    return (f"<h2>All {n} {esc(spec['label'])} Cards</h2>"
+            f"<p>Dearest first, with each card's change over the past year where we have a year of prices. "
+            f"Pick a card to see it.</p>"
+            f"<div class='report-picker'><div class='report-picker-list'>{''.join(items)}</div>"
+            f"<div class='report-picker-view'>{detail(first)}</div></div>")
 
 
 def build_type_article(d, today, no_prose=False):
@@ -476,20 +517,11 @@ def build_type_article(d, today, no_prose=False):
 
     body = [f"<p class='report-lede'>{esc(lede)}</p>"]
 
-    # The group today
-    def change(pid):
-        v = year.get(pid)
-        if v is None:
-            return ""
-        return f" · <span class='report-{'up' if v >= 0 else 'down'}'>{pct(v)}</span> in a year"
-    tiles = [ga.card_tile(game, pid, members[pid]["name"], f"{money(members[pid]['price'])}{change(pid)}")
-             for pid in d["top"] if ga.has_art(game, pid)]
-    t0 = members[d["top"][0]]
-    body.append(ga.section(
-        prose, "group", f"What a {spec['label']} Card Is Worth",
-        f"The {n} priced {plural} run from {money(prices[0])} to {money(prices[-1])}, median {money(median_price)}. "
-        f"{t0['name']} is the dearest at {money(t0['price'])}.",
-        ga.grid(tiles), f"The six dearest {plural}."))
+    # Every card first, as a list to pick from (2026-11-14, user: the
+    # six-dearest block was "not informative or interesting"; the list of
+    # cards moves to the top, scrollable, a picked card showing its art,
+    # price and details).
+    body.append(card_picker(game, spec, members, year, mc, sell, d["top"][0]))
 
     # History
     if idx:
@@ -599,21 +631,8 @@ def build_type_article(d, today, no_prose=False):
     body.append(ga.model_corner(prose, "outlook", "What to Expect", txt or f"The model has no calls on {plural} yet.",
                                 [], game, None, links, extra=extra))
 
-    # Every card, for the reader looking for theirs.
-    head = ("<table class='report-table'><thead><tr><th>Card</th><th>Price</th><th>Past year</th>"
-            "<th>Model, 1 year</th>" + ("<th>Last sold</th>" if sell else "") + "</tr></thead><tbody>")
-    rws = []
-    for pid in sorted(members, key=lambda p: -members[p]["price"]):
-        m12 = mc.get(pid, {}).get("12m")
-        rws.append(f"<tr><td>{card_link(game, pid, members[pid]['name'])}</td><td>{money(members[pid]['price'])}</td>"
-                   f"<td>{pct(year[pid]) if pid in year else ''}</td><td>{pct(m12) if m12 is not None else ''}</td>"
-                   + (f"<td>{sold_on(pid) or ''}</td>" if sell else "") + "</tr>")
-    body.append(f"<h2>Every {esc(spec['label'])} Card</h2>"
-                f"<p>All {n}, dearest first. A blank past year means we have priced the card for less than a year"
-                + ("; last sold is the week of its most recent Near Mint sale." if sell else ".")
-                + f"</p>{head}{''.join(rws)}</tbody></table>")
-    # The article ends on the table (2026-11-14, user: the sign-off joke and
-    # the scope note under it read as "weird"); no closer, no footnote.
+    # The article ends on the outlook (2026-11-14, user: the sign-off joke
+    # and the scope note under it read as "weird"); no closer, no footnote.
 
     # The picture stays light (2026-11-14, user: "this is too crowded"): the
     # group's name alone as its headline, three short stats in whole

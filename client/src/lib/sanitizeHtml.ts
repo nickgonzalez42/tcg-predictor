@@ -74,7 +74,8 @@ function keptAttrs(el: Element, report: boolean): string {
         else return '';   // an image from anywhere else loses its src, so it renders nothing
     }
     const cls = el.getAttribute('class');
-    if (cls && /^[a-z-]+$/.test(cls) && cls.startsWith('report-')) out += ` class="${cls}"`;
+    // One or more of the report's own classes (a modifier beside its base, 2026-11-14).
+    if (cls && /^report-[a-z-]+( report-[a-z-]+)*$/.test(cls)) out += ` class="${cls}"`;
     if (REPORT_SVG.has(tag)) {
         for (const name of el.getAttributeNames()) {
             const value = el.getAttribute(name) ?? '';

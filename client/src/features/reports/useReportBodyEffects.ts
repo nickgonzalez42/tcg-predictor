@@ -129,7 +129,8 @@ export function useReportBodyEffects(ref: RefObject<HTMLDivElement | null>, key:
             peek.style.top = `${y}px`;
         };
         const linkOf = (t: EventTarget | null) =>
-            t instanceof Element ? t.closest<HTMLAnchorElement>('a[href^="/catalog/"]') : null;
+            t instanceof Element && !t.closest('.report-picker-list')
+                ? t.closest<HTMLAnchorElement>('a[href^="/catalog/"]') : null;
         const over = (e: MouseEvent) => {
             const a = linkOf(e.target);
             if (!a) return;
@@ -168,6 +169,30 @@ export function useReportBodyEffects(ref: RefObject<HTMLDivElement | null>, key:
             root.removeEventListener("mousemove", move);
             peek.remove();
         };
+    }, [key, ref]);
+
+    // Card picker (2026-11-14, card type reports): a scrollable list of
+    // every card beside one detail panel. Each row is a link to its card
+    // page that carries its own detail block; picking a row shows that
+    // block in the panel instead of leaving the article.
+    useEffect(() => {
+        const root = ref.current;
+        if (!root || !key) return;
+        const pick = (e: MouseEvent) => {
+            const item = e.target instanceof Element
+                ? e.target.closest<HTMLElement>('.report-picker-item') : null;
+            const picker = item?.closest('.report-picker');
+            const view = picker?.querySelector('.report-picker-view');
+            const detail = item?.querySelector('.report-picker-detail');
+            if (!item || !picker || !view || !detail) return;
+            e.preventDefault();
+            for (const on of picker.querySelectorAll('.report-picker-on'))
+                on.classList.remove('report-picker-on');
+            item.classList.add('report-picker-on');
+            view.innerHTML = detail.innerHTML;
+        };
+        root.addEventListener('click', pick);
+        return () => root.removeEventListener('click', pick);
     }, [key, ref]);
 
 }

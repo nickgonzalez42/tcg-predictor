@@ -113,6 +113,23 @@ border:1px solid var(--border);background:var(--panel)}
 .report-compare{display:flex;flex-direction:column;gap:12px;margin:18px 0 10px}
 .report-compare-row{display:grid;grid-template-columns:88px minmax(0,1fr);gap:16px;align-items:start;
 padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
+.report-picker{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;margin:18px 0 10px;padding:16px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
+.report-picker-list{max-height:420px;overflow-y:auto;overscroll-behavior:contain;display:flex;flex-direction:column}
+.report-picker-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:baseline;padding:9px 10px;border-left:3px solid transparent;border-bottom:1px solid var(--border);color:var(--text);text-decoration:none;cursor:pointer}
+.report-picker-item:hover{background:rgba(255,255,255,.04);text-decoration:none}
+.report-picker-item.report-picker-on{border-left-color:#ffcb05;background:rgba(255,203,5,.08)}
+.report-picker-item .report-picker-detail{display:none}
+.report-picker-name{min-width:0;line-height:1.3}
+.report-picker-price,.report-picker-move{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.85em;color:var(--text-muted);text-align:right}
+.report-picker-move{min-width:4.5em}
+.report-picker-view{order:2;display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-content:start}
+.report-picker-view img{display:block;width:150px;aspect-ratio:5/7;object-fit:cover;border-radius:6%/4.3%;border:1px solid var(--border)}
+.report-picker-title{display:block;font-weight:600;line-height:1.3}
+.report-picker-big{display:block;margin:6px 0 2px;font-size:1.6em;font-weight:700;color:#ffcb05}
+.report-picker-facts{display:grid;grid-template-columns:auto minmax(0,1fr);gap:3px 12px;margin:8px 0 12px;font-size:.9em}
+.report-picker-key{color:var(--text-muted)}
+.report-picker-open{display:inline-block;padding:7px 14px;border:1px solid #ffcb05;border-radius:999px;color:#ffcb05;font-weight:600;text-decoration:none;white-space:nowrap}
+@media (max-width:760px){.report-picker{grid-template-columns:minmax(0,1fr)}.report-picker-view{order:-1;grid-template-columns:104px minmax(0,1fr)}.report-picker-view img{width:104px}.report-picker-list{max-height:320px}}
 @media (min-width:641px){.report-compare-row--solo .report-compare-card{grid-row:1 / span 2}.report-compare-row--solo .report-compare-chart{grid-column:2;margin-top:0}}
 .report-compare-card,.report-compare-peer{display:flex;flex-direction:column;gap:4px;color:var(--text);text-decoration:none}
 .report-compare-card:hover,.report-compare-peer:hover{text-decoration:none}
@@ -309,6 +326,26 @@ def long_date(iso):
         return iso
 
 
+# Card picker (2026-11-14, card type reports): picking a row of the card
+# list shows that card's detail block in the panel instead of following the
+# row's link to the card page. Same behaviour as the app's
+# useReportBodyEffects.
+PICKER_JS = """
+document.addEventListener('click', function (e) {
+  var item = e.target.closest && e.target.closest('.report-picker-item');
+  if (!item) return;
+  var picker = item.closest('.report-picker');
+  var view = picker && picker.querySelector('.report-picker-view');
+  var detail = item.querySelector('.report-picker-detail');
+  if (!view || !detail) return;
+  e.preventDefault();
+  picker.querySelectorAll('.report-picker-on').forEach(function (n) { n.classList.remove('report-picker-on'); });
+  item.classList.add('report-picker-on');
+  view.innerHTML = detail.innerHTML;
+});
+"""
+
+
 def thumbnail(slug, thumb_json, title, published_at, out_dir, base="reports"):
     """Draw this report's picture next to its page. Returns its URL path, or
     None when the report carries nothing to draw from or the draw fails — a
@@ -453,6 +490,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 </div>
 {PX}
 <script>{JS}</script>
+<script>{PICKER_JS}</script>
 <script>{NAV_JS}</script>
 </body>
 </html>
