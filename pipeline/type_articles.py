@@ -108,6 +108,18 @@ def index_facts(grid, index, today):
             "peak": {"month": hi[0][:7], "pct": r1(hi[1])}, "trough": {"month": lo[0][:7], "pct": r1(lo[1])}}
 
 
+def hero_line(grid, index, today):
+    """The index over the past year, against its level a year ago (the whole
+    history when it is shorter than that)."""
+    pts = [(g, v) for g, v in zip(grid, index) if v is not None]
+    cut = (today - timedelta(days=365)).isoformat()
+    past = [p for p in pts if p[0] <= cut]
+    if past:
+        base = past[-1]
+        pts = [(g, ((100 + v) / (100 + base[1]) - 1) * 100) for g, v in pts if g >= base[0]]
+    return pts
+
+
 def month_label(iso):
     return date.fromisoformat(iso).strftime("%b %Y")
 
@@ -502,14 +514,18 @@ def build_type_article(d, today, no_prose=False):
     if closer:
         body.append(f"<p>{esc(closer)}</p>")
 
-    stats = [[f"{n}", "priced cards", None], [money(median_price), "median price", None]]
-    if yr is not None:
-        stats.append([f"{yr:+.1f}%", "past year", "up" if yr >= 0 else "down"])
-    stats.append([money(total), "group value", None])
+    # The picture stays light (2026-11-14, user: "this is too crowded"): the
+    # group's name alone as its headline, three short stats in whole
+    # dollars, and the index over the past year only, so the line ends on
+    # the same number the title states.
+    stats = [[f"{n}", "priced cards", None], [f"${median_price:,.0f}", "median price", None]]
+    stats.append([f"{yr:+.1f}%", "past year", "up" if yr >= 0 else "down"] if yr is not None
+                 else [f"${total:,.0f}", "group value", None])
     cards = [[game, pid, members[pid]["name"]] for pid in d["top"] if ga.has_art(game, pid)][:3]
-    drawn = [(g, v) for g, v in zip(d["grid"], d["index"]) if v is not None]
+    drawn = hero_line(d["grid"], d["index"], today)
     hero, thumb = ga.hero_and_thumb("type", game, title, today, stats, cards,
-                                    ([g for g, _v in drawn], [v for _g, v in drawn]) if drawn else None)
+                                    ([g for g, _v in drawn], [v for _g, v in drawn]) if drawn else None,
+                                    headline=f"{label} {plural}")
     return {"slug": f"card-type-{game}-{d['type']}-{today.isoformat()}", "kind": "type", "focus": d["type"],
             "game": game, "set_name": plural, "title": title, "summary": lede,
             "body_html": "".join(body), "thumb": thumb, "hero": hero}

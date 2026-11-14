@@ -182,8 +182,8 @@ def _spark_line(draw, xy, line, width=600, height=74):
     draw.line([x0, Y(0), x0 + width, Y(0)], fill=(46, 58, 82), width=1)
     draw.line([(X(i), Y(v)) for i, v in pts], fill=colour, width=4, joint="curve")
     f = _font(MONO, 18, index=0)
-    draw.text((x0, y0 + height + 8), dates[0][5:], font=f, fill=LABEL)
-    end = dates[-1][5:]
+    start, end = _line_dates(dates[0], dates[-1])
+    draw.text((x0, y0 + height + 8), start, font=f, fill=LABEL)
     draw.text((x0 + width - draw.textlength(end, font=f), y0 + height + 8), end, font=f, fill=LABEL)
     draw.text((x0 + width + 8, Y(last) - 10), f"{last:+.1f}%", font=f, fill=colour)
 
@@ -315,6 +315,19 @@ def _esc(t):
             .replace(">", "&gt;").replace('"', "&quot;"))
 
 
+def _line_dates(first, last):
+    """The line's two date labels: MM-DD inside one week or month, month and
+    year when the line runs longer (a card type's year, 2026-11-14)."""
+    from datetime import date as _d
+    try:
+        a, b = _d.fromisoformat(first[:10]), _d.fromisoformat(last[:10])
+    except ValueError:
+        return first[5:], last[5:]
+    if (b - a).days > 62:
+        return a.strftime("%b %Y"), b.strftime("%b %Y")
+    return first[5:], last[5:]
+
+
 def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=None,
                spark_line=None):
     """Inline SVG twin of the thumbnail. `cards` are (game, pid[, name]);
@@ -403,15 +416,16 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=No
         last = pts[-1][1]
         colour = "#3fd98a" if last >= 0 else "#ff7a7a"
         points = " ".join(f"{X(i):.1f},{Y(v):.1f}" for i, v in pts)
-        out.append(f'<g class="report-hero-line"><title>Price index this week, against '
+        d_first, d_last = _line_dates(dts[0], dts[-1])
+        out.append(f'<g class="report-hero-line"><title>Price index, against '
                    f'{_esc(dts[0])}: {last:+.1f}%</title>'
                    f'<line x1="{x0}" y1="{Y(0):.1f}" x2="{x0 + width}" y2="{Y(0):.1f}" stroke="#2e3a52"/>'
                    f'<polyline points="{points}" fill="none" stroke="{colour}" stroke-width="3" '
                    f'stroke-linejoin="round" stroke-linecap="round"/>'
                    f'<text x="{x0}" y="{y0 + height + 24}" font-family="{SVG_MONO}" font-size="18" '
-                   f'fill="#b2bcce">{_esc(dts[0][5:])}</text>'
+                   f'fill="#b2bcce">{_esc(d_first)}</text>'
                    f'<text x="{x0 + width}" y="{y0 + height + 24}" font-family="{SVG_MONO}" '
-                   f'font-size="18" fill="#b2bcce" text-anchor="end">{_esc(dts[-1][5:])}</text>'
+                   f'font-size="18" fill="#b2bcce" text-anchor="end">{_esc(d_last)}</text>'
                    f'<text x="{x0 + width + 8}" y="{Y(last) + 6:.1f}" font-family="{SVG_MONO}" '
                    f'font-size="18" fill="{colour}">{last:+.1f}%</text></g>')
     if series:

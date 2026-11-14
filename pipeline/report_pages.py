@@ -319,7 +319,7 @@ def thumbnail(slug, thumb_json, title, published_at, out_dir, base="reports"):
         from report_thumbnail import render
         t = _json.loads(thumb_json)
         render(os.path.join(out_dir, f"{slug}.jpg"),
-               t.get("kind", "market"), title, long_date(published_at),
+               t.get("kind", "market"), t.get("headline") or title, long_date(published_at),
                stats=[tuple(x) for x in t.get("stats", [])],
                cards=[tuple(x) for x in t.get("cards", [])],
                spark=[tuple(x) for x in t.get("spark", [])],

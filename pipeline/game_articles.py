@@ -1217,7 +1217,7 @@ def model_corner(prose, key, header, body_text, picks, game, record, links, extr
     return "".join(out)
 
 
-def hero_and_thumb(kind, game, title, today, stats, cards, line, focus=None):
+def hero_and_thumb(kind, game, title, today, stats, cards, line, focus=None, headline=None):
     """`line` is (dates, values): the set's or game's price index through the
     week, drawn as one line where the reports' heroes carry a bar per game
     (2026-11-08); None when the window has no drawable index."""
@@ -1226,8 +1226,10 @@ def hero_and_thumb(kind, game, title, today, stats, cards, line, focus=None):
     pub = today.strftime("%B %-d, %Y")
     if line and not any(v is not None for v in line[1]):
         line = None
-    hero = render_svg(kind, title, pub, stats, cards, [], label=label, spark_line=line)
-    thumb = {"kind": kind, "label": label, "stats": stats, "spark": [],
+    # `headline` is a shorter line for the picture alone (a card type's
+    # hero names the group and leaves the number to the stats, 2026-11-14).
+    hero = render_svg(kind, headline or title, pub, stats, cards, [], label=label, spark_line=line)
+    thumb = {"kind": kind, "headline": headline, "label": label, "stats": stats, "spark": [],
              "spark_line": [list(line[0]), list(line[1])] if line else None,
              "cards": [list(c) for c in cards]}
     return hero, json.dumps(thumb)
