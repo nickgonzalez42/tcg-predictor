@@ -146,11 +146,19 @@ KIND_DESC = {
                "starter decks, side products and the set before it; their chase cards, this week's "
                "movers, the releases they come from, where the prices sit and what the model expects "
                "next. The newest set has its own article; this one is about everything else new"),
+    # 2026-11-14: one kind of chase card across every set, see type_articles.py.
+    "type": ("report on ONE KIND of card in one game (card_type, what_it_is), followed over its whole "
+             "priced history rather than one week: what the group is worth today, its price index month "
+             "by month against the game's other expensive cards, how each release's cards have done and "
+             "the typical path by age, a few example cards, and what the model expects next. There is no "
+             "'this week' here; the time spans are months and years, named as the pack names them. The "
+             "headline names the game and the card type and states the group's change over the past year "
+             "(index.past_year_pct) when the pack has it, else its median price"),
 }
 
 
 def _write(kind, facts, sections, headline_names):
-    """kind 'set' | 'game' | 'recent'; sections = [(key, description)]; returns dict or None."""
+    """kind 'set' | 'game' | 'recent' | 'type'; sections = [(key, description)]; returns dict or None."""
     if os.environ.get("TCG_REPORT_PROSE", "1") == "0":
         print("article_editorial: disabled via TCG_REPORT_PROSE=0")
         return None
@@ -263,6 +271,10 @@ def write_set_article(facts, sections):
 
 def write_game_article(facts, sections):
     return _write("game", facts, sections, "the game")
+
+
+def write_type_article(facts, sections):
+    return _write("type", facts, sections, "the game and the card type (One Piece Manga Cards)")
 
 
 def write_recent_article(facts, sections):

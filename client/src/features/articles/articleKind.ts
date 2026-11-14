@@ -1,11 +1,12 @@
 import type { ArticleFocus, ArticleKind } from "./articlesApi";
 
-// The two article kinds, with the chip colour the pipeline's hero uses for
+// The article kinds, with the chip colour the pipeline's hero uses for
 // each (report_thumbnail.py KIND_COLOR), so the index chip and the picture
 // agree.
 export const ARTICLE_KINDS: Record<ArticleKind, { label: string; long: string; color: string }> = {
     set: { label: 'Set', long: 'Set report', color: '#4dd0e1' },
     game: { label: 'Game', long: 'Game report', color: '#ff9e64' },
+    type: { label: 'Card type', long: 'Card type report', color: '#5ad1a0' },
 };
 
 // The set slot's other focus (2026-11-07): the game's other recent releases.

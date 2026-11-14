@@ -151,7 +151,29 @@ PICKS_N = 5
 MIN_SET_TRACKED = 6           # a set earns a bar on the game chart with this many
 LADDER = [("under $1", 0, 1), ("$1 to $5", 1, 5), ("$5 to $20", 5, 20),
           ("$20 to $50", 20, 50), ("$50 to $100", 50, 100), ("$100 and up", 100, None)]
-KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASES"}
+KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASES", "type": "CARD TYPE"}
+# Card-type articles (2026-11-14, user: "add in 'card type performance' that
+# is a historical analysis of certain kinds of high value card, by title. In
+# One Piece for example there are manga and SP cards"). A type is told by
+# its title: name_tag is in the card's name (skip_prefix leaves out
+# look-alikes). Each (game, type) is a planner slot of its own, kind
+# "type:<key>" (stored kind 'type', focus = the key): due every
+# TYPE_GAP_DAYS, at most TYPE_PER_NIGHT a night ON TOP of MAX_PER_NIGHT, so
+# the set and game articles keep their two weeks. type_articles.py writes them.
+CARD_TYPES = {
+    "onepiece": {
+        "manga": {"label": "Manga", "plural": "Manga cards", "name_tag": "(Manga)", "search": "(Manga)",
+                  "skip_prefix": "DON!! Card", "skip_note": "DON!! cards",
+                  "what": ("alternate-art printings that use panels of the original manga as their artwork; "
+                           "a set carries only a handful and they are its most expensive cards")},
+        "sp": {"label": "SP", "plural": "SP cards", "name_tag": "(SP)", "search": "(SP)",
+               "skip_prefix": "DON!! Card", "skip_note": "DON!! cards",
+               "what": ("special alternate-art reprints of cards from earlier sets, marked SP in the title, "
+                        "a few to a set")},
+    },
+}
+TYPE_GAP_DAYS = 28        # each type about once a month
+TYPE_PER_NIGHT = 1
 
 
 def r1(v):
@@ -2201,7 +2223,7 @@ def write_watch(today, last, written, pc, pred, cats, synth, window, young, attr
     tomorrow = today + timedelta(days=1)
     last2 = dict(last)
     for g, k, f in written:
-        last2[(g, k)] = (today.isoformat(), f or "set")
+        last2[(g, k)] = (today.isoformat(), f or "set")       # k is "type:<key>" for a card type
     slots, _waiting = plan(tomorrow, last2)
     cards, seen = [], set()
     for game, kind in slots:
@@ -2211,7 +2233,11 @@ def write_watch(today, last, written, pc, pred, cats, synth, window, young, attr
         try:
             anchor, _age, skipped = pick_set(pc, game, cat, tomorrow)
             attrs = attrs_by_game.get(game)
-            if kind == "set":
+            if kind.startswith("type:"):
+                from type_articles import collect_type
+                d = collect_type(pc, pred, game, cat, kind[5:], synth, window, young, tomorrow, attrs=attrs)
+                pids = d["discussed"] if d else []
+            elif kind == "set":
                 if not anchor:
                     continue
                 prev = last2.get((game, "set"))
@@ -2250,7 +2276,7 @@ def last_articles(pred):
     a NULL focus (rows from before 2026-11-07) is the set focus."""
     rows = pred.execute("SELECT game, kind, published_at, focus FROM articles "
                         "ORDER BY published_at, slug").fetchall()
-    return {(g, k): (p[:10], f or "set") for g, k, p, f in rows}
+    return {(g, f"type:{f}" if k == "type" else k): (p[:10], f or "set") for g, k, p, f in rows}
 
 
 def plan(today, last, games=None):
@@ -2281,13 +2307,29 @@ def plan(today, last, games=None):
     due.sort(key=lambda t: -t[0])          # stable: equal waits keep the shuffled order
     rnd.shuffle(drawn)
     picks = due + drawn
-    return [(g, k) for _gap, g, k in picks[:MAX_PER_NIGHT]], max(0, len(picks) - MAX_PER_NIGHT)
+    # Card types run in their own lane (2026-11-14): the longest-waiting due
+    # type, TYPE_PER_NIGHT a night, beside the two above.
+    types = []
+    for game in games or GAMES:
+        paused = PAUSED_GAMES.get(game)
+        if paused and today < date.fromisoformat(paused):
+            continue
+        for tkey in CARD_TYPES.get(game, {}):
+            prev = last.get((game, f"type:{tkey}"))
+            gap = (today - date.fromisoformat(prev[0])).days if prev else 10 ** 6
+            if gap >= TYPE_GAP_DAYS:
+                types.append((gap, game, f"type:{tkey}"))
+    rnd.shuffle(types)
+    types.sort(key=lambda t: -t[0])
+    return ([(g, k) for _gap, g, k in picks[:MAX_PER_NIGHT] + types[:TYPE_PER_NIGHT]],
+            max(0, len(picks) - MAX_PER_NIGHT) + max(0, len(types) - TYPE_PER_NIGHT))
 
 
 def main():
     ap = argparse.ArgumentParser(description="Per-game articles")
     ap.add_argument("--game", action="append", help="game key (repeatable): write it now, whatever the plan says")
-    ap.add_argument("--kind", choices=["set", "game"], help="only this kind")
+    ap.add_argument("--kind", choices=["set", "game", "type"], help="only this kind")
+    ap.add_argument("--type", help="card-type articles: only this type key (manga, sp, ...)")
     ap.add_argument("--focus", choices=["set", "recent"],
                     help="set articles: this focus (default: the other one from the game's last set article)")
     ap.add_argument("--all", action="store_true", help="every game, both kinds, right now")
@@ -2298,19 +2340,25 @@ def main():
     args = ap.parse_args()
 
     today = date.fromisoformat(args.date) if args.date else datetime.now(timezone.utc).date()
-    kinds = [args.kind] if args.kind else ["set", "game"]
+    kinds = [args.kind] if args.kind else ["set", "game", "type"]
+
+    def slots_for(g):
+        out = [(g, k) for k in kinds if k != "type"]
+        if "type" in kinds:
+            out += [(g, f"type:{t}") for t in CARD_TYPES.get(g, {}) if not args.type or t == args.type]
+        return out
     pred = sqlite3.connect(args.pred_db)
     pred.execute("PRAGMA busy_timeout=120000")
     ensure_table(pred)
     last = last_articles(pred)
     waiting = 0
     if args.game:
-        slots = [(g, k) for g in args.game if g in GAMES for k in kinds]
+        slots = [s for g in args.game if g in GAMES for s in slots_for(g)]
     elif args.all:
-        slots = [(g, k) for g in GAMES for k in kinds]
+        slots = [s for g in GAMES for s in slots_for(g)]
     else:
         slots, waiting = plan(today, last)
-        slots = [(g, k) for g, k in slots if k in kinds]
+        slots = [(g, k) for g, k in slots if k.split(":")[0] in kinds]
     print(f"game_articles plan for {today}: " + (", ".join(f"{g}/{k}" for g, k in slots) or "nothing due")
           + (f"; {waiting} more slot(s) wait for another night" if waiting else ""))
     for g, k in slots:
@@ -2346,7 +2394,14 @@ def main():
             attrs_by_game[game] = card_attrs(game)
         anchor, _age, skipped = anchors[game]
         attrs = attrs_by_game[game]
-        if kind == "set":
+        if kind.startswith("type:"):
+            from type_articles import collect_type, build_type_article
+            d = collect_type(pc, pred, game, cat, kind[5:], synth, window, young, today, attrs=attrs)
+            if d is None:
+                print(f"{game}: too few priced {kind[5:]} cards; card-type article skipped")
+                continue
+            a = build_type_article(d, today, args.no_prose)
+        elif kind == "set":
             if not anchor:
                 print(f"{game}: no set with {LATEST_SET_MIN_CARDS}+ priced cards and "
                       f"{SET_MIN_AGE_DAYS}+ days of age; set article skipped")

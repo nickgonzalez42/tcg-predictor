@@ -18,7 +18,7 @@ from _paths import DATA_DIR as BASE          # noqa: E402
 from report_pages import PRED_DB, page, thumbnail   # noqa: E402
 
 DEFAULT_OUT = os.path.join(BASE, "..", "tcg-predictor", "static-content", "articles")
-SECTION = {"set": "Set report", "game": "Game report"}
+SECTION = {"set": "Set report", "game": "Game report", "type": "Card type report"}
 
 
 def main():

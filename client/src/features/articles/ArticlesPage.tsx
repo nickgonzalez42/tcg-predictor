@@ -83,7 +83,8 @@ export default function ArticlesPage() {
             <p className="est-note reports__sub">
                 Every game gets a set report and a game report at least every two weeks, on no
                 fixed day. The set report takes turns between the newest set and the other cards
-                released lately.
+                released lately. Card type reports follow one kind of card, like One Piece Manga
+                cards, through its whole price history.
             </p>
             <div className="articles__filters" role="group" aria-label="Filter articles by game">
                 <div className="articles__chips">

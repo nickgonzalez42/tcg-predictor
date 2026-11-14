@@ -39,7 +39,7 @@ UP = (63, 217, 138)
 DOWN = (255, 122, 122)
 # Article kinds (2026-11-06): the per-game set and game reports.
 KIND_COLOR = {"market": (127, 176, 234), "model": (198, 120, 221),
-              "set": (77, 208, 225), "game": (255, 158, 100)}
+              "set": (77, 208, 225), "game": (255, 158, 100), "type": (90, 209, 160)}
 
 # Card art corners (2026-11-07, user: never any white showing on the card
 # corners). TCGplayer's scans are a rounded card on a white field, so a card
@@ -324,7 +324,7 @@ def render_svg(kind, headline, published, stats=(), cards=(), spark=(), label=No
     from PIL import Image as _I, ImageDraw
     measure = ImageDraw.Draw(_I.new("RGB", (1, 1)))
     kind_colour = {"market": "#7fb0ea", "model": "#c678dd", "set": "#4dd0e1",
-                   "game": "#ff9e64"}.get(kind, "#8b96ad")
+                   "game": "#ff9e64", "type": "#5ad1a0"}.get(kind, "#8b96ad")
     label = label or ("MARKET REPORT" if kind == "market" else "MODEL REPORT")
     out = [f'<svg class="report-hero-svg" viewBox="0 0 {W} {H}" role="img" '
            f'xmlns="http://www.w3.org/2000/svg">',

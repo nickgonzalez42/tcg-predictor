@@ -6,10 +6,12 @@ import { toApiParams } from "../../lib/util";
 // written by the pipeline's game_articles.py on its own schedule (each at
 // least every two weeks, on a random night) and served read-only at
 // /api/articles.
-export type ArticleKind = 'set' | 'game';
+// 2026-11-14: 'type' follows one kind of card (One Piece Manga cards) through
+// its whole history; its focus is the type's key and setName its name.
+export type ArticleKind = 'set' | 'game' | 'type';
 // 2026-11-07: the set slot takes turns between the newest set ('set') and the
 // game's other recent releases ('recent'); older rows and game reports carry null.
-export type ArticleFocus = 'set' | 'recent';
+export type ArticleFocus = 'set' | 'recent' | (string & {});
 
 export type ArticleSummary = {
     slug: string;

@@ -7,11 +7,13 @@ namespace API.Entities;
 public class Article
 {
     public string Slug { get; set; } = "";
-    public string Kind { get; set; } = "";        // "set" | "game"
+    public string Kind { get; set; } = "";        // "set" | "game" | "type" (one kind of card, 2026-11-14)
     public string Game { get; set; } = "";        // game key (pokemon, onepiece, ...)
     public string? SetName { get; set; }          // the set a "set" article covers
     // 2026-11-07: a "set" article is about the newest set ("set") or the game's
     // other recent releases ("recent"); null on older rows and on game reports.
+    // A "type" article carries its card type's key here ("manga") and its
+    // name ("Manga cards") in SetName.
     public string? Focus { get; set; }
     public string Title { get; set; } = "";
     public string PublishedAt { get; set; } = ""; // yyyy-MM-dd

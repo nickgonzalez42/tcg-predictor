@@ -27,7 +27,7 @@ public class ArticlesController(PredictionsContext predictions) : ControllerBase
             var q = predictions.Articles.AsQueryable();
             var key = string.IsNullOrEmpty(game) ? null : GameRegistry.Normalize(game);
             if (key != null) q = q.Where(a => a.Game == key);
-            if (kind is "set" or "game") q = q.Where(a => a.Kind == kind);
+            if (kind is "set" or "game" or "type") q = q.Where(a => a.Kind == kind);
             var total = await q.CountAsync();
             var items = await q
                 .OrderByDescending(a => a.PublishedAt).ThenBy(a => a.Slug)
