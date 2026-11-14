@@ -9,7 +9,8 @@ import PricePair from "../../app/shared/components/PricePair";
 import ChangePill from "../../app/shared/components/ChangePill";
 import Glance, { CollectionGlance } from "./Glance";
 import Carousel from "./Carousel";
-import { GAMES } from "../../lib/games";
+import { GAMES, GAME_LABEL } from "../../lib/games";
+import { useAppSelector } from "../../app/store/store";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { usePageMeta } from "../../lib/usePageMeta";
 
@@ -427,12 +428,17 @@ export default function HomePage() {
     // count=24 so the per-game guarantee (gainer+loser per game) fits for all
     // eight games; the dedupe below then keeps one tile per game. Tiles show
     // the past six months (trend) next to the 1-month forecast they rank on.
-    const { data: movers } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '6m' });
+    // The visitor's game, picked in the nav (2026-11-14): '' is every game.
+    // With one picked, both feeds are that game's own movers.
+    const game = useAppSelector(state => state.site.game);
+    const { data: movers } = useFetchMoversQuery(
+        { count: 24, horizon: '1m', trend: '6m', ...(game ? { game } : {}) });
     // The hero graph cycles every forecast length (1M/6M/1Y) with two cards
     // per game AT EACH length — its strongest gainer and loser there — in a
     // horizon-rotating order built client-side (heroOrder); the tiles below
     // stay on the 1-month ranking.
-    const { data: heroMovers } = useFetchMoversQuery({ horizon: 'mix', perGame: 2 });
+    const { data: heroMovers } = useFetchMoversQuery(
+        game ? { horizon: 'mix', perGame: 6, game } : { horizon: 'mix', perGame: 2 });
     const { data: user } = useUserInfoQuery();
     // The card the hero scene is featuring right now; the band follows it.
     const [heroCard, setHeroCard] = useState<Card | null>(null);
@@ -444,13 +450,15 @@ export default function HomePage() {
         const seen = new Set<string>();
         const picks: Card[] = [];
         for (const m of movers ?? []) {
-            if (seen.has(gameKey(m.game))) continue;
-            seen.add(gameKey(m.game));
+            // One game picked: every one of its movers is a tile.
+            const key = game ? `${m.id}` : gameKey(m.game);
+            if (seen.has(key)) continue;
+            seen.add(key);
             picks.push(m);
             if (picks.length === GAMES.length) break;
         }
         return picks;
-    }, [movers]);
+    }, [movers, game]);
 
     return (
         <>
@@ -474,7 +482,7 @@ export default function HomePage() {
                 </div>
                 <div className="hero__panel">
                     <div className="band">
-                        <span className="band__title">Featured cards</span>
+                        <span className="band__title">{game ? `Featured ${GAME_LABEL[game]} cards` : 'Featured cards'}</span>
                         <RollingText className="mono"
                             text={heroCard
                                 ? isFeatured(heroCard)
@@ -490,7 +498,7 @@ export default function HomePage() {
                 <section className="full-span subgrid">
                     <span className="kicker home__kicker full-span">01 · Market</span>
                     <h2 className="home__heading full-span">
-                        Biggest expected moves <span className="est-note">· next month · one card per game</span>
+                        Biggest expected moves <span className="est-note">· next month · {game ? GAME_LABEL[game] : 'one card per game'}</span>
                     </h2>
                     <Carousel className="movers" label="Top movers, one card per game"
                         slides={tiles.map((m, i) => ({

@@ -21,6 +21,7 @@ import argparse
 import html
 import json
 import os
+import re
 import sqlite3
 import sys
 import urllib.request
@@ -392,8 +393,19 @@ def mid_cta(body_html, cta):
     return body_html[:at] + cta + body_html[at:], ""
 
 
+def first_game_js(game):
+    """A visitor whose very first page is an article about one game starts
+    the site on that game (2026-11-14, the nav's game picker; the keys are
+    the app's, client/src/lib/siteGame.ts). Nothing changes for a browser
+    that has been here before or has already picked."""
+    if not game or not re.fullmatch(r"[a-z]+", game):
+        return ""
+    return ("<script>try{if(!localStorage.getItem('cs.seen')){localStorage.setItem('cs.seen','1');"
+            f"if(localStorage.getItem('cs.game')===null)localStorage.setItem('cs.game','{game}')}}}}catch(e){{}}</script>")
+
+
 def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None,
-         base="reports", section=None):
+         base="reports", section=None, game=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
     # cards, but no longer prints above the headline. The headline is
@@ -491,6 +503,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 {PX}
 <script>{JS}</script>
 <script>{PICKER_JS}</script>
+{first_game_js(game)}
 <script>{NAV_JS}</script>
 </body>
 </html>

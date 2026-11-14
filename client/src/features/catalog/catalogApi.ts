@@ -114,13 +114,15 @@ export const catalogApi = createApi({
         // trend: displayed history window (sparkline + PAST pill), default 1y.
         // perGame (mix only): guarantee every game that many cards at EACH
         // horizon, 1m/6m/12m back to back (the hero).
-        fetchMovers: builder.query<Card[], { count?: number; horizon?: string; trend?: string; perGame?: number } | void>({
+        // game: one game's own movers (the per-game home page, 2026-11-14).
+        fetchMovers: builder.query<Card[], { count?: number; horizon?: string; trend?: string; perGame?: number; game?: string } | void>({
             query: (args) => {
                 const p = new URLSearchParams();
                 if (args?.count) p.set('count', String(args.count));
                 if (args?.horizon) p.set('horizon', args.horizon);
                 if (args?.trend) p.set('trend', args.trend);
                 if (args?.perGame) p.set('perGame', String(args.perGame));
+                if (args?.game) p.set('game', args.game);
                 const qs = p.toString();
                 return `cards/movers${qs ? `?${qs}` : ''}`;
             }

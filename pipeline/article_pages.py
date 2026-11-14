@@ -35,18 +35,18 @@ def main():
         have = {r[1] for r in conn.execute("PRAGMA table_info(articles)")}
         focus_col = "focus" if "focus" in have else "NULL"
         rows = conn.execute(
-            f"SELECT slug, kind, title, published_at, summary, body_html, thumb, hero, {focus_col} "
+            f"SELECT slug, kind, title, published_at, summary, body_html, thumb, hero, {focus_col}, game "
             "FROM articles").fetchall()
     except sqlite3.OperationalError:
         rows = []      # no articles yet
     conn.close()
     os.makedirs(args.out, exist_ok=True)
-    for slug, kind, title, published_at, summary, body_html, thumb, hero, focus in rows:
+    for slug, kind, title, published_at, summary, body_html, thumb, hero, focus, game in rows:
         thumb_url = thumbnail(slug, thumb, title, published_at[:10], args.out, base="articles")
         section = "New releases" if focus == "recent" else SECTION.get(kind, "Game report")
         with open(os.path.join(args.out, f"{slug}.html"), "w", encoding="utf-8") as f:
             f.write(page(slug, title, published_at[:10], summary, body_html, thumb_url, hero,
-                         base="articles", section=section))
+                         base="articles", section=section, game=game))
     print(f"wrote {len(rows)} article page(s) -> {args.out}")
 
 

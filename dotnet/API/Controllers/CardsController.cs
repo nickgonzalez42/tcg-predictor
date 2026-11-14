@@ -698,7 +698,7 @@ public partial class CardsController(
     [HttpGet("movers")]
     public async Task<IActionResult> GetMovers(
         [FromQuery] int count = 12, [FromQuery] string? horizon = null, [FromQuery] string? trend = null,
-        [FromQuery] int perGame = 0)
+        [FromQuery] int perGame = 0, [FromQuery] string? game = null)
     {
         // Key on the NORMALIZED parameters (the same clamps/fallbacks the
         // ranking itself applies), so unrecognized values collapse onto the
@@ -708,7 +708,12 @@ public partial class CardsController(
         horizon = horizon is "mix" or "1m" or "6m" ? horizon : "12m";
         trend = trend == null ? null : CardMarketData.NormalizeTrend(trend);   // null = per-game default
 
-        var key = $"movers:{count}:{horizon}:{trend}:{perGame}";
+        // ?game= (2026-11-14, the per-game home page): one game's own movers;
+        // absent, "all" or unknown is the all-games ranking.
+        game = GameRegistry.Normalize(game);
+        if (game != null && !GameRegistry.Keys.Contains(game)) game = null;
+
+        var key = $"movers:{count}:{horizon}:{trend}:{perGame}:{game}";
         // Same ranking for every visitor and it changes once a night, so the
         // browser may hold it briefly (see CacheForVisitor: without this the
         // home page's preload was refetched on Safari).
@@ -737,7 +742,7 @@ public partial class CardsController(
                 // failed refresh's restart.
                 entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(7);
                 entry.Priority = CacheItemPriority.NeverRemove;
-                return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl);
+                return movers.TopMovers(count, horizon, trend, perGame, CardImageUrl, game);
             });
             return Ok(result);
         }

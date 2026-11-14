@@ -4,6 +4,7 @@ import { gsap } from "gsap";
 import { Draggable } from "gsap/Draggable";
 import { InertiaPlugin } from "gsap/InertiaPlugin";
 import { useFetchMoversQuery } from "../../../features/catalog/catalogApi";
+import { useAppSelector } from "../../store/store";
 import { gameKey } from "../../../lib/util";
 
 gsap.registerPlugin(Draggable, InertiaPlugin);
@@ -16,7 +17,9 @@ const SPEED = 60;          // px/sec
 const RESUME_DELAY = 3;    // seconds of stillness before auto-scroll resumes
 
 export default function MarketTicker() {
-    const { data: movers } = useFetchMoversQuery({ count: 12 });
+    // The crawl follows the visitor's game (the nav's picker); '' is every game.
+    const game = useAppSelector(state => state.site.game);
+    const { data: movers } = useFetchMoversQuery(game ? { count: 12, game } : { count: 12 });
     const trackRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {

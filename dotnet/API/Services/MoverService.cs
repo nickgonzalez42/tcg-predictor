@@ -35,9 +35,12 @@ public class MoverService(
     // imageUrl builds the absolute art URL (host-dependent, so the controller
     // supplies it). trend overrides the displayed history window (sparkline +
     // PAST pill); default stays the year-long view. perGame > 0 (with mix)
-    // guarantees every game that many cards at each horizon.
+    // guarantees every game that many cards at each horizon. onlyGame
+    // (2026-11-14, the per-game home page) ranks one game's cards alone: the
+    // nightly all-games picks do not apply and nothing is recorded as shown.
     public async Task<List<CardDto>> TopMovers(
-        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
+        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl,
+        string? onlyGame = null)
     {
         var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
         var yesterday = DateTime.UtcNow.AddDays(-1).ToString("yyyy-MM-dd");
@@ -54,6 +57,7 @@ public class MoverService(
         // Nightly picks (2026-11-09): when pick_showcase.py has decided the
         // lists, they are served as they stand; the on-request ranking below
         // remains the fallback for a database without them.
+        if (onlyGame != null) return await Rank(count, horizon, trend, perGame, imageUrl, onlyGame);
         var picked = await FromShowcase(count, horizon, trend, perGame, imageUrl);
         if (picked != null) return picked;
         var ranked = await Rank(count, horizon, trend, perGame, imageUrl);
@@ -141,7 +145,8 @@ public class MoverService(
     }
 
     private async Task<List<CardDto>> Rank(
-        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl)
+        int count, string? horizon, string? trend, int perGame, Func<string, int, string> imageUrl,
+        string? onlyGame = null)
     {
         count = Math.Clamp(count, 1, 24);
         perGame = Math.Clamp(perGame, 0, 6);
@@ -169,7 +174,7 @@ public class MoverService(
                 {
                     var picks = await PickMovers(
                         h, GameRegistry.Keys.Length * 2, guaranteeGames: true, trend, imageUrl,
-                        flatFallback: true);
+                        flatFallback: true, onlyGame: onlyGame);
                     foreach (var g in picks.DistinctBy(m => (m.Game, m.Id)).GroupBy(m => m.Game))
                     {
                         var chosen = g.Where(m => !featured.Contains((m.Game, m.Id)))
@@ -188,7 +193,8 @@ public class MoverService(
             // variety.
             var mixed = new List<CardDto>();
             foreach (var h in new[] { "1m", "6m", "12m" })
-                mixed.AddRange(await PickMovers(h, Math.Max(2, count / 3), guaranteeGames: false, trend, imageUrl));
+                mixed.AddRange(await PickMovers(h, Math.Max(2, count / 3), guaranteeGames: false, trend, imageUrl,
+                    onlyGame: onlyGame));
             return mixed.DistinctBy(m => (m.Game, m.Id)).ToList();
         }
 
@@ -196,14 +202,19 @@ public class MoverService(
         // legacy behavior where games without year-deep data fall back to 6m;
         // an explicit horizon applies to every game (all games train them).
         var hz = horizon is "1m" or "6m" ? horizon : "12m";
-        return await PickMovers(hz, count, guaranteeGames: true, trend, imageUrl);
+        var ranked = await PickMovers(hz, count, guaranteeGames: true, trend, imageUrl, onlyGame: onlyGame);
+        // One game with nothing at this length yet falls back to its
+        // one-month list (early estimates included).
+        if (onlyGame != null && ranked.Count == 0 && hz != "1m")
+            ranked = await PickMovers("1m", count, guaranteeGames: true, trend, imageUrl, onlyGame: onlyGame);
+        return ranked;
     }
 
     // flatFallback (the hero's mix feed): a game whose every call at this
     // horizon is flat still contributes a card — see FlatPick.
     private async Task<List<CardDto>> PickMovers(
         string hz, int count, bool guaranteeGames, string? trend, Func<string, int, string> imageUrl,
-        bool flatFallback = false)
+        bool flatFallback = false, string? onlyGame = null)
     {
         var gamesWith12m = (await predictions.Forecasts
             .Where(f => f.Target == "ungraded" && f.Horizon == "12m")
@@ -214,24 +225,40 @@ public class MoverService(
         // (6m for young games — digimon/gundam have <14 months of history).
         var moverPool = predictions.Forecasts.IgnoreQueryFilters()
             .Where(f => f.Target == "ungraded" && f.BasePrice >= 10);
+        if (onlyGame != null) moverPool = moverPool.Where(f => f.Game == onlyGame);
+        // One game alone, with no one-month model yet (the newest games):
+        // its early estimates stand in, as they do for its guaranteed pick.
+        var poolHz = hz;
+        if (onlyGame != null && hz == "1m" && !await predictions.Forecasts.AnyAsync(
+                f => f.Game == onlyGame && f.Target == "ungraded" && f.Horizon == "1m"))
+            poolHz = "launch1m";
         moverPool = hz == "12m"
             ? moverPool.Where(f => f.Horizon == "12m"
                                    || (f.Horizon == "6m" && !gamesWith12m.Contains(f.Game)))
-            : moverPool.Where(f => f.Horizon == hz);
+            : moverPool.Where(f => f.Horizon == poolHz);
         // Showcase sanity (2026-10-25, launch review): the ticker led with
         // 1-year calls of -94%/-95% — the model's least trustworthy output as
         // the first thing a visitor sees. The global ranking skips calls the
         // model itself marks low confidence and anything beyond the SANE
         // band; the per-game guarantee below applies the same band and only
         // falls back to low-confidence calls when a game has nothing else.
+        // One game alone keeps its low-confidence calls (2026-11-14): the
+        // per-game guarantee already falls back to them, every one-month
+        // call is marked low today, and a game's own page with two cards on
+        // it is no page. The band, the fresh price and the recent sales
+        // still apply.
+        var allowLow = onlyGame != null;
         var baseQuery = moverPool
-            .Where(f => f.Confidence != "low"
+            .Where(f => (allowLow || f.Confidence != "low")
                         && f.ForecastPrice >= f.BasePrice * SaneLo
                         && f.ForecastPrice <= f.BasePrice * SaneHi)
             .Select(f => new { f.Game, f.ProductId, f.Printing, f.BasePrice, f.ForecastPrice });
         // 2x buffer per side: candidates without local art are filtered below.
-        var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
-        var losers = await baseQuery.OrderBy(f => f.ForecastPrice / f.BasePrice).Take(count * 2).ToListAsync();
+        // One game alone needs a much deeper pool: its extreme calls are
+        // mostly cards with no recent sales, which the showcase gate drops.
+        var pool = count * (onlyGame != null ? 12 : 2);
+        var gainers = await baseQuery.OrderByDescending(f => f.ForecastPrice / f.BasePrice).Take(pool).ToListAsync();
+        var losers = await baseQuery.OrderBy(f => f.ForecastPrice / f.BasePrice).Take(pool).ToListAsync();
 
         // Balanced mix, alternating up/down: ordering purely by |change| lets the
         // triple-digit gainers crowd every loser out of the ticker. Only genuine
@@ -264,7 +291,8 @@ public class MoverService(
         // gainer + strongest loser) so no game monopolizes the showcase; the
         // remaining slots come from the global ranking.
         var guaranteed = new List<Pick>();
-        foreach (var game in guaranteeGames ? GameRegistry.Keys : Array.Empty<string>())
+        var guaranteedGames = !guaranteeGames ? [] : onlyGame != null ? new[] { onlyGame } : GameRegistry.Keys;
+        foreach (var game in guaranteedGames)
         {
             var gameHorizon = RankHorizon(game);
             var gainer = await BestMover(game, gameHorizon, gainerSide: true);

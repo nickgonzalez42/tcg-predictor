@@ -1,0 +1,158 @@
+/* The game picker (2026-11-14): a round mark under the logo on desktop, at
+   the top right of the bar on tablet and phone; its menu opens on hover or
+   tap. A sibling of .navbar, so the nav's own states reach it with ~. */
+.gamepick {
+  position: fixed;
+  z-index: 14;
+  left: calc(var(--content-left) / 2 - 20px);
+  top: calc(var(--logo-top) + var(--logo-h) + 18px);
+  transition: opacity 0.15s ease, top 0.3s ease;
+}
+
+.gamepick__mark {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.55);
+  border-radius: 50%;
+  background: var(--nav-glass);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+
+.gamepick__mark:hover,
+.gamepick--open .gamepick__mark {
+  border-color: var(--brand);
+}
+
+.gamepick__menu {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: -6px;
+  min-width: 210px;
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-2, #141c2e);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-4px);
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+}
+
+/* A bridge over the gap, so the pointer can travel from the mark to the menu. */
+.gamepick__menu::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  top: 0;
+  width: 12px;
+  height: 56px;
+}
+
+.gamepick--open .gamepick__menu,
+.gamepick:focus-within .gamepick__menu {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  transition-delay: 0s;
+}
+
+@media (hover: hover) {
+  .gamepick:hover .gamepick__menu {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+    transition-delay: 0s;
+  }
+}
+
+.gamepick__option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gamepick__option:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.gamepick__option--on {
+  background: rgba(255, 203, 5, 0.1);
+  font-weight: 600;
+}
+
+.gamepick__dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #ffcb05, #7fb0ea 55%, #c678dd);
+}
+
+/* Desktop: the drawer slides over the rail, so the mark steps aside while
+   it is open. */
+@media (hover: hover) and (min-width: 1024px) {
+  .navbar:is(:hover, :focus-within) ~ .gamepick {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.navbar--open ~ .gamepick {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Tablet and phone: top right of the bar, riding away with it on scroll. */
+@media (max-width: 1023px) {
+  .gamepick {
+    left: auto;
+    right: 20px;
+    top: calc((var(--nav-bar-h) - 36px) / 2);
+  }
+
+  .gamepick__mark {
+    width: 36px;
+    height: 36px;
+    font-size: 10px;
+  }
+
+  .gamepick__menu {
+    left: auto;
+    right: 0;
+    top: calc(100% + 10px);
+    transform: translateY(-4px);
+  }
+
+  .gamepick__menu::before {
+    display: none;
+  }
+
+  .navbar--hidden:not(.navbar--open) ~ .gamepick {
+    top: calc(-1 * var(--nav-bar-h));
+  }
+}

@@ -9,6 +9,7 @@ import { reportsApi } from "../../features/reports/reportsApi";
 import { articlesApi } from "../../features/articles/articlesApi";
 import { homeApi } from "../../features/home/homeApi";
 import { ownedParamsSlice, wishlistParamsSlice } from "../../features/watchlist/trackedParamsSlice";
+import { siteSlice } from "../../lib/siteGame";
 
 export const store = configureStore({
     reducer: {
@@ -20,6 +21,7 @@ export const store = configureStore({
         [articlesApi.reducerPath]: articlesApi.reducer,
         [homeApi.reducerPath]: homeApi.reducer,
         catalog: catalogSlice.reducer,
+        site: siteSlice.reducer,
         ownedParams: ownedParamsSlice.reducer,
         wishlistParams: wishlistParamsSlice.reducer
     },

@@ -93,10 +93,14 @@ export default function Catalog() {
   // per session — an explicit choice or URL param always wins.
   const { data: user, isLoading: userLoading } = useUserInfoQuery();
   const { data: watchlist, isLoading: watchlistLoading } = useFetchWatchlistQuery(undefined, { skip: !user });
+  const siteGame = useAppSelector(state => state.site.game);
   useEffect(() => {
     // A URL ?game= marks gameInitialized during hydration, and the reducer
     // itself is a no-op once any decision exists — so this can't override one.
     if (cardParams.gameInitialized) return;
+    // The game picked in the nav (or set by a first-visit article) needs no
+    // account facts: it applies at once.
+    if (siteGame) { dispatch(initDefaultGame(siteGame)); return; }
     if (userLoading || (user && watchlistLoading)) return;   // decide once the facts are in
     const owned: Record<string, number> = {};
     for (const w of watchlist ?? [])
@@ -104,7 +108,7 @@ export default function Catalog() {
     const best = Object.entries(owned).sort((a, b) => b[1] - a[1])[0];
     dispatch(initDefaultGame(best ? best[0] : 'pokemon'));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, userLoading, watchlist, watchlistLoading, cardParams.gameInitialized]);
+  }, [user, userLoading, watchlist, watchlistLoading, cardParams.gameInitialized, siteGame]);
 
   // Opening set (2026-11-02): once THIS game's facets are in (currentData, so
   // a stale game's answer can't apply), the newest set becomes the filter

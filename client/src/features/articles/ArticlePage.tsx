@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetchArticleQuery } from "./articlesApi";
 import CardLoader from "../../app/shared/components/CardLoader";
@@ -8,6 +8,8 @@ import { GAME_LABEL } from "../../lib/games";
 import { longDate } from "../reports/reportKind";
 import { useReportBodyEffects } from "../reports/useReportBodyEffects";
 import { articleChipStyle, articleKindLabel } from "./articleKind";
+import { firstVisitPath, gameChosen, setSiteGame } from "../../lib/siteGame";
+import { useAppDispatch } from "../../app/store/store";
 
 // One per-game article (2026-11-06). The body is pipeline-generated HTML
 // (text, card art, inline SVG charts) re-rendered through the strict report
@@ -22,6 +24,13 @@ export default function ArticlePage() {
         publishedAt: article?.publishedAt,
         section: article ? articleKindLabel(article.kind, false, article.focus) : undefined,
     });
+    // A visitor whose very first page is this article starts on its game
+    // (2026-11-14), unless they have already settled one.
+    const dispatch = useAppDispatch();
+    useEffect(() => {
+        if (article && firstVisitPath === `/articles/${article.slug}` && !gameChosen())
+            dispatch(setSiteGame(article.game));
+    }, [article, dispatch]);
     const bodyRef = useRef<HTMLDivElement>(null);
     useReportBodyEffects(bodyRef, article?.slug);
 

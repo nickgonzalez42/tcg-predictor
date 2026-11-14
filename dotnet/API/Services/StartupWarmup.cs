@@ -21,7 +21,7 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
     // cost 14-43 s cold on the big games — the catalog page blocks on them.
     private static readonly string[] Paths =
     [
-        "/api/cards/movers?game=all&count=10",             // market ticker
+        "/api/cards/movers?count=12",                      // market ticker (the client asks for 12)
         "/api/cards/movers?count=24&horizon=1m&trend=6m",  // homepage mover tiles
         "/api/cards/movers?horizon=mix&perGame=2",         // featured-card hero
         "/api/home/stats",                                 // home glance panels
@@ -31,6 +31,15 @@ public class StartupWarmup(IServer server, IHostApplicationLifetime lifetime,
             $"/api/cards/filters?game={g}",                // catalog facets (cached per process)
             $"/api/cards?game={g}&pageSize=30",            // first catalog page (pulls pages into the OS cache)
             $"/api/cards?game={g}&pageSize=30&orderBy=histPct6mDesc",  // past-change sort: loads the game's trends (CardMarketData.TierTrends)
+        }),
+        // Each game's own home page (2026-11-14, the nav's game picker): its
+        // ticker, tiles and hero. Last, so the all-games page and the catalog
+        // are warm first; a cold one costs a visitor 5 to 40 s of empty panels.
+        .. API.RequestHelpers.GameRegistry.Keys.SelectMany(g => new[]
+        {
+            $"/api/cards/movers?count=12&game={g}",
+            $"/api/cards/movers?count=24&horizon=1m&trend=6m&game={g}",
+            $"/api/cards/movers?horizon=mix&perGame=6&game={g}",
         }),
     ];
 

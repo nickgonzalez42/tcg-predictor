@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import UserMenu from "./UserMenu";
+import GamePicker from "./GamePicker";
 import { useUserInfoQuery } from "../../features/account/accountApi";
 import MarketTicker from "../shared/components/MarketTicker";
 
@@ -189,6 +190,10 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
             </div>
             </div>
         </header>
+        {/* A sibling of the header, not a child: hovering it must not open
+            the desktop drawer, and the header's rules hide it while the
+            drawer is open or the bar is scrolled away (GamePicker.css). */}
+        <GamePicker />
         {/* The crawl is fixed to the viewport bottom. It must NOT live inside
             the header: the tablet/mobile bar's backdrop blur makes the header
             the containing block for fixed descendants, which would pin the

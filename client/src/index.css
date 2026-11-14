@@ -17,6 +17,7 @@
 
 /* Shared components */
 @import "./styles/components/NavBar.css";
+@import "./styles/components/GamePicker.css";
 @import "./styles/components/MarketTicker.css";
 @import "./styles/components/Sparkline.css";
 @import "./styles/components/PricePair.css";
