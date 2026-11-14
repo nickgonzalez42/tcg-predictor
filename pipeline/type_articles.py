@@ -10,17 +10,27 @@ told by its title (game_articles.CARD_TYPES). Where the set article follows
 one release and the game article one week, this one follows the type over
 its whole priced history:
 
-  card-type-{game}-{type}-{date}   the group today, its price index month by
-                                   month against the game's other expensive
-                                   cards, each release's cards and the
-                                   typical path by age, a few example cards
-                                   with their full history and the model's
-                                   calls, what sold, the model's outlook
+  card-type-{game}-{type}-{date}   the dearest cards, the group's price index
+                                   month by month against the game's other
+                                   expensive cards, the typical path after
+                                   release, a few example cards with their
+                                   full history and the model's calls, how
+                                   often the cards actually sell, the
+                                   model's outlook, and every card in one
+                                   table
+
+Rewritten the day it shipped (2026-11-14, user: "some of the sections are
+awkward ... think about what a reader would want to see and read"): the
+price-band chart, the one-row-per-set table, the week-on-week sales
+comparison and the one-month picks table went; how often these cards sell
+(most weeks only a few copies, and a third of them not at all in two
+months, so some prices are asking prices) and the every-card table came in.
 
 Same sources and the same prose contract as game_articles.py, which plans
 and stores these (kind 'type', focus = the type key).
 """
 
+import sqlite3
 import statistics
 from datetime import date, timedelta
 
@@ -39,6 +49,10 @@ AGE_MONTHS = (3, 6, 12, 18, 24)
 AGE_MIN_CARDS = 4
 TOP_N = 6
 EXAMPLES_N = 4
+EXAMPLE_MIN_DAYS = 180    # an example's chart needs half a year of prices
+SELL_WEEKS = 26           # the weekly sales line
+QUIET_WEEKS = 8           # "has not sold lately"
+SELL_MIN_COVER = 0.6      # share of the cards whose sales must be freshly fetched
 COMPARE_FLOORS = ((200, 200), (20, 20), (0, 5))   # (type median at least, other cards at least)
 HIGH_LADDER = [("under $250", 0, 250), ("$250 to $500", 250, 500), ("$500 to $1,000", 500, 1000),
                ("$1,000 to $2,500", 1000, 2500), ("$2,500 and up", 2500, None)]
@@ -124,6 +138,46 @@ def month_label(iso):
     return date.fromisoformat(iso).strftime("%b %Y")
 
 
+def selling_record(pc, game, members, today):
+    """How often these cards actually change hands: Near Mint copies sold per
+    complete week over SELL_WEEKS for the whole group, each card's copies in
+    that span and the week of its last recorded sale. Only cards whose sales
+    were fetched after the last complete week closed count; None under
+    SELL_MIN_COVER of the group."""
+    pids = list(members)
+    week_open = ga.monday_of(today)
+    weeks = [(week_open - timedelta(days=7 * k)).isoformat() for k in range(SELL_WEEKS, 0, -1)]
+    marks = ",".join("?" * len(pids))
+    try:
+        scans = dict(pc.execute(
+            f"SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=? AND product_id IN ({marks})",
+            [game, *pids]).fetchall())
+        rows = pc.execute(
+            f"SELECT product_id, bucket_date, SUM(quantity_sold) FROM tcg_sales_history WHERE game=? "
+            f"AND condition='Near Mint' AND product_id IN ({marks}) GROUP BY 1, 2", [game, *pids]).fetchall()
+    except sqlite3.OperationalError as e:
+        print(f"type_articles: read failed ({e}); that part is left out", flush=True)
+        return None
+    fresh = {pid for pid, f in scans.items() if f and f[:10] >= week_open.isoformat()}
+    if len(fresh) < max(TOP_N, SELL_MIN_COVER * len(pids)):
+        return None
+    per_week = {w: 0.0 for w in weeks}
+    copies = {pid: 0.0 for pid in fresh}
+    last = {}
+    for pid, d, n in rows:
+        if pid not in fresh or not n:
+            continue
+        if d < week_open.isoformat():
+            last[pid] = max(last.get(pid, ""), d)
+        if d in per_week:
+            per_week[d] += n
+            copies[pid] += n
+    quiet_cut = (week_open - timedelta(days=7 * QUIET_WEEKS)).isoformat()
+    quiet = sorted((pid for pid in fresh if last.get(pid, "") < quiet_cut), key=lambda p: -members[p]["price"])
+    return {"weeks": weeks, "per_week": [per_week[w] for w in weeks], "copies": copies, "last": last,
+            "covered": len(fresh), "of": len(pids), "quiet": quiet}
+
+
 def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=None):
     spec = CARD_TYPES[game][tkey]
     label = GAMES[game]["label"]
@@ -197,24 +251,27 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
 
     model = ga.model_calls(pred, game, set(members))
     calls, picks = ga.forecast_bits(pred, game, cat, pids=set(members), min_pick=MIN_BASE)
-    sales = ga.sales_volume(pc, game, cat, members, today)
-    vc = sales["per_card"] if sales else {}
 
-    # A few cards that tell the story, one role each.
+    selling = selling_record(pc, game, members, today)
+    traded = selling["copies"] if selling else {}
+
+    # A few cards that tell the story, one role each, each with enough
+    # history to draw.
     top = sorted(members, key=lambda p: -members[p]["price"])
+
+    def old_enough(pid):
+        s = paths.get(pid) or []
+        return bool(s) and (today - date.fromisoformat(s[0][0])).days >= EXAMPLE_MIN_DAYS
     roles = [("the dearest", top[0])]
     if year:
         roles.append(("the past year's biggest climber", max(year, key=year.get)))
         roles.append(("the past year's biggest faller", min(year, key=year.get)))
-    sold = sorted((p for p in vc if p in members and vc[p][0] > 0), key=lambda p: -vc[p][0])
-    if sold:
-        roles.append(("the best seller last week", sold[0]))
-    newest = max((p for p in members if members[p]["release"]), key=lambda p: members[p]["release"], default=None)
-    if newest:
-        roles.append(("the newest", newest))
+    busy = sorted((p for p in traded if traded[p] > 0 and old_enough(p)), key=lambda p: -traded[p])
+    if busy:
+        roles.append((f"the most traded of the last {SELL_WEEKS} weeks", busy[0]))
     examples, seen = [], set()
     for role, pid in roles:
-        if pid in seen or not ga.has_art(game, pid):
+        if pid in seen or not old_enough(pid) or not ga.has_art(game, pid):
             continue
         seen.add(pid)
         examples.append({"role": role, "pid": pid})
@@ -230,7 +287,7 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
         "year": year, "since": since, "waves": waves, "curve": curve, "top": top[:TOP_N],
         "examples": examples, "model_calls": model, "calls": calls, "picks": picks,
         "medians": ga.set_forecast_medians(pred, game, cat, set(members)),
-        "record": ga.record_for(pred, game), "sales": sales,
+        "record": ga.record_for(pred, game), "selling": selling,
         "ladder": [(b, sum(1 for p in prices if p >= lo and (hi is None or p < hi)))
                    for b, lo, hi in (HIGH_LADDER if median_price >= 100 else ga.LADDER)],
         "about": ga.about_lines(attrs, discussed), "discussed": discussed,
@@ -238,27 +295,29 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
 
 
 TYPE_SECTIONS = [
-    ("group", "what this card type is (what_it_is) and the group today: how many priced cards across how many sets "
-              "since which release, what they cost (median, cheapest, dearest, the whole group added up) and the "
-              "dearest of them (the picture shows the six dearest, then the cards counted by price band)"),
-    ("history", "the group's price index month by month over its whole priced history, against the game's other "
-                "expensive cards (index.comparison says which): where it stands against a year ago, six months ago "
-                "and three months ago, its peak and its trough, and how many of the cards are above or below their "
-                "price of a year ago (the chart draws both indexes)"),
-    ("releases", "how each release's cards of this type have done (the table: set, release date, cards, median "
-                 "price, median change over the past year) and the typical path of one of these cards by months "
-                 "since its set released (age_curve: the median card and the middle half around it, each against "
-                 "its own first price after release); say plainly what that path has looked like, as a tendency "
-                 "with its range and the number of cards behind each point, never a promise"),
-    ("examples", "a few cards that tell the story, each with the role it carries (the dearest, the past year's "
-                 "biggest climber and faller, the best seller, the newest): its price, its change over the past "
-                 "year and since we first priced it, copies sold, and the model's one-month, six-month and "
-                 "one-year calls on it (each has its own chart: the card's whole history, then the model's three "
-                 "calls as dotted yellow)"),
-    ("sales", "how many Near Mint copies of these cards actually sold in the last complete week against the week before, and which sold most"),
-    ("outlook", "what to expect: how the model's one-month calls on the group split, its median one-month, "
-                "six-month and one-year calls beside what the group actually did over the past year and what the "
-                "age path shows, and the model's own record on this game; expectations are tendencies, never advice"),
+    ("group", "what this card type is (what_it_is, one sentence) and the group today: how many priced cards across "
+              "how many sets since which release, what they cost (median, cheapest, dearest) and which cards sit "
+              "at the top (the picture shows the six dearest)"),
+    ("history", "the story of the group's price over its whole priced history, told as a shape in plain words: when "
+                "it fell, when it sat flat, when it climbed and where it is now (index, with its peak and trough "
+                "months), then the past year against the game's other expensive cards (index.comparison) and how "
+                "many cards rose or fell in that year. Do NOT recite every figure: the chart draws both lines and "
+                "a small table under it carries the numbers"),
+    ("after", "what has typically happened to one of these cards after its set released (age_curve: the median "
+              "card and the middle half around it at each age, each against its own first price after release): "
+              "the question a collector asks about a new one. Say plainly what that path has looked like, as a "
+              "tendency with its range and the number of cards behind each point, never a promise and never advice"),
+    ("examples", "a few cards that tell the story, each with the role it carries: its price, its change over the "
+                 "past year, when it last sold, and the model's six-month and one-year calls on it (each has its "
+                 "own chart: the card's whole history, then the model's three calls as dotted yellow)"),
+    ("selling", "how often these cards actually change hands (selling): Near Mint copies sold per week across the "
+                "whole group over the last half year, how many of the cards sold at all in the last eight weeks, "
+                "and the dearest cards with no recent sale and when each last sold. A price with no recent sale "
+                "behind it is an asking price; say so plainly, it is the most useful caution in the piece"),
+    ("outlook", "what to expect: the model's median one-month, six-month and one-year calls on the group beside "
+                "what the group did over the past year and what the path after release shows; be straight that "
+                "only the one-month calls have a checked record (model.record_on_this_game) and the longer calls "
+                "are untested (model.note). Tendencies, never advice"),
 ]
 
 
@@ -326,31 +385,52 @@ def history_chart(path, price, calls, name):
 def build_type_article(d, today, no_prose=False):
     game, label, spec, members = d["game"], d["label"], d["spec"], d["members"]
     plural = spec["plural"]
-    vol = d["sales"]
-    vc = vol["per_card"] if vol else {}
+    sell = d["selling"]
     mc, ab, year, since = d["model_calls"], d["about"], d["year"], d["since"]
     prices = sorted(c["price"] for c in members.values())
     n, median_price, total = len(prices), statistics.median(prices), sum(prices)
     rels = sorted(c["release"] for c in members.values() if c["release"])
     idx = index_facts(d["grid"], d["index"], today)
     other = index_facts(d["grid"], d["other_index"], today) if d["other_index"] else None
-    compared = f"{label}'s other cards at {money(d['other_floor'])} and up"
+    compared = f"{label}'s other cards at ${d['other_floor']:,.0f} and up"
     rose = sum(1 for v in year.values() if v > 0.5)
     fell = sum(1 for v in year.values() if v < -0.5)
+    last_sale = sell["last"] if sell else {}
+
+    def sold_on(pid):
+        w = last_sale.get(pid)
+        return date.fromisoformat(w).strftime("%b %-d, %Y") if w else None
 
     def card_facts(pid, **extra):
         c = members[pid]
         return {"name": c["name"], "set": c["set"], "released": c["release"], "price_usd": round(c["price"], 2),
                 "past_year_pct": r1(year.get(pid)), "since_first_priced_pct": r1(since.get(pid)),
                 "first_priced": (d["paths"].get(pid) or [("",)])[0][0][:7] or None,
-                "week_pct": r1(d["by_pid"][pid][4]) if pid in d["by_pid"] else None,
-                "copies_sold_last_week": round(vc[pid][0]) if pid in vc else None,
+                "last_near_mint_sale_week_of": last_sale.get(pid) if sell else None,
+                "near_mint_copies_sold_in_26_weeks": round(sell["copies"].get(pid, 0)) if sell else None,
                 "model_call_1m_pct": mc.get(pid, {}).get("1m"), "model_call_6m_pct": mc.get(pid, {}).get("6m"),
                 "model_call_12m_pct": mc.get(pid, {}).get("12m"), "about": ab.get(pid), **extra}
 
     sections = [s for s in TYPE_SECTIONS
                 if not ((s[0] == "history" and not idx)
-                        or (s[0] == "sales" and not (vol and vol["enough"])))]
+                        or (s[0] == "after" and len(d["curve"]) < 2)
+                        or (s[0] == "examples" and not d["examples"])
+                        or (s[0] == "selling" and not sell))]
+    big = max(d["waves"], key=lambda w: w["cards"]) if d["waves"] else None
+    selling_facts = None
+    if sell:
+        wk = sell["per_week"]
+        sold_lately = sell["covered"] - len(sell["quiet"])
+        selling_facts = {
+            "meaning": (f"Near Mint copies sold on TCGplayer, all printings, per complete Monday-to-Sunday week "
+                        f"over the last {SELL_WEEKS} weeks, across the {sell['covered']} of {sell['of']} cards "
+                        "with final sales data; other conditions are not counted"),
+            "copies_per_week_median": round(statistics.median(wk)), "busiest_week_copies": round(max(wk)),
+            "quietest_week_copies": round(min(wk)), "copies_in_26_weeks": round(sum(wk)),
+            "cards_sold_in_last_8_weeks": sold_lately, "cards_with_no_sale_in_8_weeks": len(sell["quiet"]),
+            "dearest_with_no_recent_sale": [{"name": members[p]["name"], "price_usd": round(members[p]["price"], 2),
+                                             "last_near_mint_sale_week_of": last_sale.get(p)}
+                                            for p in sell["quiet"][:5]]}
     facts = {
         "game": label, "card_type": spec["label"], "what_it_is": spec["what"],
         "scope": (f"every priced {label} card whose title carries {spec['name_tag']}"
@@ -359,9 +439,9 @@ def build_type_article(d, today, no_prose=False):
         "totals": {"cards_priced": n, "sets": len({c["set"] for c in members.values()}),
                    "first_release": rels[0] if rels else None, "newest_release": rels[-1] if rels else None,
                    "median_price_usd": round(median_price, 2), "cheapest_usd": round(prices[0], 2),
-                   "dearest_usd": round(prices[-1], 2), "group_value_usd": round(total, 2)},
+                   "dearest_usd": round(prices[-1], 2), "group_value_usd": round(total, 2),
+                   "biggest_release": {"set": big["set"], "cards": big["cards"]} if big else None},
         "dearest": [card_facts(pid) for pid in d["top"]],
-        "ladder": [{"band": b, "cards": k} for b, k in d["ladder"]],
         "index": ({**idx, "basis": ("each month's step is the median move of the cards priced in both months, so a "
                                     "newly released card joins the month after it is first priced; index_now, peak "
                                     "and trough are against the first month; past_year, past_six_months and "
@@ -370,36 +450,31 @@ def build_type_article(d, today, no_prose=False):
                   if idx else None),
         "past_year": ({"cards_with_a_year_of_prices": len(year), "rose": rose, "fell": fell,
                        "median_pct": r1(statistics.median(year.values()))} if year else None),
-        "releases": d["waves"],
         "age_curve": ({"basis": (f"each card against its own first price within {ANCHOR_MAX_DAYS} days of its set's "
                                  "release; cards we only began pricing later are left out, so the older sets are "
                                  "thin here; 'cards' says how many stand behind each point"),
-                       "points": d["curve"]} if d["curve"] else None),
+                       "points": d["curve"]} if len(d["curve"]) >= 2 else None),
         "examples": [card_facts(e["pid"], role=e["role"]) for e in d["examples"]],
+        "selling": selling_facts,
         "model": {"calls_1m": d["calls"],
                   "median_calls": {h: {"pct": r1(v), "cards": k} for h, (v, k) in d["medians"].items()},
-                  "top_climbs_1m": [{"name": nm, "current_usd": round(now, 2), "forecast_usd": round(fc, 2),
-                                     "implied_pct": r1(imp)} for _pid, nm, now, fc, imp in d["picks"]],
-                  "record_on_this_game": d["record"]},
+                  "record_on_this_game": d["record"],
+                  "note": ("the record is for one-month calls only; the six-month and one-year calls have not been "
+                           "out long enough to check, so they are untested")},
         "context": {"compared_against": compared} if other else None,
     }
-    if vol and vol["enough"]:
-        facts["sales"] = ga.sales_facts(vol, plural)
     prose = {} if no_prose else (write_type_article(prune(facts), sections) or {})
 
     yr = idx["past_year_pct"] if idx else None
     title = (f"{label} {plural}: {pct(yr)} over the past year across {n} cards" if yr is not None
              else f"{label} {plural}: {n} priced, median {money(median_price)}")
     lede = (f"{label} has {n} priced {plural} across {facts['totals']['sets']} sets, at a median "
-            f"{money(median_price)} and {money(total)} for the lot."
+            f"{money(median_price)}."
             + (f" As a group they are {pct(yr)} against a year ago." if yr is not None else ""))
     title = prose.get("headline") or title
     lede = prose.get("lede") or lede
 
-    body = [f"<p class='report-lede'>{esc(lede)} Ungraded market prices as of {today.isoformat()}.</p>",
-            f"<p class='report-note'>{esc(facts['scope'][0].upper() + facts['scope'][1:])}. A card type report "
-            "follows one kind of card through its whole priced history, where a set report follows one release "
-            "and a game report one week.</p>"]
+    body = [f"<p class='report-lede'>{esc(lede)}</p>"]
 
     # The group today
     def change(pid):
@@ -414,33 +489,33 @@ def build_type_article(d, today, no_prose=False):
         prose, "group", f"What a {spec['label']} Card Is Worth",
         f"The {n} priced {plural} run from {money(prices[0])} to {money(prices[-1])}, median {money(median_price)}. "
         f"{t0['name']} is the dearest at {money(t0['price'])}.",
-        ga.grid(tiles) + ga.band_line(d["ladder"], f"{label} {plural}: cards by price band"),
-        f"The six dearest {plural}, then all {n} counted by price band."))
+        ga.grid(tiles), f"The six dearest {plural}."))
 
     # History
     if idx:
         series = [(plural, d["index"], "#ffcb05")]
         if other:
-            series.append((f"Other {money(d['other_floor'])}+ cards", d["other_index"], "#8b96ad"))
+            series.append((f"Other ${d['other_floor']:,.0f}+ cards", d["other_index"], "#8b96ad"))
         chart = line_chart(d["grid"], series, title=f"{label} {plural}: price index since {month_label(d['grid'][0])}",
                            xfmt=month_label)
-        txt = (f"Since {month_label(idx['from'] + '-01')} the group's index stands at {pct(idx['index_now_pct'])}"
+        table = ""
+        if other:
+            cell = lambda v: pct(v) if v is not None else ""
+            table = ("<table class='report-table'><thead><tr><th>Change over</th>"
+                     f"<th>{esc(plural)}</th><th>Other ${d['other_floor']:,.0f}+ cards</th></tr></thead><tbody>"
+                     + "".join(f"<tr><td>{lab}</td><td>{cell(idx[k])}</td><td>{cell(other[k])}</td></tr>"
+                               for lab, k in (("Past 3 months", "past_three_months_pct"),
+                                              ("Past 6 months", "past_six_months_pct"),
+                                              ("Past year", "past_year_pct"),
+                                              (f"Since {month_label(d['grid'][0])}", "index_now_pct")))
+                     + "</tbody></table>")
+        txt = (f"Since {month_label(d['grid'][0])} the group's index stands at {pct(idx['index_now_pct'])}"
                + (f", and {pct(yr)} against a year ago" if yr is not None else "") + "."
-               + (f" Of the {len(year)} cards with a year of prices, {rose} are up and {fell} are down." if year else "")
-               + (f" {compared[0].upper() + compared[1:]} are {pct(other['past_year_pct'])} over the same year."
-                  if other and other["past_year_pct"] is not None else ""))
-        body.append(ga.section(prose, "history", "The Whole History", txt, chart,
+               + (f" Of the {len(year)} cards with a year of prices, {rose} are up and {fell} are down." if year else ""))
+        body.append(ga.section(prose, "history", "The Whole History", txt, chart + table,
                                f"{plural} against {compared}, month by month."))
 
-    # Releases and the age path
-    table = ["<table class='report-table'><thead><tr><th>Set</th><th>Released</th><th>Cards</th>"
-             "<th>Median price</th><th>Past year</th></tr></thead><tbody>"]
-    for w in d["waves"]:
-        table.append(f"<tr><td>{esc(w['set'])}</td><td>{esc(w['released'] or '')}</td><td>{w['cards']}</td>"
-                     f"<td>{money(w['median_price_usd'])}</td>"
-                     f"<td>{pct(w['median_past_year_pct']) if w['median_past_year_pct'] is not None else ''}</td></tr>")
-    table.append("</tbody></table>")
-    chart = ""
+    # After release
     if len(d["curve"]) >= 2:
         xs = [f"{c['months_since_release']} mo" for c in d["curve"]]
         chart = line_chart(xs, [("Median card", [c["median_pct"] for c in d["curve"]], "#ffcb05"),
@@ -448,26 +523,23 @@ def build_type_article(d, today, no_prose=False):
                                 ("Lower quarter", [c["lower_quarter_pct"] for c in d["curve"]], "#8b96ad")],
                            title=f"{label} {plural}: price against the first price after release, by age",
                            xfmt=lambda s: s, xticks="all")
-    last = d["curve"][-1] if d["curve"] else None
-    body.append(ga.section(
-        prose, "releases", "Release by Release",
-        f"{plural} have come in {len(d['waves'])} releases since {rels[0] if rels else 'the first'}."
-        + (f" {last['months_since_release']} months after release, the median card stood {pct(last['median_pct'])} "
-           f"against its first price, across the {last['cards']} cards we have followed that long." if last else ""),
-        chart + "".join(table),
-        "The typical path by months since release, the middle half of cards between the outer lines; "
-        "the table lists every release."))
+        first, last = d["curve"][0], d["curve"][-1]
+        body.append(ga.section(
+            prose, "after", "What Happens After Release",
+            f"{first['months_since_release']} months after release the median card stood {pct(first['median_pct'])} "
+            f"against its first price ({first['cards']} cards); at {last['months_since_release']} months, "
+            f"{pct(last['median_pct'])} ({last['cards']} cards).",
+            chart, "The typical path by months since release; half the cards sit between the outer lines."))
 
     # Examples
     rows = []
     for e in d["examples"]:
         pid = e["pid"]
         c = members[pid]
-        calls = mc.get(pid, {})
         meta = " · ".join(filter(None, [
             money(c["price"]),
             f"{pct(year[pid])} in a year" if pid in year else None,
-            f"{vc[pid][0]:,.0f} sold last week" if pid in vc and vc[pid][0] else None]))
+            (f"last sold {sold_on(pid)}" if sold_on(pid) else "no sale on record") if sell else None]))
         rows.append(f"<div class='report-compare-row'>"
                     f"<a class='report-compare-card' href='/catalog/{game}/{pid}'>"
                     f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
@@ -476,7 +548,7 @@ def build_type_article(d, today, no_prose=False):
                     f"<div class='report-compare-like'><span class='report-compare-label'>"
                     f"{esc(e['role'][0].upper() + e['role'][1:])} · {esc(c['set'] or '')}"
                     f"{' · released ' + esc(c['release']) if c['release'] else ''}</span></div>"
-                    f"{history_chart(d['paths'].get(pid) or [], c['price'], calls, c['name'])}</div>")
+                    f"{history_chart(d['paths'].get(pid) or [], c['price'], mc.get(pid, {}), c['name'])}</div>")
     if rows:
         e0 = members[d["examples"][0]["pid"]]
         body.append(ga.section(
@@ -485,34 +557,68 @@ def build_type_article(d, today, no_prose=False):
             f"<div class='report-compare'>{''.join(rows)}</div>",
             "Each card's whole priced history, then the model's one-month, six-month and one-year calls."))
 
-    # Sales
-    if vol and vol["enough"]:
-        body.append(ga.sales_block(prose, vol, game, f"{label} {plural}", plural))
+    # How often they sell
+    if sell:
+        f = selling_facts
+        chart = line_chart(sell["weeks"], [("Copies sold", sell["per_week"], "#ffcb05")],
+                           title=f"{label} {plural}: Near Mint copies sold per week, all {sell['covered']} cards together",
+                           xfmt=lambda s: date.fromisoformat(s).strftime("%b %-d"), yfmt=lambda v: f"{v:,.0f}")
+        table = ""
+        if sell["quiet"]:
+            table = ("<table class='report-table'><thead><tr><th>No Near Mint sale in "
+                     f"{QUIET_WEEKS} weeks</th><th>Price shown</th><th>Last sold</th></tr></thead><tbody>"
+                     + "".join(f"<tr><td>{card_link(game, p, members[p]['name'])}</td><td>{money(members[p]['price'])}</td>"
+                               f"<td>{sold_on(p) or 'none on record'}</td></tr>" for p in sell["quiet"][:8])
+                     + "</tbody></table>")
+        body.append(ga.section(
+            prose, "selling", "How Often They Actually Sell",
+            f"Across all {sell['covered']} cards, a typical week sees {f['copies_per_week_median']} Near Mint copies "
+            f"sold. {f['cards_with_no_sale_in_8_weeks']} of the cards have had no Near Mint sale in {QUIET_WEEKS} "
+            "weeks, so the price shown for those is an asking price, not a recent sale.",
+            chart + table,
+            f"Near Mint copies per week for the whole group; the table lists the dearest cards with no sale in {QUIET_WEEKS} weeks."))
 
     # Outlook
     c, rec, med = d["calls"], d["record"], d["medians"]
-    txt = (f"Of the {plural} with a one-month call, the model has {c['up']} headed up, "
-           f"{c['down']} headed down and {c['flat']} flat.")
+    txt = ""
     if med:
-        txt += " Its median call is " + ", ".join(
+        txt = "The model's median call on the group is " + ", ".join(
             f"{pct(v)} over {ga.HORIZON_LABEL[h].lower()}" for h, (v, _k) in med.items()) + "."
     if rec:
         txt += (f" On {label} its one-month forecasts have missed by {rec['typical_miss_pct']} percent "
-                f"on average, against {rec['flat_baseline_miss_pct']} percent for assuming no change.")
+                f"on average, against {rec['flat_baseline_miss_pct']} percent for assuming no change; the "
+                "six-month and one-year calls have not been out long enough to check.")
     extra = ""
     if med:
-        rows = "".join(f"<tr><td>{ga.HORIZON_LABEL[h]}</td><td>{pct(v)} ({k} cards)</td></tr>"
-                       for h, (v, k) in med.items())
-        extra = ("<table class='report-table'><thead><tr><th>Window</th><th>Model, median call</th></tr></thead>"
-                 f"<tbody>{rows}</tbody></table>")
-    links = (f"Every card here is in the <a href='/catalog?game={game}&amp;searchTerm={esc(spec['search'])}'>catalog</a> "
-             f"with its own chart and forecast; more on {esc(label)} is under "
-             f"<a href='/articles?game={game}'>its articles</a>.")
-    body.append(ga.model_corner(prose, "outlook", "What to Expect", txt, d["picks"][:PICKS_N], game, rec, links,
-                                extra=extra))
+        rws = "".join(f"<tr><td>{ga.HORIZON_LABEL[h]}</td><td>{pct(v)}</td><td>{k}</td></tr>"
+                      for h, (v, k) in med.items())
+        extra = ("<table class='report-table'><thead><tr><th>Window</th><th>Model, median call</th><th>Cards</th>"
+                 f"</tr></thead><tbody>{rws}</tbody></table>")
+    links = (f"More on {esc(label)} is under <a href='/articles?game={game}'>its articles</a>; how the forecasts "
+             "are made and checked is on the About page.")
+    body.append(ga.model_corner(prose, "outlook", "What to Expect", txt or f"The model has no calls on {plural} yet.",
+                                [], game, None, links, extra=extra))
+
+    # Every card, for the reader looking for theirs.
+    head = ("<table class='report-table'><thead><tr><th>Card</th><th>Price</th><th>Past year</th>"
+            "<th>Model, 1 year</th>" + ("<th>Last sold</th>" if sell else "") + "</tr></thead><tbody>")
+    rws = []
+    for pid in sorted(members, key=lambda p: -members[p]["price"]):
+        m12 = mc.get(pid, {}).get("12m")
+        rws.append(f"<tr><td>{card_link(game, pid, members[pid]['name'])}</td><td>{money(members[pid]['price'])}</td>"
+                   f"<td>{pct(year[pid]) if pid in year else ''}</td><td>{pct(m12) if m12 is not None else ''}</td>"
+                   + (f"<td>{sold_on(pid) or ''}</td>" if sell else "") + "</tr>")
+    body.append(f"<h2>Every {esc(spec['label'])} Card</h2>"
+                f"<p>All {n}, dearest first. A blank past year means we have priced the card for less than a year"
+                + ("; last sold is the week of its most recent Near Mint sale." if sell else ".")
+                + f"</p>{head}{''.join(rws)}</tbody></table>")
     closer = prose.get("closer")
     if closer:
         body.append(f"<p>{esc(closer)}</p>")
+    body.append(f"<p class='report-note'>{esc(facts['scope'][0].upper() + facts['scope'][1:])}. Ungraded market "
+                f"prices as of {today.isoformat()}. Every card "
+                f"is in the <a href='/catalog?game={game}&amp;searchTerm={esc(spec['search'])}'>catalog</a> with its "
+                "own chart and forecast.</p>")
 
     # The picture stays light (2026-11-14, user: "this is too crowded"): the
     # group's name alone as its headline, three short stats in whole
