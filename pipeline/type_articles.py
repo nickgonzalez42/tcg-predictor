@@ -612,13 +612,8 @@ def build_type_article(d, today, no_prose=False):
                 f"<p>All {n}, dearest first. A blank past year means we have priced the card for less than a year"
                 + ("; last sold is the week of its most recent Near Mint sale." if sell else ".")
                 + f"</p>{head}{''.join(rws)}</tbody></table>")
-    closer = prose.get("closer")
-    if closer:
-        body.append(f"<p>{esc(closer)}</p>")
-    body.append(f"<p class='report-note'>{esc(facts['scope'][0].upper() + facts['scope'][1:])}. Ungraded market "
-                f"prices as of {today.isoformat()}. Every card "
-                f"is in the <a href='/catalog?game={game}&amp;searchTerm={esc(spec['search'])}'>catalog</a> with its "
-                "own chart and forecast.</p>")
+    # The article ends on the table (2026-11-14, user: the sign-off joke and
+    # the scope note under it read as "weird"); no closer, no footnote.
 
     # The picture stays light (2026-11-14, user: "this is too crowded"): the
     # group's name alone as its headline, three short stats in whole
