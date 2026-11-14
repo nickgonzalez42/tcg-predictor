@@ -25,14 +25,13 @@ an `articles` table in predictions.db, so they ship with the nightly push
 and the API serves them read-only at /api/articles; article_pages.py
 renders the crawler-visible static copies.
 
-Schedule (2026-11-07, user rules; the run's nominal day is the UTC date, like
-market_report.py: the Sunday-night refresh IS Monday in UTC). No fixed
-weekday any more. Every night the planner looks at each (game, kind) slot's
-last article and writes the slot if it is due (never written, or
-FORCE_GAP_DAYS since the last one) or if a seeded coin toss (DAILY_ODDS)
-says so, never inside MIN_GAP_DAYS of the last one and never more than
-MAX_PER_NIGHT a night; see plan(). The promise: every slot at least once
-every two weeks, on a random day.
+Schedule (the run's nominal day is the UTC date, like market_report.py: the
+Sunday-night refresh IS Monday in UTC). No fixed weekday. Every night the
+planner looks at each (game, kind) slot's last article; from GAP_JITTER
+days before the game's gap (gap_days(): three weeks for the big games, five
+for the smaller ones, 2026-11-14) a seeded coin toss (DAILY_ODDS) may write
+it, GAP_JITTER days after the gap it is due, and never more than
+MAX_PER_NIGHT a night; see plan(). Card types keep their own lane.
 
 The set article also lines the set up against the game's earlier sets at
 the same age since release (2026-11-07, user: "compare how it shapes up
@@ -116,9 +115,25 @@ SITE = "https://cardstock.guide"
 # days with DAILY_ODDS 0.05 gives 1.5 a night and a 16-day average gap),
 # which gives up the two weeks. Lowering the cap to 1 would put every slot
 # on a 24-day cycle.
-MIN_GAP_DAYS = 5          # never the same slot twice inside a working week
-FORCE_GAP_DAYS = 13       # due: written tonight, longest wait first
-DAILY_ODDS = 0.22         # between the two: tonight's chance, seeded by date|game|kind
+#
+# 2026-11-14, user: "I want to run articles a little less frequently" and
+# picked the tiered plan: the big games' two kinds about every three weeks,
+# the smaller games' about every five, a card type every eight; about seven
+# articles a week where the old two-week promise made thirteen. A slot's
+# gap is GAP_DAYS for its game; the coin tosses start GAP_JITTER days before
+# it and the slot is due GAP_JITTER days after, so the night stays random
+# and the average wait is the gap. The cap no longer binds.
+BIG_GAMES = ("pokemon", "magic", "yugioh", "onepiece", "lorcana")
+GAP_DAYS_BIG = 21
+GAP_DAYS_SMALL = 35
+GAP_JITTER = 3
+DAILY_ODDS = 0.22         # inside the jitter window: tonight's chance, seeded by date|game|kind
+
+
+def gap_days(game):
+    return GAP_DAYS_BIG if game in BIG_GAMES else GAP_DAYS_SMALL
+
+
 MAX_PER_NIGHT = 2         # user's cadence, 2026-11-08; also ~13 min of prose a night
 # Paused games (2026-11-08): the user deleted the two Cyberpunk articles --
 # 66 of its 406 priced cards had a week of moves, and its newest set had 1 --
@@ -159,7 +174,7 @@ KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASE
 # look-alikes). Each (game, type) is a planner slot of its own, kind
 # "type:<key>" (stored kind 'type', focus = the key): due every
 # TYPE_GAP_DAYS, at most TYPE_PER_NIGHT a night ON TOP of MAX_PER_NIGHT, so
-# the set and game articles keep their two weeks. type_articles.py writes them.
+# the set and game articles keep their own gaps. type_articles.py writes them.
 CARD_TYPES = {
     "onepiece": {
         "manga": {"label": "Manga", "plural": "Manga cards", "name_tag": "(Manga)", "search": "(Manga)",
@@ -172,7 +187,7 @@ CARD_TYPES = {
                         "a few to a set")},
     },
 }
-TYPE_GAP_DAYS = 28        # each type about once a month
+TYPE_GAP_DAYS = 56        # each type about every eight weeks (2026-11-14, the tiered plan)
 TYPE_PER_NIGHT = 1
 
 
@@ -2280,11 +2295,12 @@ def last_articles(pred):
 
 
 def plan(today, last, games=None):
-    """Tonight's (game, kind) slots. Due slots (never written, or
-    FORCE_GAP_DAYS since the last one) go first, the longest wait first; then
-    the coin tosses, each seeded by date|game|kind so a re-run the same day
-    plans the same night; cut to MAX_PER_NIGHT. Nothing inside MIN_GAP_DAYS
-    of its last article, which includes a slot already written today.
+    """Tonight's (game, kind) slots. Due slots (never written, or its
+    game's gap plus GAP_JITTER days since the last one) go first, the longest
+    wait first; then the coin tosses, each seeded by date|game|kind so a
+    re-run the same day plans the same night; cut to MAX_PER_NIGHT. Nothing
+    earlier than GAP_JITTER days before its gap, which includes a slot
+    already written today.
     Returns (picks, waiting): waiting counts the slots that wanted a turn
     tonight and did not get one (they ask again tomorrow). A game in
     PAUSED_GAMES sits out entirely until its date."""
@@ -2296,9 +2312,9 @@ def plan(today, last, games=None):
         for kind in ("set", "game"):
             prev = last.get((game, kind))
             gap = (today - date.fromisoformat(prev[0])).days if prev else None
-            if gap is not None and gap < MIN_GAP_DAYS:
+            if gap is not None and gap < gap_days(game) - GAP_JITTER:
                 continue
-            if gap is None or gap >= FORCE_GAP_DAYS:
+            if gap is None or gap >= gap_days(game) + GAP_JITTER:
                 due.append((gap if gap is not None else 10 ** 6, game, kind))
             elif random.Random(f"{today}|{game}|{kind}").random() < DAILY_ODDS:
                 drawn.append((gap, game, kind))
