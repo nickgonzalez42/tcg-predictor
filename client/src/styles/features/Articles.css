@@ -279,6 +279,21 @@ a.articles__game:hover {
   margin-top: 2px;
 }
 
+/* A card with no comparables beside it (a card type report's examples,
+   2026-11-14): the chart moves up next to the card instead of leaving the
+   right of the row empty. Phones keep it full width so its text stays
+   readable. */
+@media (min-width: 641px) {
+  .report__body .report-compare-row--solo .report-compare-card {
+    grid-row: 1 / span 2;
+  }
+
+  .report__body .report-compare-row--solo .report-compare-chart {
+    grid-column: 2;
+    margin-top: 0;
+  }
+}
+
 /* Articles written before 2026-11-10 still carry the small spark; it keeps
    its own row until they are regenerated. */
 .report__body .report-compare-spark {

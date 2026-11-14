@@ -540,7 +540,7 @@ def build_type_article(d, today, no_prose=False):
             money(c["price"]),
             f"{pct(year[pid])} in a year" if pid in year else None,
             (f"last sold {sold_on(pid)}" if sold_on(pid) else "no sale on record") if sell else None]))
-        rows.append(f"<div class='report-compare-row'>"
+        rows.append(f"<div class='report-compare-row report-compare-row--solo'>"
                     f"<a class='report-compare-card' href='/catalog/{game}/{pid}'>"
                     f"<img src='{CDN}/{game}/{pid}.jpg' alt='{esc(c['name'])}' loading='lazy'>"
                     f"<span class='report-compare-name'><span class='report-compare-swatch-own'></span>{esc(c['name'])}</span>"

@@ -113,6 +113,7 @@ border:1px solid var(--border);background:var(--panel)}
 .report-compare{display:flex;flex-direction:column;gap:12px;margin:18px 0 10px}
 .report-compare-row{display:grid;grid-template-columns:88px minmax(0,1fr);gap:16px;align-items:start;
 padding:14px;border:1px solid var(--border);border-radius:12px;background:rgba(255,255,255,.025)}
+@media (min-width:641px){.report-compare-row--solo .report-compare-card{grid-row:1 / span 2}.report-compare-row--solo .report-compare-chart{grid-column:2;margin-top:0}}
 .report-compare-card,.report-compare-peer{display:flex;flex-direction:column;gap:4px;color:var(--text);text-decoration:none}
 .report-compare-card:hover,.report-compare-peer:hover{text-decoration:none}
 .report-compare-card:hover .report-compare-name,.report-compare-peer:hover .report-compare-peer-name{text-decoration:underline}
