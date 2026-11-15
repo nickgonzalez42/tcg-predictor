@@ -57,7 +57,13 @@ export default function ToolsMenu({ label = 'Tools', items }: { label?: string; 
                     style={{ top: pos.top, left: pos.left, width: MENU_W }}>
                     {items.map(it => (
                         <button key={it.label} type="button" role="menuitem" className="tools-menu__item"
-                            onClick={() => { setPos(null); it.onSelect(); }}>
+                            onClick={() => {
+                                // Focus goes back to Tools before the menu closes, so a
+                                // dialog this item opens returns it there too.
+                                btnRef.current?.focus();
+                                setPos(null);
+                                it.onSelect();
+                            }}>
                             <span className="tools-menu__label">{it.label}</span>
                             {it.hint && <span className="tools-menu__hint">{it.hint}</span>}
                         </button>

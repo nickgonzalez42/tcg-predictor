@@ -25,6 +25,12 @@
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
 }
 
+/* The dialog itself takes focus when it opens (Modal.tsx) so the next Tab
+   lands on its first control; the frame needs no ring of its own. */
+.modal:focus {
+  outline: none;
+}
+
 .modal__head {
   display: flex;
   align-items: center;

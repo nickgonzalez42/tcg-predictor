@@ -136,6 +136,12 @@
     grid-column: 1 / -1;
   }
 
+  /* At the 16px phone font a whole date and its calendar icon only just fit
+     a half-width column; the icon side gives up a little padding. */
+  .owned-copy__date .input {
+    padding-right: var(--space-5);
+  }
+
   .owned-copy__actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -143,6 +149,15 @@
 
   .owned-copy__actions .btn--danger {
     margin-left: 0;
+  }
+}
+
+/* Narrower phones (360-389px wide): half a row can't hold the Pack pull /
+   Paid chips or a whole date at that font, so the fields go one to a row.
+   The buttons keep their 2x2 block. */
+@media (max-width: 389px) {
+  .owned-copy__fields {
+    grid-template-columns: 1fr;
   }
 }
 
