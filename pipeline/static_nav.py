@@ -14,8 +14,11 @@ scroll down and return on scroll up, outside click or Escape to close, and a
 swap to the signed-in links when the account cookie answers.
 
 Also here: the front-page call to action that closes every report and
-article (same request).
+article (same request), and an article's next steps (2026-11-13): every card
+the piece is about after its opening section, and after the piece those cards
+again, a free portfolio and more articles on the game.
 """
+import html
 import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -161,6 +164,14 @@ NAV_JS = """
         fetch('/api/account/logout', { method: 'POST', credentials: 'include' })
           .then(function () { location.href = '/'; }, function () { location.href = '/'; });
       });
+      // An article's portfolio step opens the portfolio for a member, not
+      // the sign-up form.
+      [].forEach.call(document.querySelectorAll('[data-signed-in-href]'), function (a) {
+        a.href = a.getAttribute('data-signed-in-href');
+        [].forEach.call(a.querySelectorAll('[data-signed-in-text]'), function (t) {
+          t.textContent = t.getAttribute('data-signed-in-text');
+        });
+      });
     }).catch(function () {});
   } catch (e) {}
 })();
@@ -196,3 +207,114 @@ def cta_html(site=SITE):
   </div>
   <a class="home-cta__btn" href="{site}/">Go to the front page</a>
 </aside>"""
+
+
+# ---- an article's next steps ----------------------------------------------
+# 2026-11-13: thirteen readers came from Reddit to the One Piece Heroines
+# article in a day and every one left without opening a card, the catalog or
+# the home page. The page never asked them to. Two blocks do now: after the
+# opening section, every card the piece is about in the catalog; after the
+# piece, those cards again, a free portfolio for the cards you own, and more
+# articles on the game. The app's article page shows the same two blocks
+# (ArticleNext.tsx) and THIS is its stylesheet, read when a page is rendered
+# like NavBar.css above, with the tokens it reads scoped to the two blocks
+# (the page's own --brand is its link blue; the blocks use the site yellow).
+ARTICLE_NEXT_CSS = os.path.join(HERE, "..", "client", "src", "styles", "features", "ArticleNext.css")
+
+NEXT_TOKENS = """
+.article-browse,.article-next{--brand:#ffcb05;--brand-border:#e0b000;--on-brand:#101623;
+--surface:#1a2333;--surface-tint:#141c2e;--link:#7fb0ea;
+--display:"Big Shoulders Display",Impact,"Avenir Next Condensed","Arial Narrow",sans-serif;
+--mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+--space-5:5px;--space-10:10px;--space-15:15px;--space-20:20px;--space-30:30px;--space-40:40px}
+"""
+
+
+def next_css():
+    try:
+        with open(ARTICLE_NEXT_CSS, encoding="utf-8") as f:
+            return f.read() + NEXT_TOKENS
+    except OSError:
+        # The blocks still work unstyled: plain text and links.
+        print(f"static_nav: {ARTICLE_NEXT_CSS} not found, next steps unstyled", flush=True)
+        return ""
+
+
+def _esc(s):
+    return html.escape(str(s), quote=True)
+
+
+def _cards(browse, cls):
+    """The headline's subject, the number in the brand yellow: 'all 98
+    cards in this set', 'all 2,185 Gundam cards'; 'every card' when the
+    count is unknown."""
+    n, game = browse.get("count"), "" if browse.get("set") else f"{_esc(browse['label'])} "
+    where = " in this set" if browse.get("set") else ""
+    if n and n > 1:
+        return f'all <span class="{cls}">{n:,} {game}cards</span>{where}'
+    return f"every {game}card{where}"
+
+
+def _browse_copy(browse):
+    if browse.get("set"):
+        return (f"Today's price, the price history and our forecast for every card in "
+                f"{_esc(browse['set'])}.")
+    return (f"Today's price, the price history and our forecast for every "
+            f"{_esc(browse['label'])} card we track.")
+
+
+def browse_html(browse, site=SITE):
+    """The block after an article's opening section. `browse` names the cards
+    the piece is about (article_pages.browse_for): href (site-relative, into
+    the catalog), set (None for the whole game), label (the game's name) and
+    count (None when the card DB could not say)."""
+    kicker = "This set on CardStock" if browse.get("set") else f"{_esc(browse['label'])} on CardStock"
+    button = "Browse the set" if browse.get("set") else "Browse the cards"
+    return f"""<aside class="article-browse" aria-label="Every card in this piece">
+  <div class="article-browse__text">
+    <span class="article-browse__kicker">{kicker}</span>
+    <span class="article-browse__title">See {_cards(browse, "article-browse__count")} with our forecasts</span>
+    <span class="article-browse__copy">{_browse_copy(browse)}</span>
+  </div>
+  <a class="article-browse__btn" href="{site}{_esc(browse['href'])}">{button}</a>
+</aside>"""
+
+
+def next_html(browse, more, more_title, all_href, all_text, site=SITE):
+    """The block after the article: (1) the cards again, (2) a free
+    portfolio (the nav script points it at the portfolio for a member), and
+    more articles. `more` is [(slug, title, meta)], newest first; an empty
+    list leaves that part out."""
+    go = "Browse the set" if browse.get("set") else "Browse the cards"
+    title = _cards(browse, "article-next__count")
+    items = "".join(
+        f'<li><a class="article-next__item" href="{site}/articles/{_esc(slug)}">'
+        f'<span class="article-next__item-title">{_esc(t)}</span>'
+        f'<span class="article-next__item-meta">{_esc(meta)}</span></a></li>'
+        for slug, t, meta in more)
+    more_html = f"""
+  <div class="article-next__more">
+    <div class="article-next__more-head">
+      <h3 class="article-next__more-title">{_esc(more_title)}</h3>
+      <a class="article-next__all" href="{site}{_esc(all_href)}">{_esc(all_text)} &rarr;</a>
+    </div>
+    <ul class="article-next__list">{items}</ul>
+  </div>""" if more else ""
+    return f"""<section class="article-next" aria-labelledby="article-next-title">
+  <span class="article-next__kicker">Keep going</span>
+  <h2 class="article-next__title" id="article-next-title">Where to next</h2>
+  <div class="article-next__steps">
+    <a class="article-next__step" href="{site}{_esc(browse['href'])}">
+      <span class="article-next__num">1</span>
+      <span class="article-next__step-title">See {title}</span>
+      <span class="article-next__step-copy">{_browse_copy(browse)}</span>
+      <span class="article-next__go">{go} &rarr;</span>
+    </a>
+    <a class="article-next__step" href="{site}/register" data-signed-in-href="{site}/portfolio">
+      <span class="article-next__num">2</span>
+      <span class="article-next__step-title">Track the cards you own</span>
+      <span class="article-next__step-copy">Add them to a free portfolio and see what your collection is worth today, with our forecast beside every card.</span>
+      <span class="article-next__go" data-signed-in-text="Open your portfolio &rarr;">Start a free portfolio &rarr;</span>
+    </a>
+  </div>{more_html}
+</section>"""

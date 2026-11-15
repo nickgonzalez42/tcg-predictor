@@ -42,7 +42,25 @@ export const articlesApi = createApi({
         fetchArticle: builder.query<Article, string>({
             query: (slug) => `articles/${slug}`,
         }),
+        // How many cards the catalog lists for a game, or one of its sets
+        // (2026-11-13, an article's next steps): one card asked for, the
+        // total read from the pagination header. Quiet when it fails: the
+        // copy says "every card" instead of a number, and the shared error
+        // handler, which can send a reader to the error page, never sees it.
+        fetchCatalogCount: builder.query<number | null, { game: string; set?: string | null }>({
+            queryFn: async ({ game, set }) => {
+                try {
+                    const q = new URLSearchParams({ game, orderBy: 'name', pageNumber: '1', pageSize: '1' });
+                    if (set) q.set('sets', set);
+                    const res = await fetch(`${import.meta.env.VITE_API_URL}/cards?${q}`, { credentials: 'include' });
+                    const page = res.ok ? JSON.parse(res.headers.get('Pagination') ?? 'null') : null;
+                    return { data: typeof page?.totalCount === 'number' ? page.totalCount : null };
+                } catch {
+                    return { data: null };
+                }
+            },
+        }),
     }),
 });
 
-export const { useFetchArticlesQuery, useFetchArticleQuery } = articlesApi;
+export const { useFetchArticlesQuery, useFetchArticleQuery, useFetchCatalogCountQuery } = articlesApi;

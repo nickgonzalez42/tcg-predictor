@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Link, useParams } from "react-router-dom";
 import { useFetchArticleQuery } from "./articlesApi";
 import CardLoader from "../../app/shared/components/CardLoader";
@@ -6,18 +6,20 @@ import NotFound from "../../app/errors/NotFound";
 import LoadFailed from "../../app/errors/LoadFailed";
 import { isNotFound } from "../../app/api/baseApi";
 import { usePageMeta } from "../../lib/usePageMeta";
-import { sanitizeReportHtml } from "../../lib/sanitizeHtml";
+import { sanitizeReportHtml, sanitizeReportSections } from "../../lib/sanitizeHtml";
 import { GAME_LABEL } from "../../lib/games";
 import { longDate } from "../reports/reportKind";
 import { useReportBodyEffects } from "../reports/useReportBodyEffects";
 import { articleChipStyle, articleKindLabel } from "./articleKind";
 import { firstVisitPath, gameChosen, setSiteGame } from "../../lib/siteGame";
 import { useAppDispatch } from "../../app/store/store";
+import { ArticleBrowse, ArticleNext } from "./ArticleNext";
 
 // One per-game article (2026-11-06). The body is pipeline-generated HTML
 // (text, card art, inline SVG charts) re-rendered through the strict report
 // allowlist; the charts draw in on scroll and card links preview their art,
-// exactly as on a weekly report.
+// exactly as on a weekly report. The reader's next steps (2026-11-13,
+// ArticleNext.tsx) close the opening section and follow the piece.
 export default function ArticlePage() {
     const { slug } = useParams<{ slug: string }>();
     const { data: article, isLoading, error, refetch } = useFetchArticleQuery(slug!, { skip: !slug });
@@ -36,6 +38,8 @@ export default function ArticlePage() {
     }, [article, dispatch]);
     const bodyRef = useRef<HTMLDivElement>(null);
     useReportBodyEffects(bodyRef, article?.slug);
+    const [opening, rest] = useMemo(
+        () => sanitizeReportSections(article?.bodyHtml ?? ''), [article?.bodyHtml]);
 
     if (isLoading) return <CardLoader />;
     if (!article) {
@@ -62,13 +66,14 @@ export default function ArticlePage() {
                 <Link className="articles__game" to={`/articles?game=${article.game}`}>{game}</Link>
                 {article.setName && <span className="articles__game">{article.setName}</span>}
             </p>
-            <div className="report__body" ref={bodyRef}
-                dangerouslySetInnerHTML={{ __html: sanitizeReportHtml(article.bodyHtml) }} />
-            <p className="est-note article__foot">
-                More on {game}: <Link to={`/articles?game=${article.game}`}>every {game} article</Link>,
-                the <Link to={`/catalog?game=${article.game}`}>catalog</Link>, and the
-                weekly <Link to="/reports">market and model reports</Link>.
-            </p>
+            {/* The body in two parts around the first next step: the opening
+                section, then everything from the first section heading on. */}
+            <div className="report__body" ref={bodyRef}>
+                <div dangerouslySetInnerHTML={{ __html: opening }} />
+                {rest && <ArticleBrowse article={article} />}
+                {rest && <div dangerouslySetInnerHTML={{ __html: rest }} />}
+            </div>
+            <ArticleNext article={article} />
         </article>
     );
 }

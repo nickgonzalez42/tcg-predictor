@@ -29,7 +29,7 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
-from static_nav import nav_html, nav_css, cta_html, CTA_CSS, NAV_JS
+from static_nav import nav_html, nav_css, cta_html, next_css, CTA_CSS, NAV_JS
 
 PRED_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
                        "predictions.db")
@@ -404,8 +404,33 @@ def first_game_js(game):
             f"if(localStorage.getItem('cs.game')===null)localStorage.setItem('cs.game','{game}')}}}}catch(e){{}}</script>")
 
 
+def after_opening(body_html, block):
+    """The body with `block` spliced in before its first top-level <h2>, the
+    end of the opening section. A body without one comes back unchanged.
+    Charts are skipped whole; a heading inside a box (the model corner) is
+    never the opening section's end."""
+    import re as _re
+    depth, i = 0, 0
+    tag = _re.compile(r"<(/?)([a-zA-Z][a-zA-Z0-9]*)\b[^>]*?(/?)>")
+    while True:
+        m = tag.search(body_html, i)
+        if not m:
+            return body_html
+        close, name, self_closing = m.group(1), m.group(2).lower(), m.group(3)
+        i = m.end()
+        if name == "svg" and not close:
+            end = body_html.find("</svg>", i)
+            if end < 0:
+                return body_html
+            i = end + len("</svg>")
+        elif name == "h2" and not close and depth == 0:
+            return body_html[:m.start()] + block + body_html[m.start():]
+        elif not self_closing and name not in ("br", "img", "hr", "wbr", "input"):
+            depth += -1 if close else 1
+
+
 def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg=None,
-         base="reports", section=None, game=None):
+         base="reports", section=None, lead_html="", end_html="", game=None):
     t, s = html.escape(title), html.escape(summary)
     # Article type (2026-10-29): it tags the page for crawlers and share
     # cards, but no longer prints above the headline. The headline is
@@ -427,6 +452,13 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
     # of the piece, before the section header closest to halfway through
     # the body; a body without section headers keeps it at the end.
     body_html, cta = mid_cta(body_html, cta)
+    # An article's next steps (article_pages.py, 2026-11-13): `lead_html`
+    # closes the opening section, `end_html` follows the piece. Spliced in
+    # after the call to action above has found its place, so it lands where
+    # it did before. Reports pass neither.
+    next_style = next_css() if (lead_html or end_html) else ""
+    if lead_html:
+        body_html = after_opening(body_html, lead_html)
     # One NewsArticle block per report: Google's article rich results need the
     # headline, the dates and a publisher, none of which it can infer from a
     # body of tables and inline SVG.
@@ -479,7 +511,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <script type="application/ld+json">{schema}</script>
 {ADS}
 <style>{CSS}</style>
-<style>{nav_style}{CTA_CSS}</style>
+<style>{nav_style}{CTA_CSS}{next_style}</style>
 </head>
 <body>
 <div class="wrap">
@@ -490,7 +522,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <p class="published">Published {html.escape(long_date(published_at))}</p>
 {body_html}
 </article>
-{cta}
+{end_html}{cta}
 <footer class="site">
   <p>CardStock tracks trading card prices and publishes model forecasts with a
   public track record. Not financial advice.

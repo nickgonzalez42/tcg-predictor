@@ -80,10 +80,6 @@ a.articles__game:hover {
   text-align: center;
 }
 
-.article__foot {
-  margin-top: var(--space-40);
-}
-
 /* Card-art tiles inside an article body: a row of cards with the name and
    the week's move under each. Four across, two on phones. */
 .report__body .report-grid {
