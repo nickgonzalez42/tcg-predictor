@@ -23,6 +23,7 @@ import sys
 from datetime import datetime, timezone
 
 from games import GAMES, db_path, image_dir
+from placeholder_art import is_placeholder_file
 import tcg_pokemon_scraper as tp   # transport: RateLimiter, session, retries, images
 
 SEARCH_URL = tp.SEARCH_URL
@@ -160,7 +161,10 @@ def process_sets(session, line, base_delay, conn, img_dir, new_only,
                 if pid is None or pid in have_art:
                     continue
                 path = os.path.join(img_dir, f"{pid}.jpg")
-                if os.path.exists(path) and os.path.getsize(path) > 0:
+                # A staged placeholder (saved before the guard) is no art:
+                # download_image replaces it, or leaves the card art-less.
+                if (os.path.exists(path) and os.path.getsize(path) > 0
+                        and not is_placeholder_file(path)):
                     continue
                 if tp.download_image(session, pid, base_delay, img_dir):
                     conn.execute("UPDATE cards SET image_path=? WHERE product_id=?",

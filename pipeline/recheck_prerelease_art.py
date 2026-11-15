@@ -55,6 +55,7 @@ from datetime import date, datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 from games import IMAGES_BUCKET, db_path, image_dir, market_games
+from placeholder_art import is_placeholder
 import tcg_pokemon_scraper as tp
 
 AWS = shutil.which("aws") or "/usr/local/bin/aws"
@@ -130,7 +131,7 @@ def fetch_fresh(session, pid, delay):
                                        delay, retry_forbidden=False)
         if resp is None or resp.status_code != 200 or not resp.content:
             return None
-        if hashlib.md5(resp.content).hexdigest() == tp.PLACEHOLDER_MD5:
+        if is_placeholder(resp.content):
             return None
         return resp.content
     except Exception:

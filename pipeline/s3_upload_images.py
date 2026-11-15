@@ -22,6 +22,7 @@ import sys
 import time
 
 from games import GAMES, IMAGES_BUCKET, image_dir
+from placeholder_art import is_placeholder_file
 
 AWS = shutil.which("aws") or "/usr/local/bin/aws"
 KEEP_DAYS = 7
@@ -33,6 +34,16 @@ def upload(game):
             name.endswith(".jpg") for name in os.listdir(directory)):
         print(f"[{game}] nothing staged")
         return True
+
+    # A card counts as having art once its object is in the bucket
+    # (sync_local_images.py), so the "Image Coming Soon" placeholder must
+    # never be uploaded, whoever staged it. The card stays art-less and the
+    # imageless audit keeps checking it.
+    for name in sorted(os.listdir(directory)):
+        path = os.path.join(directory, name)
+        if name.endswith(".jpg") and is_placeholder_file(path):
+            os.remove(path)
+            print(f"[{game}] dropped {name}: TCGplayer's placeholder, not card art")
 
     result = subprocess.run(
         [AWS, "s3", "sync", directory, f"s3://{IMAGES_BUCKET}/{game}/",
