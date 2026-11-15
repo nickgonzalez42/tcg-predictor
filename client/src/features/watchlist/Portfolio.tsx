@@ -11,6 +11,7 @@ import { useFetchFiltersQuery } from "../catalog/catalogApi";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { currencyFormat } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
+import UpdatingList from "../../app/shared/components/UpdatingList";
 import { usePageMeta } from "../../lib/usePageMeta";
 import ImportModal from "./ImportModal";
 import ValueChart from "./ValueChart";
@@ -48,8 +49,12 @@ export default function Portfolio() {
     // allocation, best/worst AND the positions list below (2026-10-02). They
     // never count in the money lines either way.
     const [includePacks, setIncludePacks] = useState(true);
-    const { data, currentData, isLoading, isError, refetch } = useFetchTrackedCardsQuery(
+    const { data, currentData, isLoading, isFetching, isError, refetch } = useFetchTrackedCardsQuery(
         { kind: 'owned', includePacks, listed: view === 'listed', ...params });
+    // A new sort, filter, page or tab keeps the old rows up until the new
+    // ones land; they dim meanwhile (a refetch after an edit doesn't count:
+    // its rows are still current).
+    const updating = isFetching && !currentData;
     const { data: summary } = useFetchPortfolioSummaryQuery({ includePacks });
 
     // The game filter defaults to wherever the user most recently added a
@@ -207,7 +212,7 @@ export default function Portfolio() {
                         <button className="btn btn--outline" onClick={() => refetch()}>Try again</button>
                     </div>
                 ) : data && data.items.length > 0 ? (
-                    <>
+                    <UpdatingList updating={updating}>
                         <div className="screener-wrap">
                             <table className="screener screener--positions">
                                 <thead>
@@ -238,7 +243,7 @@ export default function Portfolio() {
                             metadata={data.pagination}
                             onPageChange={(page: number) => dispatch(setPageNumber(page))}
                         />
-                    </>
+                    </UpdatingList>
                 ) : view === 'listed' ? (
                     <p className="est-note">
                         Nothing here is marked as listed for sale. Tap the tag on any

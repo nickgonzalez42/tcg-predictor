@@ -17,6 +17,7 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import Sparkline from "../../app/shared/components/Sparkline";
 import { currencyFormat, gameKey, shortDate } from "../../lib/util";
 import CardLoader from "../../app/shared/components/CardLoader";
+import UpdatingList from "../../app/shared/components/UpdatingList";
 import type { Card } from "../../app/models/card";
 import { usePageMeta } from "../../lib/usePageMeta";
 
@@ -89,7 +90,9 @@ export default function Wishlist() {
     const params = useAppSelector(state => state.wishlistParams);
     const dispatch = useAppDispatch();
 
-    const { data, isLoading } = useFetchTrackedCardsQuery({ kind: 'wishlist', ...params });
+    const { data, currentData, isLoading, isFetching } = useFetchTrackedCardsQuery({ kind: 'wishlist', ...params });
+    // New filters, sort or page: the old rows stay up, dimmed, until the new ones land.
+    const updating = isFetching && !currentData;
     // The selected price tier IS the condition vocabulary here: '' = Ungraded.
     // Owning a card at '' creates an unspecified-condition copy (priced ungraded).
     const ownGrade = params.grade ?? '';
@@ -127,7 +130,7 @@ export default function Wishlist() {
             {isLoading ? (
                 <CardLoader />
             ) : data && data.items.length > 0 ? (
-                <>
+                <UpdatingList updating={updating}>
                     <div className="screener-wrap">
                         <table className="screener">
                             <thead>
@@ -162,7 +165,7 @@ export default function Wishlist() {
                         metadata={data.pagination}
                         onPageChange={(page: number) => dispatch(setPageNumber(page))}
                     />
-                </>
+                </UpdatingList>
             ) : (
                 <p className="est-note">
                     No cards on your watchlist yet. Browse the <Link to="/catalog">catalog</Link> and

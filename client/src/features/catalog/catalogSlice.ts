@@ -129,6 +129,14 @@ export const catalogSlice = createSlice({
             // The facets that named this set must be the current game's: a
             // decision made for another game would hide every card.
             if (state.setsDecided || action.payload.game !== state.game) return;
+            // A search that arrived first (a report's card link carries
+            // ?searchTerm= and no sets) looks across every set, exactly as
+            // one typed here does (setSearchTerm).
+            if (state.searchTerm) {
+                state.sets = [];
+                state.setsDecided = 'user';
+                return;
+            }
             state.sets = action.payload.set ? [action.payload.set] : [];
             state.setsDecided = 'default';
             state.pageNumber = 1;
@@ -151,9 +159,10 @@ export const catalogSlice = createSlice({
             state.searchTerm = action.payload;
             state.pageNumber = 1;
             // A search is for a card, not a set: the newest-set default would
-            // hide every other printing of it, so it steps aside. A set the
-            // visitor chose themselves stays.
-            if (action.payload && state.setsDecided === 'default') {
+            // hide every other printing of it, so it steps aside (or, still
+            // waiting on the game's facets, never lands). A set the visitor
+            // chose themselves stays.
+            if (action.payload && state.setsDecided !== 'user') {
                 state.sets = [];
                 state.setsDecided = 'user';
             }

@@ -53,6 +53,76 @@
   white-space: nowrap;
 }
 
+/* Search form (Search.tsx, 2026-11-13): the field and its ✕ share one box.
+   The browser's own search clear is hidden, so there is one ✕ that looks
+   the same everywhere and shows without focus (iOS only shows its own while
+   typing, so clearing a finished search meant reopening the keyboard). */
+.search-field {
+  margin: 0;
+}
+
+.search-field__box {
+  position: relative;
+}
+
+/* Block, so the box is exactly the field's height (an inline field leaves
+   a baseline gap under it and the ✕ would sit off-centre). */
+.search-field__input {
+  display: block;
+}
+
+.search-field__input::-webkit-search-cancel-button,
+.search-field__input::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+/* Room for the ✕, so a long name never runs under it. */
+.search-field__box--filled .search-field__input {
+  padding-right: var(--control-h);
+}
+
+.filters--dropdown .filters__search .search-field__box--filled .input {
+  padding-right: var(--logo-h);
+}
+
+/* Square tap target the height of the field, at its right end. */
+.search-field__clear {
+  -webkit-appearance: none;
+  appearance: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--control-h);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.filters--dropdown .filters__search .search-field__clear {
+  width: var(--logo-h);
+}
+
+.search-field__clear:hover {
+  color: var(--text);
+}
+
+.search-field__clear:focus-visible {
+  color: var(--text);
+  outline: 2px solid var(--primary);
+  outline-offset: -6px;
+}
+
 /* Search input + photo-search button share a row everywhere the search
    renders (desktop panel and the mobile bar). */
 .search-row {
@@ -159,6 +229,39 @@
   justify-content: space-between;
   margin-bottom: var(--space-15);
   min-height: 35.2px;
+}
+
+/* Nothing to show (2026-11-13): spans the results column (the old one-line
+   heading sat in the first grid column and wrapped a word per line), names
+   what was searched for and offers the way back. */
+.catalog-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-10);
+  padding: var(--space-25) 0 var(--space-40);
+}
+
+.catalog-empty__title {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 20px;
+  overflow-wrap: anywhere;   /* a long pasted term can't push the page wide */
+}
+
+.catalog-empty__text {
+  margin: 0;
+  max-width: 52ch;
+  font-size: 14.4px;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.catalog-empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-10);
+  margin-top: var(--space-5);
 }
 
 /* Phones (2026-10-29): the row never wrapped, so the count, the three trend
