@@ -17,7 +17,7 @@ import { articleChipStyle, articleKindLabel } from "./articleKind";
 // there is no kind filter.
 const PAGE = 12;
 
-function ArticleCard({ article }: { article: ArticleSummary }) {
+export function ArticleCard({ article }: { article: ArticleSummary }) {
     const navigate = useNavigate();
     return (
         <li className="panel reports__item">

@@ -167,6 +167,23 @@
   margin-bottom: var(--space-5);
 }
 
+/* --- Latest articles (2026-11-15): three across, one a row on phones. */
+.reports__list.home__articles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--gap, var(--space-20));
+}
+
+.home__more {
+  margin: var(--space-15) 0 var(--space-40, 40px);
+  font-weight: 600;
+}
+
+@media (max-width: 1023px) {
+  .reports__list.home__articles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* --- Top movers carousel (Carousel.tsx). --per is how many slides show at
    once and --car-gap matches the page grid's column gap at each breakpoint,
    so a 4-up slide sits exactly on three grid columns. --per is read by the
@@ -687,6 +704,11 @@
   align-items: center;
   gap: var(--space-10);
   font-size: 12.5px;
+}
+
+/* A game is picked in the nav: its row leads, the others stand back. */
+.glance__barrow--dim {
+  opacity: 0.45;
 }
 
 .glance__barlabel {

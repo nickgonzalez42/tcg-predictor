@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { GAMES, GAME_LABEL, gameColor } from "../../lib/games";
-import { GAME_MARK, setSiteGame } from "../../lib/siteGame";
+import { GAME_MARK, pickSiteGame } from "../../lib/siteGame";
 import { setGame } from "../../features/catalog/catalogSlice";
 import { useAppDispatch, useAppSelector } from "../store/store";
 
@@ -32,7 +32,7 @@ export default function GamePicker() {
     }, [open]);
 
     const pick = (next: string) => {
-        dispatch(setSiteGame(next));
+        dispatch(pickSiteGame(next));
         // The catalog follows a real game; "all games" leaves it where it is.
         if (next) dispatch(setGame(next));
         setOpen(false);

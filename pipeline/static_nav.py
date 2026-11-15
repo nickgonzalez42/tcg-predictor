@@ -23,6 +23,20 @@ import os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 NAVBAR_CSS = os.path.join(HERE, "..", "client", "src", "styles", "components", "NavBar.css")
+GAMEPICK_CSS = os.path.join(HERE, "..", "client", "src", "styles", "components", "GamePicker.css")
+
+# The nav's game picker (2026-11-15), as the app draws it (GamePicker.tsx):
+# key, name, the mark in the circle, the game's colour. Mirrors
+# client/src/lib/games.ts (GAMES, GAME_COLOR) and siteGame.ts (GAME_MARK).
+PICK_GAMES = [
+    ("cyberpunk", "Cyberpunk", "CYB", "#f0b429"), ("digimon", "Digimon", "DIG", "#3fd98a"),
+    ("fleshandblood", "Flesh and Blood", "FAB", "#e05c5c"), ("gundam", "Gundam", "GUN", "#f06292"),
+    ("lorcana", "Lorcana", "LOR", "#4dd0e1"), ("magic", "Magic", "MTG", "#ff9e64"),
+    ("onepiece", "One Piece", "OP", "#3d7dca"), ("pokemon", "Pok\u00e9mon", "PKM", "#ffcb05"),
+    ("riftbound", "Riftbound", "RIF", "#5a9cf0"), ("sorcery", "Sorcery", "SOR", "#9ccc65"),
+    ("starwars", "Star Wars Unlimited", "SWU", "#e8ecf4"), ("yugioh", "Yu-Gi-Oh!", "YGO", "#c678dd"),
+]
+GAME_COLOR = {k: c for k, _, _, c in PICK_GAMES}
 SITE = "https://cardstock.guide"
 
 # The tokens NavBar.css reads, copied from client/src/styles/tokens.css and
@@ -30,7 +44,7 @@ SITE = "https://cardstock.guide"
 TOKENS = """
 :root{--nav-bar-h:64px;--page-top:30px}
 @media (max-width:1023px){:root{--nav-bar-h:56px;--page-top:calc(var(--nav-bar-h) + 2px + 20px)}}
-.navbar,.navbar__scrim{--brand:#ffcb05;--on-brand:#101623;--border:#2e3a52;--nav-link:#dbe4f0;
+.navbar,.navbar__scrim,.gamepick{--brand:#ffcb05;--on-brand:#101623;--border:#2e3a52;--nav-link:#dbe4f0;
 --nav-glass:rgba(12,16,26,.55);--radius:15px;--space-5:5px;--space-10:10px;--space-15:15px;
 --space-20:20px;--space-25:25px;--space-95:95px;--control-h:38px;--sidebar-w:300px;--logo-top:30px;
 --container-max:1280px;--container-pad:40px;
@@ -38,8 +52,11 @@ TOKENS = """
 --logo-h:40px;--logo-w:calc(var(--logo-h) * 63 / 88);
 --tipped-logo-left:calc(var(--content-left) / 2 + var(--logo-w) / 2);
 --nav-w:max(var(--sidebar-w),calc(var(--tipped-logo-left) + 226px));--ticker-h:40px}
-@media (max-width:1023px){.navbar,.navbar__scrim{--radius:24px;--container-pad:24px}}
-@media (max-width:767px){.navbar,.navbar__scrim{--radius:26px;--container-pad:20px}}
+@media (max-width:1023px){.navbar,.navbar__scrim,.gamepick{--radius:24px;--container-pad:24px}}
+@media (max-width:767px){.navbar,.navbar__scrim,.gamepick{--radius:26px;--container-pad:20px}}
+.gamepick{--text:#e8ecf4;--surface-2:#141c2e;--font-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
+.gamepick__menu li{margin:0}
 .navbar__scrim[hidden]{display:none!important}
 .navbar a{text-decoration:none}
 .navbar__link{font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif}
@@ -62,7 +79,13 @@ LINKS = [("catalog", "CATALOG"), ("reports", "REPORTS"), ("articles", "ARTICLES"
 def nav_css():
     try:
         with open(NAVBAR_CSS, encoding="utf-8") as f:
-            return f.read() + TOKENS
+            css = f.read()
+        try:
+            with open(GAMEPICK_CSS, encoding="utf-8") as f:
+                css += f.read()
+        except OSError:
+            print(f"static_nav: {GAMEPICK_CSS} not found, no game picker styles", flush=True)
+        return css + TOKENS
     except OSError:
         print(f"static_nav: {NAVBAR_CSS} not found, plain header", flush=True)
         return ""
@@ -76,6 +99,19 @@ def nav_html(active=None, site=SITE):
     items = "".join(
         f'<li><a class="navbar__link{" active" if key == active else ""}" href="{site}/{key}">{label}</a></li>'
         for key, label in LINKS)
+    options = "".join(
+        f'<li><button type="button" role="option" class="gamepick__option" data-game="{key}" '
+        f'data-mark="{mark}" data-color="{color}"><span class="gamepick__dot" '
+        f'style="background:{color}"></span>{html.escape(label)}</button></li>'
+        for key, label, mark, color in PICK_GAMES)
+    picker = f"""
+<div class="gamepick" id="gamepick">
+  <button type="button" class="gamepick__mark" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a game">ALL</button>
+  <ul class="gamepick__menu" role="listbox" aria-label="Choose a game">
+    <li><button type="button" role="option" class="gamepick__option" data-game=""><span class="gamepick__dot"></span>All games</button></li>
+    {options}
+  </ul>
+</div>"""
     return f"""<div class="navbar__scrim" id="navbar-scrim" hidden></div>
 <header class="navbar" id="navbar">
   <div class="navbar__bar">
@@ -107,7 +143,7 @@ def nav_html(active=None, site=SITE):
       </div>
     </div>
   </div>
-</header>"""
+</header>{picker}"""
 
 
 NAV_JS = """
@@ -175,6 +211,78 @@ NAV_JS = """
     }).catch(function () {});
   } catch (e) {}
 })();
+// The game picker (GamePicker.tsx): the choice lives in this browser under
+// the app's own keys (client/src/lib/siteGame.ts), so the home page and the
+// catalog open on it. Nothing on this page changes but the mark.
+(function () {
+  var el = document.getElementById('gamepick');
+  if (!el) return;
+  var mark = el.querySelector('.gamepick__mark'), opts = el.querySelectorAll('[data-game]');
+  function get() { try { return localStorage.getItem('cs.game') || ''; } catch (e) { return ''; } }
+  function paint() {
+    var g = get(), on = null;
+    [].forEach.call(opts, function (o) {
+      var hit = o.getAttribute('data-game') === g;
+      o.classList.toggle('gamepick__option--on', hit);
+      o.setAttribute('aria-selected', String(hit));
+      if (hit) on = o;
+    });
+    if (on && g) {
+      mark.textContent = on.getAttribute('data-mark');
+      mark.style.borderColor = mark.style.color = on.getAttribute('data-color');
+    } else {
+      mark.textContent = 'ALL';
+      mark.style.borderColor = mark.style.color = '';
+    }
+  }
+  function set(o) { el.classList.toggle('gamepick--open', o); mark.setAttribute('aria-expanded', String(o)); }
+  paint();
+  mark.addEventListener('click', function () { set(!el.classList.contains('gamepick--open')); });
+  [].forEach.call(opts, function (o) {
+    o.addEventListener('click', function () {
+      try {
+        localStorage.setItem('cs.game', o.getAttribute('data-game'));
+        localStorage.setItem('cs.pick', '1');
+      } catch (e) {}
+      paint(); set(false);
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    });
+  });
+  document.addEventListener('click', function (e) { if (!el.contains(e.target)) set(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') set(false); });
+})();
+// An article's game advert (ArticleNext.tsx, GameMovers): the four cards of
+// its game we expect to move most next month, filled in from the same list
+// the game's home page shows. Stays empty (and hidden) if the list fails.
+(function () {
+  var box = document.querySelector('.article-browse__cards[data-game]');
+  if (!box) return;
+  var game = box.getAttribute('data-game'), label = box.getAttribute('data-label');
+  function money(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function span(cls, text) { var s = document.createElement('span'); s.className = cls; s.textContent = text; return s; }
+  try {
+    fetch('/api/cards/movers?count=24&horizon=1m&trend=6m&game=' + encodeURIComponent(game))
+      .then(function (r) { return r.ok ? r.json() : []; })
+      .then(function (cards) {
+        cards = (cards || []).filter(function (c) { return c.price && c.fcstTo != null && c.pictureUrl; }).slice(0, 4);
+        if (cards.length < 2) return;
+        box.appendChild(span('article-browse__cards-label', 'The ' + label + ' cards we expect to move most next month'));
+        cards.forEach(function (c) {
+          var a = document.createElement('a'), img = document.createElement('img');
+          a.className = 'article-browse__card'; a.href = '/catalog/' + game + '/' + c.id;
+          img.className = 'article-browse__art'; img.src = c.pictureUrl; img.alt = ''; img.loading = 'lazy';
+          a.appendChild(img);
+          a.appendChild(span('article-browse__card-name', c.name));
+          var pct = (c.fcstTo / c.price - 1) * 100, flat = Math.abs(pct) < 0.5;
+          var price = span('article-browse__card-price', money(c.price) + ' ');
+          price.appendChild(span('article-browse__move' + (flat ? '' : pct > 0 ? ' article-browse__move--up' : ' article-browse__move--down'),
+            (flat ? '0' : (pct > 0 ? '+' : '') + pct.toFixed(0)) + '%'));
+          a.appendChild(price);
+          box.appendChild(a);
+        });
+      }).catch(function () {});
+  } catch (e) {}
+})();
 """
 
 # ---- front-page call to action --------------------------------------------
@@ -226,7 +334,8 @@ NEXT_TOKENS = """
 --surface:#1a2333;--surface-tint:#141c2e;--link:#7fb0ea;
 --display:"Big Shoulders Display",Impact,"Avenir Next Condensed","Arial Narrow",sans-serif;
 --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
---space-5:5px;--space-10:10px;--space-15:15px;--space-20:20px;--space-30:30px;--space-40:40px}
+--space-5:5px;--space-10:10px;--space-15:15px;--space-20:20px;--space-30:30px;--space-40:40px;
+--up:#3fd98a;--down:#ff7a7a}
 """
 
 
@@ -270,13 +379,17 @@ def browse_html(browse, site=SITE):
     count (None when the card DB could not say)."""
     kicker = "This set on CardStock" if browse.get("set") else f"{_esc(browse['label'])} on CardStock"
     button = "Browse the set" if browse.get("set") else "Browse the cards"
-    return f"""<aside class="article-browse" aria-label="Every card in this piece">
+    game = browse.get("game") or ""
+    tint = f' style="--game:{GAME_COLOR[game]}"' if game in GAME_COLOR else ""
+    advert = (f'\n  <div class="article-browse__cards" data-game="{_esc(game)}" '
+              f'data-label="{_esc(browse["label"])}"></div>') if game else ""
+    return f"""<aside class="article-browse" aria-label="Every card in this piece"{tint}>
   <div class="article-browse__text">
     <span class="article-browse__kicker">{kicker}</span>
     <span class="article-browse__title">See {_cards(browse, "article-browse__count")} with our forecasts</span>
     <span class="article-browse__copy">{_browse_copy(browse)}</span>
   </div>
-  <a class="article-browse__btn" href="{site}{_esc(browse['href'])}">{button}</a>
+  <a class="article-browse__btn" href="{site}{_esc(browse['href'])}">{button}</a>{advert}
 </aside>"""
 
 

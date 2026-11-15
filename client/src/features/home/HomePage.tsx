@@ -13,6 +13,8 @@ import { GAMES, GAME_LABEL } from "../../lib/games";
 import { useAppSelector } from "../../app/store/store";
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { usePageMeta } from "../../lib/usePageMeta";
+import { useFetchArticlesQuery } from "../articles/articlesApi";
+import { ArticleCard } from "../articles/ArticlesPage";
 
 // Hero animation: cycles through high-value movers. Each card's art rides the
 // tip of its past-1Y price line as it draws itself; when the line reaches the
@@ -422,6 +424,32 @@ function MoverTile({ mover, index = 0 }: { mover: Card; index?: number }) {
     );
 }
 
+// The newest articles (2026-11-15), three across: the picked game's own, or
+// everyone's when no game is picked or the picked game has none yet.
+const HOME_ARTICLES = 3;
+function HomeArticles({ game }: { game: string }) {
+    const { data: own } = useFetchArticlesQuery({ game, limit: HOME_ARTICLES }, { skip: !game });
+    const ownNone = !!game && !!own && own.items.length === 0;
+    const { data: all } = useFetchArticlesQuery({ limit: HOME_ARTICLES }, { skip: !!game && !ownNone });
+    const mine = !!game && !ownNone;
+    const items = (mine ? own : all)?.items ?? [];
+    if (!items.length) return null;
+    return (
+        <section className="full-span subgrid">
+            <span className="kicker home__kicker full-span">02 · Articles</span>
+            <h2 className="home__heading full-span">
+                Latest articles <span className="est-note">· {mine ? GAME_LABEL[game] : 'every game'}</span>
+            </h2>
+            <ul className="reports__list home__articles full-span">
+                {items.map(a => <ArticleCard key={a.slug} article={a} />)}
+            </ul>
+            <Link className="home__more full-span" to={mine ? `/articles?game=${game}` : '/articles'}>
+                {mine ? `Every ${GAME_LABEL[game]} article` : 'All articles'} &rarr;
+            </Link>
+        </section>
+    );
+}
+
 export default function HomePage() {
     usePageMeta(undefined,
         "Trading card price predictions powered by AI. See what Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, Gundam, and Star Wars Unlimited cards will be worth in a month, six months, or a year.");
@@ -508,13 +536,15 @@ export default function HomePage() {
                 </section>
             )}
 
+            <HomeArticles game={game} />
+
             <section className="full-span subgrid">
-                <span className="kicker home__kicker full-span">02 · Your collection</span>
+                <span className="kicker home__kicker full-span">03 · Your collection</span>
                 <CollectionGlance user={user} />
             </section>
 
             <section className="full-span subgrid">
-                <span className="kicker home__kicker full-span">03 · Our track record</span>
+                <span className="kicker home__kicker full-span">04 · Our track record</span>
                 <Glance />
             </section>
         </>

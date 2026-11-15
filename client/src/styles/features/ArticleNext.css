@@ -26,6 +26,90 @@
   border: 1px solid var(--border);
   border-radius: 14px;
   background: linear-gradient(180deg, var(--surface), var(--surface-tint));
+  /* The article's game, as a rule along the top (2026-11-15). */
+  border-top: 3px solid var(--game, var(--brand));
+}
+
+/* The game's advert: four cards we expect to move most next month. */
+.article-browse__cards {
+  flex: 1 0 100%;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-15);
+  padding-top: var(--space-15);
+  border-top: 1px solid var(--border);
+}
+
+.article-browse__cards:empty {
+  display: none;
+}
+
+.article-browse__cards-label {
+  grid-column: 1 / -1;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.article-browse__card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: #fff;
+  text-decoration: none;
+}
+
+.article-browse__art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 63 / 88;
+  object-fit: cover;
+  margin: 0;
+  border-radius: 6% / 4.3%;
+  background: var(--surface-tint);
+  transition: transform 0.15s ease;
+}
+
+.article-browse__card:hover .article-browse__art {
+  transform: translateY(-3px);
+}
+
+.article-browse__card-name {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.article-browse__card-price {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.article-browse__move {
+  font-weight: 700;
+}
+
+.article-browse__move--up {
+  color: var(--up, #3fd98a);
+}
+
+.article-browse__move--down {
+  color: var(--down, #ff6b6b);
+}
+
+@media (max-width: 560px) {
+  .article-browse__cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .article-browse__text {

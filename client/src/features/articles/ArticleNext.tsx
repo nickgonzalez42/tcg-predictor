@@ -1,7 +1,11 @@
+import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { useFetchArticlesQuery, useFetchCatalogCountQuery, type Article, type ArticleSummary } from "./articlesApi";
 import { useUserInfoQuery } from "../account/accountApi";
-import { GAME_LABEL } from "../../lib/games";
+import { GAME_LABEL, gameColor } from "../../lib/games";
+import { useFetchMoversQuery } from "../catalog/catalogApi";
+import { currencyFormat } from "../../lib/util";
+import { fallbackToCardBack } from "../../lib/cardImages";
 import { longDate } from "../reports/reportKind";
 import { articleKindLabel } from "./articleKind";
 
@@ -57,11 +61,47 @@ function browseCopy(browse: Browse) {
         : `Today's price, the price history and our forecast for every ${browse.label} card we track.`;
 }
 
+// The game's own advert inside the block (2026-11-15): the four cards of the
+// article's game we expect to move most next month, art first, each a link
+// to its card page. The same request the game's home page makes, so it is
+// already warm; nothing shows until it answers, or if it has no cards.
+const AD_CARDS = 4;
+function GameMovers({ game }: { game: string }) {
+    const { data } = useFetchMoversQuery({ count: 24, horizon: '1m', trend: '6m', game });
+    const cards = (data ?? []).filter(c => c.price && c.fcstTo != null && c.pictureUrl).slice(0, AD_CARDS);
+    if (cards.length < 2) return null;
+    return (
+        <div className="article-browse__cards">
+            <span className="article-browse__cards-label">
+                The {GAME_LABEL[game] ?? game} cards we expect to move most next month
+            </span>
+            {cards.map(c => {
+                const pct = (c.fcstTo! / c.price! - 1) * 100;
+                const flat = Math.abs(pct) < 0.5;
+                return (
+                    <Link key={c.id} className="article-browse__card" to={`/catalog/${game}/${c.id}`}>
+                        <img className="article-browse__art" src={c.pictureUrl} alt="" loading="lazy"
+                            onError={e => fallbackToCardBack(e, c.game, c.cardType)} />
+                        <span className="article-browse__card-name">{c.name}</span>
+                        <span className="article-browse__card-price">
+                            {currencyFormat(c.price!)}{' '}
+                            <span className={`article-browse__move${flat ? '' : pct > 0 ? ' article-browse__move--up' : ' article-browse__move--down'}`}>
+                                {flat ? '0' : `${pct > 0 ? '+' : ''}${pct.toFixed(0)}`}%
+                            </span>
+                        </span>
+                    </Link>
+                );
+            })}
+        </div>
+    );
+}
+
 // After the opening section.
 export function ArticleBrowse({ article }: { article: Article }) {
     const browse = useBrowse(article);
     return (
-        <aside className="article-browse" aria-label="Every card in this piece">
+        <aside className="article-browse" aria-label="Every card in this piece"
+            style={{ '--game': gameColor(article.game) } as CSSProperties}>
             <div className="article-browse__text">
                 <span className="article-browse__kicker">
                     {browse.set ? 'This set on CardStock' : `${browse.label} on CardStock`}
@@ -74,6 +114,7 @@ export function ArticleBrowse({ article }: { article: Article }) {
             <Link className="article-browse__btn" to={browse.href}>
                 {browse.set ? 'Browse the set' : 'Browse the cards'}
             </Link>
+            <GameMovers game={article.game} />
         </aside>
     );
 }

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { User } from "../../app/models/user";
-import { currencyFormat } from "../../lib/util";
+import { currencyFormat, gameKey } from "../../lib/util";
 import { gameColor } from "../../lib/games";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchPortfolioSummaryQuery } from "../watchlist/watchlistApi";
 import { useFetchHomeStatsQuery } from "./homeApi";
+import { useAppSelector } from "../../app/store/store";
 
 // Home infographics (2026-10-23/24): the collection block (section 02, its
 // own row) and the three model-performance panels (section 03), in place of
@@ -218,17 +219,30 @@ function PortfolioPanel({ user }: { user?: User | null }) {
     );
 }
 
+// The visitor's game (2026-11-15, the nav's game picker): with one picked,
+// each panel's headline figures are that game's own and its row leads the
+// list, the other games dimmed behind it for comparison. A game with no
+// record yet keeps the all-games figures.
+function useMine<T extends { game: string }>(rows?: T[]) {
+    const game = useAppSelector(state => state.site.game);
+    const mine = game ? rows?.find(r => gameKey(r.game) === game) : undefined;
+    const ordered = mine ? [mine, ...(rows ?? []).filter(r => r !== mine)] : rows ?? [];
+    const rowClass = (r: T) => `glance__barrow${mine && r !== mine ? ' glance__barrow--dim' : ''}`;
+    return { mine, ordered, rowClass };
+}
+
 // ----- 2. Model track record --------------------------------------------------
 function TrackRecordPanel() {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data } = useFetchHomeStatsQuery();
-    const graded = useCountUp(data?.graded ?? 0, inView && !!data);
-    const hit = useCountUp((data?.bandHit ?? 0) * 100, inView && !!data);
+    const { mine, ordered, rowClass } = useMine(data?.byGame);
+    const graded = useCountUp(mine?.graded ?? data?.graded ?? 0, inView && !!data);
+    const hit = useCountUp((mine?.bandHit ?? data?.bandHit ?? 0) * 100, inView && !!data);
     return (
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">How often we're right</span>
-                <span className="mono">1-month forecasts · raw cards</span>
+                <span className="mono">{mine ? `${mine.label} · ` : ''}1-month forecasts · raw cards</span>
             </div>
             <div className="glance__row">
                 {/* Until the stats arrive the figures read as a dash, never as
@@ -244,8 +258,8 @@ function TrackRecordPanel() {
                 </div>
             </div>
             <ul className="glance__bars">
-                {(data?.byGame ?? []).map((g, i) => (
-                    <li key={g.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}>
+                {ordered.map((g, i) => (
+                    <li key={g.game} className={rowClass(g)} style={{ '--i': i } as CSSProperties}>
                         <span className="glance__barlabel">{g.label}</span>
                         <span className="glance__track">
                             <span className="glance__fill"
@@ -267,15 +281,17 @@ function TrackRecordPanel() {
 function MissPanel() {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data } = useFetchHomeStatsQuery();
-    const miss = useCountUp(data ? pct(data.mae) : 0, inView && !!data);
-    const lean = useCountUp(data ? pct(data.bias) : 0, inView && !!data);
-    const hot = (data?.bias ?? 0) > 0;
+    const { mine, ordered, rowClass } = useMine(data?.miss);
+    const bias = mine?.bias ?? data?.bias ?? 0;
+    const miss = useCountUp(data ? pct(mine?.mae ?? data.mae) : 0, inView && !!data);
+    const lean = useCountUp(data ? pct(bias) : 0, inView && !!data);
+    const hot = bias > 0;
     const worst = Math.max(...(data?.miss ?? []).map(g => pct(g.mae)), 1);
     return (
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">How far off</span>
-                <span className="mono">1-month forecasts · raw cards</span>
+                <span className="mono">{mine ? `${mine.label} · ` : ''}1-month forecasts · raw cards</span>
             </div>
             <div className="glance__row">
                 <div className="glance__stat">
@@ -290,8 +306,8 @@ function MissPanel() {
                 </div>
             </div>
             <ul className="glance__bars">
-                {(data?.miss ?? []).map((g, i) => (
-                    <li key={g.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}
+                {ordered.map((g, i) => (
+                    <li key={g.game} className={rowClass(g)} style={{ '--i': i } as CSSProperties}
                         title={`${g.label}: typical miss ±${pct(g.mae).toFixed(1)}%, runs ${pct(g.bias).toFixed(1)}% ${g.bias > 0 ? 'hot' : 'cold'} over ${g.graded.toLocaleString()} checked`}>
                         <span className="glance__barlabel">{g.label}</span>
                         <span className="glance__track">
@@ -314,18 +330,19 @@ function MissPanel() {
 function LeanPanel() {
     const { ref, inView } = useInView<HTMLDivElement>();
     const { data } = useFetchHomeStatsQuery();
+    const { mine, ordered, rowClass } = useMine(data?.lean);
     return (
         <div ref={ref} className="panel glance__panel" data-in={inView ? 1 : 0}>
             <div className="band">
                 <span className="band__title">Where we lean</span>
-                <span className="mono">next month</span>
+                <span className="mono">{mine ? `${mine.label} · ` : ''}next month</span>
             </div>
             {!data && <div className="glance__text">Loading our forecasts…</div>}
             <ul className="glance__bars">
-                {(data?.lean ?? []).map((g, i) => {
+                {ordered.map((g, i) => {
                     const n = Math.max(1, g.up + g.flat + g.down);
                     return (
-                        <li key={g.game} className="glance__barrow" style={{ '--i': i } as CSSProperties}
+                        <li key={g.game} className={rowClass(g)} style={{ '--i': i } as CSSProperties}
                             title={`${g.label}: ${g.up.toLocaleString()} up · ${g.flat.toLocaleString()} unchanged · ${g.down.toLocaleString()} down`}>
                             <span className="glance__barlabel">{g.label}</span>
                             <span className="glance__stack">

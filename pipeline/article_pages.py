@@ -75,7 +75,8 @@ def browse_for(game, kind, focus, set_name, counts):
         href = f"/catalog?game={quote(game)}&sets={quote(set_name, safe='')}"
     else:
         href = f"/catalog?game={quote(game)}&sets=all"
-    return {"href": href, "set": set_name if one_set else None, "label": label, "count": counts[key]}
+    return {"href": href, "set": set_name if one_set else None, "label": label, "count": counts[key],
+            "game": game}
 
 
 def more_for(slug, game, rows):
