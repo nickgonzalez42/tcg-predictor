@@ -46,10 +46,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 from games import market_games, db_path
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
-OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                      "predictions.db")
+from _paths import PC_DB
+from _paths import PRED_DB as OUT_DB
 
 MIN_MONTHS = 2        # cards with >= this many buckets belong to the real model
 FRESH_DAYS = 7        # need a TCG price this recent to anchor an estimate

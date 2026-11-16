@@ -50,8 +50,7 @@ from games import priced_games
 from remap_special_prints import pc_catalog
 from scrape_graded_history import CHART_RE, GRADE_MAP, UA
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 TCG_ID_RE = re.compile(r"tcgplayer\.com/product/(\d+)")
 SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 

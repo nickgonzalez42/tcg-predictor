@@ -58,10 +58,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE   # noqa: E402
 from games import GAMES, market_games, db_path   # noqa: E402
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
-OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                      "predictions.db")
+from _paths import PC_DB
+from _paths import PRED_DB as OUT_DB
 ML = os.path.join(BASE, "ml_data")
 
 MODEL_VERSION = "prerelease-v1"

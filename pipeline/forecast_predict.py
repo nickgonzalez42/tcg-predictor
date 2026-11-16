@@ -34,7 +34,7 @@ from forecast_deep import (load_matrix, load_matrix_all, static_features, traj_b
 import forecast_calib as fcal
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
-OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
+from _paths import PRED_DB as OUT_DB
 
 MODEL_VERSION = "forecast-deep-v4.5"  # v4.5 (2026-10-10 review): absolute-error point
 # loss, steeper price weights, label guards, publish-time per-direction shrink

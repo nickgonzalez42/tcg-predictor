@@ -35,8 +35,7 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, db_path
 import tcg_pokemon_scraper as tp
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 
 
 def init_db(conn):

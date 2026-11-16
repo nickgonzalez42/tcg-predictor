@@ -32,7 +32,7 @@ import time
 from datetime import datetime, timezone
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
-OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB as OUT_DB
 
 # game -> (our card DB, PriceCharting CSV), from the game registry
 from games import GAMES, priced_games

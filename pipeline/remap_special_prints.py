@@ -40,8 +40,7 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, db_path, priced_games
 from scrape_gundam_prices import fetch          # polite 1 req/s + transient retry
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_match_overrides.csv")
 TCG_ID_RE = re.compile(r"tcgplayer\.com/product/(\d+)")
 TOKENS = ("1st edition", "shadowless")

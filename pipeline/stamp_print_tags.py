@@ -25,8 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 from games import db_path, priced_games
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 # bracket text in the PC page name -> display suffix
 TOKENS = {"1st edition": "1st Edition", "shadowless": "Shadowless"}
 

@@ -37,7 +37,7 @@ SUGGEST_CSV = os.path.join(ML_DATA, "pc_link_suggestions.csv")  # pending sugges
 DRAINED_CSV = os.path.join(ML_DATA, "pc_link_drained.csv")      # backlog pages fetched once
 TCG_ID_RE = re.compile(r"tcgplayer\.com/product/(\d+)")
 TITLE_RE = re.compile(r"<title>(.*?)(?:\s*Prices)?\s*[|<]", re.S)
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 DEFAULT_LIMIT = 500                              # max page fetches per game per run
 
 # --drain works back through the --baseline backlog (2026-10-09, missing-

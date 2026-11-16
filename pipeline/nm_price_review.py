@@ -41,7 +41,7 @@ from _paths import DATA_DIR as BASE
 from games import db_path
 
 PORT = 8767
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 ML = os.path.join(BASE, "ml_data")
 SWEEP_CSV = os.path.join(ML, "nm_pc_divergence_review.csv")
 REVIEWED_CSV = os.path.join(ML, "nm_pc_reviewed.csv")

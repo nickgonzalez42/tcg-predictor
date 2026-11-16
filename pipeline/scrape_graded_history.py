@@ -33,7 +33,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import certifi
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")

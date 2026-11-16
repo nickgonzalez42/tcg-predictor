@@ -14,3 +14,10 @@ import os
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tcg-predictor/
 DATA_DIR = os.environ.get("TCG_DATA_DIR") or os.path.normpath(
     os.path.join(_REPO, "..", "one-piece"))
+
+# The API's two SQLite databases live in the repo tree, next to the API that
+# serves them. One definition (2026-11-15): 38 scripts each spelled this path
+# out, so moving a database meant finding every copy.
+API_CARDS = os.path.join(DATA_DIR, "..", "tcg-predictor", "dotnet", "API", "Data", "cards")
+PC_DB = os.path.join(API_CARDS, "pricecharting.db")
+PRED_DB = os.path.join(API_CARDS, "predictions.db")

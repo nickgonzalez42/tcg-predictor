@@ -36,8 +36,7 @@ from games import db_path, market_games
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 # Cards tomorrow's articles will discuss, written by game_articles.write_watch
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
 # scraping its volume movement the day before").

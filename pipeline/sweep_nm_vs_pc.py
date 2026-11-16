@@ -25,8 +25,7 @@ import os
 import sqlite3
 
 from _paths import DATA_DIR as BASE
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 OUT_CSV = os.path.join(BASE, "ml_data", "nm_pc_divergence_review.csv")
 BLOCKLIST_CSV = os.path.join(BASE, "ml_data", "tcg_nm_blocklist.csv")
 

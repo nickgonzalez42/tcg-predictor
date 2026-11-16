@@ -189,8 +189,7 @@ def market_games():
     needed. Order follows the registry. If pricecharting.db or the table
     can't be read, falls back to priced_games() (never silently widens)."""
     import sqlite3
-    pc_db = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data",
-                         "cards", "pricecharting.db")
+    from _paths import PC_DB as pc_db
     try:
         con = sqlite3.connect(f"file:{pc_db}?mode=ro", uri=True, timeout=60)
         imported = {g for (g,) in con.execute("SELECT DISTINCT game FROM tcg_csv_imports")}

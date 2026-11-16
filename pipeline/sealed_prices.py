@@ -47,8 +47,7 @@ from games import GAMES, priced_games, db_path   # noqa: E402
 import tcg_pokemon_scraper as tp   # noqa: E402  (session + rate limiting + retries)
 import scrape_graded_history as sgh   # noqa: E402  (fetch_chart on the public product page)
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 ML = os.path.join(BASE, "ml_data")
 OUT_CSV = os.path.join(ML, "sealed_boxes.csv")
 CACHE = os.path.join(ML, "sealed_boxes_cache.json")

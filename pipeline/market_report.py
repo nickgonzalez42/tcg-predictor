@@ -24,10 +24,11 @@ from math import exp, log, log2
 from urllib.parse import quote
 
 from _paths import DATA_DIR as BASE
+from _paths import API_CARDS
 from games import GAMES
 from report_editorial import write_editorial
 
-API_DATA = os.path.normpath(os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards"))
+API_DATA = os.path.normpath(API_CARDS)
 PC_DB = os.path.join(API_DATA, "pricecharting.db")
 PRED_DB = os.path.join(API_DATA, "predictions.db")
 

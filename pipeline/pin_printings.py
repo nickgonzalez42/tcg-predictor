@@ -50,8 +50,7 @@ from _paths import DATA_DIR as BASE
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import freshen_current_week
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 PINS_CSV = os.path.join(BASE, "ml_data", "tcg_printing_pins.csv")
 TCG_NM_ONLY_CSV = os.path.join(BASE, "ml_data", "tcg_nm_only.csv")
 GAMES_DEFAULT = ["pokemon", "onepiece", "yugioh", "magic", "lorcana", "digimon",

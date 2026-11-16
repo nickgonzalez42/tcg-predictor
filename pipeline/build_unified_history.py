@@ -43,7 +43,7 @@ def nominal_day():
     return datetime.now(timezone.utc).date()
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 CORRECTIONS_CSV = os.path.join(BASE, "ml_data", "price_corrections.csv")
 # Nightly incremental mode writes the day's table changes here; push_data.sh
 # ships THIS (~15MB) to prod instead of the 4.4GB pricecharting.db. Sundays /

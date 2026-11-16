@@ -26,8 +26,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 
-PRED_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                       "predictions.db")
+from _paths import PRED_DB
 CARD_LINK = re.compile(r"/catalog/([a-z]+)/(\d+)")
 
 

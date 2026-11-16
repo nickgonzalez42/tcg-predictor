@@ -28,10 +28,10 @@ from urllib.parse import quote
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
+from _paths import API_CARDS
 from games import GAMES
 
-API_DATA = os.path.normpath(os.path.join(
-    BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards"))
+API_DATA = os.path.normpath(API_CARDS)
 PRED_DB = os.path.join(API_DATA, "predictions.db")
 DEFAULT_OUT = os.path.normpath(os.path.join(
     BASE, "..", "tcg-predictor", "static-content", "sets"))

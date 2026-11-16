@@ -22,7 +22,7 @@ import pandas as pd
 from _paths import DATA_DIR as BASE
 
 DATA = os.path.join(BASE, "ml_data")
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 
 K = 12            # neighbors per card
 MIN_COMPS = 5     # need at least this many priced neighbors to report a number

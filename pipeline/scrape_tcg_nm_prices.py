@@ -40,8 +40,7 @@ from games import GAMES, ALL_GAMES, db_path
 import tcg_pokemon_scraper as tp   # transport: RateLimiter, session, retries, is_single_card
 import tcg_scraper as ts           # fetch_set_list (setName aggregation)
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 TCG_NM_ONLY_CSV = os.path.join(BASE, "ml_data", "tcg_nm_only.csv")
 SEARCH_URL = tp.SEARCH_URL
 PAGE_SIZE = tp.PAGE_SIZE

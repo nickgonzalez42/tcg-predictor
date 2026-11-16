@@ -48,12 +48,13 @@ from datetime import datetime, timedelta, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
+from _paths import API_CARDS
 from games import GAMES, market_games, db_path
 import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 from backfill_sales_volume import REFRESH_SCRIPTS, refresh_pids
 
-CARDS = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards")
+CARDS = API_CARDS
 PRED_DB = os.path.join(CARDS, "predictions.db")
 PC_DB = os.path.join(CARDS, "pricecharting.db")
 LOCK_PATH = os.path.join(BASE, ".sales_volume.lock")          # the sales crawler's lock

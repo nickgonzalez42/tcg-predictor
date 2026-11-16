@@ -31,8 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 from static_nav import nav_html, nav_css, cta_html, next_css, CTA_CSS, NAV_JS
 
-PRED_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                       "predictions.db")
+from _paths import PRED_DB
 DEFAULT_OUT = os.path.join(BASE, "..", "tcg-predictor", "static-content", "reports")
 SITE = "https://cardstock.guide"
 

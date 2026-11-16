@@ -43,8 +43,7 @@ from games import db_path, priced_games
 import tcg_pokemon_scraper as tp
 from pin_printings import load_pins, nm_variant_series
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards",
-                     "pricecharting.db")
+from _paths import PC_DB
 
 
 def now_iso():

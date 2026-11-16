@@ -25,7 +25,7 @@ from sklearn.metrics import mean_absolute_error
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 DATA = os.path.join(BASE, "ml_data")
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 
 HORIZONS = {"1m": 1, "6m": 6, "12m": 12}
 TARGETS = ["ungraded", "psa10"]

@@ -34,8 +34,8 @@ import pandas as pd
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 DATA = os.path.join(BASE, "ml_data")
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
-OUT_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "predictions.db")
+from _paths import PC_DB
+from _paths import PRED_DB as OUT_DB
 
 from games import market_games
 GAMES = market_games()   # any price source, incl. CSV-only games (2026-10-18)

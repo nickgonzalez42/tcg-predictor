@@ -41,7 +41,7 @@ from _paths import DATA_DIR as BASE   # noqa: E402
 from games import GAMES, priced_games, db_path   # noqa: E402
 from scrape_gundam_prices import fetch, slugify   # noqa: E402
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 OUT_CSV = os.path.join(BASE, "ml_data", "pc_consoles_discovered.csv")
 SLUG_OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_console_slugs.csv")
 

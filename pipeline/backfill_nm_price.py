@@ -14,7 +14,7 @@ import os
 import sqlite3
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 
 
 def latest_ungraded(game):

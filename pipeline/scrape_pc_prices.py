@@ -35,7 +35,7 @@ from games import GAMES, priced_games
 # 2026-07-26 diff spike: written for gundam, read digimon pages unchanged).
 from scrape_gundam_prices import crawl_console, slugify, HEADER
 
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 # console display name -> real PC slug, for the sets where slugify() misses
 # (colons, apostrophes, PC's own abbreviations). Grows as the sweep reports 404s.
 SLUG_OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_console_slugs.csv")

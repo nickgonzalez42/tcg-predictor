@@ -36,7 +36,7 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, db_path
 
 PORT = 8766
-PC_DB = os.path.join(BASE, "..", "tcg-predictor", "dotnet", "API", "Data", "cards", "pricecharting.db")
+from _paths import PC_DB
 ML_DATA = os.environ.get("MATCH_REVIEW_STATE", os.path.join(BASE, "ml_data"))
 REVIEWED_CSV = os.path.join(ML_DATA, "pc_match_reviewed.csv")
 OVERRIDES_CSV = os.path.join(ML_DATA, "pc_match_overrides.csv")
