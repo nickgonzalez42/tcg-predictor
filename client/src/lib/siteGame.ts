@@ -102,5 +102,5 @@ export const GAME_MARK: Record<string, string> = {
 // The picture in the picker's mark: the middle of each game's card back
 // (client/public/images/games). A game without one keeps its letters.
 const PICTURED = ['cyberpunk', 'digimon', 'fleshandblood', 'gundam', 'lorcana', 'magic', 'onepiece',
-    'pokemon', 'riftbound', 'sorcery', 'yugioh'];
+    'pokemon', 'riftbound', 'sorcery', 'starwars', 'yugioh'];
 export const gameImage = (game: string) => (PICTURED.includes(game) ? `/images/games/${game}.webp` : '');

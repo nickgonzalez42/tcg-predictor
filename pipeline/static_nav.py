@@ -39,7 +39,7 @@ PICK_GAMES = [
 GAME_COLOR = {k: c for k, _, _, c in PICK_GAMES}
 # Games with a picture for the mark (client/public/images/games), as in siteGame.ts.
 PICTURED = {"cyberpunk", "digimon", "fleshandblood", "gundam", "lorcana", "magic", "onepiece",
-            "pokemon", "riftbound", "sorcery", "yugioh"}
+            "pokemon", "riftbound", "sorcery", "starwars", "yugioh"}
 SITE = "https://cardstock.guide"
 
 # The tokens NavBar.css reads, copied from client/src/styles/tokens.css and
