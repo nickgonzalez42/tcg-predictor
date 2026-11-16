@@ -171,7 +171,7 @@ KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASE
 # is a historical analysis of certain kinds of high value card, by title. In
 # One Piece for example there are manga and SP cards"). A type is told by
 # its title: name_tag is in the card's name (skip_prefix leaves out
-# look-alikes). Each (game, type) is a planner slot of its own, kind
+# look-alikes), or by its rarity where the title does not name it. Each (game, type) is a planner slot of its own, kind
 # "type:<key>" (stored kind 'type', focus = the key): due every
 # TYPE_GAP_DAYS, at most TYPE_PER_NIGHT a night ON TOP of MAX_PER_NIGHT, so
 # the set and game articles keep their own gaps. type_articles.py writes them.
@@ -185,6 +185,82 @@ CARD_TYPES = {
                "skip_prefix": "DON!! Card", "skip_note": "DON!! cards",
                "what": ("special alternate-art reprints of cards from earlier sets, marked SP in the title, "
                         "a few to a set")},
+        "altart": {"label": "Alternate Art", "plural": "Alternate Art cards", "name_tag": "(Alternate Art)",
+                  "what": "printings of a set's cards with different artwork, marked Alternate Art in the title; most sets carry a few dozen, from cheap Rares to the Leaders and Secret Rares that top the set"},
+        "treasure": {"label": "Treasure Rare", "plural": "Treasure Rare cards", "rarity": "Treasure Rare",
+                  "what": "the TR printing, one card to a set since early 2024, with a textured gold treatment"},
+    },
+    # 2026-11-16 (user: "do what you think is best ... if the other games have
+    # card rarities that are better to discuss, do that case by case"): the
+    # chase kinds of the other games, by title tag where the title names
+    # them and by rarity where it does not.
+    "pokemon": {
+        "sir": {"label": "Special Illustration Rare", "plural": "Special Illustration Rares", "rarity": "Special Illustration Rare",
+                  "what": "the full-art rarity above the Illustration Rare, in every main set since Scarlet & Violet began in 2023; a set carries a handful and they are usually its most expensive cards"},
+        "ir": {"label": "Illustration Rare", "plural": "Illustration Rares", "rarity": "Illustration Rare",
+                  "what": "full-art cards of ordinary Pokemon with scene artwork, a rarity that began with Scarlet & Violet in 2023; a set carries a couple of dozen"},
+        "altfull": {"label": "Alternate Full Art", "plural": "Alternate Full Art cards", "name_tag": "(Alternate Full Art)",
+                  "what": "the alternate-artwork full-art printings of the Sun & Moon and Sword & Shield years (2019 to 2022), the cards collectors call alt arts"},
+        "secret": {"label": "Secret Rare", "plural": "Secret Rares", "rarity": "Secret Rare",
+                  "what": "cards numbered past the end of their set, the top rarity of sets up to early 2023"},
+    },
+    "magic": {
+        "serial": {"label": "Serial Numbered", "plural": "serial-numbered cards", "name_tag": "(Serial Numbered)",
+                  "what": "printings stamped with their own number out of a fixed run, usually a few hundred copies, first printed in late 2022"},
+        "fracture": {"label": "Fracture Foil", "plural": "Fracture Foil cards", "name_tag": "(Fracture Foil)",
+                  "what": "a foil treatment found only in Collector Boosters since late 2024, on a few mythic cards a set"},
+        "textured": {"label": "Textured Foil", "plural": "Textured Foil cards", "name_tag": "(Textured Foil)",
+                  "what": "a raised, textured foil treatment found in Collector Boosters since 2022"},
+    },
+    "yugioh": {
+        "starlight": {"label": "Starlight Rare", "plural": "Starlight Rares", "rarity": "Starlight Rare",
+                  "what": "the hardest rarity to open in a core booster set since 2019, a few cards to a set"},
+        "ghost": {"label": "Ghost Rare", "plural": "Ghost Rares", "rarity": "Ghost Rare",
+                  "what": "a pale, holographic printing that sets have carried on and off since 2007, usually one card to a set"},
+        "ultimate": {"label": "Ultimate Rare", "plural": "Ultimate Rares", "rarity": "Ultimate Rare",
+                  "what": "an embossed printing of cards that also exist in a lower rarity, printed in core sets from 2004"},
+        "qcsr": {"label": "Quarter Century Secret Rare", "plural": "Quarter Century Secret Rares", "rarity": "Quarter Century Secret Rare",
+                  "what": "the anniversary rarity introduced in 2023, stamped with the 25th anniversary mark"},
+    },
+    "lorcana": {
+        "enchanted": {"label": "Enchanted", "plural": "Enchanted cards", "rarity": "Enchanted",
+                  "what": "the full-art alternate printings above Legendary, in every set since the first in 2023"},
+        "iconic": {"label": "Iconic", "plural": "Iconic cards", "rarity": "Iconic",
+                  "what": "the rarity above Enchanted, introduced in 2025, a card or two to a set"},
+    },
+    "digimon": {
+        "sp": {"label": "SP", "plural": "SP cards", "name_tag": "(SP)",
+                  "what": "special alternate-art printings marked SP in the title, a few to a set since 2025"},
+        "textured": {"label": "Textured", "plural": "Textured cards", "name_tag": "(Textured)",
+                  "what": "alternate-art printings with a raised, textured surface, marked Textured in the title"},
+        "rarepull": {"label": "Rare Pull", "plural": "Rare Pull cards", "name_tag": "(Rare Pull)",
+                  "what": "hard-to-open alternate-art printings marked Rare Pull in the title, a few to a set since 2025"},
+    },
+    "gundam": {
+        "lrpp": {"label": "LR++", "plural": "LR++ cards", "rarity": "LR++",
+                  "what": "the top parallel printing of a Legend Rare, the hardest cards to open in a set"},
+        "lrp": {"label": "LR+", "plural": "LR+ cards", "rarity": "LR+",
+                  "what": "the parallel, alternate-art printing of a Legend Rare"},
+        "sp": {"label": "SP", "plural": "SP cards", "name_tag": "(SP)",
+                  "what": "special parallel printings marked SP in the title, in sets since early 2026"},
+    },
+    "starwars": {
+        "showcase": {"label": "Showcase", "plural": "Showcase cards", "name_tag": "(Showcase)",
+                  "what": "the full-art Showcase printings of a set's Leaders, found in a small share of packs"},
+    },
+    "fleshandblood": {
+        "marvel": {"label": "Marvel", "plural": "Marvel cards", "rarity": "Marvel",
+                  "what": "the Marvel rarity: full-art, extended-art printings that are the chase cards of a set"},
+        "fabled": {"label": "Fabled", "plural": "Fabled cards", "rarity": "Fabled",
+                  "what": "the Fabled rarity, about one card to a set and the hardest to open"},
+        "legendary": {"label": "Legendary", "plural": "Legendary cards", "rarity": "Legendary",
+                  "what": "the Legendary rarity, a few cards to a set, mostly equipment"},
+    },
+    "riftbound": {
+        "signature": {"label": "Signature", "plural": "Signature cards", "name_tag": "(Signature)",
+                  "what": "showcase printings that carry a printed signature, marked Signature in the title, the hardest cards to open in a set"},
+        "overnumbered": {"label": "Overnumbered", "plural": "Overnumbered cards", "name_tag": "(Overnumbered)",
+                  "what": "showcase printings numbered past the end of their set, marked Overnumbered in the title"},
     },
 }
 TYPE_GAP_DAYS = 56        # each type about every eight weeks (2026-11-14, the tiered plan)

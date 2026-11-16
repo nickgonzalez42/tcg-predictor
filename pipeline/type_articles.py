@@ -48,6 +48,7 @@ ANCHOR_MAX_DAYS = 45      # age curve: first price within this long of the relea
 AGE_MONTHS = (3, 6, 12, 18, 24)
 AGE_MIN_CARDS = 4
 TOP_N = 6
+TABLE_MAX = 150           # the every-card table stops here (a 1,000-card type would be a 1,000-card page)
 EXAMPLES_N = 4
 EXAMPLE_MIN_DAYS = 180    # an example's chart needs half a year of prices
 SELL_WEEKS = 26           # the weekly sales line
@@ -61,6 +62,12 @@ ga.BAND_SHORT.update({"under $250": "under $250", "$250 to $500": "$250-500", "$
 
 
 def members_of(cat, spec):
+    """A type is told by its title (name_tag) or, where the game names the
+    kind in the rarity line and not the title, by its rarity (2026-11-16:
+    Pokemon's Special Illustration Rares carry nothing in the title)."""
+    rarity = spec.get("rarity")
+    if rarity:
+        return {pid: c for pid, c in cat.items() if c["rarity"] == rarity}
     tag, skip = spec["name_tag"], spec.get("skip_prefix")
     return {pid: c for pid, c in cat.items()
             if tag in c["name"] and not (skip and c["name"].startswith(skip))}
@@ -407,7 +414,8 @@ def card_picker(game, spec, members, year, mc, sell, first):
                 f"<div class='report-picker-facts'>{rows}</div>"
                 f"<a class='report-picker-open' href='/catalog/{game}/{pid}'>Open the card page</a></div>")
     items = []
-    for pid in sorted(members, key=lambda p: -members[p]["price"]):
+    listed = sorted(members, key=lambda p: -members[p]["price"])[:TABLE_MAX]
+    for pid in listed:
         c = members[pid]
         move = (f"<span class='report-picker-move report-{'up' if year[pid] >= 0 else 'down'}'>{pct(year[pid])}</span>"
                 if pid in year else "<span class='report-picker-move'></span>")
@@ -416,8 +424,11 @@ def card_picker(game, spec, members, year, mc, sell, first):
                      f"<span class='report-picker-price'>{money(c['price'])}</span>{move}"
                      f"<div class='report-picker-detail'>{detail(pid)}</div></div>")
     n = len(members)
-    return (f"<h2>All {n} {esc(spec['label'])} Cards</h2>"
-            f"<p>Dearest first, with each card's change over the past year where we have a year of prices. "
+    head = (f"All {n} {esc(spec['label'])} Cards" if n <= TABLE_MAX
+            else f"The {TABLE_MAX} Most Expensive {esc(spec['label'])} Cards")
+    return (f"<h2>{head}</h2>"
+            f"<p>{'Dearest first' if n <= TABLE_MAX else f'The dearest {TABLE_MAX} of {n:,}'}, "
+            f"with each card's change over the past year where we have a year of prices. "
             f"Pick a card to see it.</p>"
             f"<div class='report-picker'><div class='report-picker-list'>{''.join(items)}</div>"
             f"<div class='report-picker-view'>{detail(first)}</div></div>")
@@ -474,7 +485,8 @@ def build_type_article(d, today, no_prose=False):
                                             for p in sell["quiet"][:5]]}
     facts = {
         "game": label, "card_type": spec["label"], "what_it_is": spec["what"],
-        "scope": (f"every priced {label} card whose title carries {spec['name_tag']}"
+        "scope": ((f"every priced {label} card of the rarity {spec['rarity']}" if spec.get("rarity")
+                   else f"every priced {label} card whose title carries {spec['name_tag']}")
                   + (f", the {spec['skip_note']} left out" if spec.get("skip_note") else "")),
         "as_of": today.isoformat(),
         "totals": {"cards_priced": n, "sets": len({c["set"] for c in members.values()}),
