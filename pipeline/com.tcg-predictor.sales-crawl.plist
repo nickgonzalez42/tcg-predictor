@@ -26,6 +26,10 @@
 		<string>40</string>
 		<string>--refresh-days</string>
 		<string>28</string>
+		<string>--fill</string>
+		<string>5000</string>
+		<string>--fill-min-days</string>
+		<string>21</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -34,12 +38,44 @@
 	<key>StandardOutPath</key>
 	<string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/sales-crawl.log</string>
 	<key>StartCalendarInterval</key>
-	<dict>
-		<key>Hour</key>
-		<integer>10</integer>
-		<key>Minute</key>
-		<integer>0</integer>
-	</dict>
+	<array>
+		<dict>
+			<key>Hour</key>
+			<integer>6</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>8</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>10</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>12</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>14</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+		<dict>
+			<key>Hour</key>
+			<integer>16</integer>
+			<key>Minute</key>
+			<integer>0</integer>
+		</dict>
+	</array>
 	<key>WorkingDirectory</key>
 	<string>/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/pipeline</string>
 </dict>

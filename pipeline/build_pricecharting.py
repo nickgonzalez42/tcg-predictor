@@ -24,7 +24,9 @@ Run:  .venv/bin/python build_pricecharting.py
 """
 
 import csv
+import json
 import os
+import re
 import sqlite3
 import time
 from datetime import datetime, timezone
@@ -226,6 +228,87 @@ SUGGEST_CSV = os.path.join(BASE, "ml_data", "pc_link_suggestions.csv")
 REVIEWED_CSV = os.path.join(BASE, "ml_data", "pc_match_reviewed.csv")
 
 
+EXACT = "page-embedded tcg-id"
+HOLD = "variant page — needs review: "
+_TAG_RE = re.compile(r"\[([^\]}]+)[\]}]")   # PriceCharting has "[Foil}" typos
+_PAGE_NUM_RE = re.compile(r"#\s*0*(\d+)\s*$")
+
+
+def vet_exact(game, rows, cards):
+    """Rule on a game's exact suggestions before they are linked unseen
+    (2026-11-15). PriceCharting's embedded TCGplayer id is right about the
+    CARD but not always about the page: it hangs a showcase or signed
+    variant's id on the plain card's page, and lists one product on both its
+    plain and its [Foil] page. Linking all of those blind put a $53 showcase
+    card on the plain card's prices and picked whichever of two pages came
+    last in the file. cards = {product_id: (name, card_number, printings
+    json, base_printing)}. Returns (link, hold, drop): rows to link, rows to
+    leave for match_review with the reason, rows that are another printing's
+    page."""
+    link, hold, drop = [], [], []
+    by = {}
+    for r in rows:
+        by.setdefault(int(r["product_id"]), []).append(r)
+    for pid, group in by.items():
+        if pid not in cards:
+            link += group                    # nothing to check against
+            continue
+        name, cnum, printings, base = cards[pid]
+        lname = (name or "").lower()
+        try:
+            prs = json.loads(printings) if printings else []
+        except ValueError:
+            prs = []
+        ours = re.sub(r"^0+", "", (cnum or "").split("/")[0].strip())
+        ok = []
+        for r in group:
+            page = r.get("pc_name") or ""
+            lpage = page.lower()
+            tags = [t.strip() for t in _TAG_RE.findall(page)]
+            special = next((w for w in ("signed", "serial") if w in lname and w not in lpage), None)
+            if special:
+                hold.append((r, f"our card is the {special} one, the page is the plain card"))
+                continue
+            m = _PAGE_NUM_RE.search(page)
+            if ours.isdigit() and m and m.group(1) != ours and "token" not in lname:
+                hold.append((r, f"collector number differs (ours {cnum}, page #{m.group(1)})"))
+                continue
+            ok.append((r, any("foil" in t.lower() for t in tags)))
+        if not ok:
+            continue
+        if len(ok) == 1 and not ok[0][1] and base != "Foil":
+            link.append(ok[0][0])            # one plain page, plain card
+            continue
+        want = base == "Foil"
+        pick = ([o for o in ok if o[1]] or ok) if prs == ["Foil"] else [o for o in ok if o[1] == want]
+        if len(pick) == 1:
+            link.append(pick[0][0])
+            drop += [o[0] for o in ok if o is not pick[0]]
+        elif pick:
+            hold += [(o[0], "two pages for the same printing") for o in ok]
+        else:
+            why = ("only the non-foil page is listed, our card's price is the foil" if want
+                   else "only the foil page is listed, our card is the non-foil")
+            hold += [(o[0], why) for o in ok]
+    return link, hold, drop
+
+
+def _card_facts(game, pids):
+    """{product_id: (name, card_number, printings, base_printing)} from the
+    game's catalog; {} when it cannot be read (vet_exact then links as
+    before rather than stalling every new card)."""
+    try:
+        cc = sqlite3.connect(os.path.join(BASE, SOURCES[game][0]))
+        q = ",".join("?" * len(pids))
+        out = {r[0]: r[1:] for r in cc.execute(
+            f"SELECT product_id, name, card_number, printings, base_printing "
+            f"FROM cards WHERE product_id IN ({q})", list(pids))}
+        cc.close()
+        return out
+    except sqlite3.Error:
+        return {}
+
+
 def take_exact_suggestions(game):
     """Pop pc_link_suggest's exact links for a game: PriceCharting's own page
     lists the TCGplayer ID (the js-tcg-id-link anchor), so a suggestion sourced
@@ -239,11 +322,20 @@ def take_exact_suggestions(game):
     # value = (pc_id, console slug or None): the console is known when the
     # suggestion came from a discovered console page (2026-10-10), and is
     # stored so the sweep enumerates that new set from then on.
+    exact = [r for r in rows if r["game"] == game and r.get("source") == EXACT]
+    if not exact:
+        return {}
+    link, hold, drop = vet_exact(game, exact, _card_facts(game, {int(r["product_id"]) for r in exact}))
+    for r, why in hold:                      # stays in the file for match_review
+        r["source"] = HOLD + why
+    if hold or drop:
+        print(f"[{game}] exact suggestions: {len(link)} linked, {len(hold)} held for review, "
+              f"{len(drop)} other-printing page(s) dropped")
     take = {int(r["product_id"]): (int(r["pc_id"]), (r.get("console") or "").strip() or None)
-            for r in rows if r["game"] == game and r.get("source") == "page-embedded tcg-id"}
-    if take:
-        keep = [r for r in rows
-                if not (r["game"] == game and r.get("source") == "page-embedded tcg-id")]
+            for r in link}
+    if link or hold or drop:
+        gone = {id(r) for r in link} | {id(r) for r in drop}
+        keep = [r for r in rows if id(r) not in gone]
         with open(SUGGEST_CSV, "w", newline="", encoding="utf-8") as f:
             w = csv.DictWriter(f, fieldnames=rows[0].keys())
             w.writeheader()

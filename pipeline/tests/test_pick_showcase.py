@@ -424,10 +424,19 @@ class CrawlerSide(unittest.TestCase):
     def test_list_without_until_is_fetched_for_its_day(self):
         self.assertEqual(self.targets(), [("onepiece", 101, 0.0, True)])
 
-    def test_crawl_started_during_a_refresh_pauses_before_its_first_fetch(self):
+    def test_crawl_started_during_a_refresh_leaves(self):
         """A crawl launched while a refresh is live (pick_showcase may be
-        fetching then) fetches nothing until that refresh is over."""
-        events, live = [], iter([True, True, False])
+        fetching then) fetches nothing and does not sit on the lock all
+        night: it leaves, and a later launch does the work (2026-11-15)."""
+        self.assertEqual(self.crawl([True]), ["live?"])
+
+    def test_refresh_starting_mid_crawl_pauses_it(self):
+        """A refresh that starts under a running crawl is still waited out."""
+        self.assertEqual(self.crawl([False, True, True, False]),
+                         ["live?", "live?", "live?", "sleep 600", "live?", "fetch 101", "fetch 102"])
+
+    def crawl(self, lives):
+        events, live = [], iter(lives)
 
         def refresh_live():
             events.append("live?")
@@ -442,8 +451,8 @@ class CrawlerSide(unittest.TestCase):
         with mock.patch.object(bsv, "BASE", base), \
                 mock.patch.object(bsv, "PC_DB", os.path.join(base, "pc.db")), \
                 mock.patch.object(bsv, "market_games", return_value=["onepiece"]), \
-                mock.patch.object(bsv, "gather", return_value=[("onepiece", 101, 5.0, True),
-                                                               ("onepiece", 102, 4.0, True)]), \
+                mock.patch.object(bsv, "gather", return_value=([("onepiece", 101, 5.0, True),
+                                                                ("onepiece", 102, 4.0, True)], [])), \
                 mock.patch.object(bsv, "refresh_live", side_effect=refresh_live), \
                 mock.patch.object(bsv.time, "sleep", side_effect=lambda s: events.append(f"sleep {s}")), \
                 mock.patch.object(bsv.tp, "fetch_price_history", side_effect=fetch), \
@@ -453,7 +462,7 @@ class CrawlerSide(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()), warnings.catch_warnings():
             warnings.simplefilter("ignore", ResourceWarning)   # main() keeps its lock open by design
             bsv.main()
-        self.assertEqual(events, ["live?", "live?", "sleep 600", "live?", "fetch 101", "fetch 102"])
+        return events
 
     def test_refresh_live_reads_the_refresh_pids(self):
         """The crawler's own test, from outside the refresh (a launchd agent)."""

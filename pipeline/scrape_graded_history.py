@@ -42,6 +42,22 @@ GRADE_MAP = {
     "used": "ungraded", "cib": "grade7", "new": "grade8",
     "graded": "grade9", "boxonly": "grade95", "manualonly": "psa10",
 }
+# Dead pages (2026-11-15): a link whose PriceCharting page answers 404/400
+# was retried by every launch, ~29 guaranteed failures a run. It is noted in
+# graded_dead and left alone until the rotation comes round again. It is NOT
+# marked crawled: the graded forecasts gate on a real crawl, and a dead page
+# has no fresh price to offer.
+DEAD_CODES = ("HTTP 404", "HTTP 400", "HTTP 410")
+
+_print = print
+
+
+def print(*a, **k):
+    """Every log line carries the local time (the daytime agent's log had
+    none, so a slow run could not be told from a paused one)."""
+    _print(datetime.now().strftime("%m-%d %H:%M"), *a, **k)
+
+
 CHART_RE = re.compile(r"VGPC\.chart_data\s*=\s*(\{.*?\})\s*;", re.S)
 SSL_CTX = ssl.create_default_context(cafile=certifi.where())
 
@@ -147,6 +163,16 @@ def ensure_table(conn):
             crawled_at TEXT,
             PRIMARY KEY (game, product_id)
         );
+
+        CREATE TABLE IF NOT EXISTS graded_dead (
+            game       TEXT    NOT NULL,
+            product_id INTEGER NOT NULL,
+            pc_id      INTEGER,
+            code       TEXT,
+            fails      INTEGER NOT NULL DEFAULT 1,
+            last_try   TEXT,
+            PRIMARY KEY (game, product_id)
+        );
         """
     )
 
@@ -159,7 +185,7 @@ def refresh_live():
 
 
 def gather_targets(game, conn, resume, limit, refresh_days,
-                   fast_price=None, fast_days=None):
+                   fast_price=None, fast_days=None, fill_days=None):
     """Due pages for one game as (game, product_id, pc_id) — value-first.
 
     Two cadences (2026-10-29): a true monthly pass over all 154,814 graded
@@ -170,6 +196,7 @@ def gather_targets(game, conn, resume, limit, refresh_days,
     --refresh-days (quarterly). That is ~2,520 a night, about today's budget.
     """
     done = set()
+    last = {}       # product_id -> crawled_at, for the early top-up
     if resume:
         if refresh_days:
             # Rotation: a card counts as "done" only if it was crawled within the
@@ -195,22 +222,41 @@ def gather_targets(game, conn, resume, limit, refresh_days,
                              else cutoff)
                 if crawled > due_after:
                     done.add(pid)
+                    last[pid] = crawled
+            # A dead page waits out a full rotation before it is tried again
+            # (a re-link to a different page is tried at once).
+            dead = {pid: pc for pid, pc in conn.execute(
+                "SELECT product_id, pc_id FROM graded_dead WHERE game=? AND last_try > ?",
+                (game, cutoff))}
         else:
             done = set(r[0] for r in conn.execute(
                 "SELECT product_id FROM graded_crawled WHERE game=?", (game,)))
 
-    targets = [(game, pid, pc, psa10) for pid, pc, psa10 in conn.execute(
+    linked = list(conn.execute(
         "SELECT product_id, pc_id, psa10 FROM pricecharting "
         "WHERE game=? AND pc_id IS NOT NULL "
-        "ORDER BY psa10 DESC NULLS LAST", (game,)) if pid not in done]
+        "ORDER BY psa10 DESC NULLS LAST", (game,)))
+    dead = dead if resume and refresh_days else {}
+    targets = [(game, pid, pc, psa10) for pid, pc, psa10 in linked
+               if pid not in done and dead.get(pid) != pc]
     if limit:
         targets = targets[:limit]
-    print(f"[{game}] {len(targets)} due | {len(done)} fresh", flush=True)
-    return targets
+    # Early top-up candidates: still fresh, but crawled at least fill_days
+    # ago. main() takes the oldest of them when the due list is short.
+    early = []
+    if fill_days and resume and refresh_days:
+        fill_cutoff = (datetime.now(timezone.utc) - timedelta(days=fill_days)).isoformat()
+        early = [(last[pid], game, pid, pc, psa10) for pid, pc, psa10 in linked
+                 if pid in last and last[pid] < fill_cutoff]
+    skipped = sum(1 for pid, pc, _ in linked if pid not in done and dead.get(pid) == pc)
+    print(f"[{game}] {len(targets)} due | {len(done)} fresh"
+          + (f" | {skipped} dead page(s) waiting" if skipped else ""), flush=True)
+    return targets, early
 
 
 def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
-    ok = fail = total_rows = 0
+    ok = fail = dead = total_rows = 0
+    pc_of = {(g, pid): pc for g, pid, pc, _ in targets}
     announced = False
     per_game = {}
     err_samples = {}
@@ -245,7 +291,17 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
                 game = futs[fut]
                 g = per_game.setdefault(game, {"ok": 0, "fail": 0, "rows": 0})
                 product_id, rows, err = fut.result()
-                if err and err != "no chart_data":
+                if err in DEAD_CODES:
+                    dead += 1
+                    conn.execute(
+                        "INSERT INTO graded_dead (game, product_id, pc_id, code, fails, last_try) "
+                        "VALUES (?,?,?,?,1,?) ON CONFLICT(game, product_id) DO UPDATE SET "
+                        "pc_id=excluded.pc_id, code=excluded.code, fails=fails+1, "
+                        "last_try=excluded.last_try",
+                        (game, product_id, pc_of.get((game, product_id)), err,
+                         datetime.now(timezone.utc).isoformat()))
+                    conn.commit()
+                elif err and err != "no chart_data":
                     fail += 1
                     g["fail"] += 1
                     err_samples[err] = err_samples.get(err, 0) + 1
@@ -261,6 +317,8 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
                     conn.execute(
                         "INSERT OR REPLACE INTO graded_crawled VALUES (?,?,?)",
                         (game, product_id, datetime.now(timezone.utc).isoformat()))
+                    conn.execute("DELETE FROM graded_dead WHERE game=? AND product_id=?",
+                                 (game, product_id))
                     ok += 1
                     g["ok"] += 1
                     # Commit every page (2026-11-02). Every 50 pages at ~0.2/s
@@ -277,7 +335,9 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
     conn.commit()
     for game, g in sorted(per_game.items()):
         print(f"[{game}] done: ok={g['ok']} fail={g['fail']} rows={g['rows']}", flush=True)
-    print(f"TOTAL done: ok={ok} fail={fail} rows={total_rows}", flush=True)
+    print(f"TOTAL done: ok={ok} fail={fail} rows={total_rows}"
+          + (f" | {dead} dead page(s) set aside (table graded_dead)" if dead else ""),
+          flush=True)
     if err_samples:
         print("  error breakdown:", flush=True)
         for msg, n in sorted(err_samples.items(), key=lambda x: -x[1])[:6]:
@@ -307,6 +367,13 @@ def main():
                          "IP blocked for two days (2026-10-12). Never set this "
                          "when running AS a refresh step — it would find its own "
                          "parent and sleep forever.")
+    ap.add_argument("--fill", type=int, default=None,
+                    help="when fewer pages than this are due, top the run up "
+                         "with the pages crawled longest ago (at least "
+                         "--fill-min-days back). Due dates bunch up, 121k pages "
+                         "inside one week of November 2026 against ~13.7k a day; "
+                         "starting early on quiet days spreads them out")
+    ap.add_argument("--fill-min-days", type=float, default=21.0)
     ap.add_argument("--refresh-days", type=float, default=None,
                     help="re-crawl a card once its last crawl is older than this "
                          "many days (rotation); without it --resume skips forever")
@@ -326,10 +393,13 @@ def main():
     except OSError:
         print("another graded crawl is running — exiting", flush=True)
         return
-    if args.yield_to_refresh:
-        while refresh_live():
-            print("refresh is live — waiting", flush=True)
-            time.sleep(600)
+    if args.yield_to_refresh and refresh_live():
+        # Leave instead of waiting (2026-11-15): a waiting run held the lock
+        # all night, so the refresh's own graded step found it taken, and it
+        # was still going at the next launch. The agent launches every two
+        # hours through the day; the next one starts the work.
+        print("refresh is live — leaving it to the next launch", flush=True)
+        return
 
     conn = sqlite3.connect(PC_DB, timeout=600)
     # The sales-volume crawl writes this same file all day. A roomier page
@@ -337,11 +407,20 @@ def main():
     # EXCLUSIVE, so neither crawl blocks the other for long.
     conn.execute("PRAGMA cache_size=-65536")
     ensure_table(conn)
-    targets = []
+    targets, early = [], []
     for game in games:
-        targets.extend(gather_targets(game, conn, args.resume, args.limit,
-                                      args.refresh_days, args.fast_tier_price,
-                                      args.fast_refresh_days))
+        due, soon = gather_targets(game, conn, args.resume, args.limit,
+                                   args.refresh_days, args.fast_tier_price,
+                                   args.fast_refresh_days,
+                                   args.fill_min_days if args.fill else None)
+        targets.extend(due)
+        early.extend(soon)
+    if args.fill and len(targets) < args.fill and early:
+        early.sort()                       # crawled longest ago first
+        take = early[:args.fill - len(targets)]
+        print(f"top-up: {len(take)} page(s) crawled {args.fill_min_days:g}+ days ago "
+              f"go early ({len(early):,} could)", flush=True)
+        targets.extend(t[1:] for t in take)
     if args.total_limit and len(targets) > args.total_limit:
         # Value-first, but with a per-game floor (2026-09-29): a pure global
         # psa10 ranking starved the cheap games entirely once the budget

@@ -123,7 +123,7 @@ def watch_targets(conn, games):
 
 
 def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
-           new_only=False):
+           new_only=False, fill_days=None):
     """(game, product_id, nm_price) due for a fetch — value-first.
 
     Value comes from tcg_nm_history (uniform across games) rather than the
@@ -142,6 +142,7 @@ def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
         "SELECT product_id, price, MAX(date) FROM tcg_nm_history "
         "WHERE game=? GROUP BY product_id", (game,))}
     done = set()
+    last = {}       # product_id -> fetched_at, for the early top-up
     for pid, fetched in conn.execute(
             "SELECT product_id, fetched_at FROM tcg_sales_scan WHERE game=?", (game,)):
         if not fetched:
@@ -150,6 +151,7 @@ def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
                      else cutoff)
         if fetched > due_after:
             done.add(pid)
+            last[pid] = fetched
     ever = set(r[0] for r in conn.execute(
         "SELECT product_id FROM tcg_sales_scan WHERE game=?", (game,)))
     # Backfill phase (2026-10-28, user: "go through every card first"): a card
@@ -174,7 +176,16 @@ def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
     fresh_new = sum(1 for t in targets if not t[3])
     print(f"[{game}] {len(targets)} due ({fresh_new:,} never scanned) | "
           f"{len(done)} fresh", flush=True)
-    return targets
+    # Early top-up candidates (2026-11-15): still fresh, but fetched at least
+    # fill_days ago. main() takes the oldest when the due list is short, so a
+    # week when ~106k cards fall due together is started on ahead of time.
+    early = []
+    if fill_days and not new_only:
+        fill_cutoff = (now - timedelta(days=fill_days)).isoformat()
+        known = set(pids)
+        early = [(f, game, pid, price.get(pid) or 0.0, True)
+                 for pid, f in last.items() if f < fill_cutoff and pid in known]
+    return targets, early
 
 
 def main():
@@ -190,6 +201,11 @@ def main():
     ap.add_argument("--new-only", action="store_true",
                     help="backfill: only cards never scanned; skip all refreshes "
                          "until the whole catalog has been covered once")
+    ap.add_argument("--fill", type=int, default=None,
+                    help="when fewer cards than this are due, top the run up "
+                         "with the cards fetched longest ago (at least "
+                         "--fill-min-days back)")
+    ap.add_argument("--fill-min-days", type=float, default=21.0)
     ap.add_argument("--limit", type=int, default=None, help="cap per game")
     ap.add_argument("--total-limit", type=int, default=None,
                     help="cap the whole run; games compete value-first above "
@@ -213,6 +229,13 @@ def main():
         print("another sales crawl is running — exiting", flush=True)
         return
 
+    if not args.no_yield and refresh_live():
+        # Leave instead of sitting the night out with the lock held
+        # (2026-11-15): the agent launches every two hours through the day.
+        print(f"refresh is live — leaving it to the next launch "
+              f"({datetime.now(timezone.utc):%m-%d %H:%M} UTC)", flush=True)
+        return
+
     games = market_games() if args.game == "all" else [args.game]   # 2026-11-04: CSV-only games too
     # 600 s busy timeout (2026-11-02, was 60): the graded crawl writes to this
     # database all day and a transaction of its could outlast a minute.
@@ -225,11 +248,13 @@ def main():
     conn.execute("PRAGMA cache_size=-65536")     # 64 MB
     conn.executescript(SALES_SCHEMA)
 
-    targets = []
+    targets, early = [], []
     for game in games:
-        targets.extend(gather(game, conn, args.refresh_days, args.limit,
-                              args.fast_tier_price, args.fast_refresh_days,
-                              args.new_only))
+        due, soon = gather(game, conn, args.refresh_days, args.limit,
+                           args.fast_tier_price, args.fast_refresh_days,
+                           args.new_only, args.fill_min_days if args.fill else None)
+        targets.extend(due)
+        early.extend(soon)
     # Global order (no per-game budget): every never-scanned card, value-first,
     # before any refresh — so coverage of the whole catalog finishes before a
     # single card is fetched twice.
@@ -250,6 +275,13 @@ def main():
         print(f"total budget: {args.total_limit} of {len(targets)} due "
               f"(per-game floor {floor}, remainder by price)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
+
+    if args.fill and len(targets) < args.fill and early:
+        early.sort()                       # fetched longest ago first
+        take = early[:args.fill - len(targets)]
+        print(f"top-up: {len(take)} card(s) fetched {args.fill_min_days:g}+ days ago "
+              f"go early ({len(early):,} could)", flush=True)
+        targets.extend(t[1:] for t in take)
 
     watch = watch_targets(conn, set(games))
     watch_seen = {(g, p) for g, p, _m, _e in watch}
