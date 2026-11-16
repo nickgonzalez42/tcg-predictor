@@ -98,3 +98,9 @@ export const GAME_MARK: Record<string, string> = {
     cyberpunk: 'CYB', digimon: 'DIG', fleshandblood: 'FAB', gundam: 'GUN', lorcana: 'LOR', magic: 'MTG',
     onepiece: 'OP', pokemon: 'PKM', riftbound: 'RIF', sorcery: 'SOR', starwars: 'SWU', yugioh: 'YGO',
 };
+
+// The picture in the picker's mark: the middle of each game's card back
+// (client/public/images/games). A game without one keeps its letters.
+const PICTURED = ['cyberpunk', 'digimon', 'fleshandblood', 'gundam', 'lorcana', 'magic', 'onepiece',
+    'pokemon', 'riftbound', 'sorcery', 'yugioh'];
+export const gameImage = (game: string) => (PICTURED.includes(game) ? `/images/games/${game}.webp` : '');

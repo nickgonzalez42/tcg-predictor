@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { GAMES, GAME_LABEL, gameColor } from "../../lib/games";
-import { GAME_MARK, pickSiteGame } from "../../lib/siteGame";
+import { GAME_MARK, gameImage, pickSiteGame } from "../../lib/siteGame";
 import { setGame } from "../../features/catalog/catalogSlice";
 import { useAppDispatch, useAppSelector } from "../store/store";
 
@@ -47,7 +47,9 @@ export default function GamePicker() {
                 aria-haspopup="listbox" aria-expanded={open}
                 aria-label={`Game: ${label}. Choose a game`}
                 onClick={() => setOpen(o => !o)}>
-                {game ? GAME_MARK[game] : 'ALL'}
+                {!game ? <span className="gamepick__img gamepick__img--all" />
+                    : gameImage(game) ? <img className="gamepick__img" src={gameImage(game)} alt="" width={26} height={26} />
+                    : GAME_MARK[game]}
             </button>
             <ul className="gamepick__menu" role="listbox" aria-label="Choose a game">
                 <li>

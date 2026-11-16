@@ -37,6 +37,9 @@ PICK_GAMES = [
     ("starwars", "Star Wars Unlimited", "SWU", "#e8ecf4"), ("yugioh", "Yu-Gi-Oh!", "YGO", "#c678dd"),
 ]
 GAME_COLOR = {k: c for k, _, _, c in PICK_GAMES}
+# Games with a picture for the mark (client/public/images/games), as in siteGame.ts.
+PICTURED = {"cyberpunk", "digimon", "fleshandblood", "gundam", "lorcana", "magic", "onepiece",
+            "pokemon", "riftbound", "sorcery", "yugioh"}
 SITE = "https://cardstock.guide"
 
 # The tokens NavBar.css reads, copied from client/src/styles/tokens.css and
@@ -99,14 +102,15 @@ def nav_html(active=None, site=SITE):
     items = "".join(
         f'<li><a class="navbar__link{" active" if key == active else ""}" href="{site}/{key}">{label}</a></li>'
         for key, label in LINKS)
+    img = lambda key: f"{site}/images/games/{key}.webp" if key in PICTURED else ""
     options = "".join(
         f'<li><button type="button" role="option" class="gamepick__option" data-game="{key}" '
-        f'data-mark="{mark}" data-color="{color}"><span class="gamepick__dot" '
+        f'data-mark="{mark}" data-color="{color}" data-img="{img(key)}"><span class="gamepick__dot" '
         f'style="background:{color}"></span>{html.escape(label)}</button></li>'
         for key, label, mark, color in PICK_GAMES)
     picker = f"""
 <div class="gamepick" id="gamepick">
-  <button type="button" class="gamepick__mark" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a game">ALL</button>
+  <button type="button" class="gamepick__mark" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a game"><span class="gamepick__img gamepick__img--all"></span></button>
   <ul class="gamepick__menu" role="listbox" aria-label="Choose a game">
     <li><button type="button" role="option" class="gamepick__option" data-game=""><span class="gamepick__dot"></span>All games</button></li>
     {options}
@@ -227,11 +231,19 @@ NAV_JS = """
       o.setAttribute('aria-selected', String(hit));
       if (hit) on = o;
     });
+    var src = on && g ? on.getAttribute('data-img') : '';
+    mark.textContent = '';
     if (on && g) {
-      mark.textContent = on.getAttribute('data-mark');
+      if (src) {
+        var im = document.createElement('img');
+        im.className = 'gamepick__img'; im.alt = ''; im.width = im.height = 26; im.src = src;
+        mark.appendChild(im);
+      } else mark.textContent = on.getAttribute('data-mark');
       mark.style.borderColor = mark.style.color = on.getAttribute('data-color');
     } else {
-      mark.textContent = 'ALL';
+      var all = document.createElement('span');
+      all.className = 'gamepick__img gamepick__img--all';
+      mark.appendChild(all);
       mark.style.borderColor = mark.style.color = '';
     }
   }
