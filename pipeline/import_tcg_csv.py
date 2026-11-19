@@ -75,6 +75,7 @@ from _paths import DATA_DIR as BASE
 from games import GAMES, ALL_GAMES, db_path
 from export_tcg_csv import INCOMING_DIR, EXPORT_DIR, PORTAL_LINES, pick_option
 from scrape_tcg_nm_prices import PC_DB, TCG_NM_ONLY_CSV, NM_BLOCKLIST_CSV, PINS_CSV
+from switch_base_printing import switch_card, NORMAL, KEEP as KEEP_BASE
 
 ARCHIVE_DIR = os.path.join(EXPORT_DIR, "archive")
 CSV_DB = os.path.join(BASE, "tcg_csv.db")
@@ -420,6 +421,7 @@ def import_file(path, game, day, pc, csvdb, dry_run, force):
 
     # --- base printing per product, then the rows -------------------------
     base_rows, labeled_rows, decisions = [], [], []
+    switched = []                              # (pid, the printing it led with)
     stamps = []
     cont = collections.Counter()
     jumps = []                                 # (|log ratio|, pid, last, new, base, src, priced)
@@ -428,6 +430,14 @@ def import_file(path, game, day, pc, csvdb, dry_run, force):
         lp = last.get(pid, (None, None))[0]
         base, src = choose_base(priced, sticky.get(pid), pins.get(pid), ingest.get(pid),
                                 cat_base, lp)
+        # Normal first (2026-11-19): the Normal printing is the card's main
+        # price as soon as it has one. A card first seen on a night when only
+        # its foil was priced used to stay on the foil for good; its series
+        # is moved over in the write below (switch_base_printing.switch_card).
+        if (base != NORMAL and NORMAL in priced and base not in KEEP_BASE
+                and pid not in pins and pid not in nm_only):
+            switched.append((pid, base))
+            base, src, lp = NORMAL, "normal-first", None
         if src != "sticky":
             decisions.append((pid, base, src))
             s[f"base_{src}"] += 1
@@ -464,6 +474,8 @@ def import_file(path, game, day, pc, csvdb, dry_run, force):
         f"{' crawl ' + crawl_day if not prev and crawl_day else ' previous import'}), "
         f"labeled {len(labeled_rows):,}, condition rows {len(cond_rows):,}, "
         f"base unpriced tonight {s['base_unpriced_tonight']:,}")
+    if switched:
+        log(f"[{game}]   {len(switched):,} card(s) move to their Normal printing tonight")
     if decisions:
         log(f"[{game}]   new base decisions {len(decisions):,}: " +
             ", ".join(f"{k[5:]} {v:,}" for k, v in s.items() if k.startswith("base_") and k != "base_unpriced_tonight"))
@@ -494,6 +506,8 @@ def import_file(path, game, day, pc, csvdb, dry_run, force):
     # --- writes -----------------------------------------------------------
     now = now_iso()
     pc.execute("BEGIN")
+    for pid, old in switched:                  # before tonight's rows land
+        switch_card(pc, game, pid, old, now, need_history=False)
     pc.executemany(
         "INSERT OR REPLACE INTO tcg_nm_history (game, product_id, printing, date, price) "
         "VALUES (?,?,?,?,?)", [(game, *r) for r in base_rows + labeled_rows])
