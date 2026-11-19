@@ -57,6 +57,26 @@ class VetExact(unittest.TestCase):
         cards = {1: ("Edgar Markov (Showcase)", "328", '["Foil"]', "Foil")}   # foil-only product
         self.assertEqual(self.vet(rows, cards), (["11"], [], []))
 
+    def test_already_linked_card_drops_the_late_page(self):
+        rows = [sug(1, 11, "Risa [Foil] #293")]
+        cards = {1: ("Risa", "293", '["Normal","Foil"]', "Normal")}
+        link, hold, drop = bp.vet_exact("magic", rows, cards, linked={1})
+        self.assertEqual((link, hold, [r["pc_id"] for r in drop]), ([], [], ["11"]))
+
+    def test_card_named_for_its_foil_links_before_printings_are_read(self):
+        rows = [sug(1, 11, "Kes, Evolving Telepath [Surge Foil] #45")]
+        cards = {1: ("Kes, Evolving Telepath (Surge Foil)", "45", None, None)}
+        self.assertEqual(self.vet(rows, cards), (["11"], [], []))
+        self.assertEqual(self.vet([sug(1, 10, "Kes, Evolving Telepath #45")], cards), ([], ["10"], []))
+
+    def test_autograph_page_is_the_signed_card(self):
+        rows = [sug(1, 11, "Geordi La Forge [Borderless Autograph] #1706")]
+        cards = {1: ("Geordi La Forge (Borderless) (Signed)", "1706", '["Foil"]', "Foil")}
+        self.assertEqual(self.vet(rows, cards), (["11"], [], []))
+        rows = [sug(1, 10, "Captain James T. Kirk #1701")]
+        cards = {1: ("Captain James T. Kirk (Borderless) (Signed)", "1701", '["Foil"]', "Foil")}
+        self.assertEqual(self.vet(rows, cards), ([], ["10"], []))
+
     def test_number_mismatch_is_held(self):
         rows = [sug(1, 10, "U.S.S. Enterprise-A, Free Spirit #43")]
         cards = {1: ("U.S.S. Enterprise-A, Free Spirit (Showcase)", "550", '["Normal"]', "Normal")}

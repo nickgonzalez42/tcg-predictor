@@ -234,7 +234,7 @@ _TAG_RE = re.compile(r"\[([^\]}]+)[\]}]")   # PriceCharting has "[Foil}" typos
 _PAGE_NUM_RE = re.compile(r"#\s*0*(\d+)\s*$")
 
 
-def vet_exact(game, rows, cards):
+def vet_exact(game, rows, cards, linked=()):
     """Rule on a game's exact suggestions before they are linked unseen
     (2026-11-15). PriceCharting's embedded TCGplayer id is right about the
     CARD but not always about the page: it hangs a showcase or signed
@@ -250,6 +250,12 @@ def vet_exact(game, rows, cards):
     for r in rows:
         by.setdefault(int(r["product_id"]), []).append(r)
     for pid, group in by.items():
+        if pid in linked:
+            # The card already has its page; this is its other printing's
+            # page arriving on a later night (2026-11-19: 86 such rows had
+            # piled up for review).
+            drop += group
+            continue
         if pid not in cards:
             link += group                    # nothing to check against
             continue
@@ -265,7 +271,9 @@ def vet_exact(game, rows, cards):
             page = r.get("pc_name") or ""
             lpage = page.lower()
             tags = [t.strip() for t in _TAG_RE.findall(page)]
-            special = next((w for w in ("signed", "serial") if w in lname and w not in lpage), None)
+            # PriceCharting names a signed card's page "[... Autograph]".
+            special = next((w for w in ("signed", "serial") if w in lname and w not in lpage
+                            and not (w == "signed" and "autograph" in lpage)), None)
             if special:
                 hold.append((r, f"our card is the {special} one, the page is the plain card"))
                 continue
@@ -276,10 +284,12 @@ def vet_exact(game, rows, cards):
             ok.append((r, any("foil" in t.lower() for t in tags)))
         if not ok:
             continue
-        if len(ok) == 1 and not ok[0][1] and base != "Foil":
+        if len(ok) == 1 and not ok[0][1] and base != "Foil" and "foil" not in lname:
             link.append(ok[0][0])            # one plain page, plain card
             continue
-        want = base == "Foil"
+        # A card named for its foil ("(Surge Foil)") is the foil even before
+        # its printings have been read.
+        want = base == "Foil" or (not prs and "foil" in lname)
         pick = ([o for o in ok if o[1]] or ok) if prs == ["Foil"] else [o for o in ok if o[1] == want]
         if len(pick) == 1:
             link.append(pick[0][0])
@@ -309,7 +319,7 @@ def _card_facts(game, pids):
         return {}
 
 
-def take_exact_suggestions(game):
+def take_exact_suggestions(game, linked=()):
     """Pop pc_link_suggest's exact links for a game: PriceCharting's own page
     lists the TCGplayer ID (the js-tcg-id-link anchor), so a suggestion sourced
     from it IS PriceCharting's mapping — no human review needed (per 2026-08-01
@@ -325,7 +335,8 @@ def take_exact_suggestions(game):
     exact = [r for r in rows if r["game"] == game and r.get("source") == EXACT]
     if not exact:
         return {}
-    link, hold, drop = vet_exact(game, exact, _card_facts(game, {int(r["product_id"]) for r in exact}))
+    link, hold, drop = vet_exact(game, exact, _card_facts(game, {int(r["product_id"]) for r in exact}),
+                                 linked)
     for r, why in hold:                      # stays in the file for match_review
         r["source"] = HOLD + why
     if hold or drop:
@@ -370,27 +381,36 @@ def apply_confirmed_links(conn):
     auto_reviewed = []
     for game, (card_db, _csv) in SOURCES.items():
         overrides = load_overrides(game)                 # product_id -> pc_id
-        exact_full = take_exact_suggestions(game)        # auto-links (no review)
+        linked = {pid for (pid,) in conn.execute(
+            "SELECT product_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,))}
+        # An override decides its card; a suggestion for it is spent too.
+        exact_full = take_exact_suggestions(game, linked | set(overrides))   # auto-links (no review)
         exact = {pid: pc for pid, (pc, _) in exact_full.items()}
         consoles = {pid: con for pid, (_, con) in exact_full.items() if con}
         merged = {**exact, **overrides}                  # a human override wins
-        linked = {pid for (pid,) in conn.execute(
-            "SELECT product_id FROM pricecharting WHERE game=? AND pc_id IS NOT NULL", (game,))}
         new_links = [(pid, pc) for pid, pc in merged.items() if pc and pid not in linked]
         auto_reviewed += [(game, pid, pc) for pid, pc in new_links if pid in exact]
         # Human OVERRIDES are authoritative for already-linked cards too — a
         # match found pointing at the wrong PC page (e.g. a [1st Edition] page
         # for a regular-print card) gets corrected, not silently ignored. Only
         # rows whose pc_id actually differs are touched (no nightly churn).
+        # The graded prices on the row came from the old page, so they go
+        # with it; the crawl refills them from the right one. pc_id 0 (no
+        # correct page exists) unlinks the card outright (2026-11-19: before
+        # this an exclusion of an already-linked card did nothing here).
         for pid, pc in overrides.items():
-            if pc and pid in linked:
+            if pid in linked:
                 cur = conn.execute(
                     "SELECT pc_id FROM pricecharting WHERE game=? AND product_id=?",
                     (game, pid)).fetchone()
-                if cur and cur[0] != pc:
+                if cur and cur[0] != (pc or None):
                     conn.execute(
-                        "UPDATE pricecharting SET pc_id=?, updated_at=? "
-                        "WHERE game=? AND product_id=?", (pc, now, game, pid))
+                        "UPDATE pricecharting SET pc_id=?, ungraded=NULL, grade7=NULL, grade8=NULL, "
+                        "grade9=NULL, grade95=NULL, psa10=NULL, bgs10=NULL, cgc10=NULL, sgc10=NULL, "
+                        "sales_volume=NULL, updated_at=? WHERE game=? AND product_id=?",
+                        (pc or None, now, game, pid))
+                    if not pc:
+                        print(f"[{game}] override: {pid} unlinked (no correct PC page)")
                     added += 1
         if not new_links:
             continue

@@ -196,7 +196,7 @@ def append_override(game, product_id, pc_id, note):
         w.writerow([game, product_id, pc_id, note])
 
 
-SUGGEST_FIELDS = ["game", "product_id", "pc_id", "pc_name", "source", "created"]
+SUGGEST_FIELDS = ["game", "product_id", "pc_id", "pc_name", "source", "created", "console"]
 
 
 def load_suggestions(game):
