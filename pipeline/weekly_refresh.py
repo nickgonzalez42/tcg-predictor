@@ -173,7 +173,7 @@ NOMINAL_MIN = {
     "pc-starwars": 3, "pc-graded-new": 3, "nm-pc-sweep": 5, "unify": 27,
     "nm-price": 3, "card-trends": 3, "art-comps": 13, "s3-upload": 4, "art-sync": 7,
     "pc-link-suggest": 22, "pc-console-discover": 2, "pc-console-sweep": 94,
-    "nm-rescue-full": 25, "tcg-market-watch": 3,
+    "nm-rescue-full": 25, "tcg-market-watch": 3, "crawl-staleness": 1,
 }
 # --- the tail (2026-11-12, refresh review) ----------------------------------
 # These are rotation crawls: each night they refresh a slice of a backlog,
@@ -199,13 +199,14 @@ NOMINAL_MIN = {
 #                    pick up
 #   pc-graded-new    fallback graded crawl (the daytime agent does the bulk)
 #   pc-link-suggest  link candidates for match_review.py
+#   crawl-staleness  a message when a daytime crawl is over 32 days behind
 # NOT in the tail, because the same night's unify needs them: the CSV steps,
 # tcg-nm-prices (the fallback for a game whose CSV did not land),
 # tcg-nm-backfill and tcg-printing-pins (the only price source for the
 # TCGplayer-only and pinned cards, which the CSV import skips), tcg-nm-rescue.
 TAIL = ("pc-console-discover", "pc-console-sweep", "tcg-sku-resolve", "tcg-nm-depth",
         "tcg-nm-verify", "tcg-sales", "printing-ingest", "imageless-audit",
-        "art-recheck", "pc-graded-new", "pc-link-suggest")
+        "art-recheck", "pc-graded-new", "pc-link-suggest", "crawl-staleness")
 TAIL_CRAWL_NIGHT_ONLY = ("pc-console-discover", "pc-console-sweep")
 # The tail starts no new step at or after this local time on the batch's own
 # day: tomorrow night's run must find the machine free.
@@ -565,6 +566,9 @@ STEPS = [
     # 1,083-page drain ran ~70 min, not the 48 the Saturday rate suggested,
     # and pushed the first scheduled night an hour past 06:00).
     ("pc-link-suggest", ["pc_link_suggest.py", "--drain", "1500" if CRAWL_NIGHT else "600"]),
+    # One message when either daytime crawl has cards past 32 days (the
+    # 28-day promise plus slack). Reads only; never fails the tail.
+    ("crawl-staleness", ["crawl_staleness.py"]),
 ]
 
 
