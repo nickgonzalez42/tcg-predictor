@@ -34,7 +34,7 @@ import certifi
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 from _paths import PC_DB
-from crawl_day import day_start_utc, stop_time, past, quota_left
+from crawl_day import stop_time, past
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -185,6 +185,39 @@ def refresh_live():
                           capture_output=True).returncode == 0
 
 
+WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
+
+
+def watch_targets(conn, games):
+    """[(game, product_id, pc_id, psa10)] for the cards tomorrow's articles
+    will discuss (game_articles.write_watch), minus those crawled since the
+    list was made. They go first in the day's crawl, and they are all the
+    nightly step still fetches (2026-11-20)."""
+    try:
+        with open(WATCH_FILE, encoding="utf-8") as f:
+            w = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if (w.get("for") or "") < datetime.now(timezone.utc).date().isoformat():
+        return []
+    made = w.get("made") or ""
+    out, seen = [], set()
+    for c in w.get("cards", []):
+        key = (c.get("game"), int(c.get("pid") or 0))
+        if key[0] not in games or key in seen:
+            continue
+        seen.add(key)
+        row = conn.execute("SELECT pc_id, psa10 FROM pricecharting WHERE game=? AND product_id=? "
+                           "AND pc_id IS NOT NULL", key).fetchone()
+        crawled = conn.execute("SELECT crawled_at FROM graded_crawled WHERE game=? AND product_id=?",
+                               key).fetchone()
+        if row and not (crawled and (crawled[0] or "") >= made):
+            out.append((*key, row[0], row[1]))
+    if out:
+        print(f"watch list: {len(out)} article card(s) (for {w.get('for')}) go first", flush=True)
+    return out
+
+
 def gather_targets(game, conn, resume, limit, refresh_days,
                    fast_price=None, fast_days=None, fill_days=None):
     """Due pages for one game as (game, product_id, pc_id) — value-first.
@@ -284,11 +317,13 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False, stop=N
                       f"tomorrow", flush=True)
                 break
             if yield_to_refresh and refresh_live():
+                # Leave instead of pausing (2026-11-20): a paused run held the
+                # crawl lock all night. The hourly launch after the refresh
+                # starts again from a fresh oldest-first list.
                 conn.commit()
-                print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)", flush=True)
-                while refresh_live():
-                    time.sleep(600)
-                print("  refresh finished — resuming", flush=True)
+                print(f"  refresh is live: stopping with {len(targets) - i:,} page(s) "
+                      f"left for the next launch", flush=True)
+                break
             futs = {ex.submit(fetch_one, game, pid, pc, delay): game
                     for game, pid, pc, _psa10 in targets[c0:c0 + CHUNK]}
             for fut in as_completed(futs):
@@ -379,11 +414,14 @@ def main():
                          "inside one week of November 2026 against ~13.7k a day; "
                          "starting early on quiet days spreads them out")
     ap.add_argument("--fill-min-days", type=float, default=21.0)
-    ap.add_argument("--daily-quota", type=int, default=None,
-                    help="crawl this many pages a day: the overdue ones plus "
-                         "the oldest-crawled, with no age floor. Counts what "
-                         "today already crawled, so launches add up to one "
-                         "quota (crawl_day.py). Replaces --fill")
+    ap.add_argument("--continuous", action="store_true",
+                    help="after the overdue pages, keep going through every "
+                         "other page, crawled longest ago first (never one "
+                         "crawled within --fill-min-days), until the nightly "
+                         "refresh starts. The daytime agent's mode (2026-11-20)")
+    ap.add_argument("--watch-only", action="store_true",
+                    help="only the cards tomorrow's articles discuss "
+                         "(article_watch.json): all the nightly step fetches")
     ap.add_argument("--stop-at", default=None,
                     help="HH:MM local: start no new chunk after this (the "
                          "nightly refresh starts 19:05, Saturdays 18:20)")
@@ -425,26 +463,29 @@ def main():
     # EXCLUSIVE, so neither crawl blocks the other for long.
     conn.execute("PRAGMA cache_size=-65536")
     ensure_table(conn)
+    watch = watch_targets(conn, set(games))
+    if args.watch_only:
+        scrape_targets(conn, watch, args.workers, args.delay, args.yield_to_refresh, stop)
+        conn.close()
+        return
     targets, early = [], []
     for game in games:
         due, soon = gather_targets(game, conn, args.resume, args.limit,
                                    args.refresh_days, args.fast_tier_price,
                                    args.fast_refresh_days,
-                                   0 if args.daily_quota
-                                   else args.fill_min_days if args.fill else None)
+                                   args.fill_min_days if args.fill or args.continuous
+                                   else None)
         targets.extend(due)
         early.extend(soon)
-    if args.daily_quota:
-        today = conn.execute("SELECT COUNT(*) FROM graded_crawled WHERE crawled_at >= ?",
-                             (day_start_utc(),)).fetchone()[0]
-        more = quota_left(args.daily_quota, today, len(targets))
+    if args.continuous:
         early.sort()                       # crawled longest ago first
-        take = early[:more]
-        print(f"daily quota {args.daily_quota:,}: {today:,} crawled today, "
-              f"{len(targets):,} overdue, {len(take):,} oldest page(s) added"
-              + (f" (oldest crawled {take[0][0][:10]})" if take else ""), flush=True)
-        targets.extend(t[1:] for t in take)
+        print(f"continuous: {len(targets):,} overdue, then {len(early):,} more page(s), "
+              f"oldest first" + (f" (from {early[0][0][:10]})" if early else ""), flush=True)
+        targets.extend(t[1:] for t in early)
         args.fill = None
+    if watch:
+        first = {(g, p) for g, p, _pc, _v in watch}
+        targets = watch + [t for t in targets if (t[0], t[1]) not in first]
     if args.fill and len(targets) < args.fill and early:
         early.sort()                       # crawled longest ago first
         take = early[:args.fill - len(targets)]

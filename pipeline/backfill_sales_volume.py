@@ -37,7 +37,7 @@ import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
 from _paths import PC_DB
-from crawl_day import day_start_utc, stop_time, past, quota_left
+from crawl_day import stop_time, past
 # Cards tomorrow's articles will discuss, written by game_articles.write_watch
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
 # scraping its volume movement the day before").
@@ -206,11 +206,14 @@ def main():
                          "with the cards fetched longest ago (at least "
                          "--fill-min-days back)")
     ap.add_argument("--fill-min-days", type=float, default=21.0)
-    ap.add_argument("--daily-quota", type=int, default=None,
-                    help="fetch this many cards a day: the overdue ones plus "
-                         "the oldest-fetched, with no age floor. Counts what "
-                         "today already fetched, so launches add up to one "
-                         "quota (crawl_day.py). Replaces --fill")
+    ap.add_argument("--continuous", action="store_true",
+                    help="after the overdue cards, keep going through every "
+                         "other card, fetched longest ago first (never one "
+                         "fetched within --fill-min-days), until the nightly "
+                         "refresh starts. The daytime agent's mode (2026-11-20)")
+    ap.add_argument("--watch-only", action="store_true",
+                    help="only the watch lists (article and showcase cards): "
+                         "all the nightly step fetches")
     ap.add_argument("--stop-at", default=None,
                     help="HH:MM local: fetch nothing after this (the nightly "
                          "refresh starts 19:05, Saturdays 18:20)")
@@ -262,12 +265,12 @@ def main():
     conn.executescript(SALES_SCHEMA)
 
     targets, early = [], []
-    for game in games:
+    for game in ([] if args.watch_only else games):
         due, soon = gather(game, conn, args.refresh_days, args.limit,
                            args.fast_tier_price, args.fast_refresh_days,
                            args.new_only,
-                           0 if args.daily_quota
-                           else args.fill_min_days if args.fill else None)
+                           args.fill_min_days if args.fill or args.continuous
+                           else None)
         targets.extend(due)
         early.extend(soon)
     # Global order (no per-game budget): every never-scanned card, value-first,
@@ -291,17 +294,12 @@ def main():
               f"(per-game floor {floor}, remainder by price)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
 
-    if args.daily_quota:
-        today = conn.execute("SELECT COUNT(*) FROM tcg_sales_scan WHERE fetched_at >= ?",
-                             (day_start_utc(),)).fetchone()[0]
-        more = quota_left(args.daily_quota, today, len(targets))
+    if args.continuous:
         early.sort()                       # fetched longest ago first
-        take = early[:more]
-        print(f"daily quota {args.daily_quota:,}: {today:,} fetched today, "
-              f"{len(targets):,} overdue, {len(take):,} oldest card(s) added"
-              + (f" (oldest fetched {take[0][0][:10]})" if take else "")
+        print(f"continuous: {len(targets):,} overdue, then {len(early):,} more card(s), "
+              f"oldest first" + (f" (from {early[0][0][:10]})" if early else "")
               + f" ({datetime.now():%m-%d %H:%M})", flush=True)
-        targets.extend(t[1:] for t in take)
+        targets.extend(t[1:] for t in early)
         args.fill = None
 
     if args.fill and len(targets) < args.fill and early:
@@ -368,18 +366,11 @@ def main():
         # nothing: pick_showcase may be fetching then, 2026-11-13). After
         # a pause, drop targets the refresh's own tcg-sales step fetched.
         if not args.no_yield and (i == 1 or i % 10 == 0) and refresh_live():
-            print(f"  refresh is live — pausing ({datetime.now(timezone.utc):%H:%M} UTC)",
-                  flush=True)
-            conn.commit()
-            while refresh_live():
-                time.sleep(600)
-            cutoff = (datetime.now(timezone.utc)
-                      - timedelta(days=args.refresh_days)).isoformat()
-            skip = set((g, p) for g, p in conn.execute(
-                "SELECT game, product_id FROM tcg_sales_scan WHERE fetched_at > ?",
-                (cutoff,)))
-            print(f"  refresh finished — resuming ({len(skip):,} now fresh)", flush=True)
-            splice_watch()
+            # Leave instead of pausing (2026-11-20): the hourly launch after
+            # the refresh starts again from a fresh oldest-first list.
+            print(f"refresh is live: stopping with {len(queue) + 1:,} card(s) left for "
+                  f"the next launch ({datetime.now():%m-%d %H:%M})", flush=True)
+            break
         try:
             h = tp.fetch_price_history(session, pid, args.delay)
         except Exception as e:

@@ -430,10 +430,10 @@ class CrawlerSide(unittest.TestCase):
         night: it leaves, and a later launch does the work (2026-11-15)."""
         self.assertEqual(self.crawl([True]), ["live?"])
 
-    def test_refresh_starting_mid_crawl_pauses_it(self):
-        """A refresh that starts under a running crawl is still waited out."""
-        self.assertEqual(self.crawl([False, True, True, False]),
-                         ["live?", "live?", "live?", "sleep 600", "live?", "fetch 101", "fetch 102"])
+    def test_refresh_starting_mid_crawl_ends_it(self):
+        """A refresh that starts under a running crawl ends the run; the
+        launch after the refresh carries on (2026-11-20, it used to pause)."""
+        self.assertEqual(self.crawl([False, True]), ["live?", "live?"])
 
     def crawl(self, lives):
         events, live = [], iter(lives)

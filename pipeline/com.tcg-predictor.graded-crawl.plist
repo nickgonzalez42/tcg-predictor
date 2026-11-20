@@ -30,10 +30,9 @@
 		<string>--refresh-days</string>
 		<string>28</string>
 		<string>--yield-to-refresh</string>
-		<string>--daily-quota</string>
-		<string>6600</string>
-		<string>--stop-at</string>
-		<string>18:00</string>
+		<string>--continuous</string>
+		<string>--fill-min-days</string>
+		<string>3</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
@@ -42,86 +41,10 @@
 	<key>StandardOutPath</key>
 	<string>/Users/nicholasgonzalez/Library/Logs/tcg-predictor/graded-crawl.log</string>
 	<key>StartCalendarInterval</key>
-	<array>
-		<dict>
-			<key>Hour</key>
-			<integer>5</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>6</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>7</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>8</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>9</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>10</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>11</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>12</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>13</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>14</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>15</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>16</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-		<dict>
-			<key>Hour</key>
-			<integer>17</integer>
-			<key>Minute</key>
-			<integer>0</integer>
-		</dict>
-	</array>
+	<dict>
+		<key>Minute</key>
+		<integer>0</integer>
+	</dict>
 	<key>WorkingDirectory</key>
 	<string>/Users/nicholasgonzalez/Developer/Projects/parent/tcg-predictor/pipeline</string>
 </dict>

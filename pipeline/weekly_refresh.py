@@ -222,12 +222,10 @@ STATE_DIR = os.path.join(DATA_DIR, "ml_data", "refresh_state")
 # value is scaled by the fraction of its nominal time that still fits.
 TRIMMABLE = {
     "tcg-sku-resolve": ("--resolve", 50),
-    "tcg-sales": ("--total-limit", 100),
     "printing-ingest": ("--limit", 300),
     "imageless-audit": ("--limit", 20),
     "art-recheck": ("--limit", 15),
     "pc-link-suggest": ("--drain", 200),
-    "pc-graded-new": ("--total-limit", 800),
 }
 # Work that happens BETWEEN art-comps and s3-upload (the model block, run by
 # run_daily_refresh.sh) plus the prod push, reserved so the rotations don't
@@ -447,8 +445,11 @@ STEPS = [
     # NOMINAL_MIN["tcg-sales"] back to 110) once a feature reads this data.
     # Same 28-day cycle for sales volume; the daytime sales-crawl agent does
     # the bulk (~8,100 a day), this is the fallback trickle.
+    # 2026-11-20 (user): the daytime agent crawls whenever the refresh is not
+    # running, so the night only fetches the cards tomorrow's articles (and
+    # the showcase picks) discuss.
     ("tcg-sales", ["backfill_sales_volume.py", "--game", "all", "--rpm", "40",
-                   "--refresh-days", "28", "--total-limit", "500", "--no-yield"]),
+                   "--refresh-days", "28", "--watch-only", "--no-yield"]),
     # Second pass for cards the search crawl couldn't price tonight: if the
     # product page's sales chart still carries a recent NM series, adopt it
     # (tcg_nm_only) so the card keeps a live price instead of going stale.
@@ -515,9 +516,10 @@ STEPS = [
     # daytime graded-crawl agent (10:00, pipeline/com.tcg-predictor.graded-
     # crawl.plist) carries ~5,600 a day, so this step is the fallback for
     # days the Mac was shut: it finds little or nothing due on a normal night.
+    # 2026-11-20 (user): article cards only; the daytime agent does the rest.
     ("pc-graded-new", ["scrape_graded_history.py", "--game", "all", "--resume",
                        "--delay", "1.0", "--refresh-days", "28", "--workers", "2",
-                       "--limit", "4000", "--total-limit", "2500"]),
+                       "--watch-only"]),
     # Price-integrity sweep: TCGplayer NM vs PC sales divergences -> review
     # CSV (no auto-action; the two failure classes need human judgment).
     ("nm-pc-sweep",   ["sweep_nm_vs_pc.py"]),
