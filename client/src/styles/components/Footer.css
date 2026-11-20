@@ -29,3 +29,44 @@
 .has-ticker .site-footer {
   padding-bottom: calc(var(--space-10) + var(--ticker-h));
 }
+
+/* The TCGplayer banner above the footer links (TcgPromo.tsx): small, muted
+   until hovered, never wider than its own 970 px. */
+.tcg-promo {
+  margin-bottom: var(--space-10);
+  text-align: center;
+}
+
+.tcg-promo__tag {
+  display: block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--space-5);
+}
+
+.tcg-promo a {
+  display: inline-block;
+  max-width: 100%;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.tcg-promo a:hover {
+  opacity: 1;
+}
+
+.tcg-promo img {
+  display: block;
+  max-width: 100%;
+  width: 728px;
+  height: auto;
+  border-radius: 6px;
+}
+
+@media (max-width: 600px) {
+  .tcg-promo img {
+    width: 320px;
+  }
+}

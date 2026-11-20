@@ -41,3 +41,13 @@ export function trackBuyClick(productId: number) {
             .catch(() => { /* a lost count is not worth a console error */ });
     } catch { /* never let counting break a link */ }
 }
+
+// The TCGplayer banner (TcgPromo): the same kind of ping, as the pseudo-page
+// /out/tcgplayer/promo-{id}.
+export function trackPromoClick(id: string) {
+    try {
+        const q = new URLSearchParams({ p: `/out/tcgplayer/promo-${id}`, f: window.location.pathname });
+        fetch(`/px?${q.toString()}`, { method: "GET", keepalive: true, cache: "no-store" })
+            .catch(() => { /* a lost count is not worth a console error */ });
+    } catch { /* never let counting break a link */ }
+}

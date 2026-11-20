@@ -315,7 +315,53 @@ padding:0 22px;border-radius:999px;background:#ffcb05;color:#101623;font-weight:
 white-space:nowrap;text-decoration:none;transition:filter .15s ease}
 .home-cta__btn:hover{text-decoration:none;filter:brightness(1.08)}
 @media (max-width:540px){.home-cta{padding:18px}.home-cta__btn{width:100%}}
+.tcg-promo{margin:0 0 28px;text-align:center}
+.tcg-promo__tag{display:block;font-family:ui-monospace,Menlo,monospace;font-size:10px;
+letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);margin:0 0 5px}
+.tcg-promo a{display:inline-block;max-width:100%;opacity:.85;transition:opacity .15s ease}
+.tcg-promo a:hover{opacity:1}
+.tcg-promo img{display:block;max-width:100%;width:728px;height:auto;border-radius:6px}
+@media (max-width:600px){.tcg-promo img{width:320px}}
 """
+
+# ---- the TCGplayer banner ---------------------------------------------------
+# 2026-11-20, user: TCGplayer's Cyber Weekend creative on the articles, in a
+# low-key spot, off after 11/30. The same banner as the app's footer
+# (client/src/lib/promo.ts: change both together), under the closing block.
+# It is written hidden and shown by the page only before PROMO_UNTIL, so a
+# page rendered today drops it by itself when the sale ends.
+PROMO = {
+    "id": "cw26",
+    "href": "https://partner.tcgplayer.com/c/7852100/4128197/21018",
+    "wide": "/promo/cw26-970x90.jpg",
+    "narrow": "/promo/cw26-320x50.jpg",
+    "alt": "TCGplayer Cyber Weekend: 10% store credit, November 27 to 30",
+    "until": "2026-12-01T04:00:00Z",      # the sale's end, 11/30 11 PM New York
+}
+
+
+def promo_html(site=SITE, now=None):
+    """The banner, or '' when there is none or it has ended."""
+    from datetime import datetime, timezone
+    if not PROMO or not PROMO.get("href"):
+        return ""
+    now = now or datetime.now(timezone.utc)
+    if now >= datetime.fromisoformat(PROMO["until"].replace("Z", "+00:00")):
+        return ""
+    ping = ("try{var q=new URLSearchParams({p:'/out/tcgplayer/promo-%s',f:location.pathname});"
+            "fetch('/px?'+q.toString(),{method:'GET',keepalive:true,cache:'no-store'})"
+            ".catch(function(){})}catch(e){}" % PROMO["id"])
+    return f"""
+<aside class="tcg-promo" id="tcg-promo" aria-label="Advertisement" hidden>
+  <span class="tcg-promo__tag">Advertisement</span>
+  <a href="{PROMO['href']}" target="_blank" rel="sponsored noopener" title="TCGplayer (affiliate link; CardStock may earn a commission)" onclick="{ping}">
+    <picture>
+      <source media="(max-width: 600px)" srcset="{site}{PROMO['narrow']}" width="320" height="50">
+      <img src="{site}{PROMO['wide']}" width="970" height="90" loading="lazy" decoding="async" alt="{PROMO['alt']}">
+    </picture>
+  </a>
+</aside>
+<script>(function(){{var e=document.getElementById('tcg-promo');if(e&&Date.now()<Date.parse('{PROMO['until']}'))e.hidden=false}})();</script>"""
 
 
 def cta_html(site=SITE):
