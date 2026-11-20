@@ -37,6 +37,7 @@ import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
 from _paths import PC_DB
+from crawl_day import day_start_utc, stop_time, past, quota_left
 # Cards tomorrow's articles will discuss, written by game_articles.write_watch
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
 # scraping its volume movement the day before").
@@ -179,7 +180,7 @@ def gather(game, conn, refresh_days, limit, fast_price=None, fast_days=None,
     # fill_days ago. main() takes the oldest when the due list is short, so a
     # week when ~106k cards fall due together is started on ahead of time.
     early = []
-    if fill_days and not new_only:
+    if fill_days is not None and not new_only:
         fill_cutoff = (now - timedelta(days=fill_days)).isoformat()
         known = set(pids)
         early = [(f, game, pid, price.get(pid) or 0.0, True)
@@ -205,6 +206,14 @@ def main():
                          "with the cards fetched longest ago (at least "
                          "--fill-min-days back)")
     ap.add_argument("--fill-min-days", type=float, default=21.0)
+    ap.add_argument("--daily-quota", type=int, default=None,
+                    help="fetch this many cards a day: the overdue ones plus "
+                         "the oldest-fetched, with no age floor. Counts what "
+                         "today already fetched, so launches add up to one "
+                         "quota (crawl_day.py). Replaces --fill")
+    ap.add_argument("--stop-at", default=None,
+                    help="HH:MM local: fetch nothing after this (the nightly "
+                         "refresh starts 19:05, Saturdays 18:20)")
     ap.add_argument("--limit", type=int, default=None, help="cap per game")
     ap.add_argument("--total-limit", type=int, default=None,
                     help="cap the whole run; games compete value-first above "
@@ -235,6 +244,11 @@ def main():
               f"({datetime.now(timezone.utc):%m-%d %H:%M} UTC)", flush=True)
         return
 
+    stop = stop_time(args.stop_at)
+    if past(stop):
+        print(f"past the {args.stop_at} stop time: nothing started", flush=True)
+        return
+
     games = market_games() if args.game == "all" else [args.game]   # 2026-11-04: CSV-only games too
     # 600 s busy timeout (2026-11-02, was 60): the graded crawl writes to this
     # database all day and a transaction of its could outlast a minute.
@@ -251,7 +265,9 @@ def main():
     for game in games:
         due, soon = gather(game, conn, args.refresh_days, args.limit,
                            args.fast_tier_price, args.fast_refresh_days,
-                           args.new_only, args.fill_min_days if args.fill else None)
+                           args.new_only,
+                           0 if args.daily_quota
+                           else args.fill_min_days if args.fill else None)
         targets.extend(due)
         early.extend(soon)
     # Global order (no per-game budget): every never-scanned card, value-first,
@@ -274,6 +290,19 @@ def main():
         print(f"total budget: {args.total_limit} of {len(targets)} due "
               f"(per-game floor {floor}, remainder by price)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
+
+    if args.daily_quota:
+        today = conn.execute("SELECT COUNT(*) FROM tcg_sales_scan WHERE fetched_at >= ?",
+                             (day_start_utc(),)).fetchone()[0]
+        more = quota_left(args.daily_quota, today, len(targets))
+        early.sort()                       # fetched longest ago first
+        take = early[:more]
+        print(f"daily quota {args.daily_quota:,}: {today:,} fetched today, "
+              f"{len(targets):,} overdue, {len(take):,} oldest card(s) added"
+              + (f" (oldest fetched {take[0][0][:10]})" if take else "")
+              + f" ({datetime.now():%m-%d %H:%M})", flush=True)
+        targets.extend(t[1:] for t in take)
+        args.fill = None
 
     if args.fill and len(targets) < args.fill and early:
         early.sort()                       # fetched longest ago first
@@ -328,6 +357,10 @@ def main():
             splice_watch()
         if (game, pid) in skip:
             continue
+        if i % 10 == 0 and past(stop):
+            print(f"stop time reached: {len(queue) + 1:,} card(s) wait for tomorrow",
+                  flush=True)
+            break
         # Yield to the nightly refresh (checked on the first card and every
         # 10 after, ~15 s at 40rpm, so a refresh that has just started is
         # noticed before more than a commit or two can meet its crawl on

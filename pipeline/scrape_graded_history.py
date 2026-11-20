@@ -34,6 +34,7 @@ import certifi
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 from _paths import PC_DB
+from crawl_day import day_start_utc, stop_time, past, quota_left
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
@@ -244,7 +245,7 @@ def gather_targets(game, conn, resume, limit, refresh_days,
     # Early top-up candidates: still fresh, but crawled at least fill_days
     # ago. main() takes the oldest of them when the due list is short.
     early = []
-    if fill_days and resume and refresh_days:
+    if fill_days is not None and resume and refresh_days:
         fill_cutoff = (datetime.now(timezone.utc) - timedelta(days=fill_days)).isoformat()
         early = [(last[pid], game, pid, pc, psa10) for pid, pc, psa10 in linked
                  if pid in last and last[pid] < fill_cutoff]
@@ -254,7 +255,7 @@ def gather_targets(game, conn, resume, limit, refresh_days,
     return targets, early
 
 
-def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
+def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False, stop=None):
     ok = fail = dead = total_rows = 0
     pc_of = {(g, pid): pc for g, pid, pc, _ in targets}
     announced = False
@@ -277,6 +278,10 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False):
                     print(f"  PriceCharting blocked us ({BLOCK_LIMIT} refusals in a row) — "
                           f"skipping the remaining {len(targets) - i:,} page(s); they stay "
                           f"uncrawled for the next run.", flush=True)
+                break
+            if past(stop):
+                print(f"  stop time reached: {len(targets) - i:,} page(s) wait for "
+                      f"tomorrow", flush=True)
                 break
             if yield_to_refresh and refresh_live():
                 conn.commit()
@@ -374,6 +379,14 @@ def main():
                          "inside one week of November 2026 against ~13.7k a day; "
                          "starting early on quiet days spreads them out")
     ap.add_argument("--fill-min-days", type=float, default=21.0)
+    ap.add_argument("--daily-quota", type=int, default=None,
+                    help="crawl this many pages a day: the overdue ones plus "
+                         "the oldest-crawled, with no age floor. Counts what "
+                         "today already crawled, so launches add up to one "
+                         "quota (crawl_day.py). Replaces --fill")
+    ap.add_argument("--stop-at", default=None,
+                    help="HH:MM local: start no new chunk after this (the "
+                         "nightly refresh starts 19:05, Saturdays 18:20)")
     ap.add_argument("--refresh-days", type=float, default=None,
                     help="re-crawl a card once its last crawl is older than this "
                          "many days (rotation); without it --resume skips forever")
@@ -401,6 +414,11 @@ def main():
         print("refresh is live — leaving it to the next launch", flush=True)
         return
 
+    stop = stop_time(args.stop_at)
+    if past(stop):
+        print(f"past the {args.stop_at} stop time: nothing started", flush=True)
+        return
+
     conn = sqlite3.connect(PC_DB, timeout=600)
     # The sales-volume crawl writes this same file all day. A roomier page
     # cache keeps each batch on a RESERVED lock instead of escalating to
@@ -412,9 +430,21 @@ def main():
         due, soon = gather_targets(game, conn, args.resume, args.limit,
                                    args.refresh_days, args.fast_tier_price,
                                    args.fast_refresh_days,
-                                   args.fill_min_days if args.fill else None)
+                                   0 if args.daily_quota
+                                   else args.fill_min_days if args.fill else None)
         targets.extend(due)
         early.extend(soon)
+    if args.daily_quota:
+        today = conn.execute("SELECT COUNT(*) FROM graded_crawled WHERE crawled_at >= ?",
+                             (day_start_utc(),)).fetchone()[0]
+        more = quota_left(args.daily_quota, today, len(targets))
+        early.sort()                       # crawled longest ago first
+        take = early[:more]
+        print(f"daily quota {args.daily_quota:,}: {today:,} crawled today, "
+              f"{len(targets):,} overdue, {len(take):,} oldest page(s) added"
+              + (f" (oldest crawled {take[0][0][:10]})" if take else ""), flush=True)
+        targets.extend(t[1:] for t in take)
+        args.fill = None
     if args.fill and len(targets) < args.fill and early:
         early.sort()                       # crawled longest ago first
         take = early[:args.fill - len(targets)]
@@ -442,7 +472,7 @@ def main():
         print(f"total budget: {args.total_limit} of {len(targets)} due pages "
               f"(per-game floor {floor}, remainder by psa10)", flush=True)
         targets = keep + rest[:max(0, args.total_limit - len(keep))]
-    scrape_targets(conn, targets, args.workers, args.delay, args.yield_to_refresh)
+    scrape_targets(conn, targets, args.workers, args.delay, args.yield_to_refresh, stop)
     conn.close()
 
 
