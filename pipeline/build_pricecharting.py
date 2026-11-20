@@ -409,6 +409,17 @@ def apply_confirmed_links(conn):
                         "grade9=NULL, grade95=NULL, psa10=NULL, bgs10=NULL, cgc10=NULL, sgc10=NULL, "
                         "sales_volume=NULL, updated_at=? WHERE game=? AND product_id=?",
                         (pc or None, now, game, pid))
+                    # The stored graded history is the old page's too. It goes
+                    # here, at the moment the link changes: purged by hand a day
+                    # early, the daytime crawl just fetched the old page again
+                    # (2026-11-19, 35 excluded cards refilled within the hour).
+                    try:
+                        conn.execute("DELETE FROM graded_price_history WHERE game=? "
+                                     "AND product_id=? AND printing=''", (game, pid))
+                        conn.execute("DELETE FROM graded_crawled WHERE game=? "
+                                     "AND product_id=?", (game, pid))
+                    except sqlite3.OperationalError:
+                        pass                 # a fresh build has no crawl tables yet
                     if not pc:
                         print(f"[{game}] override: {pid} unlinked (no correct PC page)")
                     added += 1
