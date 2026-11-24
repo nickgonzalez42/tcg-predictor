@@ -59,8 +59,43 @@ def plain_name(name):
             return m.group(0)
         inner = re.sub(r"\s+", " ", re.sub(r"(?i)\bfoil\b", "", m.group(1))).strip()
         return f"[{inner}]" if inner else ""
-    out = re.sub(r"\s+", " ", re.sub(r"\[([^\]]*)\]", fix, name)).strip()
+    # "[ [Extended] Foil]" (a bracket inside the bracket, 37 Magic pages):
+    # take the word out first, then close up what is left around the inner one.
+    nested = re.sub(r"\[\s*(\[[^\]]*\])\s*foil\s*\]", r"\1", name, flags=re.I)
+    out = re.sub(r"\s+", " ", re.sub(r"\[([^\]]*)\]", fix, nested)).strip()
     return out if out != name else None
+
+
+def norm(name):
+    """A page name as PriceCharting might have cased it. The foil and the
+    non-foil page of one card are title-cased differently ("Sleight Of Hand
+    [Foil] #67" beside "Sleight of Hand #67"), which hid 600 pages from an
+    exact lookup (2026-11-24)."""
+    return re.sub(r"\s+", " ", name.replace("\u2019", "'")).strip().lower()
+
+
+def name_only(name):
+    """The name without its "#number" (some non-foil pages carry none)."""
+    return norm(re.sub(r"\s*#\S+\s*$", "", name))
+
+
+def find_page(cand, exact, loose_index, listing=None):
+    """(pc_id, loose) for the non-foil page named `cand` in one set, or
+    (None, False). exact / loose_index are that set's stored pages by name
+    and by norm(name); listing is its live page list (name -> pc_id).
+    loose = found only by dropping the card number, and only when the set
+    has exactly one non-foil page of that name: such a hit is used only if
+    the page itself names our product."""
+    hit = exact.get(cand) or loose_index.get(norm(cand))
+    if hit or listing is None:
+        return hit, False
+    hit = listing.get(cand) or {norm(n): p for n, p in listing.items()}.get(norm(cand))
+    if hit:
+        return hit, False
+    base = name_only(cand)
+    same = [p for n, p in listing.items()
+            if name_only(n) == base and not re.search(r"(?i)\bfoil\b", n)]
+    return (same[0], True) if len(same) == 1 else (None, False)
 
 
 def foil_linked(pc):
@@ -109,6 +144,15 @@ def console_listing(console_slug, cache):
     return cache[console_slug]
 
 
+def slug_overrides(game):
+    """console -> slug where the page address is not the name slugified."""
+    path = os.path.join(BASE, "ml_data", "pc_console_slugs.csv")
+    if not os.path.exists(path):
+        return {}
+    with open(path, newline="", encoding="utf-8") as f:
+        return {r["console"]: r["slug"] for r in csv.DictReader(f) if r.get("game") == game}
+
+
 def slug_of(console):
     s = console.lower().replace("&", "and")
     s = re.sub(r"[':.,!]", "", s)
@@ -128,7 +172,7 @@ def verify(limit, consoles, delay):
     for game, pid, old_pc, name, console in rows:
         key = (game, pid)
         prev = plan.get(key)
-        if prev and prev["status"] in ("ok", "ok-name", "applied", "not-our-card", "no-bracket") \
+        if prev and prev["status"] in ("ok", "ok-name", "applied", "not-our-card") \
                 and int(prev["old_pc"]) == old_pc:
             continue
         if prev and prev["status"] == "no-page" and not consoles:
@@ -143,10 +187,16 @@ def verify(limit, consoles, delay):
             stats["no-bracket"] += 1
             continue
         if game not in cats:
-            cats[game] = pc_catalog(game)
-        hit = cats[game].get(((console or "").strip(), cand))
-        if not hit and consoles and console:
-            hit = console_listing(slug_of(console), listings).get(cand)
+            by_con, by_con_i = {}, {}
+            for (con, nm), pid_ in pc_catalog(game).items():
+                by_con.setdefault(con, {})[nm] = pid_
+                by_con_i.setdefault(con, {})[norm(nm)] = pid_
+            cats[game] = (by_con, by_con_i, slug_overrides(game))
+        by_con, by_con_i, slugs = cats[game]
+        con = (console or "").strip()
+        listing = (console_listing(slugs.get(con) or slug_of(con), listings)
+                   if consoles and con else None)
+        hit, loose = find_page(cand, by_con.get(con, {}), by_con_i.get(con, {}), listing)
         if not hit:
             row["status"] = "no-page"
             plan[key] = row
@@ -179,7 +229,8 @@ def verify(limit, consoles, delay):
         # exact name and number in the same set is the whole check. A page
         # that names a DIFFERENT product is never taken.
         row["status"] = (f"http-{status}" if status != 200 else "ok" if pid in ids
-                         else "ok-name" if not ids else "not-our-card")
+                         else "not-our-card" if ids
+                         else "no-page" if loose else "ok-name")
         plan[key] = row
         stats[row["status"]] += 1
         if fetched % 50 == 0:

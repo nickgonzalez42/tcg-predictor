@@ -5,6 +5,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import repoint_foil_pages as rf
 from repoint_foil_pages import plain_name, old_label, repoint
 
 
@@ -73,6 +74,29 @@ class Repoint(unittest.TestCase):
         pc.execute("UPDATE pricecharting SET pc_id=300")
         self.assertFalse(repoint(pc, "magic", 7, 100, "x [Foil]", 200, "x", "Foil", "now"))
         self.assertEqual(pc.execute("SELECT pc_id FROM pricecharting").fetchone()[0], 300)
+
+
+class FindPage(unittest.TestCase):
+    def test_nested_bracket_names(self):
+        self.assertEqual(rf.plain_name("Getaway Car [ [Extended] Foil] #438"),
+                         "Getaway Car [Extended] #438")
+        self.assertIsNone(rf.plain_name("Airfoil #97"))          # a card's own name
+
+    def test_case_and_apostrophes_do_not_hide_a_page(self):
+        stored = {"Sleight of Hand #67": 11}
+        index = {rf.norm(n): p for n, p in stored.items()}
+        self.assertEqual(rf.find_page("Sleight Of Hand #67", stored, index), (11, False))
+        self.assertEqual(rf.find_page("Can\u2019T Wake Up #2", {}, {rf.norm("Can't Wake Up #2"): 5}),
+                         (5, False))
+
+    def test_numberless_page_only_when_it_is_the_only_one(self):
+        live = {"Earl Of Squirrel": 7, "Earl of Squirrel [Foil] #108": 9}
+        self.assertEqual(rf.find_page("Earl of Squirrel #108", {}, {}, live), (7, True))
+        live["Earl Of Squirrel [Promo]"] = 8                       # another printing: not it
+        self.assertEqual(rf.find_page("Earl of Squirrel #108", {}, {}, live), (7, True))
+        live["Earl of Squirrel #9"] = 6                            # now two of that name
+        self.assertEqual(rf.find_page("Earl of Squirrel #108", {}, {}, live), (None, False))
+        self.assertEqual(rf.find_page("Nobody #1", {}, {}, live), (None, False))
 
 
 if __name__ == "__main__":
