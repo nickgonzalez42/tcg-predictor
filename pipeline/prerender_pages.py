@@ -19,11 +19,13 @@ Usage:  python3 prerender_pages.py [--root /srv/tcg]
 import argparse
 import glob
 import html
+import json
 import os
 import re
 import shutil
 import sqlite3
 import time
+from datetime import date
 
 SITE = "https://cardstock.guide"
 GAME_LABELS = {
@@ -55,13 +57,15 @@ img.card{max-width:240px;border-radius:6%/4.3%;float:right;margin:0 0 12px 16px}
 img.card[src*="/sorcery/"]{border-radius:10%/7.2%}
 footer{border-top:1px solid var(--border);margin-top:32px;padding-top:12px;
 color:var(--muted);font-size:13.5px}
+.crumbs{color:var(--muted);font-size:13.5px;margin:0 0 6px}
+ul.plain{list-style:none;padding:0;margin:8px 0}ul.plain li{padding:3px 0}
 """
 
 NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
        f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
        f'<a href="{SITE}/reports">Reports</a> '
        f'<a href="{SITE}/articles">Articles</a> '
-       f'<a href="{SITE}/guides/how-to-read-price-charts">Guides</a> '
+       f'<a href="{SITE}/guides">Guides</a> '
        f'<a href="{SITE}/about">About</a></nav></header>')
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
         f'with a public track record. Not financial advice. '
@@ -79,24 +83,37 @@ ICONS = """<link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">"""
 
-def page(path, title, desc, body, og_image=None):
+def ld_script(items):
+    """schema.org blocks for the page head (2026-11-24). `</` is escaped so a
+    card name can never close the script element."""
+    return "".join(
+        '<script type="application/ld+json">'
+        + json.dumps(it, ensure_ascii=False).replace("</", "<\\/") + "</script>\n"
+        for it in (items or []))
+
+
+def page(path, title, desc, body, og_image=None, ld=None, bare_title=False):
     # og:image + summary_large_image turn every link pasted into Discord,
     # Slack or X into a rich card-art preview — the cheapest ad the site has.
+    # bare_title: the title already names the site (the home page's does).
     t, d = html.escape(title), html.escape(desc)
+    full = t if bare_title else f"{t} | CardStock"
+    # Every page carries a share picture (2026-11-24): the home page and the
+    # hubs had none, so a link to cardstock.guide itself previewed as bare text.
+    og_image = og_image or f"{SITE}/og-image.png?v=3"
     og_img = (f'<meta property="og:image" content="{html.escape(og_image)}">\n'
-              f'<meta name="twitter:card" content="summary_large_image">\n'
-              if og_image else '')
+              f'<meta name="twitter:card" content="summary_large_image">\n')
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{t} | CardStock</title>
+<title>{full}</title>
 <meta name="description" content="{d}">
 <link rel="canonical" href="{SITE}{path}">
 {ICONS}
 <meta name='impact-site-verification' value='7bff3025-2f3e-4682-9142-9dbdfc5ec089'>
 <meta property="og:title" content="{t}"><meta property="og:description" content="{d}">
 <meta property="og:url" content="{SITE}{path}"><meta property="og:site_name" content="CardStock">
-{og_img}{ADS}
+{og_img}{ld_script(ld)}{ADS}
 <style>{CSS}</style></head>
 <body><div class="wrap">{NAV}{body}{FOOT}</div></body></html>"""
 
@@ -130,29 +147,111 @@ def reason_block(reasons):
             f'included, is on the <a href="{SITE}/about">track record page</a>.</p>')
 
 
-def card_body(game, r, ladder, fc, reasons=None):
+def slugify(name):
+    """A set page's slug, exactly as pipeline/set_pages.py makes it."""
+    s = re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
+    return s[:80] or "set"
+
+
+def card_title(name, number, set_name):
+    """One title per card (2026-11-24). "{name} price & forecast" was shared
+    by 122,278 of the 231,676 card pages: every printing of a card, every
+    Pikachu. With the number and the set it is shared by 22."""
+    head = f"{name} {number}" if number and number not in name else name
+    return f"{head} Price & Forecast" + (f" - {set_name}" if set_name else "")
+
+
+def worth_block(name, nm, ladder, fc, as_of):
+    """The answer to "what is this card worth", in sentences (2026-11-24):
+    the question people type, and text a search snippet or an AI assistant
+    can quote whole. The numbers are the ones in the tables under it."""
+    if not nm:
+        return ""
+    out = [f"A Near Mint copy of {html.escape(name)} sells for about {money(nm)} as of "
+           f"{as_of}, going by TCGplayer sales."]
+    psa10 = (ladder or {}).get("psa10")
+    if psa10:
+        out.append(f"A PSA 10 goes for about {money(psa10)}.")
+    by_h = {h: f for h, f, _lo, _hi in fc}
+    if by_h.get("1m"):
+        line = (f"We expect about {money(by_h['1m'])} a month from now "
+                f"({(by_h['1m'] / nm - 1) * 100:+.1f}%)")
+        if by_h.get("12m"):
+            line += (f" and about {money(by_h['12m'])} in a year "
+                     f"({(by_h['12m'] / nm - 1) * 100:+.1f}%)")
+        out.append(line + ".")
+    return f"<h2>What is {html.escape(name)} worth?</h2><p>{' '.join(out)}</p>"
+
+
+def crumb_ld(trail):
+    """trail = [(name, absolute url)], the page itself last."""
+    return {"@context": "https://schema.org", "@type": "BreadcrumbList",
+            "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": n, "item": u}
+                                for i, (n, u) in enumerate(trail)]}
+
+
+def card_ld(game, label, r, ladder, desc):
+    """The card as a schema.org Product. This is a price guide, not a shop,
+    so the offer is an AggregateOffer: the lowest and highest price the page
+    shows (Near Mint up to PSA 10), which is what the card sells for."""
+    pid, name, _set, _rarity, number, _text, nm = r
+    prod = {"@context": "https://schema.org", "@type": "Product",
+            "name": f"{name} ({number})" if number and number not in name else name,
+            "image": f"{IMG}/{game}/{pid}.jpg", "description": desc,
+            "url": f"{SITE}/catalog/{game}/{pid}", "category": f"{label} trading card"}
+    prices = [v for v in [nm] + [(ladder or {}).get(c) for c, _ in GRADE_COLS[1:]] if v]
+    if prices:
+        prod["offers"] = {"@type": "AggregateOffer", "priceCurrency": "USD",
+                          "lowPrice": f"{min(prices):.2f}", "highPrice": f"{max(prices):.2f}"}
+    return prod
+
+
+def card_body(game, r, ladder, fc, reasons=None, label=None, hub="/catalog",
+              set_path=None, mates=(), as_of=""):
+    """hub: the game's set index (or the catalog); set_path: the card's set
+    page when there is one; mates: [(product_id, name, price)] other cards
+    of the set, dearest first."""
     pid, name, set_name, rarity, number, desc, nm = r
     e = html.escape
+    label = label or game
     rows = []
     if nm is not None:
         rows.append(f"<tr><td>Near Mint market price</td><td>{money(nm)}</td></tr>")
-    for col, label in GRADE_COLS[1:]:
+    for col, glabel in GRADE_COLS[1:]:
         v = ladder.get(col) if ladder else None
         if v:
-            rows.append(f"<tr><td>{label}</td><td>{money(v)}</td></tr>")
+            rows.append(f"<tr><td>{glabel}</td><td>{money(v)}</td></tr>")
     fc_rows = "".join(
         f"<tr><td>{h.upper()} forecast</td><td>{money(f_price)}</td>"
         f"<td class='muted'>range {money(lo)} – {money(hi)}</td></tr>"
         for h, f_price, lo, hi in fc)
     img = f'<img class="card" src="{IMG}/{game}/{pid}.jpg" alt="{e(name)} card image">'
     d = f"<p>{e(desc)}</p>" if desc else ""
-    return (f'{img}<h1>{e(name)}</h1>'
+    # Where the card sits (2026-11-24): a card page linked to nothing but the
+    # site's menu, so a crawler that landed on one could not reach its set or
+    # the cards next to it.
+    trail = [f'<a href="{SITE}/">CardStock</a>',
+             f'<a href="{SITE}{hub}">{e(label)} card prices</a>']
+    if set_name:
+        trail.append(f'<a href="{SITE}{set_path}">{e(set_name)}</a>' if set_path
+                     else e(set_name))
+    crumbs = '<p class="crumbs">' + " › ".join(trail) + "</p>"
+    related = ""
+    if mates and set_name:
+        items = "".join(
+            f"<li><a href='{SITE}/catalog/{game}/{mp}'>{e(mn)}</a> "
+            f"<span class='muted'>{money(mnm)}</span></li>" for mp, mn, mnm in mates)
+        every = (f"<p><a href='{SITE}{set_path}'>Every card in {e(set_name)}, with its "
+                 f"price →</a></p>" if set_path else "")
+        related = f"<h2>More from {e(set_name)}</h2><ul class='plain'>{items}</ul>{every}"
+    return (f'{crumbs}{img}<h1>{e(name)}</h1>'
             f'<p class="muted">{e(set_name or "")} · {e(rarity or "")}'
-            + (f' · #{e(number)}' if number else '') + f' · {e(game)}</p>'
+            + (f' · #{e(number)}' if number else '') + f' · {e(label)}</p>'
+            + worth_block(name, nm, ladder, fc, as_of) +
             f'<table>{"".join(rows)}</table>'
             + (f'<h2>Model price forecasts</h2><table>{fc_rows}</table>' if fc_rows else '')
             + reason_block(reasons)
-            + (f'<h2>Card text</h2>{d}' if d else '') +
+            + (f'<h2>Card text</h2>{d}' if d else '') + related +
             f'<p><a href="{SITE}/catalog/{game}/{pid}">Interactive price chart, full history '
             f'and past-forecast track record →</a></p>')
 
@@ -172,6 +271,8 @@ def write(root_new, rel, content):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default="/srv/tcg")
+    ap.add_argument("--games", help="comma-separated subset (a test run)")
+    ap.add_argument("--limit", type=int, help="cards per game (a test run)")
     args = ap.parse_args()
     t0 = time.time()
     data = os.path.join(args.root, "data")
@@ -219,16 +320,49 @@ def main():
         articles = []
     pred.close()
 
+    # The set pages that exist (pipeline/set_pages.py ships this list with
+    # them): a card links to its set page only when there is one.
+    try:
+        with open(os.path.join(args.root, "static", "sets", "manifest.txt"),
+                  encoding="utf-8") as f:
+            set_paths = {line.strip() for line in f if line.startswith("/sets")}
+    except OSError:
+        set_paths = set()
+    as_of = f"{date.today():%B} {date.today().day}, {date.today().year}"
+
     n_cards = 0
     top_names = {}
     for db in sorted(glob.glob(os.path.join(data, "*_cards.db"))):
         game = os.path.basename(db).replace("_cards.db", "")
+        if args.games and game not in args.games.split(","):
+            continue
+        label = GAME_LABELS.get(game, game)
         conn = sqlite3.connect(db)
-        for r in conn.execute(
-                "SELECT product_id, name, set_name, rarity, card_number, description, "
-                "near_mint_price FROM cards "
-                "WHERE near_mint_price IS NOT NULL AND image_path IS NOT NULL AND name IS NOT NULL"):
+        cards = conn.execute(
+            "SELECT product_id, name, set_name, rarity, card_number, description, "
+            "near_mint_price FROM cards "
+            "WHERE near_mint_price IS NOT NULL AND image_path IS NOT NULL AND name IS NOT NULL"
+            + (f" LIMIT {int(args.limit)}" if args.limit else "")).fetchall()
+        conn.close()
+        by_set = {}
+        for c in cards:
+            if c[2] and c[2].strip():
+                by_set.setdefault(c[2].strip(), []).append((c[0], c[1], c[6]))
+        for members in by_set.values():
+            members.sort(key=lambda m: -(m[2] or 0))
+        slug_uses = {}
+        for sname in by_set:
+            slug_uses[slugify(sname)] = slug_uses.get(slugify(sname), 0) + 1
+        hub = f"/sets/{game}" if f"/sets/{game}" in set_paths else "/catalog"
+        for r in cards:
             pid, name = r[0], r[1]
+            sname = (r[2] or "").strip()
+            # Two sets whose names make the same slug: set_pages gives the
+            # second a suffix this file cannot know, so neither gets a link.
+            sp = f"/sets/{game}/{slugify(sname)}"
+            set_path = sp if sname and slug_uses.get(slugify(sname)) == 1 and sp in set_paths else None
+            mates = [m for m in by_set.get(sname, []) if m[0] != pid][:8]
+            ladder = ladders.get((game, pid))
             # The model's call is a return from the price it saw; the page
             # applies it to today's price, as the app does (2026-11-06).
             fc = []
@@ -236,37 +370,75 @@ def main():
                                               key=lambda x: {"1m": 0, "6m": 1, "12m": 2}[x[0]]):
                 k = r[6] / base if r[6] and base else 1.0
                 fc.append((h, fp * k, lo * k, hi * k))
-            body = card_body(game, r, ladders.get((game, pid)), fc, reasons.get((game, pid)))
+            body = card_body(game, r, ladder, fc, reasons.get((game, pid)), label=label,
+                             hub=hub, set_path=set_path, mates=mates, as_of=as_of)
             # Forecast in the description = the hook in a link preview.
             fc_bit = ""
             if fc and r[6]:
                 _h, fp, _lo, _hi = fc[0]
                 if fp and r[6] > 0:
                     fc_bit = f" 1-month forecast {money(fp)} ({(fp / r[6] - 1) * 100:+.1f}%)."
-            desc = (f"{name} ({r[2]}) price: {money(r[6])} Near Mint.{fc_bit} "
+            psa_bit = f" PSA 10 {money(ladder['psa10'])}." if ladder and ladder.get("psa10") else ""
+            where = ", ".join(x for x in (r[4], sname) if x)
+            desc = (f"{name} ({where}) price: {money(r[6])} Near Mint.{psa_bit}{fc_bit} "
                     f"Graded prices and AI forecasts with a public accuracy record.")
+            trail = [("CardStock", f"{SITE}/"), (f"{label} card prices", f"{SITE}{hub}")]
+            if set_path:
+                trail.append((sname, f"{SITE}{set_path}"))
+            trail.append((name, f"{SITE}/catalog/{game}/{pid}"))
             write(out_new, f"catalog/{game}/{pid}.html",
-                  page(f"/catalog/{game}/{pid}", f"{name} price & forecast", desc, body,
-                       og_image=f"{IMG}/{game}/{pid}.jpg"))
+                  page(f"/catalog/{game}/{pid}", card_title(name, r[4], sname), desc, body,
+                       og_image=f"{IMG}/{game}/{pid}.jpg",
+                       ld=[card_ld(game, label, r, ladder, desc), crumb_ld(trail)]))
             top_names[(game, pid)] = name
             n_cards += 1
-        conn.close()
 
     movers = "".join(
         f"<tr><td><a href='{SITE}/catalog/{g}/{pid}'>{html.escape(top_names.get((g, pid), str(pid)))}</a></td>"
-        f"<td>{g}</td><td>{money(b)}</td><td>{money(f)}</td></tr>"
+        f"<td>{html.escape(GAME_LABELS.get(g, g))}</td><td>{money(b)}</td><td>{money(f)}</td></tr>"
         for g, pid, b, f in top if (g, pid) in top_names)
-    write(out_new, "index.html", page("/", "CardStock: Trading Card Price Predictions",
-        "AI price forecasts for Pokémon, One Piece, Magic, Yu-Gi-Oh!, Lorcana, Digimon, Gundam "
-        "and Star Wars cards, with graded price history and a public accuracy record.",
-        f"<h1>Trading card prices, with receipts</h1>"
+    # The home page (2026-11-24): its title said "CardStock" twice, it carried
+    # no structured data (crawlers get THIS copy, not the app shell that has
+    # it) and it linked to no game, set, article or guide.
+    games_here = sorted({g for g, _pid in top_names},
+                        key=lambda g: -sum(1 for k in top_names if k[0] == g))
+    game_links = "".join(
+        f"<li><a href='{SITE}{'/sets/' + g if '/sets/' + g in set_paths else '/catalog?game=' + g}'>"
+        f"{html.escape(GAME_LABELS.get(g, g))} card prices</a></li>" for g in games_here)
+    latest = "".join(
+        f"<li><a href='{SITE}/articles/{html.escape(slug)}'>{html.escape(title)}</a></li>"
+        for slug, title, _pub, _sum in articles[:6])
+    latest_reports = "".join(
+        f"<li><a href='{SITE}/reports/{html.escape(slug)}'>{html.escape(title)}</a></li>"
+        for slug, title, _pub, _sum in reports[:3])
+    home_ld = [
+        {"@context": "https://schema.org", "@type": "WebSite", "name": "CardStock",
+         "alternateName": ["CardStock Guide", "cardstock.guide"], "url": f"{SITE}/",
+         "description": "Trading card prices and price predictions, checked in public."},
+        {"@context": "https://schema.org", "@type": "Organization", "name": "CardStock",
+         "url": f"{SITE}/", "logo": f"{SITE}/apple-touch-icon.png",
+         "email": "hello@cardstock.guide"},
+    ]
+    write(out_new, "index.html", page(
+        "/", "CardStock: Trading Card Prices and Price Predictions",
+        "Daily trading card prices and AI price predictions for Pokémon, Magic, Yu-Gi-Oh!, "
+        "One Piece, Lorcana and seven more games, with every forecast checked in public.",
+        f"<h1>Trading card prices and price predictions, with receipts</h1>"
         f"<p>CardStock tracks {n_cards:,} cards across twelve games, publishes model price "
         f"forecasts for one month to a year ahead, and grades every forecast in public once "
         f"its date arrives. Weekly <a href='{SITE}/reports'>market reports</a> round up what "
         f"moved; the <a href='{SITE}/about'>About page</a> explains the model in plain "
         f"language.</p><h2>Model's top 1-month calls right now</h2>"
         f"<table><tr><th>Card</th><th>Game</th><th>Price</th><th>1M forecast</th></tr>"
-        f"{movers}</table>"))
+        f"{movers}</table>"
+        f"<h2>Card prices by game</h2><ul class='plain'>{game_links}</ul>"
+        + (f"<h2>Latest articles</h2><ul class='plain'>{latest}</ul>"
+           f"<p><a href='{SITE}/articles'>All articles →</a></p>" if latest else "")
+        + (f"<h2>Latest market reports</h2><ul class='plain'>{latest_reports}</ul>"
+           f"<p><a href='{SITE}/reports'>All reports →</a></p>" if latest_reports else "")
+        + f"<p>New to card prices? Start with the <a href='{SITE}/guides'>guides</a> or the "
+          f"<a href='{SITE}/guides/faq'>questions people ask us</a>.</p>",
+        ld=home_ld, bare_title=True))
 
     # ---- hub pages (2026-10-25) --------------------------------------------
     # /catalog, /reports and /guides rendered nothing at all without
@@ -277,11 +449,11 @@ def main():
     for (g, _pid) in top_names:
         per_game[g] = per_game.get(g, 0) + 1
     game_rows = "".join(
-        f"<tr><td><a href='{SITE}/catalog?game={g}'>{html.escape(GAME_LABELS.get(g, g))}</a></td>"
-        f"<td>{n:,} cards</td></tr>"
+        f"<tr><td><a href='{SITE}{'/sets/' + g if '/sets/' + g in set_paths else '/catalog?game=' + g}'>"
+        f"{html.escape(GAME_LABELS.get(g, g))}</a></td><td>{n:,} cards</td></tr>"
         for g, n in sorted(per_game.items(), key=lambda kv: -kv[1]))
     write(out_new, "catalog.html", page(
-        "/catalog", "Card price catalog",
+        "/catalog", "Trading Card Price Catalog: Prices and Forecasts for 12 Games",
         "Browse trading card prices and model forecasts across twelve games, with "
         "graded price ladders and a public forecast track record.",
         f"<h1>Card price catalog</h1>"
@@ -301,7 +473,7 @@ def main():
         f"<div class='muted'>{html.escape(published)} · {html.escape(summary or '')}</div></li>"
         for slug, title, published, summary in reports[:40])
     write(out_new, "reports.html", page(
-        "/reports", "Weekly reports",
+        "/reports", "Weekly Trading Card Market Reports",
         "A data-driven look at the week in trading card prices, published every Friday: the "
         "biggest movers, what each game did, and the model's accuracy scorecard.",
         f"<h1>Weekly reports</h1>"
@@ -318,7 +490,7 @@ def main():
         f"<div class='muted'>{html.escape(published)} · {html.escape(summary or '')}</div></li>"
         for slug, title, published, summary in articles[:60])
     write(out_new, "articles.html", page(
-        "/articles", "Game articles",
+        "/articles", "Trading Card Game Articles: Set Reports and Price Trends",
         "Articles on every game we track: its newest set, its other new releases and how "
         "the whole game traded, with the cards, the charts and the model's outlook.",
         f"<h1>Game articles</h1>"
@@ -334,6 +506,8 @@ def main():
     guides = []
     for gp in sorted(glob.glob(os.path.join(args.root, "static", "guides", "*.html"))):
         slug = os.path.basename(gp)[:-5]
+        if slug == "index":            # the hub itself (static-content/guides/index.html)
+            continue
         try:
             with open(gp, encoding="utf-8") as f:
                 head = f.read(4000)
@@ -348,7 +522,7 @@ def main():
         + (f"<div class='muted'>{html.escape(desc)}</div>" if desc else "") + "</li>"
         for slug, title, desc in guides)
     write(out_new, "guides.html", page(
-        "/guides", "Guides",
+        "/guides", "Trading Card Price Guides: How Card Prices Work",
         "Plain-English guides to trading card prices: reading a price chart, what grading does "
         "to value, where card prices come from, and the vocabulary of the market.",
         f"<h1>Guides</h1>"
@@ -356,7 +530,7 @@ def main():
         f"numbers on this site.</p><ul>{guide_rows}</ul>" if guides else
         f"<h1>Guides</h1><p>Guides are on the way.</p>"))
 
-    write(out_new, "about.html", page("/about", "About", "What CardStock is and how its trading card price predictions work.", PROSE["about"]))
+    write(out_new, "about.html", page("/about", "How Our Trading Card Price Predictions Work", "Where CardStock's prices come from, what the forecasting model weighs, how every prediction is checked against the real price, and what the ranges mean.", PROSE["about"]))
     write(out_new, "privacy.html", page("/privacy", "Privacy Policy", "How CardStock handles your data, cookies, and advertising.", PROSE["privacy"]))
     write(out_new, "terms.html", page("/terms", "Terms of Service", "The terms for using CardStock.", PROSE["terms"]))
     write(out_new, "contact.html", page("/contact", "Contact", "Get in touch with CardStock.", PROSE["contact"]))

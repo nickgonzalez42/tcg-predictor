@@ -466,6 +466,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
         "@type": "NewsArticle",
         "headline": title,
         "description": summary,
+        "image": [image],
         "datePublished": published_at[:10],
         "dateModified": published_at[:10],
         "articleSection": section,
@@ -477,13 +478,37 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
                       "url": SITE,
                       "logo": {"@type": "ImageObject",
                                "url": f"{SITE}/og-image.png"}},
-    })
+    }).replace("</", "<\\/")
+    # Where the page sits, for the breadcrumb line under a search result.
+    crumbs = json.dumps({
+        "@context": "https://schema.org", "@type": "BreadcrumbList",
+        "itemListElement": [
+            {"@type": "ListItem", "position": 1, "name": "CardStock", "item": f"{SITE}/"},
+            {"@type": "ListItem", "position": 2,
+             "name": "Articles" if base == "articles" else "Weekly reports",
+             "item": f"{SITE}/{base}"},
+            {"@type": "ListItem", "position": 3, "name": title, "item": url}],
+    }).replace("</", "<\\/")
+    # The <title> is what a search result shows, and a weekly report's
+    # headline alone ("Decliners outnumbered gainers, 15,102 to 12,938...")
+    # never says what it is a report ON. The tag leads with that; the
+    # headline on the page and on share cards is untouched (2026-11-24).
+    # Articles already name their game and set in the headline.
+    doc_title = t
+    if base == "reports":
+        kind = ("Card Price Forecast Accuracy" if slug.startswith("model-report")
+                else "Trading Card Market Report")
+        try:
+            d = date.fromisoformat(published_at[:10])
+            doc_title = f"{kind}, {d:%b} {d.day}, {d.year}: {t}"
+        except ValueError:
+            doc_title = f"{kind}: {t}"
     return f"""<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{t} | CardStock</title>
+<title>{doc_title} | CardStock</title>
 <meta name="description" content="{s}">
 <link rel="canonical" href="{url}">
 {ICONS}
@@ -508,6 +533,7 @@ def page(slug, title, published_at, summary, body_html, thumb_url=None, hero_svg
 <meta name="twitter:description" content="{s}">
 <meta name="twitter:image" content="{image}">
 <script type="application/ld+json">{schema}</script>
+<script type="application/ld+json">{crumbs}</script>
 {ADS}
 <style>{CSS}</style>
 <style>{nav_style}{CTA_CSS}{next_style}</style>

@@ -19,6 +19,7 @@ Run:  python3 set_pages.py [--out DIR]
 
 import argparse
 import html
+import json
 import os
 import re
 import sqlite3
@@ -65,13 +66,15 @@ td.num,th.num{text-align:right}
 .up{color:var(--up)}.down{color:var(--down)}
 footer{border-top:1px solid var(--border);margin-top:32px;padding-top:12px;
 color:var(--muted);font-size:13.5px}
+.crumbs{color:var(--muted);font-size:13.5px;margin:0 0 6px}
+ul.plain{list-style:none;padding:0;margin:8px 0}ul.plain li{padding:3px 0}
 @media (max-width:540px){td,th{padding:5px 5px;font-size:12.5px}}
 """
 
 NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
        f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
        f'<a href="{SITE}/reports">Reports</a> <a href="{SITE}/articles">Articles</a> '
-       f'<a href="{SITE}/about">About</a></nav></header>')
+       f'<a href="{SITE}/guides">Guides</a> <a href="{SITE}/about">About</a></nav></header>')
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
         f'with a public track record. Not financial advice. '
         f'<a href="{SITE}/about">How the forecasts work</a> · '
@@ -113,11 +116,38 @@ PX = ('<script>(function(){try{var q=new URLSearchParams({p:location.pathname});
       '.catch(function(){})}catch(e){}})()</script>')
 
 
-def page(path, title, desc, body, og_image=None):
+def crumb_ld(trail):
+    """trail = [(name, path)], the page itself last."""
+    return {"@context": "https://schema.org", "@type": "BreadcrumbList",
+            "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": n,
+                                 "item": f"{SITE}{p}"} for i, (n, p) in enumerate(trail)]}
+
+
+def list_ld(name, items):
+    """items = [(name, path)]: the cards or sets a page ranks, in order."""
+    return {"@context": "https://schema.org", "@type": "ItemList", "name": name,
+            "itemListElement": [{"@type": "ListItem", "position": i + 1, "name": n,
+                                 "url": f"{SITE}{p}"} for i, (n, p) in enumerate(items)]}
+
+
+def crumbs(trail):
+    """The visible trail: every step but the last is a link."""
+    return ('<p class="crumbs">' + " › ".join(
+        f'<a href="{SITE}{p}">{esc(n)}</a>' for n, p in trail[:-1])
+        + f" › {esc(trail[-1][0])}</p>")
+
+
+def page(path, title, desc, body, og_image=None, ld=None):
     t, d = esc(title), esc(desc)
+    # Every page carries a share picture and its place in the site as
+    # structured data (2026-11-24).
+    og_image = og_image or f"{SITE}/og-image.png?v=3"
     og_img = (f'<meta property="og:image" content="{esc(og_image)}">'
-              f'<meta name="twitter:card" content="summary_large_image">'
-              if og_image else '')
+              f'<meta name="twitter:card" content="summary_large_image">')
+    og_img += "".join(
+        '<script type="application/ld+json">'
+        + json.dumps(it, ensure_ascii=False).replace("</", "<\\/") + "</script>"
+        for it in (ld or []))
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -154,6 +184,13 @@ def main():
             fc1m[(g, pid)] = (base, f)
     except sqlite3.Error:
         pass
+    articles = {}
+    try:
+        for g, slug, title in pred.execute(
+                "SELECT game, slug, title FROM articles ORDER BY published_at DESC, slug"):
+            articles.setdefault(g, []).append((slug, title))
+    except sqlite3.Error:
+        pass
     pred.close()
 
     manifest = []
@@ -169,6 +206,9 @@ def main():
         by_set = {}
         for s, pid, name, rarity, nm in cards:
             by_set.setdefault(s.strip(), []).append((pid, name, rarity, nm))
+        # The game's dearest cards, whatever their set, for its hub page.
+        dearest = sorted(((nm, pid, name, s.strip()) for s, pid, name, rarity, nm in cards
+                          if nm), reverse=True)[:20]
 
         label = GAMES[game]["label"]
         slugs, set_rows = {}, []
@@ -203,7 +243,18 @@ def main():
                     f"{len(members):,} priced cards.</p>" if len(members) > MAX_ROWS else "")
             cat_link = (f"{SITE}/catalog?game={game}&sets={quote(set_name, safe='')}"
                         if "," not in set_name else f"{SITE}/catalog?game={game}")
+            path = f"/sets/{game}/{slug}"
+            trail = [("CardStock", "/"), (f"{label} card prices", f"/sets/{game}"),
+                     (set_name, path)]
+            # The question the page answers, in a sentence (2026-11-24):
+            # "most valuable cards in {set}" is what people search, and a
+            # sentence is what a search snippet or an AI assistant quotes.
+            top5 = members[:5]
+            top_line = "; ".join(
+                f"<a href='{SITE}/catalog/{game}/{pid}'>{esc(name)}</a> ({money(nm)})"
+                for pid, name, _rar, nm in top5)
             body = (
+                crumbs(trail) +
                 f"<h1>{esc(set_name)} card prices</h1>"
                 f"<p class='muted'>{esc(label)} · {len(members):,} priced cards · "
                 f"prices updated {today}</p>"
@@ -214,16 +265,25 @@ def main():
                 f"{money(chase[3])}. Click any card for its full price history, graded "
                 f"ladder and forecast track record, or "
                 f"<a href='{cat_link}'>browse this set in the interactive catalog</a>.</p>"
+                f"<h2>Most valuable cards in {esc(set_name)}</h2>"
+                f"<p>The {len(top5)} most valuable cards in {esc(set_name)} right now are "
+                f"{top_line}.</p>"
+                f"<h2>{esc(set_name)} price list</h2>"
                 f"<table><tr><th>Card</th><th>Rarity</th><th class='num'>NM price</th>"
                 f"<th class='num'>1M forecast</th><th class='num'>Implied</th></tr>"
-                f"{''.join(rows)}</table>{more}")
-            path = f"/sets/{game}/{slug}"
+                f"{''.join(rows)}</table>{more}"
+                f"<p><a href='{SITE}/sets/{game}'>Every {esc(label)} set, with its total "
+                f"value →</a></p>")
             desc = (f"{set_name} ({label}) price guide: {len(members):,} cards priced, "
-                    f"total value {money(total)}. Near Mint prices and AI 1-month "
-                    f"forecasts with a public accuracy record.")
+                    f"total value {money(total)}. The most valuable is {chase[1]} at "
+                    f"{money(chase[3])}. Near Mint prices and AI 1-month forecasts.")
             write(args.out, f"{game}/{slug}.html",
-                  page(path, f"{set_name} price guide", desc, body,
-                       og_image=f"{IMG}/{game}/{chase[0]}.jpg"))
+                  page(path, f"{set_name} Card Prices & Most Valuable Cards ({label})",
+                       desc, body, og_image=f"{IMG}/{game}/{chase[0]}.jpg",
+                       ld=[crumb_ld(trail),
+                           list_ld(f"Most valuable cards in {set_name}",
+                                   [(name, f"/catalog/{game}/{pid}")
+                                    for pid, name, _rar, _nm in members[:10]])]))
             manifest.append(path)
             set_rows.append((set_name, slug, len(members), total))
 
@@ -232,22 +292,51 @@ def main():
             f"<tr><td><a href='{SITE}/sets/{game}/{slug}'>{esc(name)}</a></td>"
             f"<td class='num'>{n:,}</td><td class='num'>{money(total)}</td></tr>"
             for name, slug, n, total in set_rows)
+        # The game's own page (2026-11-24): what card pages and set pages
+        # link up to, so it answers the game-level questions too: what the
+        # dearest cards are and what has been written about the game lately.
+        slug_of = {name: slug for slug, name in slugs.items()}
+        dear_rows = "".join(
+            f"<tr><td><a href='{SITE}/catalog/{game}/{pid}'>{esc(name)}</a></td>"
+            + (f"<td><a href='{SITE}/sets/{game}/{slug_of[sn]}'>{esc(sn)}</a></td>"
+               if sn in slug_of else f"<td>{esc(sn)}</td>")
+            + f"<td class='num'>{money(nm)}</td></tr>"
+            for nm, pid, name, sn in dearest)
+        art_rows = "".join(
+            f"<li><a href='{SITE}/articles/{esc(slug)}'>{esc(title)}</a></li>"
+            for slug, title in articles.get(game, [])[:6])
+        n_priced = sum(n for _n, _s, n, _t in set_rows)
+        hub_trail = [("CardStock", "/"), ("Set price guides", "/sets"),
+                     (f"{label} card prices", f"/sets/{game}")]
         write(args.out, f"{game}.html", page(
-            f"/sets/{game}", f"{label} sets: price guides",
-            f"Price guides for every {label} set: {len(set_rows)} sets with Near Mint "
-            f"prices and AI forecasts for every card.",
-            f"<h1>{esc(label)} set price guides</h1>"
+            f"/sets/{game}", f"{label} Card Prices: Price Guides for Every Set",
+            f"{label} card prices by set: {len(set_rows)} sets and {n_priced:,} priced cards, "
+            f"with the most valuable {label} cards, Near Mint prices and AI forecasts.",
+            crumbs(hub_trail) +
+            f"<h1>{esc(label)} card prices by set</h1>"
             f"<p>Every {esc(label)} set we track, with the number of priced cards and "
-            f"the set's total Near Mint value. Prices updated {today}.</p>"
+            f"the set's total Near Mint value: {len(set_rows)} sets and {n_priced:,} priced "
+            f"cards. Prices updated {today}.</p>"
+            + (f"<h2>Most valuable {esc(label)} cards right now</h2>"
+               f"<table><tr><th>Card</th><th>Set</th><th class='num'>NM price</th></tr>"
+               f"{dear_rows}</table>" if dear_rows else "")
+            + f"<h2>{esc(label)} sets by total value</h2>"
             f"<table><tr><th>Set</th><th class='num'>Priced cards</th>"
-            f"<th class='num'>Total value</th></tr>{idx_rows}</table>"))
+            f"<th class='num'>Total value</th></tr>{idx_rows}</table>"
+            + (f"<h2>Latest {esc(label)} articles</h2><ul class='plain'>{art_rows}</ul>"
+               if art_rows else "")
+            + f"<p><a href='{SITE}/catalog?game={game}'>Browse {esc(label)} cards in the "
+              f"interactive catalog →</a></p>",
+            ld=[crumb_ld(hub_trail),
+                list_ld(f"Most valuable {label} cards",
+                        [(name, f"/catalog/{game}/{pid}") for _nm, pid, name, _sn in dearest[:10]])]))
         manifest.append(f"/sets/{game}")
         game_rows.append((label, game, len(set_rows)))
 
     write(args.out, "index.html", page(
-        "/sets", "Card set price guides",
-        "Set-by-set price guides for Pokémon, Magic, Yu-Gi-Oh!, One Piece, Digimon, "
-        "Lorcana, Gundam and Star Wars Unlimited cards.",
+        "/sets", "Trading Card Set Price Guides: Every Set, Every Game",
+        "Set-by-set price guides for " + ", ".join(label for label, _g, _n in game_rows[:8])
+        + " and more: every priced card with its market price and forecast.",
         "<h1>Set price guides</h1>"
         "<p>Pick a game to browse set-by-set price guides — every priced card with "
         "its market price and our model's 1-month forecast.</p>"
