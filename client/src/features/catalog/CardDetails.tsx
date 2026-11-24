@@ -22,7 +22,7 @@ import Modal from "../../app/shared/components/Modal";
 import NotFound from "../../app/errors/NotFound";
 import LoadFailed from "../../app/errors/LoadFailed";
 import { isNotFound } from "../../app/api/baseApi";
-import { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice";
+import { isUpcoming, releaseLabel } from "../../lib/release";
 
 const HORIZONS = ['1m', '6m', '12m'];
 const HORIZON_LABEL: Record<string, string> = {

@@ -35,14 +35,22 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
     // open (the link keeps focus / the pointer is still over it). On navigation
     // we blur focus and briefly suppress hover (see .navbar--suppress) so it
     // collapses. mobile dropdown + touch drawer just reset their state.
-    const [suppress, setSuppress] = useState(false);
+    const [suppress, setSuppress] = useState(true);    // from the first paint, as after any navigation
     const navRef = useRef<HTMLElement>(null);
     const { pathname } = useLocation();
-    useEffect(() => {
+    // A new page: the drawer shuts, the bar returns and hover is held off
+    // (state adjusted during render, React's reset-on-change pattern). The
+    // effect keeps what touches the DOM: dropping focus, and the timer that
+    // lets hover back in.
+    const [page, setPage] = useState(pathname);
+    if (page !== pathname) {
+        setPage(pathname);
         setNavOpen(false);
         setHidden(false);
-        (document.activeElement as HTMLElement | null)?.blur();
         setSuppress(true);
+    }
+    useEffect(() => {
+        (document.activeElement as HTMLElement | null)?.blur();
         const t = setTimeout(() => setSuppress(false), 600);
         return () => clearTimeout(t);
     }, [pathname]);

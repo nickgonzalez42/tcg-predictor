@@ -135,10 +135,13 @@ function HeroChart({ movers, onCard }: { movers?: Card[]; onCard?: (c: Card | nu
     // placeholder; later ones are gated by canLeave below, so the finished
     // scene sits at its end state until the next card's art is in.
     const [scene, setScene] = useState<{ i: number; art: string } | null>(null);
-    const [nextArt, setNextArt] = useState<string | null>(null);
+    // The next card's art, kept with the scene it was loaded for: a new
+    // scene (or a new list) has no next art until its own preload lands.
+    const [next, setNext] = useState<{ i: number; of: Card[]; art: string } | null>(null);
+    if (!cards.length && scene) setScene(null);      // the feed emptied: back to the placeholder
 
     useEffect(() => {   // first scene: wait for its art before playing
-        if (!cards.length) { setScene(null); return; }
+        if (!cards.length) return;
         let live = true;
         preloadArt(cards[0]).then(art => { if (live) setScene({ i: 0, art }); });
         return () => { live = false; };
@@ -148,12 +151,12 @@ function HeroChart({ movers, onCard }: { movers?: Card[]; onCard?: (c: Card | nu
     useEffect(() => { onCard?.(shown); }, [shown, onCard]);
 
     const nextIdx = (scene?.i ?? 0) + 1;
+    const nextArt = next && next.i === nextIdx && next.of === cards ? next.art : null;
     useEffect(() => {   // preload the NEXT card's art while this scene plays
         if (!scene || !cards.length) return;
         let live = true;
-        setNextArt(null);
         preloadArt(cards[nextIdx % cards.length])
-            .then(art => { if (live) setNextArt(art); });
+            .then(art => { if (live) setNext({ i: nextIdx, of: cards, art }); });
         return () => { live = false; };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [scene?.i, cards]);

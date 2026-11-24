@@ -8,7 +8,8 @@ import { tierLabel } from "../watchlist/grades"
 import ChangePill from "../../app/shared/components/ChangePill"
 import Sparkline from "../../app/shared/components/Sparkline"
 import PricePair from "../../app/shared/components/PricePair"
-import PredictedPrice, { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice"
+import PredictedPrice from "../../app/shared/components/PredictedPrice"
+import { isUpcoming, releaseLabel } from "../../lib/release"
 import { cardBackSrc, fallbackToCardBack } from "../../lib/cardImages";
 import { isHolo, holoMove, holoLeave } from "../../lib/holo";
 import { useUserInfoQuery } from "../account/accountApi";

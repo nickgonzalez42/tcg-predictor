@@ -26,16 +26,17 @@ export default function AllocationDonut({ title, slices }: {
     if (!slices.length) return null;
 
     const R = 40, C = 2 * Math.PI * R;
-    let offset = 0;
+    const lens = slices.map(s => (s.pct / 100) * C);
+    const starts = lens.map((_, i) => lens.slice(0, i).reduce((a, b) => a + b, 0));
 
     return (
         <div className="panel detail-panel">
             <span className="mono detail-panel__title">{title}</span>
             <div className="donut">
                 <svg viewBox="0 0 100 100" className="donut__svg" aria-hidden="true">
-                    {slices.map(s => {
-                        const len = (s.pct / 100) * C;
-                        const el = (
+                    {slices.map((s, i) => {
+                        const len = lens[i];
+                        return (
                             <circle
                                 key={s.label}
                                 cx="50" cy="50" r={R}
@@ -43,12 +44,10 @@ export default function AllocationDonut({ title, slices }: {
                                 stroke={DONUT_COLORS[s.label] ?? '#8b96ad'}
                                 strokeWidth="14"
                                 strokeDasharray={`${len} ${C - len}`}
-                                strokeDashoffset={-offset}
+                                strokeDashoffset={-starts[i]}
                                 transform="rotate(-90 50 50)"
                             />
                         );
-                        offset += len;
-                        return el;
                     })}
                 </svg>
                 <ul className="donut__legend">

@@ -4,7 +4,7 @@ import CardLoader from "../../app/shared/components/CardLoader";
 import ChangePill from "../../app/shared/components/ChangePill";
 import AllocationDonut from "./AllocationDonut";
 import { useFetchCollectionAnalysisQuery, type CollectionAnalysis, type Slice } from "./watchlistApi";
-import { useCountUp } from "../home/Glance";
+import { useCountUp } from "../home/glanceHooks";
 import { currencyFormat, gameKey } from "../../lib/util";
 import { fallbackToCardBack } from "../../lib/cardImages";
 

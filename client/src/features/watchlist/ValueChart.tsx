@@ -4,6 +4,7 @@ import { useFetchPortfolioSummaryQuery, type PortfolioSummary } from "./watchlis
 import ChangePill from "../../app/shared/components/ChangePill";
 import { currencyFormat, shortDate } from "../../lib/util";
 import { GAMES } from "../../lib/games";
+import { fade } from "./fade";
 
 const RANGES: { key: string; label: string; months?: number }[] = [
     { key: '1m', label: '1M', months: 1 },
@@ -11,15 +12,6 @@ const RANGES: { key: string; label: string; months?: number }[] = [
     { key: '1y', label: '1Y', months: 12 },
     { key: 'all', label: 'ALL' },
 ];
-
-// "#rrggbb" -> rgba() at the given opacity (non-hex values pass through).
-// Shared with the Value outlook chart.
-export const fade = (hex: string, alpha: number) => {
-    const m = /^#?([\da-f]{6})$/i.exec(hex.trim());
-    if (!m) return hex;
-    const n = parseInt(m[1], 16);
-    return `rgba(${n >> 16}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-};
 
 // Portfolio value-over-time chart: green collection line (zero until each
 // copy's add date) vs a dashed S&P 500 what-if line (the same dollars put
@@ -32,6 +24,7 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
 }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const [range, setRange] = useState('all');
+    const [now] = useState(() => Date.now());     // the range cutoffs count back from when the chart opened
     // Game chips: the chart (and its stats) can narrow to one game's copies.
     // 'all' reuses the page's summary; a game fetches its own filtered rollup.
     const [game, setGame] = useState('all');
@@ -66,12 +59,12 @@ export default function ValueChart({ summary, includePacks = true, onIncludePack
     const { points, bench } = useMemo(() => {
         const months = RANGES.find(r => r.key === range)?.months;
         const cutoff = months
-            ? new Date(Date.now() - months * 30.44 * 86400e3).toISOString().slice(0, 10)
+            ? new Date(now - months * 30.44 * 86400e3).toISOString().slice(0, 10)
             : null;
         const slice = (pts?: { date: string; value: number }[]) =>
             (cutoff ? pts?.filter(p => p.date >= cutoff) : pts) ?? [];
         return { points: slice(s?.series), bench: slice(s?.benchmark) };
-    }, [s, range]);
+    }, [s, range, now]);
 
     useEffect(() => {
         const el = containerRef.current;

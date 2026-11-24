@@ -5,7 +5,7 @@ import Modal from "../../app/shared/components/Modal";
 import CardLoader from "../../app/shared/components/CardLoader";
 import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchCollectionOutlookQuery, type CollectionOutlook, type OutlookLongest } from "./watchlistApi";
-import { fade } from "./ValueChart";
+import { fade } from "./fade";
 import { currencyFormat, gameKey } from "../../lib/util";
 import { fallbackToCardBack } from "../../lib/cardImages";
 

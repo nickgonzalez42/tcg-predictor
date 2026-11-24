@@ -1,5 +1,3 @@
-import { useEffect, useState } from "react";
-
 type Props = {
     items: string[];
     checked: string[];
@@ -7,19 +5,14 @@ type Props = {
 }
 
 export default function CheckBoxButtons({ items, checked, onChange }: Props) {
-    const [checkedItems, setCheckedItems] = useState(checked);
-
-    useEffect(() => {
-        setCheckedItems(checked)
-    }, [checked]);
+    // Driven by the parent: both filter panels keep the picks in the store
+    // and hand them back as `checked`, so no second copy lives here.
+    const checkedItems = checked ?? [];
 
     const handleToggle = (value: string) => {
-        const updatedChecked = checkedItems?.includes(value)
+        onChange(checkedItems.includes(value)
             ? checkedItems.filter(item => item !== value)
-            : [...checkedItems, value]
-
-        setCheckedItems(updatedChecked);
-        onChange(updatedChecked);
+            : [...checkedItems, value]);
     }
 
     return (

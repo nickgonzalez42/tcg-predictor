@@ -31,7 +31,7 @@ export default function Carousel({ slides, label, className = '' }: Props) {
     const [active, setActive] = useState(0);
     const navigate = useNavigate();
     const nav = useRef(navigate);
-    nav.current = navigate;
+    useEffect(() => { nav.current = navigate; });
     // goTo(i) from the buttons; swapped in by the effect below.
     const api = useRef<(i: number) => void>(() => {});
     const n = slides.length;
@@ -45,6 +45,9 @@ export default function Carousel({ slides, label, className = '' }: Props) {
         const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         let per = 1, step = 0, idx = 0;
+        // A let on purpose: measure() below runs once before the Draggable
+        // exists and must find `undefined` here, not an uninitialised const.
+        // eslint-disable-next-line prefer-const
         let drag: Draggable | undefined;
         let tween: gsap.core.Tween | undefined;
         let timer: gsap.core.Tween | undefined;

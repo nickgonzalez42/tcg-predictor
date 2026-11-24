@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import type { User } from "../../app/models/user";
 import { currencyFormat, gameKey } from "../../lib/util";
@@ -7,55 +7,13 @@ import ChangePill from "../../app/shared/components/ChangePill";
 import { useFetchPortfolioSummaryQuery } from "../watchlist/watchlistApi";
 import { useFetchHomeStatsQuery } from "./homeApi";
 import { useAppSelector } from "../../app/store/store";
+import { useInView, useCountUp, compact, pct } from "./glanceHooks";
 
 // Home infographics (2026-10-23/24): the collection block (section 02, its
 // own row) and the three model-performance panels (section 03), in place of
 // the old how-it-works boxes. Each panel reveals once it scrolls into view —
 // bars grow, rings draw, numbers count up — and all of it collapses to the
 // final state under prefers-reduced-motion.
-
-const reducedMotion = () =>
-    typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-// True once the element has entered the viewport (never flips back).
-export function useInView<T extends HTMLElement>() {
-    const ref = useRef<T>(null);
-    const [inView, setInView] = useState(() => reducedMotion());
-    useEffect(() => {
-        const el = ref.current;
-        if (!el || inView) return;
-        if (!('IntersectionObserver' in window)) { setInView(true); return; }
-        const io = new IntersectionObserver(entries => {
-            if (entries.some(e => e.isIntersecting)) { setInView(true); io.disconnect(); }
-        }, { threshold: 0.25 });
-        io.observe(el);
-        return () => io.disconnect();
-    }, [inView]);
-    return { ref, inView };
-}
-
-// Eases a number from 0 to `target` over `ms` once `active`.
-export function useCountUp(target: number, active: boolean, ms = 1200) {
-    const [value, setValue] = useState(0);
-    useEffect(() => {
-        if (!active) return;
-        if (reducedMotion()) { setValue(target); return; }
-        let raf = 0;
-        const t0 = performance.now();
-        const tick = (t: number) => {
-            const p = Math.min(1, (t - t0) / ms);
-            const eased = 1 - Math.pow(1 - p, 3);
-            setValue(target * eased);
-            if (p < 1) raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
-    }, [target, active, ms]);
-    return value;
-}
-
-export const compact = (n: number) =>
-    n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${Math.round(n)}`;
 
 // Allocation ring: one arc per slice, drawn in sequence once in view.
 function Ring({ slices, size = 104, stroke = 13, inView }: {
@@ -64,22 +22,21 @@ function Ring({ slices, size = 104, stroke = 13, inView }: {
     const r = (size - stroke) / 2;
     const circ = 2 * Math.PI * r;
     const total = slices.reduce((s, x) => s + x.pct, 0) || 1;
-    let offset = 0;
+    const lens = slices.map(s => (s.pct / total) * circ);
+    const starts = lens.map((_, i) => lens.slice(0, i).reduce((a, b) => a + b, 0));
     return (
         <svg className="glance__ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
             <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--surface-2)" strokeWidth={stroke} />
             {slices.map((s, i) => {
-                const len = (s.pct / total) * circ;
-                const el = (
+                const len = lens[i];
+                return (
                     <circle key={s.label} cx={size / 2} cy={size / 2} r={r} fill="none"
                         stroke={s.color} strokeWidth={stroke}
                         strokeDasharray={`${len} ${circ - len}`}
-                        strokeDashoffset={inView ? -offset : circ}
+                        strokeDashoffset={inView ? -starts[i] : circ}
                         style={{ '--i': i } as CSSProperties}
                         transform={`rotate(-90 ${size / 2} ${size / 2})`} />
                 );
-                offset += len;
-                return el;
             })}
         </svg>
     );
@@ -87,9 +44,6 @@ function Ring({ slices, size = 104, stroke = 13, inView }: {
 
 // "+$212.00" / "−$48.10" for the P/L cells.
 const signedUsd = (n: number) => (n < 0 ? '−' : '+') + currencyFormat(Math.abs(n));
-
-// Log-return error → the percentage a reader understands ("±12%").
-export const pct = (logRet: number) => (Math.exp(Math.abs(logRet)) - 1) * 100;
 
 // ----- 1. Portfolio (signed in) / Track your collection (signed out) -------
 // Its own full-width row, taller (user request 2026-10-24): ring + legend,

@@ -12,17 +12,19 @@ import { useAppDispatch, useAppSelector } from "../store/store";
 export default function GamePicker() {
     const game = useAppSelector(state => state.site.game);
     const dispatch = useAppDispatch();
-    const [open, setOpen] = useState(false);
     const ref = useRef<HTMLDivElement>(null);
     const { pathname } = useLocation();
-    useEffect(() => setOpen(false), [pathname]);
+    // Open belongs to the page it was opened on: navigating closes the menu
+    // without an effect having to reset it.
+    const [openOn, setOpenOn] = useState<string | null>(null);
+    const open = openOn === pathname;
 
     useEffect(() => {
         if (!open) return;
         const onOutside = (e: MouseEvent) => {
-            if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+            if (ref.current && !ref.current.contains(e.target as Node)) setOpenOn(null);
         };
-        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+        const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpenOn(null); };
         document.addEventListener('click', onOutside);
         document.addEventListener('keydown', onKey);
         return () => {
@@ -35,7 +37,7 @@ export default function GamePicker() {
         dispatch(pickSiteGame(next));
         // The catalog follows a real game; "all games" leaves it where it is.
         if (next) dispatch(setGame(next));
-        setOpen(false);
+        setOpenOn(null);
         (document.activeElement as HTMLElement | null)?.blur();
     };
 
@@ -46,7 +48,7 @@ export default function GamePicker() {
                 style={game ? { borderColor: gameColor(game), color: gameColor(game) } : undefined}
                 aria-haspopup="listbox" aria-expanded={open}
                 aria-label={`Game: ${label}. Choose a game`}
-                onClick={() => setOpen(o => !o)}>
+                onClick={() => setOpenOn(open ? null : pathname)}>
                 {!game ? <span className="gamepick__img gamepick__img--all" />
                     : gameImage(game) ? <img className="gamepick__img" src={gameImage(game)} alt="" width={26} height={26} />
                     : GAME_MARK[game]}

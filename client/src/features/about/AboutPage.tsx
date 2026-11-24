@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { usePageMeta } from "../../lib/usePageMeta";
 import { gameColor } from "../../lib/games";
 import { useFetchScorecardQuery, type ModelScore, type WeekScore } from "../home/homeApi";
-import { useInView, useCountUp, compact, pct } from "../home/Glance";
+import { useInView, useCountUp, compact, pct } from "../home/glanceHooks";
 
 // About (2026-10-24): infographics of how every model has actually done.
 // Every forecast is archived the day it is issued and graded when its date

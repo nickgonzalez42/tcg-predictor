@@ -8,7 +8,8 @@ import TrackButton from "../watchlist/TrackButton";
 import QuickAdd from "../watchlist/QuickAdd";
 import { tierLabel } from "../watchlist/grades";
 import CardThumbCell from "../../app/shared/components/CardThumbCell";
-import PredictedPrice, { isUpcoming, releaseLabel } from "../../app/shared/components/PredictedPrice";
+import PredictedPrice from "../../app/shared/components/PredictedPrice";
+import { isUpcoming, releaseLabel } from "../../lib/release";
 
 type Props = {
     cards: Card[]

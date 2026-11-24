@@ -258,13 +258,11 @@ export default function PriceHistoryChart({ game, id, printing, forecasts }: Pro
     if (rangeCard !== cardKey) { setRangeCard(cardKey); setRange(null); }
 
     // default to the first available tier once data arrives
-    useEffect(() => {
-        if (grades.length && !grades.includes(grade)) setGrade(grades[0]);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [data]);
+    if (grades.length && !grades.includes(grade)) setGrade(grades[0]);
 
     // A category view resets when switching tiers (that horizon may not exist there).
-    useEffect(() => { setPastView('latest'); }, [grade]);
+    const [viewTier, setViewTier] = useState(grade);
+    if (viewTier !== grade) { setViewTier(grade); setPastView('latest'); }
 
     useEffect(() => {
         const el = containerRef.current;
