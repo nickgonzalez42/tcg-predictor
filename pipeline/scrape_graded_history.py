@@ -185,6 +185,15 @@ def refresh_live():
                           capture_output=True).returncode == 0
 
 
+def unwritten(conn, game, product_id, rows):
+    """The (game, product_id, grade, date, price) rows the page's own series
+    does not already hold with that price."""
+    have = {(g, d): p for g, d, p in conn.execute(
+        "SELECT grade, date, price FROM graded_price_history "
+        "WHERE game=? AND product_id=? AND printing=''", (game, product_id))}
+    return [r for r in rows if have.get((r[2], r[3])) != r[4]]
+
+
 WATCH_FILE = os.path.join(BASE, "ml_data", "article_watch.json")
 
 
@@ -349,9 +358,15 @@ def scrape_targets(conn, targets, workers, delay, yield_to_refresh=False, stop=N
                     # "no chart_data" counts as crawled: the page exists but PC has
                     # no chart for it yet — retrying nightly forever buys nothing.
                     if rows:
+                        # Only new or changed points are written: an unchanged
+                        # row re-written gets a new rowid, and the nightly
+                        # delta (delta_extras.py) ships every row above its
+                        # rowid mark, so each crawl sent the card's whole
+                        # chart to the server again (2026-11-24).
                         conn.executemany(
                             "INSERT OR REPLACE INTO graded_price_history "
-                            "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)", rows)
+                            "(game, product_id, grade, date, price) VALUES (?,?,?,?,?)",
+                            unwritten(conn, game, product_id, rows))
                         total_rows += len(rows)
                         g["rows"] += len(rows)
                     conn.execute(

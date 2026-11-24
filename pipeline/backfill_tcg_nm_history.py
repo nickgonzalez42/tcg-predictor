@@ -115,9 +115,21 @@ def record_sales(conn, game, pid, h):
             rows.append((game, pid, variant, condition, d[:10], qty, txn,
                          _f(b.get("lowSalePrice")), _f(b.get("highSalePrice")),
                          _f(b.get("marketPrice"))))
+    # Only the buckets that are new or changed are written (2026-11-24). A
+    # card's year of buckets comes back the same on every fetch but the newest
+    # week, and INSERT OR REPLACE gives an unchanged row a new rowid all the
+    # same: the nightly delta (delta_extras.py ships rows above a rowid mark)
+    # then carried every card's whole year again, millions of rows a day once
+    # the crawl ran all day, and went over its cap.
     if rows:
-        conn.executemany(
-            "INSERT OR REPLACE INTO tcg_sales_history VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+        have = {(v, c, d): rest for v, c, d, *rest in conn.execute(
+            "SELECT variant, condition, bucket_date, quantity_sold, transaction_count, "
+            "low_sale, high_sale, market_price FROM tcg_sales_history "
+            "WHERE game=? AND product_id=?", (game, pid))}
+        fresh = [r for r in rows if have.get(r[2:5]) != list(r[5:])]
+        if fresh:
+            conn.executemany(
+                "INSERT OR REPLACE INTO tcg_sales_history VALUES (?,?,?,?,?,?,?,?,?,?)", fresh)
     conn.execute("INSERT OR REPLACE INTO tcg_sales_scan VALUES (?,?,?)",
                  (game, pid, datetime.now(timezone.utc).isoformat()))
     return len(rows)

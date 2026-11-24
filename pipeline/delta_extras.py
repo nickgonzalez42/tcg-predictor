@@ -91,13 +91,25 @@ def stage():
         if t not in marks or upto[t] < marks[t]:
             print(f"delta extras: {t} has no usable mark (table rebuilt?); waiting for a full push")
             return 4
-    todo = sum(upto[t] - marks[t] for t in TABLES)
-    if todo > MAX_ROWS:
-        print(f"delta extras: {todo:,} rowids behind, over the {MAX_ROWS:,} cap; waiting for a full push")
+    # The cap is spent in TABLES order, the daily prices first and the sales
+    # counts last, and a table whose backlog does not fit waits for the full
+    # push ALONE. It used to be all or nothing: from 2026-11-20 the all-day
+    # sales crawl rewrote millions of sales rows a day, the sum went over the
+    # cap, and on two nights of four the daily prices did not ship either.
+    ship, room = [], MAX_ROWS
+    for t in TABLES:
+        behind = upto[t] - marks[t]
+        if behind <= room:
+            ship.append(t)
+            room -= behind
+        else:
+            print(f"delta extras: {t} is {behind:,} rowids behind, more than is left of the "
+                  f"{MAX_ROWS:,} cap; it waits for a full push")
+    if not ship:
         return 4
     out = sqlite3.connect(EXTRAS_DB)
     out.execute("CREATE TABLE meta (tbl TEXT PRIMARY KEY, lo INTEGER, upto INTEGER, n INTEGER)")
-    for t in TABLES:
+    for t in ship:
         cols = [r[1] for r in src.execute(f"PRAGMA table_info({t})")]
         out.execute(f"CREATE TABLE x_{t} ({', '.join(cols)})")
         ins = f"INSERT INTO x_{t} VALUES ({','.join('?' * len(cols))})"
