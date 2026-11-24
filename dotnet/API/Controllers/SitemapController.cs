@@ -29,7 +29,8 @@ public class SitemapController(
 
     private static readonly string[] StaticPaths =
         ["/", "/catalog", "/reports", "/articles", "/guides", "/about", "/privacy", "/terms",
-         "/contact", "/guides/faq", "/guides/how-to-read-price-charts",
+         "/contact", "/guides/faq", "/guides/psa-10-vs-raw",
+         "/guides/card-prices-after-release", "/guides/how-to-read-price-charts",
          "/guides/how-grading-affects-value", "/guides/where-card-prices-come-from",
          "/guides/tcg-glossary"];
 

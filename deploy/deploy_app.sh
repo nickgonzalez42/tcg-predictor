@@ -49,13 +49,18 @@ trap - ERR
 # silently broken image rather than a 404 anyone would notice.
 chmod -R a+rX "$ROOT/client/dist"
 sync_dir "$ROOT/client/dist/" ubuntu@$IP:/srv/tcg/client/
-# The guides: the only static pages a deploy owns. This used to send all of
-# static-content/, which also holds whatever set, report and article pages
+# The guides: the only static pages a deploy sends, so a new written guide
+# does not wait for the night. They are rendered here from
+# pipeline/guides_src (--written-only reads no database; the two guides built
+# from prices are the nightly's). A deploy used to send all of
+# static-content/, which also held whatever set, report and article pages
 # were last rendered into the repo folder (sets from October, articles from
 # 11-14): each deploy laid those months-old copies over the server's fresh
-# ones, and they stayed until the next nightly render re-shipped them
-# (2026-11-24). Set, report and article pages ship with the nightly only.
-$RSYNC -az -e "$SSH_E" "$ROOT/static-content/guides/" ubuntu@$IP:/srv/tcg/static/guides/
+# ones until the next nightly re-shipped them (2026-11-24).
+GUIDE_PY="$ROOT/../one-piece/.venv/bin/python"; [ -x "$GUIDE_PY" ] || GUIDE_PY=python3
+"$GUIDE_PY" "$ROOT/pipeline/guide_pages.py" --written-only --out "$HOME/tcg-backups/guide_pages" \
+  && $RSYNC -az -e "$SSH_E" "$HOME/tcg-backups/guide_pages/" ubuntu@$IP:/srv/tcg/static/guides/ \
+  || echo "(guide pages not shipped; the nightly sends them)"
 # The API takes 10-30 s to come up (migrations, the scanner artifacts); a
 # warm-up fired before that only collects 502s from Caddy (2026-10-25). Wait
 # for a real answer first, then prime what the startup self-warmup covers as

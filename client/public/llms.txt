@@ -36,6 +36,8 @@ Each card has one page at `https://cardstock.guide/catalog/{game}/{id}`, where `
 
 ## Guides
 
+- [PSA 10 vs raw: how much more a graded card sells for, by game](https://cardstock.guide/guides/psa-10-vs-raw)
+- [How card prices move after a set releases, by game](https://cardstock.guide/guides/card-prices-after-release)
 - [How to read a card price chart](https://cardstock.guide/guides/how-to-read-price-charts)
 - [How grading affects value](https://cardstock.guide/guides/how-grading-affects-value)
 - [Where card prices come from](https://cardstock.guide/guides/where-card-prices-come-from)

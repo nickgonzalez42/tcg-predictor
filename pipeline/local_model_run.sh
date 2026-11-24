@@ -198,6 +198,15 @@ done
   && echo "set pages shipped" \
   || echo "(set pages ship failed — non-fatal)"
 
+# The guides (2026-11-24): the written ones, plus the two counted from last
+# night's prices (PSA 10 vs raw, prices after a release). No --delete: a
+# numbers guide that could not be counted tonight keeps yesterday's page.
+"$PY" "$DIR/guide_pages.py" --out "$HOME/tcg-backups/guide_pages" \
+  && $RSYNC -az -e "$SSH" "$HOME/tcg-backups/guide_pages/" \
+       "ubuntu@$SERVER_IP:/srv/tcg/static/guides/" \
+  && echo "guide pages shipped" \
+  || echo "(guide pages ship failed — non-fatal)"
+
 if [ "${TCG_MODEL_RESTART:-1}" != "1" ]; then
   echo "predictions.db pushed; the API restart is left to the price publish that follows"
   exit 0
