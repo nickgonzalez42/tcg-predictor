@@ -384,7 +384,40 @@ def _r4(v):
     return None if v is None else round(v, 4)
 
 
+def swap_table(conn, table, ddl, insert_sql, rows):
+    """Replace a whole table inside the caller's transaction (2026-11-24).
+    These rebuilds used to DROP and re-CREATE through executescript, which
+    commits on the spot, and only then count the new rows: a run that died
+    during the count (minutes over forecast_archive) left the table empty,
+    and the About page and the articles would then have said that nothing
+    has been checked. Now the old rows stay until the commit that brings the
+    new ones."""
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    conn.execute(f"DROP TABLE IF EXISTS {table}")
+    conn.execute(ddl)
+    conn.executemany(insert_sql, rows)
+
+
+ACCURACY_DDL = """
+        CREATE TABLE forecast_accuracy (
+            game TEXT NOT NULL, target TEXT NOT NULL, horizon TEXT NOT NULL,
+            n INTEGER NOT NULL,
+            ret_mae REAL,           -- mean |predicted - realized| log-return
+            ret_bias REAL,          -- mean (predicted - realized): + = runs hot
+            band_hit_rate REAL,     -- share of outcomes inside [low, high] (~0.80 when calibrated)
+            graded_through TEXT, updated_at TEXT,
+            PRIMARY KEY (game, target, horizon)
+        )"""
+
+
 def rebuild_accuracy(conn, now_iso):
+    ensure_monthly_accuracy(conn)
+    swap_table(conn, "forecast_accuracy", ACCURACY_DDL,
+               "INSERT INTO forecast_accuracy VALUES (?,?,?,?,?,?,?,?,?)", accuracy_rows(conn, now_iso))
+
+
+def accuracy_rows(conn, now_iso):
     """Aggregate graded rows into the site/model-facing scorecard table.
 
     Two sources (2026-08-29): live archive rows, PLUS the persisted
@@ -394,20 +427,6 @@ def rebuild_accuracy(conn, now_iso):
     headline numbers always reflect every forecast ever graded, not just the
     rows that happened to be retained.
     """
-    ensure_monthly_accuracy(conn)
-    conn.executescript(
-        """
-        DROP TABLE IF EXISTS forecast_accuracy;
-        CREATE TABLE forecast_accuracy (
-            game TEXT NOT NULL, target TEXT NOT NULL, horizon TEXT NOT NULL,
-            n INTEGER NOT NULL,
-            ret_mae REAL,           -- mean |predicted - realized| log-return
-            ret_bias REAL,          -- mean (predicted - realized): + = runs hot
-            band_hit_rate REAL,     -- share of outcomes inside [low, high] (~0.80 when calibrated)
-            graded_through TEXT, updated_at TEXT,
-            PRIMARY KEY (game, target, horizon)
-        );
-        """)
     live = conn.execute(
         """
         SELECT game, target, horizon, COUNT(*),
@@ -433,31 +452,21 @@ def rebuild_accuracy(conn, now_iso):
         s[2] += (bias or 0.0) * n
         s[3] += (hit or 0.0) * n
         s[4] = max(s[4], thru or "")
-    conn.executemany(
-        "INSERT INTO forecast_accuracy VALUES (?,?,?,?,?,?,?,?,?)",
-        [(g, t, h, s[0], round(s[1] / s[0], 4), round(s[2] / s[0], 4),
-          round(s[3] / s[0], 3), s[4], now_iso)
-         for (g, t, h), s in stats.items() if s[0]])
+    return [(g, t, h, s[0], round(s[1] / s[0], 4), round(s[2] / s[0], 4),
+             round(s[3] / s[0], 3), s[4], now_iso)
+            for (g, t, h), s in stats.items() if s[0]]
 
 
 def write_weekly_accuracy(conn, horizon="1m", table="forecast_accuracy_weekly", banked=True):
-    """forecast_accuracy_weekly (2026-10-24): the FULL-cohort week-over-week
-    record of the nightly dated 1-month Near Mint cohorts, by the Friday-
-    starting week they came due — the series the About page's "accuracy
-    over time" infographic draws. Same merge the Friday report performs
-    (market_report.weekly_coverage): live archive rows PLUS the tallies
-    compact_1m banked for the rows it deleted. Rebuilt from scratch each run,
-    so it is always the whole record. Day-01 landings (month-bucket
-    stragglers) are excluded, as in the report.
-    The EARLY tier (2026-11-05, user: "add an early chart to the accuracy
-    over time on the about page"): the same series for the early estimates
-    (horizon launch1m) lands in forecast_accuracy_weekly_early. Early rows
-    are never compacted, so there are no banked tallies to merge."""
     if banked:
         ensure_weekly_coverage(conn)
-    conn.executescript(
-        f"""
-        DROP TABLE IF EXISTS {table};
+    rows = weekly_rows(conn, horizon, banked)
+    swap_table(conn, table, WEEKLY_DDL.format(table=table),
+               f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
+    return len(rows)
+
+
+WEEKLY_DDL = """
         CREATE TABLE {table} (
             week TEXT PRIMARY KEY,      -- Friday the landing week starts
             n INTEGER NOT NULL,
@@ -470,8 +479,22 @@ def write_weekly_accuracy(conn, horizon="1m", table="forecast_accuracy_weekly", 
             band_hit_rate10 REAL,
             ret_mae10 REAL,
             flat_mae10 REAL
-        );
-        """)
+        )"""
+
+
+def weekly_rows(conn, horizon="1m", banked=True):
+    """forecast_accuracy_weekly (2026-10-24): the FULL-cohort week-over-week
+    record of the nightly dated 1-month Near Mint cohorts, by the Friday-
+    starting week they came due — the series the About page's "accuracy
+    over time" infographic draws. Same merge the Friday report performs
+    (market_report.weekly_coverage): live archive rows PLUS the tallies
+    compact_1m banked for the rows it deleted. Rebuilt from scratch each run,
+    so it is always the whole record. Day-01 landings (month-bucket
+    stragglers) are excluded, as in the report.
+    The EARLY tier (2026-11-05, user: "add an early chart to the accuracy
+    over time on the about page"): the same series for the early estimates
+    (horizon launch1m) lands in forecast_accuracy_weekly_early. Early rows
+    are never compacted, so there are no banked tallies to merge."""
     DEC = "ABS(COALESCE(ret, 0)) >= 0.01 AND ABS(realized_ret) >= 0.01"
     HIT = "(COALESCE(ret, 0) > 0) = (realized_ret > 0)"
     agg = {}
@@ -510,8 +533,7 @@ def write_weekly_accuracy(conn, horizon="1m", table="forecast_accuracy_weekly", 
                      n10, round(hits10 / n10, 4) if n10 else None,
                      round(errs10 / n10, 4) if n10 else None,
                      round(reals10 / n10, 4) if n10 else None))
-    conn.executemany(f"INSERT INTO {table} VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
-    return len(rows)
+    return rows
 
 
 def card_sets(game):
