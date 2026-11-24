@@ -102,6 +102,16 @@ def main():
             r = get(path, ua)
             check(f"{path} is a real page for a {ua}", r.status_code == 200 and want in title(r.text),
                   title(r.text))
+    for slug in ("psa-10-vs-raw", "card-prices-after-release"):
+        r = get(f"/guides/{slug}", "person")
+        check(f"/guides/{slug} is live", r.status_code == 200 and "Updated" in r.text
+              and canonical(r.text) == f"{SITE}/guides/{slug}", title(r.text))
+    setpage = get("/sets/onepiece", "person").text
+    check("set pages wear the app's nav", 'class="navbar"' in setpage and "gamepick" in setpage)
+    api = get("/api/cards" + card.replace("/catalog", ""), "person")
+    check("the card API names the card's set page",
+          api.status_code == 200 and str(api.json().get("setPage") or "").startswith("/sets/"),
+          api.json().get("setPage") if api.status_code == 200 else api.status_code)
     home = get("/").text
     check("home title names the site once", title(home).count("CardStock") == 1, title(home))
     check("home carries WebSite + Organization", ld_types(home) == ["WebSite", "Organization"],

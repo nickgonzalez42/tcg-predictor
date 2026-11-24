@@ -1257,15 +1257,22 @@ def compare_graphic(game, chase, like, age, calls):
 
 def section(prose, key, header, body_text, figure, cap):
     """<h2>, the paragraph, the picture or chart, its caption."""
-    h = prose.get("headers", {}).get(key) or header
-    p = prose.get("sections", {}).get(key) or body_text
+    # A written heading goes with its written paragraph or not at all
+    # (2026-11-24). The overreach guard drops a paragraph alone, and its
+    # heading used to stay: "Three Cards, Three Very Different Years" over the
+    # one stock sentence "Charizard is the dearest at $5,975.50." (two live
+    # articles). Without the paragraph the stock heading goes over the stock text.
+    p = prose.get("sections", {}).get(key)
+    h = (prose.get("headers", {}).get(key) if p else None) or header
     c = prose.get("captions", {}).get(key) or cap
-    return (f"<h2>{esc(h)}</h2><p>{esc(p)}</p>{figure}{caption(c) if figure else ''}")
+    return (f"<h2>{esc(h)}</h2><p>{esc(p or body_text)}</p>{figure}{caption(c) if figure else ''}")
 
 
 def model_corner(prose, key, header, body_text, picks, game, record, links, extra=""):
-    out = [f"<div class='report-model-corner'><h2>{esc(prose.get('headers', {}).get(key) or header)}</h2>",
-           f"<p>{esc(prose.get('sections', {}).get(key) or body_text)}</p>"]
+    written = prose.get("sections", {}).get(key)       # heading and paragraph together, as in section()
+    out = [f"<div class='report-model-corner'><h2>"
+           f"{esc((prose.get('headers', {}).get(key) if written else None) or header)}</h2>",
+           f"<p>{esc(written or body_text)}</p>"]
     if picks:
         out.append("<table class='report-table'><thead><tr><th>Card</th><th>Now</th>"
                    "<th>1M forecast</th><th>Implied</th></tr></thead><tbody>")

@@ -210,14 +210,32 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
     # The charts start where the group's index does, not at one card's first price.
     k = next((i for i, v in enumerate(index) if v is not None), 0)
     grid, index, other_index = grid[k:], index[k:], other_index[k:]
+    # ...and the comparison line starts at zero there too. It kept its level
+    # from its own first month, so under "Since Jan 2021" the other cards
+    # opened at -13.5% and their "+45.0%" was not a change since that month.
+    base = next((v for v in other_index if v is not None), None)
+    if base:
+        other_index = [None if v is None else ((1 + v / 100) / (1 + base / 100) - 1) * 100
+                       for v in other_index]
 
     # Each card over the last year and since we first priced it.
     year_ago = (today - timedelta(days=365)).isoformat()
+    def steady(pid):
+        """No step between two readings in the past year beyond STEP_MAX_RATIO.
+        Such a step is a price source changing hands or one stray reading
+        (Heart of Fyendal $188 to $1,594 in a day, Stardust Dragon measured
+        from a single $6,062 month), not a move: the index already leaves
+        those steps out, and a card with one gets no one-year figure, so it
+        is neither listed with one nor featured as a climber or a faller
+        (2026-11-24: six of eight articles featured at least one)."""
+        s = [p for d_, p in (paths.get(pid) or []) if d_ >= year_ago and p > 0]
+        return all(1 / STEP_MAX_RATIO <= b / a <= STEP_MAX_RATIO for a, b in zip(s, s[1:]))
+
     year, since = {}, {}
     for pid, c in members.items():
         s = paths.get(pid) or []
         was = ga.price_on(s, year_ago, MONTH_TOL) if s else None
-        if was:
+        if was and steady(pid):
             year[pid] = (c["price"] / was - 1) * 100
         if s and s[0][1] > 0 and (today - date.fromisoformat(s[0][0])).days >= 60:
             since[pid] = (c["price"] / s[0][1] - 1) * 100
@@ -270,9 +288,12 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
         s = paths.get(pid) or []
         return bool(s) and (today - date.fromisoformat(s[0][0])).days >= EXAMPLE_MIN_DAYS
     roles = [("the dearest", top[0])]
-    if year:
-        roles.append(("the past year's biggest climber", max(year, key=year.get)))
-        roles.append(("the past year's biggest faller", min(year, key=year.get)))
+    if year:                      # steady cards only (see steady() above)
+        up, down = max(year, key=year.get), min(year, key=year.get)
+        if year[up] > 0:
+            roles.append(("the past year's biggest climber", up))
+        if year[down] < 0:        # "biggest faller" once sat on a card up 10.5%
+            roles.append(("the past year's biggest faller", down))
     busy = sorted((p for p in traded if traded[p] > 0 and old_enough(p)), key=lambda p: -traded[p])
     if busy:
         roles.append((f"the most traded of the last {SELL_WEEKS} weeks", busy[0]))
@@ -319,9 +340,11 @@ TYPE_SECTIONS = [
                 "and the dearest cards with no recent sale and when each last sold. A price with no recent sale "
                 "behind it is an asking price; say so plainly, it is the most useful caution in the piece"),
     ("outlook", "what to expect: the model's median one-month, six-month and one-year calls on the group beside "
-                "what the group did over the past year and what the path after release shows; be straight that "
-                "only the one-month calls have a checked record (model.record_on_this_game) and the longer calls "
-                "are untested (model.note). Tendencies, never advice"),
+                "what the group did over the past year and what the path after release shows; be straight about "
+                "what has been checked: model.record_on_this_game is the one-month record when the game has "
+                "one, and when it is absent NOTHING has been checked yet, the one-month calls included "
+                "(model.note says which case this is; never claim a checked record the facts do not carry). "
+                "Tendencies, never advice"),
 ]
 
 
@@ -365,6 +388,8 @@ def history_chart(path, price, calls, name):
     out.append(f"<text class='report-compare-tick' x='{PL}' y='{H - PB + 16}' font-size='10' fill='{muted}'>{d0.strftime('%b %Y')}</text>")
     out.append(f"<text class='report-compare-tick' x='{hx:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>today</text>")
     for (h, _d), lab in zip(ga.COMP_HORIZONS, ("+1M", "+6M", "+1Y")):
+        if calls.get(h) is None:      # no "+1Y" under an empty slot (games with no one-year model)
+            continue
         out.append(f"<text class='report-compare-tick' x='{slot[h]:.1f}' y='{H - PB + 16}' text-anchor='middle' font-size='10' fill='{muted}'>{lab}</text>")
     out.append(f"<text class='report-compare-tick' x='{W - PR:.1f}' y='{PT - 12}' text-anchor='end' font-size='10' "
                f"fill='{muted}'>{'dotted = model forecast' if fc else 'no model call for this card yet'}</text>")
@@ -513,7 +538,10 @@ def build_type_article(d, today, no_prose=False):
                   "median_calls": {h: {"pct": r1(v), "cards": k} for h, (v, k) in d["medians"].items()},
                   "record_on_this_game": d["record"],
                   "note": ("the record is for one-month calls only; the six-month and one-year calls have not been "
-                           "out long enough to check, so they are untested")},
+                           "out long enough to check, so they are untested" if d["record"] else
+                           "there is NO checked record for this game yet: none of the model's calls on it, the "
+                           "one-month ones included, has been out long enough to check, so every call here is "
+                           "untested")},
         "context": {"compared_against": compared} if other else None,
     }
     prose = {} if no_prose else (write_type_article(prune(facts), sections) or {})
@@ -551,7 +579,9 @@ def build_type_article(d, today, no_prose=False):
                                for lab, k in (("Past 3 months", "past_three_months_pct"),
                                               ("Past 6 months", "past_six_months_pct"),
                                               ("Past year", "past_year_pct"),
-                                              (f"Since {month_label(d['grid'][0])}", "index_now_pct")))
+                                              (f"Since {month_label(d['grid'][0])}", "index_now_pct"))
+                               # an index under a year old has no "Past year": no row of blanks
+                               if idx[k] is not None or other[k] is not None)
                      + "</tbody></table>")
         txt = (f"Since {month_label(d['grid'][0])} the group's index stands at {pct(idx['index_now_pct'])}"
                + (f", and {pct(yr)} against a year ago" if yr is not None else "") + "."

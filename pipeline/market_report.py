@@ -940,7 +940,9 @@ def money(v):
 
 
 def pct(v):
-    return f"{v:+.1f}%"
+    # A move that rounds to nothing prints as +0.0%, never the "-0.0%" a tiny
+    # negative gave (three articles carried it in tables, 2026-11-24).
+    return f"{0.0 if abs(v) < 0.05 else v:+.1f}%"
 
 
 def build_report(force=False, as_of=None):
