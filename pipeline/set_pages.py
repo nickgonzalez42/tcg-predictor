@@ -31,6 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
 from _paths import API_CARDS
 from games import GAMES
+from static_nav import (nav_html, nav_css, cta_html, promo_html, first_game_js,
+                        CTA_CSS, NAV_JS)
 
 API_DATA = os.path.normpath(API_CARDS)
 PRED_DB = os.path.join(API_DATA, "predictions.db")
@@ -55,8 +57,8 @@ CSS = """
 font:16px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif}
 .wrap{max-width:860px;margin:0 auto;padding:24px 16px 48px}
 a{color:var(--brand);text-decoration:none}a:hover{text-decoration:underline}
-header{display:flex;gap:14px;align-items:baseline;border-bottom:1px solid var(--border);
-padding-bottom:12px;margin-bottom:20px}header .logo{font-weight:800;color:var(--text)}
+header.site{display:flex;gap:14px;align-items:baseline;border-bottom:1px solid var(--border);
+padding-bottom:12px;margin-bottom:20px}header.site .logo{font-weight:800;color:var(--text)}
 h1{font-size:25px;margin:8px 0 4px}h2{font-size:18px;margin:26px 0 8px}
 .muted{color:var(--muted);font-size:14px}
 table{border-collapse:collapse;width:100%;margin:12px 0}
@@ -71,13 +73,13 @@ ul.plain{list-style:none;padding:0;margin:8px 0}ul.plain li{padding:3px 0}
 @media (max-width:540px){td,th{padding:5px 5px;font-size:12.5px}}
 """
 
-NAV = (f'<header><a class="logo" href="{SITE}/">CardStock</a>'
-       f'<nav><a href="{SITE}/catalog">Catalog</a> <a href="{SITE}/sets">Sets</a> '
-       f'<a href="{SITE}/reports">Reports</a> <a href="{SITE}/articles">Articles</a> '
-       f'<a href="{SITE}/guides">Guides</a> <a href="{SITE}/about">About</a></nav></header>')
+# The header is the app's own nav (static_nav.py, 2026-11-24): a set page is
+# where a search for "{set} card prices" lands, and it used to wear a one-line
+# text header with no game picker and no way to sign in.
 FOOT = (f'<footer><p>CardStock tracks trading card prices and publishes model forecasts '
         f'with a public track record. Not financial advice. '
         f'<a href="{SITE}/about">How the forecasts work</a> · '
+        f'<a href="{SITE}/guides">Guides</a> · '
         f'<a href="{SITE}/privacy">Privacy</a> · <a href="{SITE}/terms">Terms</a></p></footer>')
 
 
@@ -137,7 +139,8 @@ def crumbs(trail):
         + f" › {esc(trail[-1][0])}</p>")
 
 
-def page(path, title, desc, body, og_image=None, ld=None):
+def page(path, title, desc, body, og_image=None, ld=None, game=None):
+    """game: the page's game, which a first-time visitor starts the site on."""
     t, d = esc(title), esc(desc)
     # Every page carries a share picture and its place in the site as
     # structured data (2026-11-24).
@@ -159,8 +162,10 @@ def page(path, title, desc, body, og_image=None, ld=None):
 <meta property="og:url" content="{SITE}{path}"><meta property="og:site_name" content="CardStock">
 {og_img}
 {ADS}
-<style>{CSS}</style></head>
-<body><div class="wrap">{NAV}{body}{FOOT}</div>{PX}</body></html>"""
+<style>{CSS}</style>
+<style>{nav_css()}{CTA_CSS}</style></head>
+<body><div class="wrap">{nav_html(active="sets")}{body}{cta_html()}{promo_html()}{FOOT}</div>{PX}
+{first_game_js(game)}<script>{NAV_JS}</script></body></html>"""
 
 
 def write(out, rel, content):
@@ -279,7 +284,7 @@ def main():
                     f"{money(chase[3])}. Near Mint prices and AI 1-month forecasts.")
             write(args.out, f"{game}/{slug}.html",
                   page(path, f"{set_name} Card Prices & Most Valuable Cards ({label})",
-                       desc, body, og_image=f"{IMG}/{game}/{chase[0]}.jpg",
+                       desc, body, og_image=f"{IMG}/{game}/{chase[0]}.jpg", game=game,
                        ld=[crumb_ld(trail),
                            list_ld(f"Most valuable cards in {set_name}",
                                    [(name, f"/catalog/{game}/{pid}")
@@ -327,6 +332,7 @@ def main():
                if art_rows else "")
             + f"<p><a href='{SITE}/catalog?game={game}'>Browse {esc(label)} cards in the "
               f"interactive catalog →</a></p>",
+            game=game,
             ld=[crumb_ld(hub_trail),
                 list_ld(f"Most valuable {label} cards",
                         [(name, f"/catalog/{game}/{pid}") for _nm, pid, name, _sn in dearest[:10]])]))

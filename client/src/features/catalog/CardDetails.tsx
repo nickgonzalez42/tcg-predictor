@@ -463,6 +463,9 @@ export default function CardDetails() {
         card.setName && <Link to={catalogFilter('sets', card.setName)}>{card.setName}</Link>,
         card.rarity && <Link to={catalogFilter('rarities', card.rarity)}>{card.rarity}</Link>,
         card.cardNumber && `#${card.cardNumber}`,
+        // The set's price guide: every card in the set with its price. A
+        // static page, so a plain link (the router has no such route).
+        card.setPage && <a href={card.setPage}>Set prices</a>,
     ].filter(Boolean);
 
     const cardDetails = [

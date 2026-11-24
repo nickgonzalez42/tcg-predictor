@@ -29,7 +29,8 @@ from datetime import date
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
-from static_nav import nav_html, nav_css, cta_html, next_css, promo_html, CTA_CSS, NAV_JS
+from static_nav import (nav_html, nav_css, cta_html, next_css, promo_html, first_game_js,
+                        CTA_CSS, NAV_JS)
 
 from _paths import PRED_DB
 DEFAULT_OUT = os.path.join(BASE, "..", "tcg-predictor", "static-content", "reports")
@@ -390,17 +391,6 @@ def mid_cta(body_html, cta):
     half = text_len(body_html) / 2
     at = min(heads[1:], key=lambda i: abs(text_len(body_html[:i]) - half))
     return body_html[:at] + cta + body_html[at:], ""
-
-
-def first_game_js(game):
-    """A visitor whose very first page is an article about one game starts
-    the site on that game (2026-11-14, the nav's game picker; the keys are
-    the app's, client/src/lib/siteGame.ts). Nothing changes for a browser
-    that has been here before or has already picked."""
-    if not game or not re.fullmatch(r"[a-z]+", game):
-        return ""
-    return ("<script>try{if(!localStorage.getItem('cs.seen')){localStorage.setItem('cs.seen','1');"
-            f"if(localStorage.getItem('cs.game')===null)localStorage.setItem('cs.game','{game}')}}}}catch(e){{}}</script>")
 
 
 def after_opening(body_html, block):

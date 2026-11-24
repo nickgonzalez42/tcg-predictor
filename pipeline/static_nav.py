@@ -72,14 +72,39 @@ font-family:system-ui,-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif
 # this should never print.
 PLAIN = """<header class="site">
   <a class="logo" href="{site}/">CardStock</a>
-  <nav><a href="{site}/catalog">Catalog</a><a href="{site}/reports">Reports</a>
+  <nav><a href="{site}/catalog">Catalog</a><a href="{site}/sets">Sets</a><a href="{site}/reports">Reports</a>
   <a href="{site}/articles">Articles</a><a href="{site}/about">About</a></nav>
 </header>"""
 
-LINKS = [("catalog", "CATALOG"), ("reports", "REPORTS"), ("articles", "ARTICLES"), ("about", "ABOUT")]
+# NavBar.tsx midLinks, in its order. SETS (2026-11-24) is the static set index.
+LINKS = [("catalog", "CATALOG"), ("sets", "SETS"), ("reports", "REPORTS"),
+         ("articles", "ARTICLES"), ("about", "ABOUT")]
+
+
+_NAV_CSS = None
 
 
 def nav_css():
+    """The app's nav stylesheet, read once a run (the set pages ask 1,700 times)."""
+    global _NAV_CSS
+    if _NAV_CSS is None:
+        _NAV_CSS = _read_nav_css()
+    return _NAV_CSS
+
+
+def first_game_js(game):
+    """A visitor whose very first page is about one game starts the site on
+    that game (2026-11-14, the nav's game picker; the keys are the app's,
+    client/src/lib/siteGame.ts). Nothing changes for a browser that has been
+    here before or has already picked."""
+    import re
+    if not game or not re.fullmatch(r"[a-z]+", game):
+        return ""
+    return ("<script>try{if(!localStorage.getItem('cs.seen')){localStorage.setItem('cs.seen','1');"
+            f"if(localStorage.getItem('cs.game')===null)localStorage.setItem('cs.game','{game}')}}}}catch(e){{}}</script>")
+
+
+def _read_nav_css():
     try:
         with open(NAVBAR_CSS, encoding="utf-8") as f:
             css = f.read()

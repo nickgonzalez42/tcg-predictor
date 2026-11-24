@@ -9,6 +9,9 @@ export default function Footer() {
             <TcgPromo />
             <nav className="site-footer__links container" aria-label="Footer">
                 <Link to="/about">About</Link>
+                {/* Static pages outside the app: plain links. */}
+                <a href="/sets">Set prices</a>
+                <a href="/guides">Guides</a>
                 <Link to="/contact">Contact</Link>
                 <Link to="/privacy">Privacy</Link>
                 <Link to="/terms">Terms</Link>

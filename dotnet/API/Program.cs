@@ -38,6 +38,7 @@ AddReadOnlySqlite<SorceryContext>("SorceryConnection");
 AddReadOnlySqlite<RiftboundContext>("RiftboundConnection");
 AddReadOnlySqlite<CyberpunkContext>("CyberpunkConnection");
 builder.Services.AddScoped<CardSources>();
+builder.Services.AddSingleton<SetPages>();
 // Cross-database market context + the movers ranking built on it.
 builder.Services.AddScoped<CardMarketData>();
 builder.Services.AddScoped<MoverService>();

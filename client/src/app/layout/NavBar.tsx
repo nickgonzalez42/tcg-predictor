@@ -5,8 +5,11 @@ import GamePicker from "./GamePicker";
 import { useUserInfoQuery } from "../../features/account/accountApi";
 import MarketTicker from "../shared/components/MarketTicker";
 
-const midLinks = [
+// `page`: a static page outside the app (the set price guides): a plain link,
+// since the router has no such route and would answer "not found".
+const midLinks: { title: string; path: string; page?: boolean }[] = [
     { title: 'catalog', path: '/catalog' },
+    { title: 'sets', path: '/sets', page: true },
     { title: 'reports', path: '/reports' },
     { title: 'articles', path: '/articles' },
     { title: 'about', path: '/about' }
@@ -149,11 +152,13 @@ export default function NavBar({ showTicker }: { showTicker?: boolean }) {
                         <li className="navbar__home-item">
                             <NavLink to="/" className="navbar__link">HOME</NavLink>
                         </li>
-                        {midLinks.map(({ title, path }) => (
+                        {midLinks.map(({ title, path, page }) => (
                             <li key={path}>
-                                <NavLink to={path} className="navbar__link">
-                                    {title.toUpperCase()}
-                                </NavLink>
+                                {page
+                                    ? <a href={path} className="navbar__link">{title.toUpperCase()}</a>
+                                    : <NavLink to={path} className="navbar__link">
+                                        {title.toUpperCase()}
+                                    </NavLink>}
                             </li>
                         ))}
                         {user && (

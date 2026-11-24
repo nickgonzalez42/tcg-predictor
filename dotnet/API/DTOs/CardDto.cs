@@ -6,6 +6,7 @@ public class CardDto
     public string? Name { get; set; }
     public string Game { get; set; } = "";
     public string? SetName { get; set; }
+    public string? SetPage { get; set; }     // the set's static price guide (/sets/...), detail view only
     public string? Rarity { get; set; }
     public string? CardNumber { get; set; }
     public string? CardType { get; set; }

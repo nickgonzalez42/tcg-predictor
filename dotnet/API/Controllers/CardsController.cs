@@ -19,7 +19,8 @@ public partial class CardsController(
     CardSources sources,
     PredictionsContext predictions, PriceChartingContext priceCharting,
     StoreContext store, ReasoningService reasoning,
-    CardMarketData market, MoverService movers, IMemoryCache cache) : BaseApiController
+    CardMarketData market, MoverService movers, IMemoryCache cache,
+    SetPages setPages) : BaseApiController
 {
     [HttpGet]
     public async Task<ActionResult<List<CardDto>>> GetCards([FromQuery] CardParams cardParams)
@@ -69,6 +70,7 @@ public partial class CardsController(
             : card!.ToDto(folder, CardImageUrl(folder, card.Id));
 
         if (dto == null) return NotFound();
+        dto.SetPage = setPages.PathFor(folder, dto.SetName);
 
         var nonBasePrinting = false;
         // A selected non-base printing swaps the headline price and the graded

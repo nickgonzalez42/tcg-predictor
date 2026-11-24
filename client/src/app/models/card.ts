@@ -3,6 +3,7 @@ export type Card = {
     name: string
     game: string
     setName?: string
+    setPage?: string      // the set's price guide, a static page outside the app
     rarity?: string
     cardNumber?: string
     cardType?: string
