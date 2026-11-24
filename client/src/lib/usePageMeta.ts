@@ -2,10 +2,10 @@ import { useEffect } from "react";
 
 const SITE = "CardStock";
 const ORIGIN = "https://cardstock.guide";
-const DEFAULT_TITLE = `${SITE}: Trading Card Price Predictions`;
+const DEFAULT_TITLE = `${SITE}: Trading Card Prices and Price Predictions`;
 const DEFAULT_DESCRIPTION =
-    "AI price predictions, graded price history, and portfolio tracking for " +
-    "Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards.";
+    "Daily trading card prices and AI price predictions for Pokémon, Magic, Yu-Gi-Oh!, " +
+    "One Piece, Lorcana and seven more games, with every forecast checked in public.";
 
 // Social/article tags a page can set on top of its title and description
 // (2026-10-29): reports are the site's original editorial, so each one needs
@@ -20,6 +20,8 @@ export type PageMeta = {
     publishedAt?: string;
     /** Article grouping, e.g. "Market report" -> article:section. */
     section?: string;
+    /** A page with nothing to index (the not-found page): robots noindex. */
+    noindex?: boolean;
 };
 
 // A tag this hook owns, so cleanup can remove exactly what it added and the
@@ -54,7 +56,11 @@ function meta(key: "name" | "property", name: string, value?: string) {
 // index.html. Reports and guides are also prerendered server-side, so their
 // tags exist without JavaScript too.
 export function usePageMeta(title?: string, description?: string, extra?: PageMeta) {
-    const { type, canonical, publishedAt, section } = extra ?? {};
+    const { type, canonical, publishedAt, section, noindex } = extra ?? {};
+    // Every page names its own address (2026-11-24). A page that passed no
+    // canonical used to keep the shell's, which was the home page's, so a
+    // crawler that runs JavaScript read each card page as a copy of "/".
+    const here = window.location.pathname.replace(/\/+$/, "") || "/";
     useEffect(() => {
         const full = title ? `${title} · ${SITE}` : DEFAULT_TITLE;
         const desc = description ?? DEFAULT_DESCRIPTION;
@@ -68,7 +74,13 @@ export function usePageMeta(title?: string, description?: string, extra?: PageMe
         meta("name", "twitter:title", full);
         meta("name", "twitter:description", desc);
         if (type) meta("property", "og:type", type);
-        const url = canonical && (canonical.startsWith("http") ? canonical : ORIGIN + canonical);
+        const url = canonical
+            ? (canonical.startsWith("http") ? canonical : ORIGIN + canonical)
+            : ORIGIN + here;
+        // Only the caller that asked for it touches the robots tag: a page
+        // that renders the not-found panel inside itself calls this hook
+        // too, after the panel has, and must not take the tag back off.
+        if (noindex) meta("name", "robots", "noindex");
         if (url) {
             meta("property", "og:url", url);
             set('link[rel="canonical"]', () => {
@@ -93,10 +105,11 @@ export function usePageMeta(title?: string, description?: string, extra?: PageMe
             if (url) meta("property", "og:url", ORIGIN + "/");
             meta("property", "article:published_time", undefined);
             meta("property", "article:section", undefined);
+            if (noindex) meta("name", "robots", undefined);
             if (url) {
                 const link = document.head.querySelector('link[rel="canonical"]');
                 if (link?.hasAttribute(MARK)) link.remove();
             }
         };
-    }, [title, description, type, canonical, publishedAt, section]);
+    }, [title, description, type, canonical, publishedAt, section, noindex, here]);
 }

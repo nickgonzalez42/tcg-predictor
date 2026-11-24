@@ -1,0 +1,47 @@
+# CardStock
+
+> CardStock (cardstock.guide) tracks what trading cards sell for, every day, across twelve games, and publishes a price forecast for each card one month, six months and one year ahead. Every forecast is saved the day it is made and checked against the real price when its date arrives. The full record, misses included, is public. The site is free and is not financial advice.
+
+Games covered: Pokémon, Magic: The Gathering, Yu-Gi-Oh!, One Piece, Lorcana, Digimon, Gundam, Star Wars Unlimited, Flesh and Blood, Sorcery, Riftbound, Cyberpunk.
+
+Where the numbers come from: prices for raw (ungraded) cards are TCGplayer's Near Mint market price, which is built from completed sales and collected nightly. Prices for graded cards (Grade 7 through PSA 10) come from PriceCharting's sales history for each grade. Forecasts come from CardStock's own model and carry a low-to-high range built to hold the real price about four times in five.
+
+## Card pages
+
+Each card has one page at `https://cardstock.guide/catalog/{game}/{id}`, where `{game}` is one of `pokemon`, `magic`, `yugioh`, `onepiece`, `lorcana`, `digimon`, `gundam`, `starwars`, `fleshandblood`, `sorcery`, `riftbound`, `cyberpunk` and `{id}` is the card's TCGplayer product id. A card page gives the Near Mint price, the graded prices, the forecasts with their ranges, and the reasons behind the forecast in plain English.
+
+## Main pages
+
+- [Catalog](https://cardstock.guide/catalog): every priced card, searchable by name, set and game
+- [Set price guides](https://cardstock.guide/sets): one page per set with every card's price, the set's total value and its most valuable cards
+- [Weekly reports](https://cardstock.guide/reports): a market report and a forecast accuracy report every Friday
+- [Articles](https://cardstock.guide/articles): set reports, game reports and card-type reports with charts
+- [How the forecasts work, and how they have done](https://cardstock.guide/about)
+- [Questions people ask](https://cardstock.guide/guides/faq)
+
+## Card prices by game
+
+- [Pokémon card prices](https://cardstock.guide/sets/pokemon)
+- [Magic: The Gathering card prices](https://cardstock.guide/sets/magic)
+- [Yu-Gi-Oh! card prices](https://cardstock.guide/sets/yugioh)
+- [One Piece card prices](https://cardstock.guide/sets/onepiece)
+- [Lorcana card prices](https://cardstock.guide/sets/lorcana)
+- [Digimon card prices](https://cardstock.guide/sets/digimon)
+- [Gundam card prices](https://cardstock.guide/sets/gundam)
+- [Star Wars Unlimited card prices](https://cardstock.guide/sets/starwars)
+- [Flesh and Blood card prices](https://cardstock.guide/sets/fleshandblood)
+- [Sorcery card prices](https://cardstock.guide/sets/sorcery)
+- [Riftbound card prices](https://cardstock.guide/sets/riftbound)
+- [Cyberpunk card prices](https://cardstock.guide/sets/cyberpunk)
+
+## Guides
+
+- [How to read a card price chart](https://cardstock.guide/guides/how-to-read-price-charts)
+- [How grading affects value](https://cardstock.guide/guides/how-grading-affects-value)
+- [Where card prices come from](https://cardstock.guide/guides/where-card-prices-come-from)
+- [Trading card market glossary](https://cardstock.guide/guides/tcg-glossary)
+
+## Optional
+
+- [Sitemap](https://cardstock.guide/sitemap.xml)
+- Contact: hello@cardstock.guide

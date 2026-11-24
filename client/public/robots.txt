@@ -1,4 +1,9 @@
-# TCG Predictor
+# CardStock (cardstock.guide)
+# Search engines and AI assistants are welcome on every public page:
+# Googlebot, Bingbot, GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot,
+# Claude-User, PerplexityBot, Applebot and the rest all fall under the rule
+# below. A plain-text summary of the site for language models is at
+# https://cardstock.guide/llms.txt
 User-agent: *
 Allow: /
 # Account-only pages are useless to crawlers
@@ -8,5 +13,8 @@ Disallow: /login
 Disallow: /register
 Disallow: /settings
 Disallow: /scan
+# Data endpoints and the page-view ping: the pages themselves carry the content
+Disallow: /api/
+Disallow: /px
 
 Sitemap: https://cardstock.guide/sitemap.xml

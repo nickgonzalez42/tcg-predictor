@@ -81,16 +81,20 @@
          guides are ALSO served as real static HTML (Caddy file-first from
          /srv/tcg/static — see pipeline/report_pages.py), so the site's
          editorial content is crawlable without JavaScript. -->
-    <title>CardStock: Trading Card Price Predictions</title>
-    <meta name="description" content="AI price predictions for Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards. See where card prices are headed one month to a year out, with graded price history and a portfolio that benchmarks against the S&P 500." />
-    <link rel="canonical" href="https://cardstock.guide/" />
+    <title>CardStock: Trading Card Prices and Price Predictions</title>
+    <meta name="description" content="Daily trading card prices and AI price predictions for Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana and seven more games, with every forecast checked in public." />
+    <!-- No canonical link here (2026-11-24). This shell answers every address
+         the app handles, and a fixed "https://cardstock.guide/" told any
+         crawler that does not run JavaScript that each card page WAS the
+         home page. usePageMeta sets the right one once the app is up, and
+         crawlers get their own prerendered HTML with its own link. -->
     <meta name='impact-site-verification' value='7bff3025-2f3e-4682-9142-9dbdfc5ec089'>
 
     <!-- Open Graph (Facebook, Discord, Slack, iMessage…) -->
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="CardStock" />
-    <meta property="og:title" content="CardStock: Trading Card Price Predictions" />
-    <meta property="og:description" content="AI price predictions, graded price history, and portfolio tracking for Magic, Pokémon, One Piece, Yu-Gi-Oh!, Lorcana, Digimon, and Gundam cards." />
+    <meta property="og:title" content="CardStock: Trading Card Prices and Price Predictions" />
+    <meta property="og:description" content="Daily trading card prices and AI price predictions for Pokémon, Magic, Yu-Gi-Oh!, One Piece, Lorcana and seven more games, with every forecast checked in public." />
     <meta property="og:url" content="https://cardstock.guide/" />
     <meta property="og:image" content="https://cardstock.guide/og-image.png?v=3" />
     <meta property="og:image:width" content="1200" />
@@ -99,7 +103,7 @@
 
     <!-- Twitter / X -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="CardStock: Trading Card Price Predictions" />
+    <meta name="twitter:title" content="CardStock: Trading Card Prices and Price Predictions" />
     <meta name="twitter:description" content="AI price predictions, graded price history, and portfolio tracking for trading cards." />
     <meta name="twitter:image" content="https://cardstock.guide/og-image.png?v=3" />
 
@@ -109,8 +113,9 @@
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "CardStock",
+      "alternateName": ["CardStock Guide", "cardstock.guide"],
       "url": "https://cardstock.guide/",
-      "description": "AI price predictions and portfolio tracking for trading cards."
+      "description": "Trading card prices and price predictions, checked in public."
     }
     </script>
 

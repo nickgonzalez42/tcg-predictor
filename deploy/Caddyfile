@@ -13,8 +13,39 @@
 	}
 }
 
+# Who counts as a crawler (2026-11-24). Search engines, the AI assistants'
+# crawlers AND their live fetchers, and the link previewers. Until this date
+# the list knew GPTBot, ClaudeBot and PerplexityBot (the training crawlers)
+# but not OAI-SearchBot, ChatGPT-User, Claude-User, Perplexity-User or
+# Applebot: the ones that fetch a page when someone asks an assistant about a
+# card. None of them runs JavaScript, so each got the empty app shell, with
+# the home page's title and canonical link, for every card page on the site.
+(crawler) {
+	header_regexp ua User-Agent (?i)(googlebot|google-inspectiontool|googleother|storebot-google|adsbot|mediapartners|apis-google|bingbot|bingpreview|msnbot|slurp|duckduckbot|duckassistbot|baiduspider|yandex|applebot|amazonbot|petalbot|seznambot|yeti|naverbot|kagibot|ia_archiver|archive\.org_bot|gptbot|oai-searchbot|chatgpt|claudebot|claude-user|claude-searchbot|claude-web|anthropic-ai|perplexity|meta-externalagent|meta-externalfetcher|facebookexternalhit|facebookcatalog|bytespider|ccbot|cohere-ai|mistralai|youbot|phindbot|diffbot|ai2bot|timpibot|twitterbot|linkedinbot|discordbot|slackbot|slack-imgproxy|telegrambot|whatsapp|redditbot|pinterestbot|bluesky|mastodon|skypeuripreview|embedly|iframely|ahrefsbot|semrushbot|mj12bot|dotbot|rogerbot|screaming.frog)
+}
+
+# Nothing answers on http://www before two redirects (http -> https://www ->
+# the apex) unless it is told to.
+http://www.cardstock.guide {
+	redir https://cardstock.guide{uri} permanent
+}
+
 cardstock.guide {
 	encode gzip
+
+	# One address per page (2026-11-24): /catalog/onepiece/123/ used to answer
+	# 200 with the app shell, a second URL for the same page. The query
+	# string rides along (a utm tag on a shared link must survive).
+	@slash {
+		path_regexp slash ^(.+)/$
+		expression {http.request.uri.query} == ""
+	}
+	redir @slash {re.slash.1} 308
+	@slashq {
+		path_regexp slashq ^(.+)/$
+		expression {http.request.uri.query} != ""
+	}
+	redir @slashq {re.slashq.1}?{http.request.uri.query} 308
 
 	# Access log (2026-10-27): the only record of who visits and what they
 	# read — nothing was logged before, so every visit was lost. Caddy rolls
@@ -58,16 +89,20 @@ cardstock.guide {
 	# fix): weekly reports + guides exist as real HTML in /srv/tcg/static —
 	# served file-first, so /reports/{slug} and /guides/{name} work without
 	# JavaScript. Anything without a file falls through to the SPA.
+	# /sets is sets/index.html (2026-11-24): the set index existed on disk but
+	# nothing routed to it, so the "Sets" link in every static page's menu
+	# opened the app's not-found page.
+	# /guides is guides/index.html the same way (the app has no guides page).
 	@static-pages {
-		path /reports/* /articles/* /guides/* /sets /sets/*
+		path /reports/* /articles/* /guides /guides/* /sets /sets/*
 		file {
 			root /srv/tcg/static
-			try_files {path}.html {path}
+			try_files {path}.html {path}/index.html {path}
 		}
 	}
 	handle @static-pages {
 		root * /srv/tcg/static
-		try_files {path}.html {path}
+		try_files {path}.html {path}/index.html {path}
 		file_server
 	}
 
@@ -76,7 +111,7 @@ cardstock.guide {
 	# box by /srv/tcg/prerender_pages.py after every data push. Humans get
 	# the SPA. Pages without a prerender file fall through to the SPA.
 	@bots {
-		header_regexp ua User-Agent (?i)(googlebot|adsbot|mediapartners|apis-google|bingbot|slurp|duckduckbot|baiduspider|yandexbot|facebookexternalhit|twitterbot|linkedinbot|gptbot|ccbot|claudebot|perplexitybot|discordbot|slackbot|telegrambot|whatsapp|redditbot|pinterestbot)
+		import crawler
 		path / /about /privacy /terms /contact /catalog /catalog/* /reports /articles /guides
 		file {
 			root /srv/tcg/static
@@ -104,8 +139,21 @@ cardstock.guide {
 		# The page shell names the current bundle, so browsers must check it
 		# every time (an ETag makes that a cheap 304); the site's own icons
 		# and images can keep their default caching.
-		@shell not path /images/* /favicon* /apple-touch-icon.png /og-image.png /icons.svg /robots.txt /ads.txt
+		@shell not path /images/* /favicon* /apple-touch-icon.png /og-image.png /icons.svg /robots.txt /ads.txt /llms.txt /promo/*
 		header @shell Cache-Control "no-cache"
+		# A crawler that reaches this point with a path that is no file is
+		# about to get the app shell: a page with no content of its own. That
+		# is every address that does not exist (/catalog/999999999 answered
+		# 200) and every card with no price to show. Tell it not to index
+		# what it got; real pages were answered above with their own HTML.
+		@crawler-shell {
+			import crawler
+			not file {
+				root /srv/tcg/client
+				try_files {path}
+			}
+		}
+		header @crawler-shell X-Robots-Tag "noindex"
 		try_files {path} /index.html
 		file_server
 	}

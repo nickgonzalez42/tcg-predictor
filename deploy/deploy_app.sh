@@ -49,10 +49,13 @@ trap - ERR
 # silently broken image rather than a 404 anyone would notice.
 chmod -R a+rX "$ROOT/client/dist"
 sync_dir "$ROOT/client/dist/" ubuntu@$IP:/srv/tcg/client/
-# Static crawler-visible pages (reports backfill + guides). NO --delete: the
-# trainer drops each new Friday report into the same tree; the repo copy only
-# grows it.
-$RSYNC -az -e "$SSH_E" "$ROOT/static-content/" ubuntu@$IP:/srv/tcg/static/
+# The guides: the only static pages a deploy owns. This used to send all of
+# static-content/, which also holds whatever set, report and article pages
+# were last rendered into the repo folder (sets from October, articles from
+# 11-14): each deploy laid those months-old copies over the server's fresh
+# ones, and they stayed until the next nightly render re-shipped them
+# (2026-11-24). Set, report and article pages ship with the nightly only.
+$RSYNC -az -e "$SSH_E" "$ROOT/static-content/guides/" ubuntu@$IP:/srv/tcg/static/guides/
 # The API takes 10-30 s to come up (migrations, the scanner artifacts); a
 # warm-up fired before that only collects 502s from Caddy (2026-10-25). Wait
 # for a real answer first, then prime what the startup self-warmup covers as

@@ -28,9 +28,10 @@ public class SitemapController(
     private const string XmlNs = "http://www.sitemaps.org/schemas/sitemap/0.9";
 
     private static readonly string[] StaticPaths =
-        ["/", "/catalog", "/reports", "/articles", "/about", "/privacy", "/terms", "/contact",
-         "/guides/how-to-read-price-charts", "/guides/how-grading-affects-value",
-         "/guides/where-card-prices-come-from", "/guides/tcg-glossary"];
+        ["/", "/catalog", "/reports", "/articles", "/guides", "/about", "/privacy", "/terms",
+         "/contact", "/guides/faq", "/guides/how-to-read-price-charts",
+         "/guides/how-grading-affects-value", "/guides/where-card-prices-come-from",
+         "/guides/tcg-glossary"];
 
     private string Origin => (config["ClientUrl"] ?? "https://cardstock.guide").TrimEnd('/');
 
@@ -63,8 +64,12 @@ public class SitemapController(
             sb.Append($"  <sitemap><loc>{Origin}/sitemap-sets.xml</loc></sitemap>\n");
         if ((await ArticleSlugs()).Count > 0)
             sb.Append($"  <sitemap><loc>{Origin}/sitemap-articles.xml</loc></sitemap>\n");
+        // Only games whose own sitemap has something in it (2026-11-24): the
+        // four newest games were listed here on the strength of having cards,
+        // while their sitemaps answered 404 for want of a 1-year forecast.
         foreach (var game in GameRegistry.Keys)
-            if (await sources.Cards(game).VisibleInCatalog().AnyAsync())
+            if (await WorthyHorizon(game) != null
+                && await sources.Cards(game).VisibleInCatalog().AnyAsync())
                 sb.Append($"  <sitemap><loc>{Origin}/sitemap-{game}.xml</loc></sitemap>\n");
         sb.Append("</sitemapindex>\n");
         return sb.ToString();
@@ -76,9 +81,16 @@ public class SitemapController(
         var paths = SetPaths();
         if (paths.Count == 0) return Task.FromResult<string?>(null);
 
+        // The set pages are rewritten with fresh prices on every data push,
+        // and the manifest ships with them: its date is theirs.
+        string? day = null;
+        try { day = System.IO.File.GetLastWriteTimeUtc(ManifestPath).ToString("yyyy-MM-dd"); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+
         var sb = OpenUrlset();
         foreach (var path in paths)
-            sb.Append($"  <url><loc>{Origin}{path}</loc></url>\n");
+            sb.Append(UrlTag($"{Origin}{path}", day));
         return Task.FromResult<string?>(CloseUrlset(sb).ToString());
     });
 
@@ -100,6 +112,21 @@ public class SitemapController(
     // fewer, richer pages; lower it as the catalog's depth improves.
     private const double SitemapMinPrice = 5.0;
 
+    // A game too young for a 1-year forecast is judged on the longest one it
+    // has (2026-11-24): Flesh and Blood, Sorcery, Riftbound and Cyberpunk had
+    // no card in any sitemap.
+    private static readonly string[] Horizons = ["12m", "6m", "1m"];
+
+    private async Task<string?> WorthyHorizon(string game)
+    {
+        foreach (var h in Horizons)
+            if (await predictions.Forecasts.AnyAsync(f =>
+                    f.Game == game && f.Target == "ungraded" && f.Horizon == h
+                    && f.Printing == "" && f.BasePrice >= SitemapMinPrice))
+                return h;
+        return null;
+    }
+
     // Every card page for one game that clears the bar above (each game fits
     // the 50k-URL sitemap limit; the biggest, magic, is ~17k).
     [HttpGet("/sitemap-{game}.xml")]
@@ -115,22 +142,27 @@ public class SitemapController(
             // Cross-database: the forecast list comes from predictions.db and
             // the catalog-visible set from the game's own card DB, so the
             // intersection happens in memory.
-            var worthy = (await predictions.Forecasts
-                    .Where(f => f.Game == key && f.Target == "ungraded"
-                                && f.Horizon == "12m" && f.Printing == ""
-                                && f.BasePrice >= SitemapMinPrice)
-                    .Select(f => f.ProductId).Distinct().ToListAsync())
-                .ToHashSet();
+            var horizon = await WorthyHorizon(key);
+            if (horizon == null) return null;
+            // The day each card's forecast was last written is the day its
+            // page last changed in a way worth a fresh crawl.
+            var worthy = new Dictionary<int, string?>();
+            foreach (var f in await predictions.Forecasts
+                         .Where(f => f.Game == key && f.Target == "ungraded"
+                                     && f.Horizon == horizon && f.Printing == ""
+                                     && f.BasePrice >= SitemapMinPrice)
+                         .Select(f => new { f.ProductId, f.ScoredAt }).ToListAsync())
+                worthy[f.ProductId] = f.ScoredAt;
             if (worthy.Count == 0) return null;
 
             var ids = (await sources.Cards(key).VisibleInCatalog()
                     .Select(c => c.Id).ToListAsync())
-                .Where(worthy.Contains).OrderBy(id => id).ToList();
+                .Where(worthy.ContainsKey).OrderBy(id => id).ToList();
             if (ids.Count == 0) return null;
 
             var sb = OpenUrlset();
             foreach (var id in ids)
-                sb.Append($"  <url><loc>{Origin}/catalog/{key}/{id}</loc></url>\n");
+                sb.Append(UrlTag($"{Origin}/catalog/{key}/{id}", worthy[id]));
             return CloseUrlset(sb).ToString();
         });
     }
@@ -138,12 +170,18 @@ public class SitemapController(
     [HttpGet("/sitemap-reports.xml")]
     public Task<IActionResult> Reports() => Cached("sitemap:reports", async () =>
     {
-        var slugs = await ReportSlugs();
-        if (slugs.Count == 0) return null;
+        List<(string Slug, string? Day)> rows;
+        try
+        {
+            rows = (await predictions.Reports.Select(r => new { r.Slug, r.PublishedAt })
+                .ToListAsync()).Select(r => (r.Slug, (string?)r.PublishedAt)).ToList();
+        }
+        catch (SqliteException) { return null; }
+        if (rows.Count == 0) return null;
 
         var sb = OpenUrlset();
-        foreach (var slug in slugs)
-            sb.Append($"  <url><loc>{Origin}/reports/{slug}</loc></url>\n");
+        foreach (var (slug, day) in rows)
+            sb.Append(UrlTag($"{Origin}/reports/{slug}", day));
         return CloseUrlset(sb).ToString();
     });
 
@@ -151,12 +189,18 @@ public class SitemapController(
     [HttpGet("/sitemap-articles.xml")]
     public Task<IActionResult> Articles() => Cached("sitemap:articles", async () =>
     {
-        var slugs = await ArticleSlugs();
-        if (slugs.Count == 0) return null;
+        List<(string Slug, string? Day)> rows;
+        try
+        {
+            rows = (await predictions.Articles.Select(a => new { a.Slug, a.PublishedAt })
+                .ToListAsync()).Select(a => (a.Slug, (string?)a.PublishedAt)).ToList();
+        }
+        catch (SqliteException) { return null; }
+        if (rows.Count == 0) return null;
 
         var sb = OpenUrlset();
-        foreach (var slug in slugs)
-            sb.Append($"  <url><loc>{Origin}/articles/{slug}</loc></url>\n");
+        foreach (var (slug, day) in rows)
+            sb.Append(UrlTag($"{Origin}/articles/{slug}", day));
         return CloseUrlset(sb).ToString();
     });
 
@@ -186,6 +230,17 @@ public class SitemapController(
     {
         try { return await predictions.Articles.Select(a => a.Slug).ToListAsync(); }
         catch (SqliteException) { return []; }
+    }
+
+    // One <url>, with <lastmod> when the date is a real yyyy-MM-dd (2026-11-24:
+    // no sitemap carried one, so a crawler had no way to tell this morning's
+    // article from a page unchanged since July).
+    private static string UrlTag(string loc, string? day)
+    {
+        var d = day is { Length: >= 10 } ? day[..10] : null;
+        var ok = d != null && DateOnly.TryParseExact(d, "yyyy-MM-dd", out _);
+        return ok ? $"  <url><loc>{loc}</loc><lastmod>{d}</lastmod></url>\n"
+                  : $"  <url><loc>{loc}</loc></url>\n";
     }
 
     private static StringBuilder OpenUrlset() =>
