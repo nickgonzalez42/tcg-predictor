@@ -39,6 +39,7 @@ from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import PC_DB
 from games import db_path, priced_games
+import match_dirty
 
 NORMAL = "Normal"
 FRESH_DAYS = 14      # the Normal printing must have a price this recent
@@ -175,6 +176,10 @@ def switch_card(pc, game, pid, old, now=None, need_history=True):
                    (*key, old, cur[0], cur[1], "ok", now))
         # The crawl refills the row's graded prices from the new page.
         pc.execute("DELETE FROM graded_crawled WHERE game=? AND product_id=?", key)
+        try:
+            match_dirty.mark(pc, *key)      # the nightly ships the row whatever its prices do
+        except sqlite3.Error as e:
+            print(f"match_dirty: non-fatal error: {e}")
     return normal[-1][1] if normal else None
 
 

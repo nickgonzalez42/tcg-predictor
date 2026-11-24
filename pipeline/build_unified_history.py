@@ -491,6 +491,32 @@ def refresh_match_current(conn):
     return changed
 
 
+def stage_match_rows(conn, changed):
+    """Fill delta.match_rows (the delta is attached): tonight's changed match
+    rows, plus the rows a tool changed by hand (match_dirty). Returns how many
+    of the staged rows came only from a mark. The marks are a courtesy and
+    never fatal: on any trouble with them the night ships `changed` alone,
+    as it did before 2026-11-24."""
+    conn.execute("CREATE TABLE delta.match_rows AS SELECT * FROM pricecharting WHERE 0")
+    marked = set()
+    try:
+        import match_dirty
+        marked = match_dirty.pending(conn) - set(changed)
+    except Exception as e:                                      # noqa: BLE001
+        print(f"match_dirty: non-fatal error: {type(e).__name__}: {e}")
+    ship = set(changed) | marked
+    if ship:
+        conn.executescript(
+            "CREATE TEMP TABLE changed_keys (game TEXT, product_id INTEGER, "
+            "PRIMARY KEY (game, product_id)) WITHOUT ROWID;")
+        conn.executemany("INSERT INTO changed_keys VALUES (?,?)", sorted(ship))
+        conn.execute(
+            "INSERT INTO delta.match_rows SELECT p.* FROM pricecharting p "
+            "JOIN changed_keys k ON k.game = p.game AND k.product_id = p.product_id")
+        conn.execute("DROP TABLE changed_keys")
+    return len(marked)
+
+
 def sync_incremental(conn, all_rows, labeled_rows):
     """Sync price_history_unified to the freshly-built desired set IN PLACE and
     stage the exact difference in DELTA_DB — insert new/changed rows, delete
@@ -674,23 +700,15 @@ def main():
     # Stage the changed match rows + an integrity check for the prod apply:
     # prod verifies its row count equals ours afterwards, else push_data.sh
     # falls back to the full-file push.
-    conn.execute("CREATE TABLE delta.match_rows AS SELECT * FROM pricecharting WHERE 0")
-    if changed:
-        conn.executescript(
-            "CREATE TEMP TABLE changed_keys (game TEXT, product_id INTEGER, "
-            "PRIMARY KEY (game, product_id)) WITHOUT ROWID;")
-        conn.executemany("INSERT INTO changed_keys VALUES (?,?)", sorted(changed))
-        conn.execute(
-            "INSERT INTO delta.match_rows SELECT p.* FROM pricecharting p "
-            "JOIN changed_keys k ON k.game = p.game AND k.product_id = p.product_id")
-        conn.execute("DROP TABLE changed_keys")
+    by_hand = stage_match_rows(conn, changed)
     total = conn.execute("SELECT COUNT(*) FROM price_history_unified").fetchone()[0]
     conn.execute("CREATE TABLE delta.meta (date TEXT, expected_unified_rows INTEGER)")
     conn.execute("INSERT INTO delta.meta VALUES (?, ?)", (nominal_day().isoformat(), total))
     conn.commit()
     conn.execute("DETACH delta")
     print(f"\nincremental: +{n_ins} / -{n_del} unified row(s) (table at {total:,}), "
-          f"{len(changed)} match row(s) -> {os.path.normpath(DELTA_DB)} "
+          f"{len(changed)} match row(s)"
+          + (f" + {by_hand} changed by hand" if by_hand else "") + f" -> {os.path.normpath(DELTA_DB)} "
           f"({os.path.getsize(DELTA_DB) / 1e6:.1f} MB)")
     conn.close()
 

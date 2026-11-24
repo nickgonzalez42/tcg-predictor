@@ -36,6 +36,7 @@ from _paths import PC_DB as OUT_DB
 
 # game -> (our card DB, PriceCharting CSV), from the game registry
 from games import GAMES, priced_games
+import match_dirty
 SOURCES = {g: (GAMES[g]["db"], GAMES[g]["pc_csv"]) for g in priced_games()}
 
 # CSV column -> our column (graded tiers)
@@ -420,6 +421,12 @@ def apply_confirmed_links(conn):
                                      "AND product_id=?", (game, pid))
                     except sqlite3.OperationalError:
                         pass                 # a fresh build has no crawl tables yet
+                    # The new link has no prices yet, so nothing would tell
+                    # the night's delta that this row changed (match_dirty).
+                    try:
+                        match_dirty.mark(conn, game, pid)
+                    except sqlite3.Error as e:
+                        print(f"[{game}] match_dirty: non-fatal error: {e}")
                     if not pc:
                         print(f"[{game}] override: {pid} unlinked (no correct PC page)")
                     added += 1

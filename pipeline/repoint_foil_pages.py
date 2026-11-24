@@ -39,6 +39,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE, PC_DB
 from games import db_path
+import match_dirty
 
 PLAN_CSV = os.path.join(BASE, "ml_data", "foil_page_repoints.csv")
 FIELDS = ["game", "product_id", "old_pc", "old_name", "console", "new_pc", "new_name",
@@ -284,6 +285,7 @@ def repoint(pc, game, pid, old_pc, old_name, new_pc, new_name, label, now):
         "sales_volume=NULL, updated_at=? WHERE game=? AND product_id=?",
         (new_pc, new_name, now, *key))
     pc.execute("DELETE FROM graded_crawled WHERE game=? AND product_id=?", key)
+    match_dirty.mark(pc, *key)            # the nightly ships the row whatever its prices do
     return True
 
 

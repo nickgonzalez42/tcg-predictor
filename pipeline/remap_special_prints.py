@@ -41,6 +41,7 @@ from games import GAMES, db_path, priced_games
 from scrape_gundam_prices import fetch          # polite 1 req/s + transient retry
 
 from _paths import PC_DB
+import match_dirty
 OVERRIDES_CSV = os.path.join(BASE, "ml_data", "pc_match_overrides.csv")
 TCG_ID_RE = re.compile(r"tcgplayer\.com/product/(\d+)")
 TOKENS = ("1st edition", "shadowless")
@@ -158,6 +159,7 @@ def main():
                          (game, pid))
             conn.execute("DELETE FROM graded_crawled WHERE game=? AND product_id=?",
                          (game, pid))
+            match_dirty.mark(conn, game, pid)
             conn.commit()
             add_override(game, pid, sib_id,
                          f"special-print remap {pc_name!r} -> {sib_name!r} 2026-08-08")
