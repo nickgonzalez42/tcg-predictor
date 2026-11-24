@@ -73,8 +73,12 @@ hold advice, no "now is the time", no urgency, no exclamation points.
 semicolon, or parentheses instead.
 - Plain text only: no HTML, no markdown, no links, no quotation marks \
 around card names. Name cards exactly as the pack spells them.
-- Never use the words "graded", "cohort", "calibration", "P/L" or "cost \
-basis". Say "forecast" or "call", "checked", "inside the range".
+- Never use the words "graded", "horizon", "cohort", "calibration", "P/L" \
+or "cost basis" (a card or set name that contains one is spelled as the pack \
+spells it). Say "forecast" or "call", "checked", "window", "inside the range".
+- Numbers in one style: a percentage is the figure and the word percent \
+(16.9 percent), a fall is "down 16.9 percent" or "-16.9 percent", never \
+"negative 16.9" and never the % sign; money is $1,594, never "1,594 dollars".
 - "We" is CardStock; "the model" is our price forecaster, and it is allowed \
 to be wrong in print.\
 """
@@ -93,7 +97,7 @@ The article is a {kind_desc}. Its sections, in order, each with a picture \
 or a chart the caption goes under:
 {sections}
 
-CLAIMS: say only what the facts measure (user rule, 2026-11-11). A comparison \
+{recent}CLAIMS: say only what the facts measure (user rule, 2026-11-11). A comparison \
 is named by what it covers ("the last five releases", "the six sets we can \
 compare at this age"); never "every", "all" or "any" earlier set, never "ever", \
 "of all time", "in history" or "record", unless a fact states exactly that.
@@ -152,9 +156,69 @@ KIND_DESC = {
              "by month against the game's other expensive cards, how each release's cards have done and "
              "the typical path by age, a few example cards, and what the model expects next. There is no "
              "'this week' here; the time spans are months and years, named as the pack names them. The "
-             "headline names the game and the card type and states the group's change over the past year "
-             "(index.past_year_pct) when the pack has it, else its median price"),
+             "headline names the game and the card type and states ONE figure, the one the pack gives as "
+             "headline_figure (its 'what' says what it measures, so the wording matches: a change over "
+             "the past year, a change since a named month, or a median price); the picture above the "
+             "article shows that same figure, so no other number goes in the headline. what_it_is is "
+             "our own one-line description of the kind of card, not a measurement: use it to say what "
+             "the card is, and take every count and date from totals and per_set"),
 }
+
+
+# What the last few articles already used (2026-11-24). Every article is
+# written alone, so the same lines kept coming back: "Three Cards, Three Very
+# Different Years" headed three card-type articles in a week, "Most of X
+# Costs Less Than a Dollar" five game reports, and nine of the last twenty
+# articles took a "Still ___." refrain. game_articles.recent_phrases reads
+# the stored articles and sets this before each one is written.
+_RECENT = {}
+RECENT_BLOCK = """\
+ALREADY USED by our last few articles. Do not reuse any of these, and do not \
+reuse one with a word swapped ("Still sealed." after "Still falling." is the \
+same line; so is "Most of Lorcana Costs Less Than a Dollar" after "Most of \
+Gundam's Cards Live Under a Dollar"). Find a header that says what THIS \
+section found and a refrain built on a different word:
+- headers: {headers}
+- refrains and closing lines: {refrains}
+
+"""
+
+
+def set_recent(used):
+    """used = {"headers": [...], "refrains": [...]} or None."""
+    _RECENT.clear()
+    _RECENT.update(used or {})
+
+
+def _recent_block():
+    headers, refrains = _RECENT.get("headers") or [], _RECENT.get("refrains") or []
+    if not headers and not refrains:
+        return ""
+    return RECENT_BLOCK.format(headers=" | ".join(headers) or "(none)",
+                               refrains=" | ".join(refrains) or "(none)")
+
+
+# One style for numbers and words, whatever the writer sent (2026-11-24). The
+# rules ask for it; this makes sure. Across the first 34 articles the same
+# paragraph could carry "16.9 percent", "63.5%", "624.12 dollars" and
+# "negative 2.1 percent", and "graded" got through in a caption. Our own
+# sentences say "+1.2 percent" and "$624.12", so that is the style.
+_SWAPS = (("graded", "checked"), ("cohorts", "groups"), ("cohort", "group"))
+
+
+def _style(text, title=False):
+    if not text:
+        return text
+    text = re.sub(r"(\d)\s?%", r"\1 Percent" if title else r"\1 percent", text)
+    text = re.sub(r"\b(\d[\d,]*(?:\.\d+)?) dollars\b", r"$\1", text, flags=re.I)
+    text = re.sub(r"\bnegative (?=\d)", "-", text, flags=re.I)
+    text = re.sub(r"\bpositive (?=\d)", "+", text, flags=re.I)
+    for bad, good in _SWAPS:
+        text = re.sub(rf"\b{bad}\b", good, text)
+        text = re.sub(rf"\b{bad.capitalize()}\b", good.capitalize(), text)
+    # Lower case only: "Modern Horizons 3" is a set's name.
+    text = re.sub(r"\bhorizon(s?)\b", r"window\1", text)
+    return text
 
 
 def _write(kind, facts, sections, headline_names):
@@ -171,7 +235,8 @@ def _write(kind, facts, sections, headline_names):
         sections="\n".join(f'- "{k}": {d}' for k, d in sections),
         headline=LIMITS["headline"], lede=LIMITS["lede"], section=SECTION_LIMIT,
         header=HEADER_LIMIT, caption=CAPTION_LIMIT, closer=LIMITS["closer"],
-        headline_names=headline_names, facts=json.dumps(facts, indent=1))
+        headline_names=headline_names, facts=json.dumps(facts, indent=1),
+        recent=_recent_block())
     try:
         out = subprocess.run(
             [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],
@@ -198,7 +263,8 @@ def _write(kind, facts, sections, headline_names):
         return None
 
     compared = ((facts.get("context") or {}).get("compared_against") if isinstance(facts, dict) else None)
-    prose = {k: _guard(_clean(data.get(k), cap), compared) for k, cap in LIMITS.items()}
+    prose = {k: _guard(_style(_clean(data.get(k), cap), title=(k == "headline")), compared)
+             for k, cap in LIMITS.items()}
     prose["headline"] = _headline(prose.get("headline"))
     keys = [k for k, _ in sections]
 
@@ -206,7 +272,9 @@ def _write(kind, facts, sections, headline_names):
         src = data.get(field)
         if not isinstance(src, dict):
             return {}
-        return {k: t for k, t in ((k, _guard(_clean(src.get(k), cap), compared)) for k in keys) if t}
+        title = field == "headers"
+        return {k: t for k, t in ((k, _guard(_style(_clean(src.get(k), cap), title), compared))
+                                  for k in keys) if t}
 
     prose["sections"] = pick("sections", SECTION_LIMIT)
     prose["headers"] = {k: _headline(v) or v for k, v in pick("headers", HEADER_LIMIT).items()}

@@ -30,8 +30,11 @@ Same sources and the same prose contract as game_articles.py, which plans
 and stores these (kind 'type', focus = the type key).
 """
 
+import collections
+import re
 import sqlite3
 import statistics
+import sys
 from datetime import date, timedelta
 
 import game_articles as ga
@@ -143,6 +146,20 @@ def hero_line(grid, index, today):
 
 def month_label(iso):
     return date.fromisoformat(iso).strftime("%b %Y")
+
+
+def carries(headline, value, money_figure=False):
+    """True when the headline states this figure: 57.0 as "57" or "57.0",
+    -12.6 as "12.6" (the wording carries the direction), a price as
+    "$672.31" or "$672". The picture above the article shows the same
+    figure, so a headline with another number is not used."""
+    if not headline or value is None:
+        return False
+    v = abs(value)
+    forms = {f"{v:,.2f}", f"{v:,.0f}", f"{v:.2f}", f"{v:.0f}"} if money_figure else {f"{v:.1f}"}
+    if not money_figure and f"{v:.1f}".endswith(".0"):
+        forms.add(f"{v:.0f}")
+    return any(re.search(rf"(?<![\d.,]){re.escape(f)}(?![\d]|[.,]\d)", headline) for f in forms)
 
 
 def selling_record(pc, game, members, today):
@@ -508,8 +525,31 @@ def build_type_article(d, today, no_prose=False):
             "dearest_with_no_recent_sale": [{"name": members[p]["name"], "price_usd": round(members[p]["price"], 2),
                                              "last_near_mint_sale_week_of": last_sale.get(p)}
                                             for p in sell["quiet"][:5]]}
+    # The one number the title states and the picture shows. The past year
+    # when the index reaches back that far; else the change since the index
+    # began (the picture's line is the whole index then, ending on that
+    # number); else the median price. Titles used to take any figure from the
+    # pack when there was no past year (2026-11-24: "Fell 2.4 Percent" over a
+    # picture that showed a dollar total).
+    yr = idx["past_year_pct"] if idx else None
+    since_pct = idx["index_now_pct"] if idx and yr is None else None
+    began = month_label(d["grid"][0]) if idx else None
+    if yr is not None:
+        figure = {"value_pct": yr, "what": "the group's price change over the past year (index.past_year_pct)"}
+    elif since_pct is not None:
+        figure = {"value_pct": since_pct,
+                  "what": f"the group's price change since {began}, the first month of its index "
+                          "(index.index_now_pct); there is no past-year figure yet, so do not call it a year"}
+    else:
+        figure = {"value_usd": round(median_price, 2), "what": "the median price of the group's cards"}
+    per_set = collections.Counter(c["set"] or "Unlisted" for c in members.values())
+    most = per_set.most_common(1)[0]
     facts = {
         "game": label, "card_type": spec["label"], "what_it_is": spec["what"],
+        "headline_figure": figure,
+        "per_set": {"sets": len(per_set), "median_cards_in_a_set": statistics.median(per_set.values()),
+                    "fewest_in_a_set": min(per_set.values()),
+                    "most_in_a_set": {"set": most[0], "cards": most[1]}},
         "scope": ((f"every priced {label} card of the rarity {spec['rarity']}" if spec.get("rarity")
                    else f"every priced {label} card whose title carries {spec['name_tag']}")
                   + (f", the {spec['skip_note']} left out" if spec.get("skip_note") else "")),
@@ -546,13 +586,19 @@ def build_type_article(d, today, no_prose=False):
     }
     prose = {} if no_prose else (write_type_article(prune(facts), sections) or {})
 
-    yr = idx["past_year_pct"] if idx else None
     title = (f"{label} {plural}: {pct(yr)} over the past year across {n} cards" if yr is not None
+             else f"{label} {plural}: {pct(since_pct)} since {began} across {n} cards" if since_pct is not None
              else f"{label} {plural}: {n} priced, median {money(median_price)}")
     lede = (f"{label} has {n} priced {plural} across {facts['totals']['sets']} sets, at a median "
             f"{money(median_price)}."
-            + (f" As a group they are {pct(yr)} against a year ago." if yr is not None else ""))
-    title = prose.get("headline") or title
+            + (f" As a group they are {pct(yr)} against a year ago." if yr is not None else
+               f" As a group they are {pct(since_pct)} since {began}." if since_pct is not None else ""))
+    written = prose.get("headline")
+    if written and not (carries(written, figure.get("value_pct")) if "value_pct" in figure
+                        else carries(written, figure["value_usd"], money_figure=True)):
+        print(f"type_articles: headline without the picture's figure, ours stands: {written!r}", file=sys.stderr)
+        written = None
+    title = written or title
     lede = prose.get("lede") or lede
 
     body = [f"<p class='report-lede'>{esc(lede)}</p>"]
@@ -678,11 +724,13 @@ def build_type_article(d, today, no_prose=False):
 
     # The picture stays light (2026-11-14, user: "this is too crowded"): the
     # group's name alone as its headline, three short stats in whole
-    # dollars, and the index over the past year only, so the line ends on
-    # the same number the title states.
+    # dollars, and the index over the past year only (the whole index when
+    # it is younger than a year), so the line ends on the same number the
+    # title states.
     stats = [[f"{n}", "priced cards", None], [f"${median_price:,.0f}", "median price", None]]
     stats.append([f"{yr:+.1f}%", "past year", "up" if yr >= 0 else "down"] if yr is not None
-                 else [f"${total:,.0f}", "group value", None])
+                 else [f"{since_pct:+.1f}%", f"since {began}", "up" if since_pct >= 0 else "down"]
+                 if since_pct is not None else [f"${total:,.0f}", "group value", None])
     cards = [[game, pid, members[pid]["name"]] for pid in d["top"] if ga.has_art(game, pid)][:3]
     drawn = hero_line(d["grid"], d["index"], today)
     hero, thumb = ga.hero_and_thumb("type", game, title, today, stats, cards,
