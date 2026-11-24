@@ -37,6 +37,7 @@ import tcg_pokemon_scraper as tp
 from backfill_tcg_nm_history import SALES_SCHEMA, record_sales
 
 from _paths import PC_DB
+import crawl_day
 from crawl_day import stop_time, past
 # Cards tomorrow's articles will discuss, written by game_articles.write_watch
 # at the end of the nightly; fetched first (2026-11-07, user: "prioritize
@@ -76,8 +77,9 @@ def refresh_live():
     """True while the nightly refresh is running. Long unattended runs pause
     then: the refresh crawls TCGplayer at the same politeness budget, and two
     crawls at once would double it — the exact mistake that got the
-    PriceCharting IP blocked for two days (2026-10-12)."""
-    return bool(refresh_pids())
+    PriceCharting IP blocked for two days (2026-10-12). Asks the refresh's
+    lock (crawl_day.refresh_live), not the process list: see there."""
+    return crawl_day.refresh_live()
 
 
 def watch_targets(conn, games):

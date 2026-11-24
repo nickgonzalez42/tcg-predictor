@@ -34,6 +34,7 @@ import certifi
 
 from _paths import DATA_DIR as BASE  # data lives in the sibling one-piece/ dir
 from _paths import PC_DB
+import crawl_day
 from crawl_day import stop_time, past
 
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -181,8 +182,7 @@ def ensure_table(conn):
 def refresh_live():
     """True while the nightly refresh is running. Its pc-graded-new step
     crawls the SAME host at the same politeness budget."""
-    return subprocess.run(["pgrep", "-f", "run_daily_refresh.sh|weekly_refresh.py"],
-                          capture_output=True).returncode == 0
+    return crawl_day.refresh_live()      # the refresh's lock, not the process list
 
 
 def unwritten(conn, game, product_id, rows):

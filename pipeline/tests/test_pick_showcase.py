@@ -464,14 +464,12 @@ class CrawlerSide(unittest.TestCase):
             bsv.main()
         return events
 
-    def test_refresh_live_reads_the_refresh_pids(self):
-        """The crawler's own test, from outside the refresh (a launchd agent)."""
+    def test_refresh_pids_from_outside_the_refresh(self):
+        """What pick_showcase reads, from outside the refresh (a launchd agent)."""
         with mock.patch.object(subprocess, "run", side_effect=Procs(NIGHTLY, 1)):
             self.assertEqual(bsv.refresh_pids(), {CAFFEINATE, REFRESH})
-            self.assertTrue(bsv.refresh_live())
         with mock.patch.object(subprocess, "run", side_effect=Procs(DAYTIME, 1)):
             self.assertEqual(bsv.refresh_pids(), set())
-            self.assertFalse(bsv.refresh_live())
 
     def test_refresh_pids_reads_only_the_pid_column(self):
         """Linux's pgrep -a lists command lines too: their numbers are no pids."""
