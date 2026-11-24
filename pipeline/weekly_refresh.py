@@ -239,6 +239,12 @@ TRIMMABLE = {
 # the model block by 35-77 min EVERY night. Re-measure from the ledger when
 # the trend continues; if this ever exceeds ~5 h the model block itself needs
 # bounding, not a bigger reservation.
+# Re-measured 2026-11-24 from the state files, the eleven nights since the
+# 11-12 redesign bar its first: 156, 165, 179, 212, 235, 255, 256, 261, 262,
+# 267, 289 min. 290 still covers every one, so it stays. Note that nothing
+# reads it on a normal night any more: every trimmable step now runs in the
+# tail, after the model block, so this only matters again if a trimmable
+# step moves back in front of art-comps under TCG_REFRESH_DEADLINE_MODE=hard.
 MODEL_BLOCK_MIN = 290
 PUSH_MIN = 25
 
