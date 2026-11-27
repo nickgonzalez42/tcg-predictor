@@ -31,6 +31,7 @@ Run:  .venv/bin/python pc_printing_backfill.py --limit 500
 import argparse
 import collections
 import email.utils
+import http.client
 import json
 import os
 import re
@@ -88,6 +89,12 @@ WAIT_BUDGET = 600              # s of 429 waits per run
 # them). A refused page is left unsaved for the next run, and this many in a
 # row stop the run, the way the shared fetch helper and the graded crawl stop.
 BLOCK_STOP = 5
+# A dropped connection (reset, timeout, half a page) is nobody's verdict on
+# the page. It used to end the whole run behind the non-fatal handler
+# (2026-11-26: one reset on the first page, 600 pages not fetched that
+# night). The page is left unsaved for the next run, like a 403, and this
+# many in a row stop the run: the network is down, not the page.
+DROP_STOP = 5
 
 
 def now_iso():
@@ -149,6 +156,8 @@ def fetch_verified(pc_id):
             html = resp.read().decode("utf-8", "ignore")
     except urllib.error.HTTPError as e:
         return None, set(), e.code, (retry_after(e.headers) if e.code == 429 else None)
+    except (OSError, http.client.HTTPException):
+        return None, set(), 0, None      # no answer at all
     m = CHART_RE.search(html)
     chart = json.loads(m.group(1)) if m else None
     ids = {int(x) for x in TCG_ID_RE.findall(urllib.parse.unquote(html))}
@@ -198,7 +207,7 @@ def main():
 
     cats = {}
     stats = collections.Counter()
-    pace, waited, blocked = args.delay, 0.0, 0
+    pace, waited, blocked, dropped = args.delay, 0.0, 0, 0
     for i, (game, pid, variant, base_name, console) in enumerate(targets, 1):
         def memo(status, pc_id=None, pc_name=None):
             conn.execute("INSERT OR REPLACE INTO pc_printing_matches VALUES (?,?,?,?,?,?,?)",
@@ -252,6 +261,15 @@ def main():
                 break
             continue
         blocked = 0
+        if status == 0:
+            dropped += 1
+            stats["no-answer"] += 1
+            if dropped >= DROP_STOP:
+                print(f"  {dropped} dropped connections in a row — stopping "
+                      "this run early", file=sys.stderr)
+                break
+            continue
+        dropped = 0
         if pid not in ids:
             memo("verify-failed", pc_id, pc_name)
             continue

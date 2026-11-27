@@ -1,4 +1,4 @@
-"""Mock-only tests for pc_printing_backfill's 429 handling.
+"""Mock-only tests for pc_printing_backfill's 429, 403 and dropped-connection handling.
 
 No network (urlopen faked, sockets refused), no sleeping (time.sleep
 recorded), no DB file (main() gets an in-memory stand-in for
@@ -127,6 +127,8 @@ class Script:
             return FakeResp(page(pc_id))
         if isinstance(what, tuple):
             raise refused(url, what[1])
+        if isinstance(what, Exception):
+            raise what
         raise refused(url, code=what)
 
 
@@ -261,6 +263,32 @@ class BackoffTests(unittest.TestCase):
         plan = {9001: [403], 9002: [403], 9003: [403], 9004: [403]}
         conn, sleeps, fake, out, err = run(plan)
         self.assertEqual(memos(conn), {105: "ok"})
+        self.assertNotIn("stopping", err)
+
+    def test_a_dropped_connection_is_left_for_the_next_run(self):
+        reset = urllib.error.URLError(ConnectionResetError(54, "Connection reset by peer"))
+        conn, sleeps, fake, out, err = run({9001: [reset]})
+        self.assertNotIn(101, memos(conn))
+        self.assertEqual({p: memos(conn)[p] for p in (102, 103, 104, 105)},
+                         {p: "ok" for p in (102, 103, 104, 105)})
+        self.assertNotIn("stopping", err)
+        self.assertIn("'no-answer': 1", out)
+
+    def test_a_timeout_or_half_a_page_is_a_dropped_connection_too(self):
+        conn, sleeps, fake, out, err = run({9002: [TimeoutError("timed out")],
+                                            9004: [bf.http.client.IncompleteRead(b"")]})
+        self.assertEqual(sorted(memos(conn)), [101, 103, 105])
+
+    def test_five_dropped_connections_in_a_row_stop_the_run_unsaved(self):
+        conn, sleeps, fake, out, err = run(
+            {9000 + n: [ConnectionResetError(54, "reset")] for n in range(1, 6)})
+        self.assertEqual(memos(conn), {})
+        self.assertIn("dropped connections in a row", err)
+
+    def test_a_success_resets_the_dropped_streak(self):
+        plan = {9000 + n: [ConnectionResetError(54, "reset")] for n in (1, 2, 4, 5)}
+        conn, sleeps, fake, out, err = run(plan)
+        self.assertEqual(memos(conn), {103: "ok"})
         self.assertNotIn("stopping", err)
 
     def test_retry_after_is_logged(self):
