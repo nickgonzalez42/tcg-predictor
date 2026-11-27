@@ -8,6 +8,7 @@ each thing the 2026-11-24 search audit fixed. Run it after a deploy:
 
 Read-only: plain GET requests to cardstock.guide, nothing else.
 """
+import html
 import json
 import re
 import sys
@@ -44,7 +45,8 @@ def one(pattern, text):
 
 
 def title(text):
-    return one(r"<title[^>]*>(.*?)</title>", text) or ""
+    # As a reader sees it: the page writes "&amp;", the title says "&".
+    return html.unescape(one(r"<title[^>]*>(.*?)</title>", text) or "")
 
 
 def canonical(text):
