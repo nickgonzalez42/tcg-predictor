@@ -36,9 +36,27 @@ SECTION_LIMIT = 95
 # is dropped whole and the templated line stands in, which threw away 23 of
 # 405 written sections, 16 of them for being 1 to 10 words over (the stub
 # paragraphs in the Pokemon Secret and Flesh and Blood Marvel articles). A
-# section or a lede may run this many words over; a longer one still drops,
-# and says so.
+# section or a lede may run this many words over. A section longer still is
+# cut back to the whole sentences that fit (a 119-word sales paragraph was
+# two sentences of 104 words and a closing line); only when too little is
+# left, under KEEP_LEAST of the limit, does it drop, and it says so.
 OVER = 10
+KEEP_LEAST = 0.6
+_ABBREV = re.compile(r"\b(?:Mr|Mrs|Ms|Dr|St|Jr|Sr|vs|No)\.$")
+
+
+def _trim(text, limit):
+    """text cut back to whole sentences within limit words; None when fewer
+    than KEEP_LEAST of SECTION_LIMIT would be left or nothing can be cut."""
+    sents = re.split(r"(?<=[.!?])\s+", text.strip())
+    while len(sents) > 1:
+        sents.pop()
+        kept = " ".join(sents)
+        if _ABBREV.search(kept):                  # "... from Dr." is not an ending
+            continue
+        if len(kept.split()) <= limit:
+            return kept if len(kept.split()) >= KEEP_LEAST * SECTION_LIMIT else None
+    return None
 CAPTION_LIMIT = 20
 HEADER_LIMIT = 9
 
@@ -298,8 +316,14 @@ def _write(kind, facts, sections, headline_names):
         for k in keys:
             text = _clean(src.get(k), cap + over)
             if text is None and field == "sections" and isinstance(src.get(k), str) and src[k].strip():
-                print(f"article_editorial: section '{k}' ran {len(src[k].split())} words against "
-                      f"{cap} (+{over}), keeping templated text", file=sys.stderr)
+                whole = _clean(src[k], 10 ** 6) or ""
+                text = _trim(whole, cap + over)
+                if text:
+                    print(f"article_editorial: section '{k}' cut to its first {len(text.split())} "
+                          f"of {len(whole.split())} words", file=sys.stderr)
+                else:
+                    print(f"article_editorial: section '{k}' ran {len(whole.split())} words against "
+                          f"{cap} (+{over}), keeping templated text", file=sys.stderr)
             text = _guard(_style(text, title), compared)
             if text:
                 out[k] = text

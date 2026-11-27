@@ -127,6 +127,51 @@ class SteadyPath(unittest.TestCase):
         self.assertTrue(ta.steady_path([("2025-01-01", 0.0), ("2025-02-01", 5.0)]))   # no price, no ratio
 
 
+class Trim(unittest.TestCase):
+    SALES = ("Near Mint copies move at a median of 2,726 a week across the group, from a quiet week of 2,073 up to "
+             "a busy one of 5,491, and 549 of the 601 cards sold at all in the last eight weeks. The other 52 "
+             "didn't move at all in that span, and the dearest among them show why a sticker price isn't a sale: "
+             "Charizard at $4,988.12 and Nidoking (150) at $1,200.00 carry no recorded sale in this window at all, "
+             "while Shining Charizard ($1,700.99), M Charizard EX (X) (Secret) ($1,501.23) and Rayquaza ($1,250.00) "
+             "last changed hands back in January, May and September respectively. A price with no recent sale "
+             "behind it is an asking price, not a market.")
+
+    def test_whole_sentences_that_fit_are_kept(self):
+        self.assertEqual(len(self.SALES.split()), 119)
+        kept = ae._trim(self.SALES, ae.SECTION_LIMIT + ae.OVER)
+        self.assertEqual(len(kept.split()), 104)
+        self.assertTrue(kept.endswith("September respectively."))
+
+    def test_too_little_left_or_nothing_to_cut_drops_it(self):
+        one = " ".join(["word"] * 150) + "."
+        self.assertIsNone(ae._trim(one, 105))
+        short_then_long = "Short opener here. " + " ".join(["word"] * 150) + "."
+        self.assertIsNone(ae._trim(short_then_long, 105))          # 3 words is not a section
+
+    def test_it_does_not_end_on_an_abbreviation(self):
+        text = " ".join(["word"] * 70) + ". Then came Dr. " + " ".join(["more"] * 60) + "."
+        kept = ae._trim(text, 105)
+        self.assertTrue(kept.endswith("word."))
+
+    def test_the_writer_path_logs_a_cut_not_a_drop(self):
+        import contextlib
+        import io
+        import json
+        run, find = ae.subprocess.run, ae._find_cli
+        ae._find_cli = lambda: "stand-in"
+        ae.subprocess.run = lambda cmd, input=None, **kw: types.SimpleNamespace(
+            returncode=0, stderr="", stdout=json.dumps({"sections": {"selling": self.SALES}}))
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                out = ae._write("type", {"game": "Pokemon"}, [("selling", "x")], "the type")
+        finally:
+            ae.subprocess.run, ae._find_cli = run, find
+        self.assertEqual(len(out["sections"]["selling"].split()), 104)
+        self.assertIn("section 'selling' cut to its first 104 of 119 words", err.getvalue())
+        self.assertNotIn("keeping templated text", err.getvalue())
+
+
 class HeadlineFigure(unittest.TestCase):
     """The title states the number the picture shows, or ours stands."""
 
