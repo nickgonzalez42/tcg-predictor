@@ -518,4 +518,11 @@ main_stages() {
   fi
   note "done"
   echo "=== night $BATCH closed — $(date '+%F %T') ==="
+  # The morning look at this night, emailed (morning_check.py): the quiet
+  # faults that do not fail a night. Last of all, after the state says done.
+  # Its output goes to its own log, so a later read of THIS log never finds
+  # yesterday's email quoted in it. Never fatal.
+  if [ "$DRY" = 1 ]; then echo "DRY [morning-check] morning_check.py"
+  else "$PY" morning_check.py >> "$LOG_DIR/morning-check.log" 2>&1 || true
+  fi
 } >> "$LOG" 2>&1
