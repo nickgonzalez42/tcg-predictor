@@ -16,6 +16,7 @@ all, as on Lorcana's non-foil pages; never a different product's).
 
     repoint_foil_pages.py --verify [--consoles] [--limit N]   # fetch + check, writes the plan
     repoint_foil_pages.py --apply                             # act on the checked rows
+    repoint_foil_pages.py --unlink-foil-only --games magic    # no non-foil page exists: take the link off
 
 Applying, per card: the link moves (pricecharting row + a row in
 pc_match_overrides.csv so the nightly matcher keeps it), the old page's
@@ -23,7 +24,14 @@ graded history becomes the foil printing's own labeled series (or is dropped
 when that printing already has one), and the crawl mark is cleared so the
 graded crawl fills the new page's history on its next run.
 
-Run it while the graded crawl is NOT running: both fetch PriceCharting.
+Foil-only pages (user decision 2026-11-27, 392 Magic cards): where
+PriceCharting has no non-foil page at all (plan status no-page), the foil's
+graded prices do not belong beside the Normal card. --unlink-foil-only takes
+the link off the way the nightly's exclusion does (pc_id NULL, a pc_id 0 row
+in pc_match_overrides.csv so nothing links the page again) and keeps the
+page's history as the foil printing's series, as a move does.
+
+Run --verify while the graded crawl is NOT running: both fetch PriceCharting.
 """
 import argparse
 import collections
@@ -252,14 +260,10 @@ def old_label(printings):
     return others[0] if len(others) == 1 else None
 
 
-def repoint(pc, game, pid, old_pc, old_name, new_pc, new_name, label, now):
-    """One card, inside the caller's transaction. Returns False when the link
-    is no longer the one that was checked."""
-    key = (game, pid)
-    cur = pc.execute("SELECT pc_id FROM pricecharting WHERE game=? AND product_id=?",
-                     key).fetchone()
-    if not cur or cur[0] != old_pc:
-        return False
+def keep_old_history(pc, key, old_pc, old_name, label, now):
+    """The old page's graded history leaves the card's main series: it becomes
+    the foil printing's own labeled series, or is dropped when that printing
+    already has one (or the card has no single foil printing to give it to)."""
     has_label = label and pc.execute(
         "SELECT 1 FROM graded_price_history WHERE game=? AND product_id=? AND printing=? LIMIT 1",
         (*key, label)).fetchone()
@@ -279,6 +283,21 @@ def repoint(pc, game, pid, old_pc, old_name, new_pc, new_name, label, now):
                    (*key, label, old_pc, old_name, "ok", now))
     pc.execute("DELETE FROM pc_printing_matches WHERE game=? AND product_id=? AND printing=?",
                (*key, NORMAL))
+
+
+def still_linked(pc, key, old_pc):
+    cur = pc.execute("SELECT pc_id FROM pricecharting WHERE game=? AND product_id=?",
+                     key).fetchone()
+    return bool(cur) and cur[0] == old_pc
+
+
+def repoint(pc, game, pid, old_pc, old_name, new_pc, new_name, label, now):
+    """One card, inside the caller's transaction. Returns False when the link
+    is no longer the one that was checked."""
+    key = (game, pid)
+    if not still_linked(pc, key, old_pc):
+        return False
+    keep_old_history(pc, key, old_pc, old_name, label, now)
     pc.execute(
         "UPDATE pricecharting SET pc_id=?, pc_name=?, ungraded=NULL, grade7=NULL, grade8=NULL, "
         "grade9=NULL, grade95=NULL, psa10=NULL, bgs10=NULL, cgc10=NULL, sgc10=NULL, "
@@ -287,6 +306,78 @@ def repoint(pc, game, pid, old_pc, old_name, new_pc, new_name, label, now):
     pc.execute("DELETE FROM graded_crawled WHERE game=? AND product_id=?", key)
     match_dirty.mark(pc, *key)            # the nightly ships the row whatever its prices do
     return True
+
+
+def unlink(pc, game, pid, old_pc, old_name, label, now):
+    """One card whose only page is the foil's, inside the caller's
+    transaction: the link comes off exactly as build_pricecharting's
+    exclusion takes it off (pc_id NULL, the row's graded prices blanked, the
+    page's name left on the row). False when the link changed since the check."""
+    key = (game, pid)
+    if not still_linked(pc, key, old_pc):
+        return False
+    keep_old_history(pc, key, old_pc, old_name, label, now)
+    pc.execute(
+        "UPDATE pricecharting SET pc_id=NULL, ungraded=NULL, grade7=NULL, grade8=NULL, "
+        "grade9=NULL, grade95=NULL, psa10=NULL, bgs10=NULL, cgc10=NULL, sgc10=NULL, "
+        "sales_volume=NULL, updated_at=? WHERE game=? AND product_id=?", (now, *key))
+    pc.execute("DELETE FROM graded_crawled WHERE game=? AND product_id=?", key)
+    match_dirty.mark(pc, *key)            # the nightly ships the row whatever its prices do
+    return True
+
+
+def unlink_foil_only(games, dry_run=False):
+    """Every plan row with status no-page in these games. The override row
+    (pc_id 0) is what makes it stick: without one, pc_link_suggest finds the
+    now-unlinked foil page naming our product and links it again."""
+    from match_review import append_override
+    plan = load_plan()
+    todo = [r for r in plan.values() if r["status"] == "no-page" and r["game"] in games]
+    if not todo:
+        print("no foil-only rows waiting")
+        return
+    printings = {}
+    for game in {r["game"] for r in todo}:
+        cc = sqlite3.connect(f"file:{db_path(game)}?mode=ro", uri=True, timeout=30)
+        printings[game] = dict(cc.execute("SELECT product_id, printings FROM cards"))
+        cc.close()
+    if dry_run:
+        pc = sqlite3.connect(f"file:{os.path.normpath(PC_DB)}?mode=ro", uri=True, timeout=120)
+        seen = collections.Counter()
+        for r in todo:
+            pid = int(r["product_id"])
+            if not still_linked(pc, (r["game"], pid), int(r["old_pc"])):
+                seen["link changed since the check"] += 1
+            else:
+                seen["history kept as " + (old_label(printings[r["game"]].get(pid)) or "nothing (dropped)")] += 1
+        pc.close()
+        print(f"would unlink {len(todo)}: {dict(seen)}")
+        return
+    pc = sqlite3.connect(PC_DB, timeout=600)
+    pc.execute("PRAGMA cache_size=-65536")
+    now = now_iso()
+    done = collections.Counter()
+    for i in range(0, len(todo), 50):              # short transactions beside the crawls
+        batch = todo[i:i + 50]
+        off = []
+        pc.execute("BEGIN IMMEDIATE")
+        for r in batch:
+            pid = int(r["product_id"])
+            label = old_label(printings[r["game"]].get(pid))
+            if unlink(pc, r["game"], pid, int(r["old_pc"]), r["old_name"], label, now):
+                off.append(r)
+            else:
+                r["status"] = "link-changed"
+        pc.execute("COMMIT")
+        for r in off:
+            append_override(r["game"], r["product_id"], 0,
+                            f"foil-only PriceCharting page on a Normal-priced card (was {r['old_pc']} "
+                            f"{r['old_name']}); no non-foil page exists, {now[:10]}")
+            r["status"] = "unlinked"
+            done[r["game"]] += 1
+        save_plan(plan)
+    pc.close()
+    print(f"unlinked: {dict(done)}")
 
 
 def apply():
@@ -336,6 +427,10 @@ def main():
     ap.add_argument("--consoles", action="store_true",
                     help="also look in each set's live listing for pages the "
                          "stored catalog lacks")
+    ap.add_argument("--unlink-foil-only", action="store_true",
+                    help="take the link off cards whose only page is the foil's (plan status no-page)")
+    ap.add_argument("--games", default="", help="--unlink-foil-only: comma-separated games (required)")
+    ap.add_argument("--dry-run", action="store_true", help="--unlink-foil-only: count, change nothing")
     ap.add_argument("--limit", type=int, default=None, help="max page fetches")
     ap.add_argument("--delay", type=float, default=1.5)
     args = ap.parse_args()
@@ -343,7 +438,12 @@ def main():
         verify(args.limit, args.consoles, args.delay)
     if args.apply:
         apply()
-    if not (args.verify or args.apply):
+    if args.unlink_foil_only:
+        games = {g for g in args.games.split(",") if g}
+        if not games:
+            sys.exit("--unlink-foil-only needs --games")
+        unlink_foil_only(games, args.dry_run)
+    if not (args.verify or args.apply or args.unlink_foil_only):
         plan = load_plan()
         print(dict(collections.Counter((r["game"], r["status"]) for r in plan.values())))
 
