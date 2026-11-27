@@ -30,7 +30,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from _paths import DATA_DIR as BASE
-from report_editorial import LIMITS, _clean, _find_cli, _headline
+from report_editorial import LIMITS, _clean, _find_cli, _headline, writer_cmd, writer_timeout
 
 from _paths import PRED_DB
 
@@ -81,9 +81,8 @@ def fallback(summary):
 
 def ask(cli, items, cap):
     prompt = PROMPT.format(cap=cap, reports=json.dumps(items, indent=1))
-    out = subprocess.run([cli, "-p", "--model", "claude-sonnet-5",
-                          "--output-format", "text"],
-                         input=prompt, capture_output=True, text=True, timeout=600)
+    out = subprocess.run(writer_cmd(cli), input=prompt, capture_output=True,
+                         text=True, timeout=writer_timeout())
     if out.returncode != 0:
         print(f"claude CLI exit {out.returncode}: {out.stderr.strip()[:200]}",
               file=sys.stderr)

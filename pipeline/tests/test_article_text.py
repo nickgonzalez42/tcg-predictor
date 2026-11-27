@@ -2,6 +2,7 @@
 import os
 import sqlite3
 import sys
+import types
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -71,6 +72,46 @@ class Style(unittest.TestCase):
                          "Ral, Monsoon Mage from Modern Horizons 3, ungraded")
 
 
+class StillLine(unittest.TestCase):
+    def test_the_tag_line_goes_wherever_it_sits(self):
+        self.assertEqual(ae._style("The total slid 3.5 percent for the week. Still undercard."),
+                         "The total slid 3.5 percent for the week.")
+        self.assertEqual(ae._style("It fell. Still no promotion. Then it fell again."),
+                         "It fell. Then it fell again.")
+        self.assertEqual(ae._style("Still undercard."), "")
+
+    def test_a_real_sentence_that_starts_with_still_stays(self):
+        for keep in ("Still, the index is up 4 percent on the year.",
+                     "It fell. Still up 4.1 percent on the year.",
+                     "Still the dearest card in the set by a wide margin.",
+                     "The card is still falling."):
+            self.assertEqual(ae._style(keep), keep)
+
+    def test_a_title_is_left_alone(self):
+        self.assertEqual(ae._style("Down 28.7 Percent. Still Winning.", title=True),
+                         "Down 28.7 Percent. Still Winning.")
+
+    def test_the_rule_is_in_the_prompt(self):
+        self.assertIn('begins with "Still"', ae.RULES)
+
+
+class TypeMembers(unittest.TestCase):
+    CAT = {1: {"name": "A", "set": "Rising Rampage", "rarity": "Starlight Rare"},
+           2: {"name": "B", "set": "Rarity Collection 5", "rarity": "Starlight Rare"},
+           3: {"name": "C", "set": "2025 Mega-Pack", "rarity": "Starlight Rare"},
+           4: {"name": "D", "set": None, "rarity": "Starlight Rare"},
+           5: {"name": "E", "set": "Rising Rampage", "rarity": "Ghost Rare"}}
+
+    def test_starlight_leaves_out_the_mass_reprint_sets(self):
+        spec = ga.CARD_TYPES["yugioh"]["starlight"]
+        self.assertEqual(sorted(ta.members_of(self.CAT, spec)), [1, 4])
+        self.assertTrue(spec["skip_note"])
+
+    def test_a_type_without_skip_sets_keeps_every_set(self):
+        self.assertEqual(sorted(ta.members_of(self.CAT, {"rarity": "Starlight Rare"})), [1, 2, 3, 4])
+        self.assertEqual(sorted(ta.members_of(self.CAT, ga.CARD_TYPES["yugioh"]["ghost"])), [5])
+
+
 class HeadlineFigure(unittest.TestCase):
     """The title states the number the picture shows, or ours stands."""
 
@@ -123,6 +164,84 @@ class Recent(unittest.TestCase):
 
     def test_no_table_no_block(self):
         self.assertEqual(ga.recent_phrases(sqlite3.connect(":memory:")), {})
+
+
+class Writer(unittest.TestCase):
+    """The nightly's call to the writer: its own effort and a limit above the
+    slowest call seen, whatever the interactive Claude settings say."""
+
+    def setUp(self):
+        self.env = {k: os.environ.pop(k, None) for k in ("TCG_PROSE_TIMEOUT", "TCG_PROSE_EFFORT")}
+        self.run, self.find = ae.subprocess.run, ae._find_cli
+        ae._find_cli = lambda: "claude-stand-in"
+
+    def tearDown(self):
+        ae.subprocess.run, ae._find_cli = self.run, self.find
+        for k, v in self.env.items():
+            os.environ.pop(k, None)
+            if v is not None:
+                os.environ[k] = v
+
+    def call(self, reply=None, raises=None):
+        seen = {}
+
+        def fake(cmd, input=None, **kw):
+            seen.update(cmd=cmd, timeout=kw.get("timeout"), prompt=input)
+            if raises:
+                raise raises
+            return types.SimpleNamespace(returncode=0, stdout=reply or "{}", stderr="")
+        ae.subprocess.run = fake
+        out = ae._write("set", {"game": "Magic"}, [("movers", "the week's movers")], "the set")
+        return seen, out
+
+    def test_the_effort_is_named_and_the_limit_is_900_seconds(self):
+        seen, _ = self.call()
+        cmd = seen["cmd"]
+        self.assertEqual(cmd[:2], ["claude-stand-in", "-p"])
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "xhigh")
+        self.assertEqual(cmd[cmd.index("--model") + 1], "claude-sonnet-5")
+        self.assertEqual(seen["timeout"], 900)
+
+    def test_both_can_be_set_for_one_run(self):
+        os.environ["TCG_PROSE_TIMEOUT"], os.environ["TCG_PROSE_EFFORT"] = "1200", "high"
+        seen, _ = self.call()
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--effort") + 1], "high")
+        self.assertEqual(seen["timeout"], 1200)
+
+    def test_the_reports_use_the_same_call(self):
+        import report_editorial as re_
+        self.assertEqual(re_.writer_cmd("x"), ae.writer_cmd("x"))
+        self.assertIs(ae.writer_timeout, re_.writer_timeout)
+
+    def test_a_section_a_few_words_over_its_limit_is_kept(self):
+        import contextlib
+        import io
+        import json
+        words = lambda n: " ".join(["word"] * (n - 1)) + " end."
+        ae.subprocess.run = lambda cmd, input=None, **kw: types.SimpleNamespace(
+            returncode=0, stderr="", stdout=json.dumps({
+                "lede": words(ae.LIMITS["lede"] + ae.OVER),
+                "sections": {"a": words(ae.SECTION_LIMIT + 3), "b": words(ae.SECTION_LIMIT + ae.OVER),
+                             "c": words(ae.SECTION_LIMIT + ae.OVER + 1)},
+                "headers": {"a": words(ae.HEADER_LIMIT + 1)}}))
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            out = ae._write("set", {"game": "Magic"}, [("a", "x"), ("b", "x"), ("c", "x")], "the set")
+        self.assertEqual(sorted(out["sections"]), ["a", "b"])
+        self.assertTrue(out["lede"])
+        self.assertEqual(out["headers"], {})              # a header gets no extra words
+        self.assertIn("section 'c' ran 106 words against 95 (+10)", err.getvalue())
+        self.assertNotIn("section 'a'", err.getvalue())
+
+    def test_a_writer_that_runs_out_of_time_leaves_the_templated_text(self):
+        import contextlib
+        import io
+        import subprocess
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            _, out = self.call(raises=subprocess.TimeoutExpired("claude", 900))
+        self.assertIsNone(out)
+        self.assertIn("keeping templated text", err.getvalue())
 
 
 if __name__ == "__main__":

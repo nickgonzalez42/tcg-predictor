@@ -173,7 +173,8 @@ KIND_LABEL = {"set": "SET REPORT", "game": "GAME REPORT", "recent": "NEW RELEASE
 # is a historical analysis of certain kinds of high value card, by title. In
 # One Piece for example there are manga and SP cards"). A type is told by
 # its title: name_tag is in the card's name (skip_prefix leaves out
-# look-alikes), or by its rarity where the title does not name it. Each (game, type) is a planner slot of its own, kind
+# look-alikes), or by its rarity where the title does not name it;
+# skip_sets leaves out whole sets (mass reprints). Each (game, type) is a planner slot of its own, kind
 # "type:<key>" (stored kind 'type', focus = the key): due every
 # TYPE_GAP_DAYS, at most TYPE_PER_NIGHT a night ON TOP of MAX_PER_NIGHT, so
 # the set and game articles keep their own gaps. type_articles.py writes them.
@@ -215,6 +216,8 @@ CARD_TYPES = {
     },
     "yugioh": {
         "starlight": {"label": "Starlight Rare", "plural": "Starlight Rares", "rarity": "Starlight Rare",
+                  "skip_sets": ("Rarity Collection", "Mega-Pack"),
+                  "skip_note": "mass reprints in the Rarity Collection and Mega-Pack sets",
                   "what": "a rarity first printed in 2019, known as the hardest to open in a core booster set"},
         "ghost": {"label": "Ghost Rare", "plural": "Ghost Rares", "rarity": "Ghost Rare",
                   "what": "a pale, holographic printing that sets have carried on and off since 2007"},

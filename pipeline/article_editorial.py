@@ -27,10 +27,18 @@ import re
 import subprocess
 import sys
 
-from report_editorial import LORE, _clean, _find_cli, _headline
+from report_editorial import LORE, _clean, _find_cli, _headline, writer_cmd, writer_timeout
 
 LIMITS = {"headline": 12, "lede": 85, "closer": 32}
 SECTION_LIMIT = 95
+# The writer is told the limits above and lands on them: the median section
+# in 66 saved replies (2026-11-07..27) is 93 words. A field over its limit
+# is dropped whole and the templated line stands in, which threw away 23 of
+# 405 written sections, 16 of them for being 1 to 10 words over (the stub
+# paragraphs in the Pokemon Secret and Flesh and Blood Marvel articles). A
+# section or a lede may run this many words over; a longer one still drops,
+# and says so.
+OVER = 10
 CAPTION_LIMIT = 20
 HEADER_LIMIT = 9
 
@@ -79,6 +87,8 @@ spells it). Say "forecast" or "call", "checked", "window", "inside the range".
 - Numbers in one style: a percentage is the figure and the word percent \
 (16.9 percent), a fall is "down 16.9 percent" or "-16.9 percent", never \
 "negative 16.9" and never the % sign; money is $1,594, never "1,594 dollars".
+- Never end a paragraph, the lede or the closer on a short tag line that \
+begins with "Still" ("Still undercard.", "Still falling."). End on the fact.
 - "We" is CardStock; "the model" is our price forecaster, and it is allowed \
 to be wrong in print.\
 """
@@ -206,6 +216,15 @@ def _recent_block():
 _SWAPS = (("graded", "checked"), ("cohorts", "groups"), ("cohort", "group"))
 
 
+# The writer's stock closer: "Still undercard." ended the lede, two
+# sections and the closer of one article (2026-11-27), after the review of
+# 2026-11-24 had found it across articles. The rule forbids it; this takes
+# out the ones that slip through. Only a whole sentence of "Still" and one
+# to three plain words goes: "Still, the index is up" and "Still up 4.1
+# percent." stay.
+_STILL = re.compile(r"(?:(?<=[.!?:;])\s+|^)Still(?: [A-Za-z'’-]+){1,3}\.(?=\s|$)")
+
+
 def _style(text, title=False):
     if not text:
         return text
@@ -218,6 +237,8 @@ def _style(text, title=False):
         text = re.sub(rf"\b{bad.capitalize()}\b", good.capitalize(), text)
     # Lower case only: "Modern Horizons 3" is a set's name.
     text = re.sub(r"\bhorizon(s?)\b", r"window\1", text)
+    if not title:
+        text = _STILL.sub("", text).strip()
     return text
 
 
@@ -239,9 +260,8 @@ def _write(kind, facts, sections, headline_names):
         recent=_recent_block())
     try:
         out = subprocess.run(
-            [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],
-            input=prompt, capture_output=True, text=True,
-            timeout=int(os.environ.get("TCG_PROSE_TIMEOUT", "600")))
+            writer_cmd(cli), input=prompt, capture_output=True, text=True,
+            timeout=writer_timeout())
     except (subprocess.TimeoutExpired, OSError) as e:
         print(f"article_editorial: CLI failed ({type(e).__name__}), keeping templated text",
               file=sys.stderr)
@@ -263,20 +283,29 @@ def _write(kind, facts, sections, headline_names):
         return None
 
     compared = ((facts.get("context") or {}).get("compared_against") if isinstance(facts, dict) else None)
-    prose = {k: _guard(_style(_clean(data.get(k), cap), title=(k == "headline")), compared)
+    prose = {k: _guard(_style(_clean(data.get(k), cap + (OVER if k == "lede" else 0)),
+                              title=(k == "headline")), compared)
              for k, cap in LIMITS.items()}
     prose["headline"] = _headline(prose.get("headline"))
     keys = [k for k, _ in sections]
 
-    def pick(field, cap):
+    def pick(field, cap, over=0):
         src = data.get(field)
         if not isinstance(src, dict):
             return {}
         title = field == "headers"
-        return {k: t for k, t in ((k, _guard(_style(_clean(src.get(k), cap), title), compared))
-                                  for k in keys) if t}
+        out = {}
+        for k in keys:
+            text = _clean(src.get(k), cap + over)
+            if text is None and field == "sections" and isinstance(src.get(k), str) and src[k].strip():
+                print(f"article_editorial: section '{k}' ran {len(src[k].split())} words against "
+                      f"{cap} (+{over}), keeping templated text", file=sys.stderr)
+            text = _guard(_style(text, title), compared)
+            if text:
+                out[k] = text
+        return out
 
-    prose["sections"] = pick("sections", SECTION_LIMIT)
+    prose["sections"] = pick("sections", SECTION_LIMIT, OVER)
     prose["headers"] = {k: _headline(v) or v for k, v in pick("headers", HEADER_LIMIT).items()}
     prose["captions"] = pick("captions", CAPTION_LIMIT)
     kept = sum(1 for k in LIMITS if prose[k]) + sum(

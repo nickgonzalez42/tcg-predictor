@@ -70,10 +70,19 @@ def members_of(cat, spec):
     Pokemon's Special Illustration Rares carry nothing in the title)."""
     rarity = spec.get("rarity")
     if rarity:
-        return {pid: c for pid, c in cat.items() if c["rarity"] == rarity}
-    tag, skip = spec["name_tag"], spec.get("skip_prefix")
-    return {pid: c for pid, c in cat.items()
-            if tag in c["name"] and not (skip and c["name"].startswith(skip))}
+        out = {pid: c for pid, c in cat.items() if c["rarity"] == rarity}
+    else:
+        tag, skip = spec["name_tag"], spec.get("skip_prefix")
+        out = {pid: c for pid, c in cat.items()
+               if tag in c["name"] and not (skip and c["name"].startswith(skip))}
+    # skip_sets: sets that reprint the kind by the hundred at a dollar or two
+    # (2026-11-27: Yu-Gi-Oh! Starlight Rare is 409 chase cards plus 199 in
+    # Rarity Collection 5 and the 2025 Mega-Pack, median $2.99 and $1.17; a
+    # $0.29 one was the article's featured faller). Matched inside the set name.
+    sets = spec.get("skip_sets")
+    if sets:
+        out = {pid: c for pid, c in out.items() if not any(s in (c["set"] or "") for s in sets)}
+    return out
 
 
 def month_grid(first, today):

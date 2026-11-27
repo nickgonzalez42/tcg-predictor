@@ -134,6 +134,29 @@ FACTS:
 """
 
 
+# The writer is the Claude Code CLI, and it thinks for minutes before it
+# writes: 4 to 9 minutes a call over thirty nightly calls (2026-11-13..27),
+# because it ran at whatever effort ~/.claude/settings.json set for the
+# interactive sessions (xhigh). The article limit was 600 s and the report's
+# 300 s: two of four articles ran past theirs on 2026-11-26/27 and shipped
+# with templated text, and the Friday report's call took 250 and 288 s.
+# The effort is named here, so the nightly does not change when the
+# interactive setting does, and the limit leaves room above the slowest
+# call seen (539 s).
+WRITER_EFFORT = "xhigh"
+WRITER_TIMEOUT = 900
+
+
+def writer_cmd(cli):
+    return [cli, "-p", "--model", "claude-sonnet-5",
+            "--effort", os.environ.get("TCG_PROSE_EFFORT", WRITER_EFFORT),
+            "--output-format", "text"]
+
+
+def writer_timeout():
+    return int(os.environ.get("TCG_PROSE_TIMEOUT", WRITER_TIMEOUT))
+
+
 def _find_cli():
     path = shutil.which("claude")
     if path:
@@ -193,8 +216,8 @@ def write_editorial(facts):
                            model_headline=LIMITS["model_headline"])
     try:
         out = subprocess.run(
-            [cli, "-p", "--model", "claude-sonnet-5", "--output-format", "text"],
-            input=prompt, capture_output=True, text=True, timeout=300)
+            writer_cmd(cli), input=prompt, capture_output=True, text=True,
+            timeout=writer_timeout())
     except (subprocess.TimeoutExpired, OSError) as e:
         print(f"report_editorial: CLI failed ({type(e).__name__}) — "
               "keeping templated text", file=sys.stderr)
