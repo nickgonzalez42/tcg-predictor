@@ -85,6 +85,14 @@ def members_of(cat, spec):
     return out
 
 
+def steady_path(path, start=""):
+    """No step beyond STEP_MAX_RATIO between two readings of [(day, price)]
+    on or after `start`. Such a step is a price source changing hands or one
+    stray reading, not a move."""
+    s = [p for d_, p in (path or []) if d_ >= start and p > 0]
+    return all(1 / STEP_MAX_RATIO <= b / a <= STEP_MAX_RATIO for a, b in zip(s, s[1:]))
+
+
 def month_grid(first, today):
     """Month starts from the first reading's month to today's, then today."""
     d = date.fromisoformat(first).replace(day=1)
@@ -254,8 +262,7 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
         those steps out, and a card with one gets no one-year figure, so it
         is neither listed with one nor featured as a climber or a faller
         (2026-11-24: six of eight articles featured at least one)."""
-        s = [p for d_, p in (paths.get(pid) or []) if d_ >= year_ago and p > 0]
-        return all(1 / STEP_MAX_RATIO <= b / a <= STEP_MAX_RATIO for a, b in zip(s, s[1:]))
+        return steady_path(paths.get(pid), year_ago)
 
     year, since = {}, {}
     for pid, c in members.items():
@@ -263,7 +270,11 @@ def collect_type(pc, pred, game, cat, tkey, synth, window, young, today, attrs=N
         was = ga.price_on(s, year_ago, MONTH_TOL) if s else None
         if was and steady(pid):
             year[pid] = (c["price"] / was - 1) * 100
-        if s and s[0][1] > 0 and (today - date.fromisoformat(s[0][0])).days >= 60:
+        # The same rule over the card's whole path for its change since we
+        # first priced it (2026-11-27: the rebuilt Fabled article said Heart
+        # of Fyendal was "up 564.0 percent since first priced"; its base
+        # printing had changed from a $190 one to a $1,594 one in a step).
+        if s and s[0][1] > 0 and (today - date.fromisoformat(s[0][0])).days >= 60 and steady_path(s):
             since[pid] = (c["price"] / s[0][1] - 1) * 100
 
     releases = {}

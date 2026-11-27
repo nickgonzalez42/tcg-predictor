@@ -112,6 +112,21 @@ class TypeMembers(unittest.TestCase):
         self.assertEqual(sorted(ta.members_of(self.CAT, ga.CARD_TYPES["yugioh"]["ghost"])), [5])
 
 
+class SteadyPath(unittest.TestCase):
+    FYENDAL = [("2025-11-24", 238.17), ("2026-08-31", 199.87), ("2026-09-28", 190.31),
+               ("2026-10-31", 1593.99), ("2026-11-27", 1593.99)]
+
+    def test_a_printing_switch_is_a_step_not_a_move(self):
+        self.assertFalse(ta.steady_path(self.FYENDAL))
+        self.assertFalse(ta.steady_path(self.FYENDAL, "2025-11-27"))
+        self.assertTrue(ta.steady_path(self.FYENDAL, "2026-10-01"))      # nothing after the step
+
+    def test_an_ordinary_path_is_steady(self):
+        self.assertTrue(ta.steady_path([("2025-01-01", 10.0), ("2025-02-01", 25.0), ("2025-03-01", 9.0)]))
+        self.assertTrue(ta.steady_path([]))
+        self.assertTrue(ta.steady_path([("2025-01-01", 0.0), ("2025-02-01", 5.0)]))   # no price, no ratio
+
+
 class HeadlineFigure(unittest.TestCase):
     """The title states the number the picture shows, or ours stands."""
 
@@ -198,14 +213,14 @@ class Writer(unittest.TestCase):
         seen, _ = self.call()
         cmd = seen["cmd"]
         self.assertEqual(cmd[:2], ["claude-stand-in", "-p"])
-        self.assertEqual(cmd[cmd.index("--effort") + 1], "xhigh")
+        self.assertEqual(cmd[cmd.index("--effort") + 1], "high")
         self.assertEqual(cmd[cmd.index("--model") + 1], "claude-sonnet-5")
         self.assertEqual(seen["timeout"], 900)
 
     def test_both_can_be_set_for_one_run(self):
-        os.environ["TCG_PROSE_TIMEOUT"], os.environ["TCG_PROSE_EFFORT"] = "1200", "high"
+        os.environ["TCG_PROSE_TIMEOUT"], os.environ["TCG_PROSE_EFFORT"] = "1200", "medium"
         seen, _ = self.call()
-        self.assertEqual(seen["cmd"][seen["cmd"].index("--effort") + 1], "high")
+        self.assertEqual(seen["cmd"][seen["cmd"].index("--effort") + 1], "medium")
         self.assertEqual(seen["timeout"], 1200)
 
     def test_the_reports_use_the_same_call(self):

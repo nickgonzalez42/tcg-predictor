@@ -50,6 +50,7 @@ class Review(unittest.TestCase):
     def test_the_quiet_faults_are_each_named(self):
         log = LOG + "\n".join([
             "article_editorial: CLI failed (TimeoutExpired), keeping templated text",
+            "article_editorial: bad JSON, keeping templated text",
             "pc_printing_backfill: non-fatal error: URLError: reset",
             "delta_extras: tcg_nm_history not shipped tonight (cap)",
             "article_editorial: section 'movers' ran 170 words against 95 (+10), keeping templated text",
@@ -60,7 +61,7 @@ class Review(unittest.TestCase):
             "indexnow: answered 403", "graded: 1,250 card(s) over 32 days (oldest 2026-10-01)"])
         problems, _fine, _pages = mc.review("2026-11-27", "2026-11-27", STATE, log)
         text = "\n".join(problems)
-        for want in ("A step failed (2)", "skipped (1)", "held back", "writer failed", "ran too long",
+        for want in ("A step failed (2)", "skipped (1)", "held back", "writer failed, so that text is fill-in (2)", "ran too long",
                      "could not read", "only part of its written text (1)", "ping was refused",
                      "graded crawl is behind"):
             self.assertIn(want, text)

@@ -142,8 +142,16 @@ FACTS:
 # with templated text, and the Friday report's call took 250 and 288 s.
 # The effort is named here, so the nightly does not change when the
 # interactive setting does, and the limit leaves room above the slowest
-# call seen (539 s).
-WRITER_EFFORT = "xhigh"
+# call seen.
+#
+# "high", not the "xhigh" it had inherited: at xhigh a call spends 43 to 58
+# thousand output tokens thinking, and on 2026-11-27 one reached the 64,000
+# ceiling mid-answer; the CLI went on in a second message and printed only
+# that tail ("bad JSON", templated article). The same request measured at
+# each setting: xhigh 629 s and cut off; high 385 s, 36,255 tokens, every
+# section inside its limit, every number from the facts; medium 169 s,
+# 16,804 tokens, but all five sections over their limit and looser claims.
+WRITER_EFFORT = "high"
 WRITER_TIMEOUT = 900
 
 
